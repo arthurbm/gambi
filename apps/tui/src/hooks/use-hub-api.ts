@@ -87,18 +87,18 @@ export interface UseHubApiReturn {
 }
 
 // ============================================================================
-// Helper Functions
+// Helper Functions (exported for testing)
 // ============================================================================
 
-function createErrorResult<T>(error: string): ApiResult<T> {
+export function createErrorResult<T>(error: string): ApiResult<T> {
   return { data: null, error };
 }
 
-function createSuccessResult<T>(data: T): ApiResult<T> {
+export function createSuccessResult<T>(data: T): ApiResult<T> {
   return { data, error: null };
 }
 
-async function fetchJson<T>(
+export async function fetchJson<T>(
   url: string,
   schema: z.ZodType<T>,
   options?: RequestInit

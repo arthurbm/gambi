@@ -17,7 +17,8 @@ interface UseSSEReturn {
 const RECONNECT_DELAY = 3000;
 const MAX_RECONNECT_ATTEMPTS = 10;
 
-function toUint8Array(value: unknown): Uint8Array {
+// Exported for testing
+export function toUint8Array(value: unknown): Uint8Array {
   if (value instanceof Uint8Array) {
     return value;
   }
@@ -149,12 +150,13 @@ export function useSSE(options: UseSSEOptions): UseSSEReturn {
   return { connected, error, reconnect };
 }
 
-interface ParsedSSEResult {
+export interface ParsedSSEResult {
   parsed: SSEEvent[];
   remaining: string;
 }
 
-function tryParseEvent(
+// Exported for testing
+export function tryParseEvent(
   eventType: string,
   eventData: string
 ): SSEEvent | undefined {
@@ -168,7 +170,11 @@ function tryParseEvent(
   }
 }
 
-function buildRemainingBuffer(eventType: string, eventData: string): string {
+// Exported for testing
+export function buildRemainingBuffer(
+  eventType: string,
+  eventData: string
+): string {
   let remaining = "";
   if (eventType) {
     remaining += `event: ${eventType}\n`;
@@ -179,7 +185,8 @@ function buildRemainingBuffer(eventType: string, eventData: string): string {
   return remaining;
 }
 
-function parseSSEBuffer(buffer: string): ParsedSSEResult {
+// Exported for testing
+export function parseSSEBuffer(buffer: string): ParsedSSEResult {
   const events: SSEEvent[] = [];
   const lines = buffer.split("\n");
 

@@ -37,8 +37,8 @@ interface UseRoomsReturn {
 
 const RECONNECT_DELAY = 3000;
 
-// Types for event handler results
-interface LogAction {
+// Types for event handler results - exported for testing
+export interface LogAction {
   type: "join" | "leave" | "offline" | "request" | "complete" | "error";
   participantId: string;
   participantName?: string;
@@ -46,17 +46,17 @@ interface LogAction {
   metrics?: { tokensPerSecond?: number; latencyMs?: number };
 }
 
-interface EventResult {
+export interface EventResult {
   room: RoomState;
   log?: LogAction;
 }
 
-// Individual event handlers (pure functions)
-function handleConnectedEvent(room: RoomState): EventResult {
+// Individual event handlers (pure functions) - exported for testing
+export function handleConnectedEvent(room: RoomState): EventResult {
   return { room: { ...room, connected: true } };
 }
 
-function handleRoomCreatedEvent(
+export function handleRoomCreatedEvent(
   room: RoomState,
   code: string,
   data: unknown
@@ -68,7 +68,7 @@ function handleRoomCreatedEvent(
   return { room };
 }
 
-function handleParticipantJoinedEvent(
+export function handleParticipantJoinedEvent(
   room: RoomState,
   data: unknown
 ): EventResult {
@@ -90,7 +90,7 @@ function handleParticipantJoinedEvent(
   };
 }
 
-function handleParticipantLeftEvent(
+export function handleParticipantLeftEvent(
   room: RoomState,
   data: unknown
 ): EventResult {
@@ -115,7 +115,7 @@ function handleParticipantLeftEvent(
   };
 }
 
-function handleParticipantOfflineEvent(
+export function handleParticipantOfflineEvent(
   room: RoomState,
   data: unknown
 ): EventResult {
@@ -141,7 +141,10 @@ function handleParticipantOfflineEvent(
   };
 }
 
-function handleLlmRequestEvent(room: RoomState, data: unknown): EventResult {
+export function handleLlmRequestEvent(
+  room: RoomState,
+  data: unknown
+): EventResult {
   const parsed = SSELlmRequestEvent.safeParse(data);
   if (!parsed.success) {
     return { room };
@@ -169,7 +172,10 @@ function handleLlmRequestEvent(room: RoomState, data: unknown): EventResult {
   };
 }
 
-function handleLlmCompleteEvent(room: RoomState, data: unknown): EventResult {
+export function handleLlmCompleteEvent(
+  room: RoomState,
+  data: unknown
+): EventResult {
   const parsed = SSELlmCompleteEvent.safeParse(data);
   if (!parsed.success) {
     return { room };
@@ -197,7 +203,10 @@ function handleLlmCompleteEvent(room: RoomState, data: unknown): EventResult {
   };
 }
 
-function handleLlmErrorEvent(room: RoomState, data: unknown): EventResult {
+export function handleLlmErrorEvent(
+  room: RoomState,
+  data: unknown
+): EventResult {
   const parsed = SSELlmErrorEvent.safeParse(data);
   if (!parsed.success) {
     return { room };

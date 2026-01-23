@@ -12,7 +12,8 @@
     }
   },
   "scripts": {
-    "dev": "bun run --watch src/index.tsx"
+    "dev": "bun run --watch src/index.tsx",
+    "test": "bun test"
   },
   "dependencies": {
     "@gambiarra/core": "workspace:*",
