@@ -4,7 +4,7 @@ import {
   LlmMetrics,
   MachineSpecs,
   ParticipantInfo,
-  RoomInfo,
+  RoomInfoPublic,
 } from "./types.ts";
 
 // Room messages
@@ -92,7 +92,7 @@ export const TuiRegisterMessage = z.object({
 
 export const TuiRegisteredMessage = z.object({
   type: z.literal("tui:registered"),
-  rooms: z.array(RoomInfo),
+  rooms: z.array(RoomInfoPublic),
   participants: z.array(ParticipantInfo),
 });
 
@@ -104,7 +104,7 @@ export const HostRegisterMessage = z.object({
 
 export const HostRegisteredMessage = z.object({
   type: z.literal("host:registered"),
-  room: RoomInfo,
+  room: RoomInfoPublic,
   participants: z.array(ParticipantInfo),
 });
 
@@ -116,7 +116,7 @@ export const ListRoomsMessage = z.object({
 export const ListRoomsResponseMessage = z.object({
   type: z.literal("list:rooms-response"),
   rooms: z.array(
-    RoomInfo.extend({
+    RoomInfoPublic.extend({
       participantCount: z.number(),
     })
   ),
