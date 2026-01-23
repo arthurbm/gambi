@@ -8,10 +8,10 @@ import { RoomTabs } from "../components/room-tabs";
 import type { Screen } from "../hooks/use-navigation";
 import { useParticipantSession } from "../hooks/use-participant-session";
 import type { RoomState } from "../hooks/use-rooms";
+import { useAppStore } from "../store/app-store";
 import { colors } from "../types";
 
 interface MonitorProps {
-  hubUrl: string;
   rooms: Map<string, RoomState>;
   activeRoom: string | null;
   allConnected: boolean;
@@ -24,7 +24,6 @@ interface MonitorProps {
 }
 
 export function Monitor({
-  hubUrl,
   rooms,
   activeRoom,
   allConnected,
@@ -35,8 +34,9 @@ export function Monitor({
   onBack,
   canGoBack,
 }: MonitorProps) {
+  const hubUrl = useAppStore((s) => s.hubUrl);
   const [expanded, setExpanded] = useState(false);
-  const session = useParticipantSession({ hubUrl });
+  const session = useParticipantSession();
 
   const handleCycleRooms = useCallback(() => {
     const roomList = [...rooms.keys()];
@@ -65,10 +65,10 @@ export function Monitor({
         handleCycleRooms();
       }
       if (key.name === "a") {
-        onNavigate("addRoom", { hubUrl });
+        onNavigate("addRoom", {});
       }
       if (key.name === "c") {
-        onNavigate("create", { hubUrl });
+        onNavigate("create", {});
       }
       if (key.name === "r") {
         handleRefreshRoom();

@@ -1,13 +1,12 @@
 import { useKeyboard } from "@opentui/react";
 import { useCallback, useState } from "react";
 import { Footer } from "../components/footer";
-import { formatSpecs, useMachineSpecs } from "../hooks/use-machine-specs";
+import { formatSpecs, useMachineSpecsQuery } from "../hooks/queries";
 import type { Screen } from "../hooks/use-navigation";
 import { useParticipantSession } from "../hooks/use-participant-session";
 import { colors } from "../types";
 
 interface JoinRoomProps {
-  hubUrl: string;
   roomCode?: string;
   onNavigate: (screen: Screen, params: Record<string, unknown>) => void;
   onBack: () => void;
@@ -24,14 +23,13 @@ function generateNickname(): string {
 }
 
 export function JoinRoom({
-  hubUrl,
   roomCode: initialRoomCode,
   onNavigate,
   onBack,
   canGoBack,
 }: JoinRoomProps) {
-  const { specs, loading: specsLoading } = useMachineSpecs();
-  const session = useParticipantSession({ hubUrl });
+  const { data: specs, isLoading: specsLoading } = useMachineSpecsQuery();
+  const session = useParticipantSession();
 
   const [roomCode, setRoomCode] = useState(initialRoomCode ?? "");
   const [endpoint, setEndpoint] = useState("http://localhost:11434");
@@ -61,7 +59,7 @@ export function JoinRoom({
     });
 
     if (session.status === "joined") {
-      onNavigate("monitor", { hubUrl, roomCodes: [roomCode] });
+      onNavigate("monitor", { roomCodes: [roomCode] });
     }
   }, [
     roomCode,
@@ -72,7 +70,6 @@ export function JoinRoom({
     shareSpecs,
     specs,
     session,
-    hubUrl,
     onNavigate,
   ]);
 
@@ -80,7 +77,7 @@ export function JoinRoom({
     (key) => {
       if (session.status === "joined") {
         if (key.name === "m") {
-          onNavigate("monitor", { hubUrl, roomCodes: [roomCode] });
+          onNavigate("monitor", { roomCodes: [roomCode] });
         } else if (key.name === "l") {
           session.leave();
         }

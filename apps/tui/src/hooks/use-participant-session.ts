@@ -6,10 +6,6 @@ const MAX_FAILURES = 3;
 
 type SessionStatus = "idle" | "joining" | "joined" | "disconnected" | "error";
 
-export interface UseParticipantSessionOptions {
-  hubUrl: string;
-}
-
 export interface UseParticipantSessionReturn {
   status: SessionStatus;
   participantId: string | null;
@@ -19,11 +15,8 @@ export interface UseParticipantSessionReturn {
   leave: () => Promise<void>;
 }
 
-export function useParticipantSession(
-  options: UseParticipantSessionOptions
-): UseParticipantSessionReturn {
-  const { hubUrl } = options;
-  const api = useHubApi({ hubUrl });
+export function useParticipantSession(): UseParticipantSessionReturn {
+  const api = useHubApi();
 
   const [status, setStatus] = useState<SessionStatus>("idle");
   const [participantId, setParticipantId] = useState<string | null>(null);

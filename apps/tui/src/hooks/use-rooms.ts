@@ -1,8 +1,11 @@
 import { ParticipantInfo as ParticipantInfoSchema } from "@gambiarra/core/types";
+import { useQueryClient } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import type { ActivityLogEntry, ParticipantInfo } from "../types";
+import { useAppStore } from "../store/app-store";
+import type { ActivityLogEntry, ParticipantInfo, RoomState } from "../types";
+import { roomKeys } from "./queries";
 
 export type { RoomState } from "../types";
 
@@ -15,10 +18,6 @@ import {
   SSEParticipantOfflineEvent,
   SSERoomCreatedEvent,
 } from "../types";
-
-interface UseRoomsOptions {
-  hubUrl: string;
-}
 
 interface RoomConnection {
   code: string;
@@ -263,8 +262,9 @@ function parseSSEBuffer(buffer: string): SSEParseResult {
   return { events, remaining };
 }
 
-export function useRooms(options: UseRoomsOptions): UseRoomsReturn {
-  const { hubUrl } = options;
+export function useRooms(): UseRoomsReturn {
+  const hubUrl = useAppStore((s) => s.hubUrl);
+  const queryClient = useQueryClient();
 
   const [rooms, setRooms] = useState<Map<string, RoomState>>(new Map());
   const [activeRoom, setActiveRoom] = useState<string | null>(null);
@@ -342,8 +342,24 @@ export function useRooms(options: UseRoomsOptions): UseRoomsReturn {
 
         return next;
       });
+
+      // Invalidate participant queries when relevant events occur
+      if (
+        event === "participant:joined" ||
+        event === "participant:left" ||
+        event === "participant:offline"
+      ) {
+        queryClient.invalidateQueries({
+          queryKey: roomKeys.participants(code),
+        });
+      }
+
+      // Invalidate room list when room is created
+      if (event === "room:created") {
+        queryClient.invalidateQueries({ queryKey: roomKeys.list() });
+      }
     },
-    [addLog]
+    [addLog, queryClient]
   );
 
   const fetchParticipants = useCallback(

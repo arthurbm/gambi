@@ -6,14 +6,7 @@ import {
 } from "@gambiarra/core/types";
 import { useCallback } from "react";
 import { z } from "zod";
-
-// ============================================================================
-// Types
-// ============================================================================
-
-export interface UseHubApiOptions {
-  hubUrl: string;
-}
+import { useAppStore } from "../store/app-store";
 
 export interface ApiResult<T> {
   data: T | null;
@@ -145,8 +138,8 @@ async function fetchJson<T>(
 // Hook Implementation
 // ============================================================================
 
-export function useHubApi(options: UseHubApiOptions): UseHubApiReturn {
-  const { hubUrl } = options;
+export function useHubApi(): UseHubApiReturn {
+  const hubUrl = useAppStore((s) => s.hubUrl);
 
   const checkHub = useCallback(
     (): Promise<ApiResult<HealthResponse>> =>

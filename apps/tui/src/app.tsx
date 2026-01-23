@@ -1,5 +1,5 @@
 import { useKeyboard, useRenderer } from "@opentui/react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { AddRoomModal } from "./components/add-room-modal";
 import { Footer } from "./components/footer";
 import { useNavigation } from "./hooks/use-navigation";
@@ -10,6 +10,7 @@ import { ListRooms } from "./screens/list-rooms";
 import { MainMenu } from "./screens/main-menu";
 import { Monitor } from "./screens/monitor";
 import { ServeHub } from "./screens/serve-hub";
+import { useAppStore } from "./store/app-store";
 
 interface AppProps {
   hubUrl: string;
@@ -17,10 +18,15 @@ interface AppProps {
 
 export function App({ hubUrl: initialHubUrl }: AppProps) {
   const renderer = useRenderer();
-  const [hubUrl, setHubUrl] = useState(initialHubUrl);
+  const setHubUrl = useAppStore((s) => s.setHubUrl);
+
+  // Initialize store with prop value
+  useEffect(() => {
+    setHubUrl(initialHubUrl);
+  }, [initialHubUrl, setHubUrl]);
+
   const { screen, params, navigate, goBack, canGoBack } = useNavigation({
     initialScreen: "menu",
-    initialParams: { hubUrl },
   });
 
   const {
@@ -30,7 +36,7 @@ export function App({ hubUrl: initialHubUrl }: AppProps) {
     addRoom,
     removeRoom,
     allConnected,
-  } = useRooms({ hubUrl });
+  } = useRooms();
 
   const handleQuit = useCallback(() => {
     renderer.destroy();
@@ -57,14 +63,7 @@ export function App({ hubUrl: initialHubUrl }: AppProps) {
 
   // Screen: Menu Principal
   if (screen === "menu") {
-    return (
-      <MainMenu
-        hubUrl={hubUrl}
-        onHubUrlChange={setHubUrl}
-        onNavigate={navigate}
-        onQuit={handleQuit}
-      />
-    );
+    return <MainMenu onNavigate={navigate} onQuit={handleQuit} />;
   }
 
   // Screen: Serve Hub
@@ -77,7 +76,6 @@ export function App({ hubUrl: initialHubUrl }: AppProps) {
     return (
       <CreateRoom
         canGoBack={canGoBack()}
-        hubUrl={hubUrl}
         onBack={goBack}
         onNavigate={(s, p) => {
           if (p.roomCodes) {
@@ -96,7 +94,6 @@ export function App({ hubUrl: initialHubUrl }: AppProps) {
     return (
       <ListRooms
         canGoBack={canGoBack()}
-        hubUrl={hubUrl}
         onBack={goBack}
         onNavigate={(s, p) => {
           if (p.roomCodes) {
@@ -115,7 +112,6 @@ export function App({ hubUrl: initialHubUrl }: AppProps) {
     return (
       <JoinRoom
         canGoBack={canGoBack()}
-        hubUrl={hubUrl}
         onBack={goBack}
         onNavigate={(s, p) => {
           if (p.roomCodes) {
@@ -134,10 +130,9 @@ export function App({ hubUrl: initialHubUrl }: AppProps) {
   if (screen === "addRoom") {
     return (
       <AddRoomModal
-        hubUrl={hubUrl}
         onAdd={(code) => {
           addRoom(code);
-          navigate("monitor", { hubUrl, roomCodes: [code] });
+          navigate("monitor", { roomCodes: [code] });
         }}
         onCancel={() => goBack()}
       />
@@ -151,7 +146,6 @@ export function App({ hubUrl: initialHubUrl }: AppProps) {
         activeRoom={activeRoom}
         allConnected={allConnected}
         canGoBack={canGoBack()}
-        hubUrl={hubUrl}
         onAddRoom={addRoom}
         onBack={goBack}
         onNavigate={(s, p) => {

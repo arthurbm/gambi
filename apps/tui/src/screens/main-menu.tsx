@@ -2,6 +2,7 @@ import { useKeyboard, useRenderer } from "@opentui/react";
 import { useState } from "react";
 import { Footer } from "../components/footer";
 import type { Screen } from "../hooks/use-navigation";
+import { useAppStore } from "../store/app-store";
 import { colors } from "../types";
 
 const LOGO = `
@@ -32,19 +33,14 @@ const menuOptions: MenuOption[] = [
 ];
 
 interface MainMenuProps {
-  hubUrl: string;
-  onHubUrlChange: (url: string) => void;
-  onNavigate: (screen: Screen, params: { hubUrl: string }) => void;
+  onNavigate: (screen: Screen) => void;
   onQuit: () => void;
 }
 
-export function MainMenu({
-  hubUrl,
-  onHubUrlChange,
-  onNavigate,
-  onQuit,
-}: MainMenuProps) {
+export function MainMenu({ onNavigate, onQuit }: MainMenuProps) {
   const _renderer = useRenderer();
+  const hubUrl = useAppStore((s) => s.hubUrl);
+  const setHubUrl = useAppStore((s) => s.setHubUrl);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [editingUrl, setEditingUrl] = useState(false);
   const [urlValue, setUrlValue] = useState(hubUrl);
@@ -56,7 +52,7 @@ export function MainMenu({
 
   const confirmEdit = () => {
     setEditingUrl(false);
-    onHubUrlChange(urlValue);
+    setHubUrl(urlValue);
   };
 
   const handleMenuKey = (keyName: string) => {
@@ -70,7 +66,7 @@ export function MainMenu({
     } else if (keyName === "return") {
       const option = menuOptions[selectedIndex];
       if (option) {
-        onNavigate(option.screen, { hubUrl });
+        onNavigate(option.screen);
       }
     } else if (keyName === "e") {
       setEditingUrl(true);

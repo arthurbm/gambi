@@ -16,17 +16,17 @@ export type Screen =
   | "dashboard" // Legacy: main dashboard
   | "addRoom"; // Legacy: add room modal
 
-// Screen parameters by screen type
+// Screen parameters by screen type (hubUrl is in the global store)
 export interface ScreenParams {
-  menu: { hubUrl?: string };
-  serve: { hubUrl: string };
-  create: { hubUrl: string };
-  list: { hubUrl: string };
-  join: { hubUrl: string; roomCode?: string };
-  monitor: { hubUrl: string; roomCodes?: string[] };
-  selector: { hubUrl: string };
-  dashboard: { hubUrl: string };
-  addRoom: { hubUrl: string };
+  menu: Record<string, never>;
+  serve: Record<string, never>;
+  create: Record<string, never>;
+  list: Record<string, never>;
+  join: { roomCode?: string };
+  monitor: { roomCodes?: string[] };
+  selector: Record<string, never>;
+  dashboard: Record<string, never>;
+  addRoom: Record<string, never>;
 }
 
 // History entry

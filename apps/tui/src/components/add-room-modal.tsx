@@ -1,14 +1,15 @@
 import { useKeyboard } from "@opentui/react";
 import { useCallback, useState } from "react";
+import { useAppStore } from "../store/app-store";
 import { colors } from "../types";
 
 interface AddRoomModalProps {
-  hubUrl: string;
   onAdd: (roomCode: string) => void;
   onCancel: () => void;
 }
 
-export function AddRoomModal({ hubUrl, onAdd, onCancel }: AddRoomModalProps) {
+export function AddRoomModal({ onAdd, onCancel }: AddRoomModalProps) {
+  const hubUrl = useAppStore((s) => s.hubUrl);
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);

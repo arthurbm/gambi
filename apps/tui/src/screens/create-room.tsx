@@ -1,12 +1,11 @@
 import { useKeyboard } from "@opentui/react";
 import { useCallback, useState } from "react";
 import { Footer } from "../components/footer";
-import { useHubApi } from "../hooks/use-hub-api";
+import { useCreateRoom } from "../hooks/queries";
 import type { Screen } from "../hooks/use-navigation";
 import { colors } from "../types";
 
 interface CreateRoomProps {
-  hubUrl: string;
   onNavigate: (screen: Screen, params: Record<string, unknown>) => void;
   onBack: () => void;
   canGoBack: boolean;
@@ -14,53 +13,46 @@ interface CreateRoomProps {
 
 type Step = "form" | "success";
 
-export function CreateRoom({
-  hubUrl,
-  onNavigate,
-  onBack,
-  canGoBack,
-}: CreateRoomProps) {
-  const api = useHubApi({ hubUrl });
+export function CreateRoom({ onNavigate, onBack, canGoBack }: CreateRoomProps) {
+  const createRoom = useCreateRoom();
+
   const [step, setStep] = useState<Step>("form");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [focusedField, setFocusedField] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const [createdRoom, setCreatedRoom] = useState<{
     code: string;
     name: string;
   } | null>(null);
 
-  const handleSubmit = useCallback(async () => {
+  const handleSubmit = useCallback(() => {
     if (!name.trim()) {
-      setError("Name is required");
+      setValidationError("Name is required");
       return;
     }
 
-    setLoading(true);
-    setError(null);
+    setValidationError(null);
 
-    const result = await api.createRoom(name.trim(), password || undefined);
-
-    if (result.error) {
-      setError(result.error);
-      setLoading(false);
-    } else if (result.data) {
-      setCreatedRoom({
-        code: result.data.room.code,
-        name: result.data.room.name,
-      });
-      setStep("success");
-      setLoading(false);
-    }
-  }, [api, name, password]);
+    createRoom.mutate(
+      { name: name.trim(), password: password || undefined },
+      {
+        onSuccess: (data) => {
+          setCreatedRoom({
+            code: data.room.code,
+            name: data.room.name,
+          });
+          setStep("success");
+        },
+      }
+    );
+  }, [createRoom, name, password]);
 
   useKeyboard(
     (key) => {
       if (step === "success") {
         if (key.name === "m" && createdRoom) {
-          onNavigate("monitor", { hubUrl, roomCodes: [createdRoom.code] });
+          onNavigate("monitor", { roomCodes: [createdRoom.code] });
         } else if (key.name === "escape" || key.name === "b") {
           onBack();
         }
@@ -80,6 +72,10 @@ export function CreateRoom({
     },
     { release: false }
   );
+
+  const error =
+    validationError ||
+    (createRoom.error instanceof Error ? createRoom.error.message : null);
 
   if (step === "success" && createdRoom) {
     return (
@@ -155,7 +151,9 @@ export function CreateRoom({
         {error && <text fg={colors.error}>Error: {error}</text>}
 
         {/* Loading state */}
-        {loading && <text fg={colors.muted}>Creating room...</text>}
+        {createRoom.isPending && (
+          <text fg={colors.muted}>Creating room...</text>
+        )}
 
         {/* Instructions */}
         <box paddingTop={1}>

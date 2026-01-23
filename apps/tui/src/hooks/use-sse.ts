@@ -17,8 +17,22 @@ interface UseSSEReturn {
 const RECONNECT_DELAY = 3000;
 const MAX_RECONNECT_ATTEMPTS = 10;
 
+function toUint8Array(value: unknown): Uint8Array {
+  if (value instanceof Uint8Array) {
+    return value;
+  }
+  if (value instanceof ArrayBuffer) {
+    return new Uint8Array(value);
+  }
+  // Fallback for other buffer-like objects
+  if (ArrayBuffer.isView(value)) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  }
+  throw new Error("Unexpected value type in SSE stream");
+}
+
 async function processSSEStream(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
+  reader: { read: () => Promise<{ done: boolean; value?: unknown }> },
   onEvent: (event: string, data: unknown) => void
 ): Promise<void> {
   const decoder = new TextDecoder();
@@ -30,7 +44,8 @@ async function processSSEStream(
       break;
     }
 
-    buffer += decoder.decode(value, { stream: true });
+    const chunk = toUint8Array(value);
+    buffer += decoder.decode(chunk, { stream: true });
     const events = parseSSEBuffer(buffer);
     buffer = events.remaining;
 
@@ -92,8 +107,8 @@ export function useSSE(options: UseSSEOptions): UseSSEReturn {
       reconnectAttemptsRef.current = 0;
 
       if (response.body) {
-        const reader: ReadableStreamDefaultReader<Uint8Array> =
-          response.body.getReader();
+        const stream = response.body;
+        const reader = stream.getReader();
         await processSSEStream(reader, onEvent);
       }
     } catch (err) {
