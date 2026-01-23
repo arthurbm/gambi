@@ -41,6 +41,41 @@ Gambiarra enables multiple users on a local network to share their LLM endpoints
       └─────────┘    └───────────────────┘         └───────────┘
 ```
 
+## Design Philosophy
+
+Gambiarra follows the principle of **feature parity across all endpoints**. Each entry point exposes the same core capabilities through an interface optimized for its target use case:
+
+| Endpoint | Target Audience | Use Case |
+|----------|-----------------|----------|
+| **SDK** | Developers | Programmatic integration for JS/TS applications (Vercel AI SDK compatible) |
+| **CLI** | DevOps / Power Users | Scripts, automation, and CI/CD pipelines |
+| **TUI** | Human Operators | Interactive real-time monitoring and management |
+
+### Invocation Pattern
+
+| Command | Result |
+|---------|--------|
+| `gambiarra` | Opens **TUI** - Interactive interface with all features |
+| `gambiarra serve` | CLI - Starts hub server (scripting) |
+| `gambiarra create` | CLI - Creates room (scripting) |
+| `gambiarra join` | CLI - Joins as participant (scripting) |
+| `gambiarra list` | CLI - Lists rooms (scripting) |
+
+**Important:** Running `gambiarra` without a subcommand opens the TUI. Subcommands are designed for scripting and automation.
+
+### Feature Parity Matrix
+
+| Feature | SDK | CLI | TUI |
+|---------|-----|-----|-----|
+| Create room | POST /rooms | `gambiarra create` | Create dialog |
+| List rooms | GET /rooms | `gambiarra list` | Room selector |
+| Join room | POST /rooms/:code/join | `gambiarra join` | Join dialog |
+| Leave room | DELETE /rooms/:code/leave/:id | Auto on exit | Leave action |
+| Health check | POST /rooms/:code/health | Auto (background) | Auto (background) |
+| Chat completion | POST /rooms/:code/v1/chat/completions | Via SDK | N/A (monitoring only) |
+| Real-time events | SSE subscription | - | Built-in |
+| Serve hub | - | `gambiarra serve` | Embedded server |
+
 ## Packages
 
 The project is a Bun + Turbo monorepo with the following packages:

@@ -1,24 +1,27 @@
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { useCallback, useState } from "react";
-import { ActivityLog } from "./components/activity-log";
 import { AddRoomModal } from "./components/add-room-modal";
 import { Footer } from "./components/footer";
-import { Header } from "./components/header";
-import { ParticipantList } from "./components/participant-list";
-import { RoomSelector } from "./components/room-selector";
-import { RoomTabs } from "./components/room-tabs";
+import { useNavigation } from "./hooks/use-navigation";
 import { useRooms } from "./hooks/use-rooms";
-
-type Screen = "selector" | "dashboard" | "addRoom";
+import { CreateRoom } from "./screens/create-room";
+import { JoinRoom } from "./screens/join-room";
+import { ListRooms } from "./screens/list-rooms";
+import { MainMenu } from "./screens/main-menu";
+import { Monitor } from "./screens/monitor";
+import { ServeHub } from "./screens/serve-hub";
 
 interface AppProps {
   hubUrl: string;
 }
 
-export function App({ hubUrl }: AppProps) {
+export function App({ hubUrl: initialHubUrl }: AppProps) {
   const renderer = useRenderer();
-  const [screen, setScreen] = useState<Screen>("selector");
-  const [expanded, setExpanded] = useState(false);
+  const [hubUrl, setHubUrl] = useState(initialHubUrl);
+  const { screen, params, navigate, goBack, canGoBack } = useNavigation({
+    initialScreen: "menu",
+    initialParams: { hubUrl },
+  });
 
   const {
     rooms,
@@ -29,148 +32,145 @@ export function App({ hubUrl }: AppProps) {
     allConnected,
   } = useRooms({ hubUrl });
 
-  const handleSelectRooms = useCallback(
-    (roomCodes: string[]) => {
-      for (const code of roomCodes) {
-        addRoom(code);
-      }
-      setScreen("dashboard");
-    },
-    [addRoom]
-  );
-
   const handleQuit = useCallback(() => {
     renderer.destroy();
-    process.exit(0);
   }, [renderer]);
 
-  const handleAddRoom = useCallback(
-    (code: string) => {
-      addRoom(code);
-      setScreen("dashboard");
-    },
-    [addRoom]
-  );
-
-  const handleCycleRooms = useCallback(() => {
-    const roomList = [...rooms.keys()];
-    if (roomList.length > 1 && activeRoom) {
-      const currentIndex = roomList.indexOf(activeRoom);
-      const nextIndex = (currentIndex + 1) % roomList.length;
-      setActiveRoom(roomList[nextIndex] ?? null);
-    }
-  }, [rooms, activeRoom, setActiveRoom]);
-
-  const handleRefreshRoom = useCallback(() => {
-    if (activeRoom && rooms.has(activeRoom)) {
-      removeRoom(activeRoom);
-      addRoom(activeRoom);
-    }
-  }, [activeRoom, rooms, removeRoom, addRoom]);
-
-  const keyboardHandlers: Record<string, () => void> = {
-    q: handleQuit,
-    tab: handleCycleRooms,
-    a: () => setScreen("addRoom"),
-    r: handleRefreshRoom,
-    e: () => setExpanded((prev) => !prev),
-  };
-
+  // Global keyboard handlers (only for screens that don't handle their own keyboard)
   useKeyboard(
     (key) => {
-      if (screen !== "dashboard") {
+      // These screens handle their own keyboard
+      if (["menu", "serve", "create", "list", "join", "monitor"].includes(screen)) {
         return;
       }
-      const handler = keyboardHandlers[key.name];
-      if (handler) {
-        handler();
+
+      // Global quit
+      if (key.name === "q" && screen !== "addRoom") {
+        handleQuit();
+        return;
       }
     },
     { release: false }
   );
 
-  // Room selector screen
-  if (screen === "selector") {
+  // Screen: Menu Principal
+  if (screen === "menu") {
     return (
-      <RoomSelector
+      <MainMenu
         hubUrl={hubUrl}
+        onHubUrlChange={setHubUrl}
+        onNavigate={navigate}
         onQuit={handleQuit}
-        onSelectRooms={handleSelectRooms}
       />
     );
   }
 
-  // Add room modal
+  // Screen: Serve Hub
+  if (screen === "serve") {
+    return <ServeHub onBack={goBack} canGoBack={canGoBack()} />;
+  }
+
+  // Screen: Create Room
+  if (screen === "create") {
+    return (
+      <CreateRoom
+        hubUrl={hubUrl}
+        onNavigate={(s, p) => {
+          if (p.roomCodes) {
+            for (const code of p.roomCodes as string[]) addRoom(code);
+          }
+          navigate(s, p as Record<string, unknown>);
+        }}
+        onBack={goBack}
+        canGoBack={canGoBack()}
+      />
+    );
+  }
+
+  // Screen: List Rooms
+  if (screen === "list") {
+    return (
+      <ListRooms
+        hubUrl={hubUrl}
+        onNavigate={(s, p) => {
+          if (p.roomCodes) {
+            for (const code of p.roomCodes as string[]) addRoom(code);
+          }
+          navigate(s, p as Record<string, unknown>);
+        }}
+        onBack={goBack}
+        canGoBack={canGoBack()}
+      />
+    );
+  }
+
+  // Screen: Join Room
+  if (screen === "join") {
+    return (
+      <JoinRoom
+        hubUrl={hubUrl}
+        roomCode={params.roomCode as string | undefined}
+        onNavigate={(s, p) => {
+          if (p.roomCodes) {
+            for (const code of p.roomCodes as string[]) addRoom(code);
+          }
+          navigate(s, p as Record<string, unknown>);
+        }}
+        onBack={goBack}
+        canGoBack={canGoBack()}
+      />
+    );
+  }
+
+  // Screen: Add Room Modal
   if (screen === "addRoom") {
     return (
       <AddRoomModal
         hubUrl={hubUrl}
-        onAdd={handleAddRoom}
-        onCancel={() => setScreen("dashboard")}
+        onAdd={(code) => {
+          addRoom(code);
+          navigate("monitor", { hubUrl, roomCodes: [code] });
+        }}
+        onCancel={() => goBack()}
       />
     );
   }
 
-  // Main dashboard
-  const currentRoom = activeRoom ? rooms.get(activeRoom) : null;
-
-  return (
-    <box flexDirection="column" flexGrow={1}>
-      {/* Header */}
-      <Header connected={allConnected} hubUrl={hubUrl} roomCount={rooms.size} />
-
-      {/* Room tabs */}
-      <RoomTabs activeRoom={activeRoom} rooms={rooms} />
-
-      {/* Main content area */}
-      <box flexDirection="row" flexGrow={1}>
-        {/* Participants panel */}
-        <box flexGrow={1}>
-          {currentRoom ? (
-            <ParticipantList
-              expanded={expanded}
-              participants={currentRoom.participants}
-              processingRequests={currentRoom.processingRequests}
-            />
-          ) : (
-            <box
-              alignItems="center"
-              borderStyle="single"
-              flexGrow={1}
-              justifyContent="center"
-            >
-              <text>No room selected</text>
-            </box>
-          )}
-        </box>
-
-        {/* Activity log panel */}
-        <box flexGrow={1}>
-          {currentRoom ? (
-            <ActivityLog entries={currentRoom.logs} />
-          ) : (
-            <box
-              alignItems="center"
-              borderStyle="single"
-              flexGrow={1}
-              justifyContent="center"
-            >
-              <text>No activity</text>
-            </box>
-          )}
-        </box>
-      </box>
-
-      {/* Footer */}
-      <Footer
-        shortcuts={[
-          { key: "q", description: "Quit" },
-          { key: "Tab", description: "Switch" },
-          { key: "a", description: "Add Room" },
-          { key: "e", description: expanded ? "Collapse" : "Expand" },
-          { key: "r", description: "Refresh" },
-        ]}
+  // Screen: Monitor (Dashboard)
+  if (screen === "monitor") {
+    return (
+      <Monitor
+        hubUrl={hubUrl}
+        rooms={rooms}
+        activeRoom={activeRoom}
+        allConnected={allConnected}
+        onSetActiveRoom={setActiveRoom}
+        onAddRoom={addRoom}
+        onRemoveRoom={removeRoom}
+        onNavigate={(s, p) => {
+          if (p.roomCodes) {
+            for (const code of p.roomCodes as string[]) addRoom(code);
+          }
+          navigate(s, p as Record<string, unknown>);
+        }}
+        onBack={goBack}
+        canGoBack={canGoBack()}
       />
+    );
+  }
+
+  // Fallback: Telas não implementadas
+  return (
+    <box
+      alignItems="center"
+      borderStyle="single"
+      flexDirection="column"
+      flexGrow={1}
+      justifyContent="center"
+    >
+      <text>Screen not implemented: {screen}</text>
+      <text>Press ESC to go back or q to quit</text>
+      <Footer canGoBack={canGoBack()} />
     </box>
   );
 }

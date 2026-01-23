@@ -50,6 +50,7 @@ export function ParticipantCard({
             {" "}
             {participant.nickname}
           </span>
+          {selected && <span fg={colors.primary}> ◉</span>}
           {status === "offline" && <span fg={colors.muted}> (offline)</span>}
         </text>
         {isProcessing && (
