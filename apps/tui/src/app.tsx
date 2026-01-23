@@ -40,7 +40,9 @@ export function App({ hubUrl: initialHubUrl }: AppProps) {
   useKeyboard(
     (key) => {
       // These screens handle their own keyboard
-      if (["menu", "serve", "create", "list", "join", "monitor"].includes(screen)) {
+      if (
+        ["menu", "serve", "create", "list", "join", "monitor"].includes(screen)
+      ) {
         return;
       }
 
@@ -67,22 +69,24 @@ export function App({ hubUrl: initialHubUrl }: AppProps) {
 
   // Screen: Serve Hub
   if (screen === "serve") {
-    return <ServeHub onBack={goBack} canGoBack={canGoBack()} />;
+    return <ServeHub canGoBack={canGoBack()} onBack={goBack} />;
   }
 
   // Screen: Create Room
   if (screen === "create") {
     return (
       <CreateRoom
+        canGoBack={canGoBack()}
         hubUrl={hubUrl}
+        onBack={goBack}
         onNavigate={(s, p) => {
           if (p.roomCodes) {
-            for (const code of p.roomCodes as string[]) addRoom(code);
+            for (const code of p.roomCodes as string[]) {
+              addRoom(code);
+            }
           }
           navigate(s, p as Record<string, unknown>);
         }}
-        onBack={goBack}
-        canGoBack={canGoBack()}
       />
     );
   }
@@ -91,15 +95,17 @@ export function App({ hubUrl: initialHubUrl }: AppProps) {
   if (screen === "list") {
     return (
       <ListRooms
+        canGoBack={canGoBack()}
         hubUrl={hubUrl}
+        onBack={goBack}
         onNavigate={(s, p) => {
           if (p.roomCodes) {
-            for (const code of p.roomCodes as string[]) addRoom(code);
+            for (const code of p.roomCodes as string[]) {
+              addRoom(code);
+            }
           }
           navigate(s, p as Record<string, unknown>);
         }}
-        onBack={goBack}
-        canGoBack={canGoBack()}
       />
     );
   }
@@ -108,16 +114,18 @@ export function App({ hubUrl: initialHubUrl }: AppProps) {
   if (screen === "join") {
     return (
       <JoinRoom
+        canGoBack={canGoBack()}
         hubUrl={hubUrl}
-        roomCode={params.roomCode as string | undefined}
+        onBack={goBack}
         onNavigate={(s, p) => {
           if (p.roomCodes) {
-            for (const code of p.roomCodes as string[]) addRoom(code);
+            for (const code of p.roomCodes as string[]) {
+              addRoom(code);
+            }
           }
           navigate(s, p as Record<string, unknown>);
         }}
-        onBack={goBack}
-        canGoBack={canGoBack()}
+        roomCode={params.roomCode as string | undefined}
       />
     );
   }
@@ -140,21 +148,23 @@ export function App({ hubUrl: initialHubUrl }: AppProps) {
   if (screen === "monitor") {
     return (
       <Monitor
-        hubUrl={hubUrl}
-        rooms={rooms}
         activeRoom={activeRoom}
         allConnected={allConnected}
-        onSetActiveRoom={setActiveRoom}
+        canGoBack={canGoBack()}
+        hubUrl={hubUrl}
         onAddRoom={addRoom}
-        onRemoveRoom={removeRoom}
+        onBack={goBack}
         onNavigate={(s, p) => {
           if (p.roomCodes) {
-            for (const code of p.roomCodes as string[]) addRoom(code);
+            for (const code of p.roomCodes as string[]) {
+              addRoom(code);
+            }
           }
           navigate(s, p as Record<string, unknown>);
         }}
-        onBack={goBack}
-        canGoBack={canGoBack()}
+        onRemoveRoom={removeRoom}
+        onSetActiveRoom={setActiveRoom}
+        rooms={rooms}
       />
     );
   }

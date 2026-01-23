@@ -8,18 +8,8 @@ interface FormProps {
   onCancel?: () => void;
 }
 
-interface FormContextValue {
-  focusedIndex: number;
-  setFocusedIndex: (index: number) => void;
-}
-
-export function Form({
-  children,
-  fieldCount,
-  onSubmit,
-  onCancel,
-}: FormProps) {
-  const [focusedIndex, setFocusedIndex] = useState(0);
+export function Form({ children, fieldCount, onSubmit, onCancel }: FormProps) {
+  const [_focusedIndex, setFocusedIndex] = useState(0);
 
   useKeyboard(
     (key) => {

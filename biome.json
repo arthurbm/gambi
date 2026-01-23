@@ -51,9 +51,6 @@
           }
         }
       },
-      "organizeImports": {
-        "enabled": false
-      },
       "assist": {
         "actions": {
           "source": {

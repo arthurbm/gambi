@@ -53,7 +53,7 @@ export function ServeHub({ onBack, canGoBack }: ServeHubProps) {
         <text fg={colors.primary}>Serve Hub</text>
       </box>
 
-      <box flexDirection="column" flexGrow={1} padding={2} gap={2}>
+      <box flexDirection="column" flexGrow={1} gap={2} padding={2}>
         {/* Status */}
         <box>
           <text>
@@ -99,24 +99,28 @@ export function ServeHub({ onBack, canGoBack }: ServeHubProps) {
             <box flexDirection="column">
               <text fg={colors.text}>Port</text>
               <input
-                value={port}
+                backgroundColor={
+                  focusedField === 0 ? colors.surface : undefined
+                }
+                focused={focusedField === 0}
                 onChange={setPort}
                 placeholder="3000"
-                focused={focusedField === 0}
+                value={port}
                 width={10}
-                backgroundColor={focusedField === 0 ? colors.surface : undefined}
               />
             </box>
 
             <box flexDirection="column">
               <text fg={colors.text}>Hostname</text>
               <input
-                value={hostname}
+                backgroundColor={
+                  focusedField === 1 ? colors.surface : undefined
+                }
+                focused={focusedField === 1}
                 onChange={setHostname}
                 placeholder="0.0.0.0"
-                focused={focusedField === 1}
+                value={hostname}
                 width={20}
-                backgroundColor={focusedField === 1 ? colors.surface : undefined}
               />
             </box>
 
@@ -134,9 +138,7 @@ export function ServeHub({ onBack, canGoBack }: ServeHubProps) {
         )}
 
         {/* Error */}
-        {error && (
-          <text fg={colors.error}>Error: {error}</text>
-        )}
+        {error && <text fg={colors.error}>Error: {error}</text>}
       </box>
 
       <Footer

@@ -61,11 +61,21 @@ export function Monitor({
         return;
       }
 
-      if (key.name === "tab") handleCycleRooms();
-      if (key.name === "a") onNavigate("addRoom", { hubUrl });
-      if (key.name === "c") onNavigate("create", { hubUrl });
-      if (key.name === "r") handleRefreshRoom();
-      if (key.name === "e") setExpanded((prev) => !prev);
+      if (key.name === "tab") {
+        handleCycleRooms();
+      }
+      if (key.name === "a") {
+        onNavigate("addRoom", { hubUrl });
+      }
+      if (key.name === "c") {
+        onNavigate("create", { hubUrl });
+      }
+      if (key.name === "r") {
+        handleRefreshRoom();
+      }
+      if (key.name === "e") {
+        setExpanded((prev) => !prev);
+      }
       if (key.name === "l" && session.status === "joined") {
         session.leave();
       }
@@ -109,7 +119,9 @@ export function Monitor({
               expanded={expanded}
               participants={currentRoom.participants}
               processingRequests={currentRoom.processingRequests}
-              selectedId={isParticipant ? session.participantId ?? undefined : undefined}
+              selectedId={
+                isParticipant ? (session.participantId ?? undefined) : undefined
+              }
             />
           ) : (
             <box

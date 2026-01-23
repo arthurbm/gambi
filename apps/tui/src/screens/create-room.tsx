@@ -27,7 +27,10 @@ export function CreateRoom({
   const [focusedField, setFocusedField] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [createdRoom, setCreatedRoom] = useState<{ code: string; name: string } | null>(null);
+  const [createdRoom, setCreatedRoom] = useState<{
+    code: string;
+    name: string;
+  } | null>(null);
 
   const handleSubmit = useCallback(async () => {
     if (!name.trim()) {
@@ -85,11 +88,11 @@ export function CreateRoom({
           alignItems="center"
           flexDirection="column"
           flexGrow={1}
-          justifyContent="center"
           gap={2}
+          justifyContent="center"
         >
           <text fg={colors.success}>✓ Room created successfully!</text>
-          <box flexDirection="column" alignItems="center" gap={1}>
+          <box alignItems="center" flexDirection="column" gap={1}>
             <text>
               <span fg={colors.muted}>Code: </span>
               <span fg={colors.primary}>{createdRoom.code}</span>
@@ -118,12 +121,7 @@ export function CreateRoom({
         <text fg={colors.primary}>Create New Room</text>
       </box>
 
-      <box
-        flexDirection="column"
-        flexGrow={1}
-        padding={2}
-        gap={2}
-      >
+      <box flexDirection="column" flexGrow={1} gap={2} padding={2}>
         {/* Name field */}
         <box flexDirection="column">
           <text>
@@ -131,12 +129,12 @@ export function CreateRoom({
             <span fg={colors.error}> *</span>
           </text>
           <input
-            value={name}
+            backgroundColor={focusedField === 0 ? colors.surface : undefined}
+            focused={focusedField === 0}
             onChange={setName}
             placeholder="Enter room name..."
-            focused={focusedField === 0}
+            value={name}
             width={40}
-            backgroundColor={focusedField === 0 ? colors.surface : undefined}
           />
         </box>
 
@@ -144,24 +142,20 @@ export function CreateRoom({
         <box flexDirection="column">
           <text fg={colors.text}>Password (optional)</text>
           <input
-            value={password}
+            backgroundColor={focusedField === 1 ? colors.surface : undefined}
+            focused={focusedField === 1}
             onChange={setPassword}
             placeholder="Leave empty for no password"
-            focused={focusedField === 1}
+            value={password}
             width={40}
-            backgroundColor={focusedField === 1 ? colors.surface : undefined}
           />
         </box>
 
         {/* Error message */}
-        {error && (
-          <text fg={colors.error}>Error: {error}</text>
-        )}
+        {error && <text fg={colors.error}>Error: {error}</text>}
 
         {/* Loading state */}
-        {loading && (
-          <text fg={colors.muted}>Creating room...</text>
-        )}
+        {loading && <text fg={colors.muted}>Creating room...</text>}
 
         {/* Instructions */}
         <box paddingTop={1}>

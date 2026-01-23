@@ -58,7 +58,9 @@ export function useParticipantSession(
           failureCountRef.current += 1;
           if (failureCountRef.current >= MAX_FAILURES) {
             setStatus("disconnected");
-            setError(`Lost connection after ${MAX_FAILURES} failed health checks`);
+            setError(
+              `Lost connection after ${MAX_FAILURES} failed health checks`
+            );
             stopHealthCheck();
           }
         } else {

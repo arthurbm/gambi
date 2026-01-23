@@ -91,8 +91,9 @@ export function useSSE(options: UseSSEOptions): UseSSEReturn {
       setError(null);
       reconnectAttemptsRef.current = 0;
 
-      const reader = response.body?.getReader();
-      if (reader) {
+      if (response.body) {
+        const reader: ReadableStreamDefaultReader<Uint8Array> =
+          response.body.getReader();
         await processSSEStream(reader, onEvent);
       }
     } catch (err) {

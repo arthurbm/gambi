@@ -1,11 +1,11 @@
-import { useCallback } from "react";
-import { z } from "zod";
 import {
+  type GenerationConfig,
+  type MachineSpecs,
   ParticipantInfo,
   RoomInfoPublic,
-  GenerationConfig,
-  MachineSpecs,
 } from "@gambiarra/core/types";
+import { useCallback } from "react";
+import { z } from "zod";
 
 // ============================================================================
 // Types
@@ -149,79 +149,68 @@ export function useHubApi(options: UseHubApiOptions): UseHubApiReturn {
   const { hubUrl } = options;
 
   const checkHub = useCallback(
-    async (): Promise<ApiResult<HealthResponse>> => {
-      return fetchJson(`${hubUrl}/health`, HealthResponse);
-    },
+    (): Promise<ApiResult<HealthResponse>> =>
+      fetchJson(`${hubUrl}/health`, HealthResponse),
     [hubUrl]
   );
 
   const listRooms = useCallback(
-    async (): Promise<ApiResult<ListRoomsResponse>> => {
-      return fetchJson(`${hubUrl}/rooms`, ListRoomsResponse);
-    },
+    (): Promise<ApiResult<ListRoomsResponse>> =>
+      fetchJson(`${hubUrl}/rooms`, ListRoomsResponse),
     [hubUrl]
   );
 
   const createRoom = useCallback(
-    async (
-      name: string,
-      password?: string
-    ): Promise<ApiResult<CreateRoomResponse>> => {
-      return fetchJson(`${hubUrl}/rooms`, CreateRoomResponse, {
+    (name: string, password?: string): Promise<ApiResult<CreateRoomResponse>> =>
+      fetchJson(`${hubUrl}/rooms`, CreateRoomResponse, {
         method: "POST",
         body: JSON.stringify({ name, password }),
-      });
-    },
+      }),
     [hubUrl]
   );
 
   const joinRoom = useCallback(
-    async (
+    (
       code: string,
       participantData: JoinParticipantData
-    ): Promise<ApiResult<JoinRoomResponse>> => {
-      return fetchJson(`${hubUrl}/rooms/${code}/join`, JoinRoomResponse, {
+    ): Promise<ApiResult<JoinRoomResponse>> =>
+      fetchJson(`${hubUrl}/rooms/${code}/join`, JoinRoomResponse, {
         method: "POST",
         body: JSON.stringify(participantData),
-      });
-    },
+      }),
     [hubUrl]
   );
 
   const leaveRoom = useCallback(
-    async (
+    (
       code: string,
       participantId: string
-    ): Promise<ApiResult<SuccessResponse>> => {
-      return fetchJson(
+    ): Promise<ApiResult<SuccessResponse>> =>
+      fetchJson(
         `${hubUrl}/rooms/${code}/leave/${participantId}`,
         SuccessResponse,
-        { method: "DELETE" }
-      );
-    },
+        {
+          method: "DELETE",
+        }
+      ),
     [hubUrl]
   );
 
   const healthCheck = useCallback(
-    async (
+    (
       code: string,
       participantId: string
-    ): Promise<ApiResult<SuccessResponse>> => {
-      return fetchJson(`${hubUrl}/rooms/${code}/health`, SuccessResponse, {
+    ): Promise<ApiResult<SuccessResponse>> =>
+      fetchJson(`${hubUrl}/rooms/${code}/health`, SuccessResponse, {
         method: "POST",
         body: JSON.stringify({ id: participantId }),
-      });
-    },
+      }),
     [hubUrl]
   );
 
   const getParticipants = useCallback(
-    async (code: string): Promise<ApiResult<ParticipantsResponse>> => {
-      return fetchJson(
-        `${hubUrl}/rooms/${code}/participants`,
-        ParticipantsResponse
-      );
-    },
+    (code: string): Promise<ApiResult<ParticipantsResponse>> =>
+      fetchJson(`${hubUrl}/rooms/${code}/participants`, ParticipantsResponse),
     [hubUrl]
   );
 

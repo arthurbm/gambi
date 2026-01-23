@@ -49,7 +49,8 @@ export function useHubServer(): UseHubServerReturn {
       setRunning(true);
       setError(null);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to start hub";
+      const message =
+        err instanceof Error ? err.message : "Failed to start hub";
       setError(message);
     }
   }, []);

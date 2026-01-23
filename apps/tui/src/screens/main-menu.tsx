@@ -20,7 +20,11 @@ interface MenuOption {
 }
 
 const menuOptions: MenuOption[] = [
-  { screen: "serve", name: "Serve Hub", description: "Start a local hub server" },
+  {
+    screen: "serve",
+    name: "Serve Hub",
+    description: "Start a local hub server",
+  },
   { screen: "create", name: "Create Room", description: "Create a new room" },
   { screen: "list", name: "List Rooms", description: "View available rooms" },
   { screen: "join", name: "Join Room", description: "Join as LLM participant" },
@@ -40,41 +44,54 @@ export function MainMenu({
   onNavigate,
   onQuit,
 }: MainMenuProps) {
-  const renderer = useRenderer();
+  const _renderer = useRenderer();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [editingUrl, setEditingUrl] = useState(false);
   const [urlValue, setUrlValue] = useState(hubUrl);
+
+  const cancelEdit = () => {
+    setEditingUrl(false);
+    setUrlValue(hubUrl);
+  };
+
+  const confirmEdit = () => {
+    setEditingUrl(false);
+    onHubUrlChange(urlValue);
+  };
+
+  const handleMenuKey = (keyName: string) => {
+    const isUp = keyName === "up" || keyName === "k";
+    const isDown = keyName === "down" || keyName === "j";
+
+    if (isUp) {
+      setSelectedIndex((i) => (i > 0 ? i - 1 : menuOptions.length - 1));
+    } else if (isDown) {
+      setSelectedIndex((i) => (i < menuOptions.length - 1 ? i + 1 : 0));
+    } else if (keyName === "return") {
+      const option = menuOptions[selectedIndex];
+      if (option) {
+        onNavigate(option.screen, { hubUrl });
+      }
+    } else if (keyName === "e") {
+      setEditingUrl(true);
+    }
+  };
 
   useKeyboard(
     (key) => {
       if (editingUrl) {
         if (key.name === "escape") {
-          setEditingUrl(false);
-          setUrlValue(hubUrl);
+          cancelEdit();
         } else if (key.name === "return") {
-          setEditingUrl(false);
-          onHubUrlChange(urlValue);
+          confirmEdit();
         }
         return;
       }
-
       if (key.name === "q") {
         onQuit();
         return;
       }
-
-      if (key.name === "up" || key.name === "k") {
-        setSelectedIndex((i) => (i > 0 ? i - 1 : menuOptions.length - 1));
-      } else if (key.name === "down" || key.name === "j") {
-        setSelectedIndex((i) => (i < menuOptions.length - 1 ? i + 1 : 0));
-      } else if (key.name === "return") {
-        const option = menuOptions[selectedIndex];
-        if (option) {
-          onNavigate(option.screen, { hubUrl });
-        }
-      } else if (key.name === "e") {
-        setEditingUrl(true);
-      }
+      handleMenuKey(key.name);
     },
     { release: false }
   );
@@ -92,25 +109,23 @@ export function MainMenu({
           <span fg={colors.muted}>Hub: </span>
           {editingUrl ? (
             <input
-              value={urlValue}
-              onChange={setUrlValue}
-              focused
-              width={40}
               backgroundColor={colors.surface}
+              focused
+              onChange={setUrlValue}
+              value={urlValue}
+              width={40}
             />
           ) : (
             <span fg={colors.accent}>{hubUrl}</span>
           )}
-          {!editingUrl && (
-            <span fg={colors.muted}> (press e to edit)</span>
-          )}
+          {!editingUrl && <span fg={colors.muted}> (press e to edit)</span>}
         </text>
       </box>
 
       {/* Menu Options */}
       <box
-        flexDirection="column"
         alignItems="center"
+        flexDirection="column"
         flexGrow={1}
         paddingTop={1}
       >

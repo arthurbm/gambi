@@ -1,10 +1,7 @@
 import { useKeyboard } from "@opentui/react";
 import { useCallback, useState } from "react";
 import { Footer } from "../components/footer";
-import {
-  formatSpecs,
-  useMachineSpecs,
-} from "../hooks/use-machine-specs";
+import { formatSpecs, useMachineSpecs } from "../hooks/use-machine-specs";
 import type { Screen } from "../hooks/use-navigation";
 import { useParticipantSession } from "../hooks/use-participant-session";
 import { colors } from "../types";
@@ -47,8 +44,12 @@ export function JoinRoom({
   const totalFields = 6;
 
   const handleJoin = useCallback(async () => {
-    if (!roomCode.trim()) return;
-    if (!model.trim()) return;
+    if (!roomCode.trim()) {
+      return;
+    }
+    if (!model.trim()) {
+      return;
+    }
 
     await session.join(roomCode.trim(), {
       id: crypto.randomUUID(),
@@ -110,11 +111,11 @@ export function JoinRoom({
           alignItems="center"
           flexDirection="column"
           flexGrow={1}
-          justifyContent="center"
           gap={2}
+          justifyContent="center"
         >
           <text fg={colors.success}>✓ Joined room successfully!</text>
-          <box flexDirection="column" alignItems="center" gap={1}>
+          <box alignItems="center" flexDirection="column" gap={1}>
             <text>
               <span fg={colors.muted}>Room: </span>
               <span fg={colors.primary}>{roomCode}</span>
@@ -148,7 +149,7 @@ export function JoinRoom({
         <text fg={colors.primary}>Join Room as LLM Participant</text>
       </box>
 
-      <box flexDirection="column" flexGrow={1} padding={2} gap={1}>
+      <box flexDirection="column" flexGrow={1} gap={1} padding={2}>
         {/* Room Code */}
         <box flexDirection="column">
           <text>
@@ -156,12 +157,12 @@ export function JoinRoom({
             <span fg={colors.error}> *</span>
           </text>
           <input
-            value={roomCode}
+            backgroundColor={focusedField === 0 ? colors.surface : undefined}
+            focused={focusedField === 0}
             onChange={setRoomCode}
             placeholder="ABC123"
-            focused={focusedField === 0}
+            value={roomCode}
             width={10}
-            backgroundColor={focusedField === 0 ? colors.surface : undefined}
           />
         </box>
 
@@ -169,12 +170,12 @@ export function JoinRoom({
         <box flexDirection="column">
           <text fg={colors.text}>LLM Endpoint</text>
           <input
-            value={endpoint}
+            backgroundColor={focusedField === 1 ? colors.surface : undefined}
+            focused={focusedField === 1}
             onChange={setEndpoint}
             placeholder="http://localhost:11434"
-            focused={focusedField === 1}
+            value={endpoint}
             width={40}
-            backgroundColor={focusedField === 1 ? colors.surface : undefined}
           />
         </box>
 
@@ -185,12 +186,12 @@ export function JoinRoom({
             <span fg={colors.error}> *</span>
           </text>
           <input
-            value={model}
+            backgroundColor={focusedField === 2 ? colors.surface : undefined}
+            focused={focusedField === 2}
             onChange={setModel}
             placeholder="llama3, gpt-4, etc."
-            focused={focusedField === 2}
+            value={model}
             width={30}
-            backgroundColor={focusedField === 2 ? colors.surface : undefined}
           />
         </box>
 
@@ -198,12 +199,12 @@ export function JoinRoom({
         <box flexDirection="column">
           <text fg={colors.text}>Nickname</text>
           <input
-            value={nickname}
+            backgroundColor={focusedField === 3 ? colors.surface : undefined}
+            focused={focusedField === 3}
             onChange={setNickname}
             placeholder={generateNickname()}
-            focused={focusedField === 3}
+            value={nickname}
             width={20}
-            backgroundColor={focusedField === 3 ? colors.surface : undefined}
           />
         </box>
 
@@ -211,12 +212,12 @@ export function JoinRoom({
         <box flexDirection="column">
           <text fg={colors.text}>Password (if required)</text>
           <input
-            value={password}
+            backgroundColor={focusedField === 4 ? colors.surface : undefined}
+            focused={focusedField === 4}
             onChange={setPassword}
             placeholder="Leave empty if no password"
-            focused={focusedField === 4}
+            value={password}
             width={30}
-            backgroundColor={focusedField === 4 ? colors.surface : undefined}
           />
         </box>
 
@@ -245,9 +246,7 @@ export function JoinRoom({
         )}
 
         {/* Error */}
-        {session.error && (
-          <text fg={colors.error}>Error: {session.error}</text>
-        )}
+        {session.error && <text fg={colors.error}>Error: {session.error}</text>}
 
         {/* Loading */}
         {session.status === "joining" && (

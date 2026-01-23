@@ -1,6 +1,6 @@
 import { cpus, platform, totalmem } from "node:os";
-import { useCallback, useEffect, useState } from "react";
 import { $ } from "bun";
+import { useCallback, useEffect, useState } from "react";
 
 export interface MachineSpecs {
   cpu: string;

@@ -68,7 +68,10 @@ export function ListRooms({
       if (key.name === "r") {
         fetchRooms();
       } else if (key.name === "m" && rooms[selectedIndex]) {
-        onNavigate("monitor", { hubUrl, roomCodes: [rooms[selectedIndex].code] });
+        onNavigate("monitor", {
+          hubUrl,
+          roomCodes: [rooms[selectedIndex].code],
+        });
       } else if (key.name === "j" && rooms[selectedIndex]) {
         onNavigate("join", { hubUrl, roomCode: rooms[selectedIndex].code });
       } else if (key.name === "escape") {
@@ -114,11 +117,11 @@ export function ListRooms({
           <Table
             columns={columns}
             data={rooms}
-            selectedIndex={selectedIndex}
-            onSelect={handleSelect}
-            onChange={handleChange}
             emptyMessage="No rooms found. Create one first!"
             focused
+            onChange={handleChange}
+            onSelect={handleSelect}
+            selectedIndex={selectedIndex}
           />
         )}
       </box>

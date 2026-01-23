@@ -23,7 +23,7 @@ export function InputField({
   focused = false,
   width = 30,
 }: InputFieldProps) {
-  const displayValue = type === "password" ? "•".repeat(value.length) : value;
+  const _displayValue = type === "password" ? "•".repeat(value.length) : value;
 
   return (
     <box flexDirection="column" gap={0}>
@@ -34,17 +34,15 @@ export function InputField({
         </text>
       </box>
       <input
-        value={value}
+        backgroundColor={focused ? colors.surface : undefined}
+        focused={focused}
         onChange={onChange}
         placeholder={placeholder}
-        focused={focused}
-        width={width}
-        backgroundColor={focused ? colors.surface : undefined}
         textColor={colors.text}
+        value={value}
+        width={width}
       />
-      {error && (
-        <text fg={colors.error}>{error}</text>
-      )}
+      {error && <text fg={colors.error}>{error}</text>}
     </box>
   );
 }

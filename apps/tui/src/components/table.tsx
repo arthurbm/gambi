@@ -18,10 +18,9 @@ interface TableProps<T> {
   onAction?: (key: string, item: T, index: number) => void;
   focused?: boolean;
   emptyMessage?: string;
-  maxHeight?: number;
 }
 
-export function Table<T extends Record<string, unknown>>({
+export function Table<T extends object>({
   columns,
   data,
   selectedIndex: controlledIndex,
@@ -30,47 +29,82 @@ export function Table<T extends Record<string, unknown>>({
   onAction,
   focused = true,
   emptyMessage = "No data",
-  maxHeight,
 }: TableProps<T>) {
   const [internalIndex, setInternalIndex] = useState(0);
   const selectedIndex = controlledIndex ?? internalIndex;
 
+  const handleMove = (direction: "up" | "down") => {
+    let newIndex: number;
+    if (direction === "up") {
+      newIndex = selectedIndex > 0 ? selectedIndex - 1 : data.length - 1;
+    } else {
+      newIndex = selectedIndex < data.length - 1 ? selectedIndex + 1 : 0;
+    }
+    setInternalIndex(newIndex);
+    const item = data[newIndex];
+    if (item && onChange) {
+      onChange(item, newIndex);
+    }
+  };
+
+  const handleSelect = () => {
+    const item = data[selectedIndex];
+    if (item && onSelect) {
+      onSelect(item, selectedIndex);
+    }
+  };
+
+  const handleAction = (keyName: string) => {
+    if (!onAction) {
+      return;
+    }
+    const item = data[selectedIndex];
+    if (item) {
+      onAction(keyName, item, selectedIndex);
+    }
+  };
+
   useKeyboard(
     (key) => {
-      if (!focused || data.length === 0) return;
+      if (!focused || data.length === 0) {
+        return;
+      }
 
-      if (key.name === "up" || key.name === "k") {
-        const newIndex = selectedIndex > 0 ? selectedIndex - 1 : data.length - 1;
-        setInternalIndex(newIndex);
-        const item = data[newIndex];
-        if (item && onChange) onChange(item, newIndex);
-      } else if (key.name === "down" || key.name === "j") {
-        const newIndex = selectedIndex < data.length - 1 ? selectedIndex + 1 : 0;
-        setInternalIndex(newIndex);
-        const item = data[newIndex];
-        if (item && onChange) onChange(item, newIndex);
+      const isUp = key.name === "up" || key.name === "k";
+      const isDown = key.name === "down" || key.name === "j";
+
+      if (isUp) {
+        handleMove("up");
+      } else if (isDown) {
+        handleMove("down");
       } else if (key.name === "return") {
-        const item = data[selectedIndex];
-        if (item && onSelect) onSelect(item, selectedIndex);
-      } else if (onAction) {
-        const item = data[selectedIndex];
-        if (item) onAction(key.name, item, selectedIndex);
+        handleSelect();
+      } else {
+        handleAction(key.name);
       }
     },
     { release: false }
   );
 
-  const getCellValue = (item: T, column: TableColumn<T>, index: number): string => {
+  const getCellValue = (
+    item: T,
+    column: TableColumn<T>,
+    index: number
+  ): string => {
     if (column.render) {
       return column.render(item, index);
     }
     const value = item[column.key as keyof T];
-    if (value === undefined || value === null) return "";
+    if (value === undefined || value === null) {
+      return "";
+    }
     return String(value);
   };
 
   const formatCell = (value: string, width?: number): string => {
-    if (!width) return value;
+    if (!width) {
+      return value;
+    }
     if (value.length > width) {
       return `${value.slice(0, width - 1)}…`;
     }
@@ -109,23 +143,26 @@ export function Table<T extends Record<string, unknown>>({
       {/* Separator */}
       <box paddingLeft={1} paddingRight={1}>
         <text fg={colors.muted}>
-          {columns.map((col, i) => {
-            const width = col.width ?? col.header.length;
-            return (i > 0 ? "─┼─" : "") + "─".repeat(width);
-          }).join("")}
+          {columns
+            .map((col, i) => {
+              const width = col.width ?? col.header.length;
+              return (i > 0 ? "─┼─" : "") + "─".repeat(width);
+            })
+            .join("")}
         </text>
       </box>
 
       {/* Rows */}
-      <scrollbox focused={focused} flexGrow={1}>
+      <scrollbox flexGrow={1} focused={focused}>
         {data.map((item, rowIndex) => {
           const isSelected = rowIndex === selectedIndex;
+          const rowKey = (item as { id?: string }).id ?? `row-${rowIndex}`;
           return (
             <box
-              key={rowIndex}
+              backgroundColor={isSelected ? colors.surface : undefined}
+              key={rowKey}
               paddingLeft={1}
               paddingRight={1}
-              backgroundColor={isSelected ? colors.surface : undefined}
             >
               <text>
                 {columns.map((col, colIndex) => (

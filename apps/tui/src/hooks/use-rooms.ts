@@ -2,7 +2,10 @@ import { ParticipantInfo as ParticipantInfoSchema } from "@gambiarra/core/types"
 import { nanoid } from "nanoid";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import type { ActivityLogEntry, ParticipantInfo, RoomState } from "../types";
+import type { ActivityLogEntry, ParticipantInfo } from "../types";
+
+export type { RoomState } from "../types";
+
 import {
   SSELlmCompleteEvent,
   SSELlmErrorEvent,
