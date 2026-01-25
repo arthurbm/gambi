@@ -1,4 +1,4 @@
-import { RoomInfo as RoomInfoSchema } from "@gambiarra/core/types";
+import { RoomInfoPublic as RoomInfoSchema } from "@gambiarra/core/types";
 import { useKeyboard } from "@opentui/react";
 import { useCallback, useEffect, useState } from "react";
 import { z } from "zod";

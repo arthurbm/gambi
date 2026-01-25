@@ -99,6 +99,9 @@ export const colors = {
   error: "#FF5555", // Red - offline, errors
   muted: "#666666", // Gray - secondary text, disabled
   metrics: "#FF79C6", // Pink - tok/s, latency numbers
+  text: "#FFFFFF", // White - primary text
+  surface: "#333333", // Dark gray - backgrounds, selected items
+  accent: "#AA55FF", // Purple - accent/highlight
 } as const;
 
 // Status indicators

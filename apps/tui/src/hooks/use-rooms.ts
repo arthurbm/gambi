@@ -1,8 +1,14 @@
 import { ParticipantInfo as ParticipantInfoSchema } from "@gambiarra/core/types";
+import { useQueryClient } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
+import { useAppStore } from "../store/app-store";
 import type { ActivityLogEntry, ParticipantInfo, RoomState } from "../types";
+import { roomKeys } from "./queries";
+
+export type { RoomState } from "../types";
+
 import {
   SSELlmCompleteEvent,
   SSELlmErrorEvent,
@@ -12,10 +18,6 @@ import {
   SSEParticipantOfflineEvent,
   SSERoomCreatedEvent,
 } from "../types";
-
-interface UseRoomsOptions {
-  hubUrl: string;
-}
 
 interface RoomConnection {
   code: string;
@@ -35,8 +37,8 @@ interface UseRoomsReturn {
 
 const RECONNECT_DELAY = 3000;
 
-// Types for event handler results
-interface LogAction {
+// Types for event handler results - exported for testing
+export interface LogAction {
   type: "join" | "leave" | "offline" | "request" | "complete" | "error";
   participantId: string;
   participantName?: string;
@@ -44,17 +46,17 @@ interface LogAction {
   metrics?: { tokensPerSecond?: number; latencyMs?: number };
 }
 
-interface EventResult {
+export interface EventResult {
   room: RoomState;
   log?: LogAction;
 }
 
-// Individual event handlers (pure functions)
-function handleConnectedEvent(room: RoomState): EventResult {
+// Individual event handlers (pure functions) - exported for testing
+export function handleConnectedEvent(room: RoomState): EventResult {
   return { room: { ...room, connected: true } };
 }
 
-function handleRoomCreatedEvent(
+export function handleRoomCreatedEvent(
   room: RoomState,
   code: string,
   data: unknown
@@ -66,7 +68,7 @@ function handleRoomCreatedEvent(
   return { room };
 }
 
-function handleParticipantJoinedEvent(
+export function handleParticipantJoinedEvent(
   room: RoomState,
   data: unknown
 ): EventResult {
@@ -88,7 +90,7 @@ function handleParticipantJoinedEvent(
   };
 }
 
-function handleParticipantLeftEvent(
+export function handleParticipantLeftEvent(
   room: RoomState,
   data: unknown
 ): EventResult {
@@ -113,7 +115,7 @@ function handleParticipantLeftEvent(
   };
 }
 
-function handleParticipantOfflineEvent(
+export function handleParticipantOfflineEvent(
   room: RoomState,
   data: unknown
 ): EventResult {
@@ -139,7 +141,10 @@ function handleParticipantOfflineEvent(
   };
 }
 
-function handleLlmRequestEvent(room: RoomState, data: unknown): EventResult {
+export function handleLlmRequestEvent(
+  room: RoomState,
+  data: unknown
+): EventResult {
   const parsed = SSELlmRequestEvent.safeParse(data);
   if (!parsed.success) {
     return { room };
@@ -167,7 +172,10 @@ function handleLlmRequestEvent(room: RoomState, data: unknown): EventResult {
   };
 }
 
-function handleLlmCompleteEvent(room: RoomState, data: unknown): EventResult {
+export function handleLlmCompleteEvent(
+  room: RoomState,
+  data: unknown
+): EventResult {
   const parsed = SSELlmCompleteEvent.safeParse(data);
   if (!parsed.success) {
     return { room };
@@ -195,7 +203,10 @@ function handleLlmCompleteEvent(room: RoomState, data: unknown): EventResult {
   };
 }
 
-function handleLlmErrorEvent(room: RoomState, data: unknown): EventResult {
+export function handleLlmErrorEvent(
+  room: RoomState,
+  data: unknown
+): EventResult {
   const parsed = SSELlmErrorEvent.safeParse(data);
   if (!parsed.success) {
     return { room };
@@ -260,8 +271,9 @@ function parseSSEBuffer(buffer: string): SSEParseResult {
   return { events, remaining };
 }
 
-export function useRooms(options: UseRoomsOptions): UseRoomsReturn {
-  const { hubUrl } = options;
+export function useRooms(): UseRoomsReturn {
+  const hubUrl = useAppStore((s) => s.hubUrl);
+  const queryClient = useQueryClient();
 
   const [rooms, setRooms] = useState<Map<string, RoomState>>(new Map());
   const [activeRoom, setActiveRoom] = useState<string | null>(null);
@@ -339,8 +351,24 @@ export function useRooms(options: UseRoomsOptions): UseRoomsReturn {
 
         return next;
       });
+
+      // Invalidate participant queries when relevant events occur
+      if (
+        event === "participant:joined" ||
+        event === "participant:left" ||
+        event === "participant:offline"
+      ) {
+        queryClient.invalidateQueries({
+          queryKey: roomKeys.participants(code),
+        });
+      }
+
+      // Invalidate room list when room is created
+      if (event === "room:created") {
+        queryClient.invalidateQueries({ queryKey: roomKeys.list() });
+      }
     },
-    [addLog]
+    [addLog, queryClient]
   );
 
   const fetchParticipants = useCallback(

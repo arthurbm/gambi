@@ -12,15 +12,18 @@
     }
   },
   "scripts": {
-    "dev": "bun run --watch src/index.tsx"
+    "dev": "bun run --watch src/index.tsx",
+    "test": "bun test"
   },
   "dependencies": {
     "@gambiarra/core": "workspace:*",
     "@opentui/core": "^0.1.67",
     "@opentui/react": "^0.1.67",
+    "@tanstack/react-query": "^5.90.20",
     "nanoid": "^5.1.6",
     "react": "^19.2.3",
-    "zod": "^4.3.5"
+    "zod": "^4.3.5",
+    "zustand": "^5.0.10"
   },
   "devDependencies": {
     "@types/bun": "latest",

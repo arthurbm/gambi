@@ -17,8 +17,23 @@ interface UseSSEReturn {
 const RECONNECT_DELAY = 3000;
 const MAX_RECONNECT_ATTEMPTS = 10;
 
+// Exported for testing
+export function toUint8Array(value: unknown): Uint8Array {
+  if (value instanceof Uint8Array) {
+    return value;
+  }
+  if (value instanceof ArrayBuffer) {
+    return new Uint8Array(value);
+  }
+  // Fallback for other buffer-like objects
+  if (ArrayBuffer.isView(value)) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  }
+  throw new Error("Unexpected value type in SSE stream");
+}
+
 async function processSSEStream(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
+  reader: { read: () => Promise<{ done: boolean; value?: unknown }> },
   onEvent: (event: string, data: unknown) => void
 ): Promise<void> {
   const decoder = new TextDecoder();
@@ -30,7 +45,8 @@ async function processSSEStream(
       break;
     }
 
-    buffer += decoder.decode(value, { stream: true });
+    const chunk = toUint8Array(value);
+    buffer += decoder.decode(chunk, { stream: true });
     const events = parseSSEBuffer(buffer);
     buffer = events.remaining;
 
@@ -91,8 +107,9 @@ export function useSSE(options: UseSSEOptions): UseSSEReturn {
       setError(null);
       reconnectAttemptsRef.current = 0;
 
-      const reader = response.body?.getReader();
-      if (reader) {
+      if (response.body) {
+        const stream = response.body;
+        const reader = stream.getReader();
         await processSSEStream(reader, onEvent);
       }
     } catch (err) {
@@ -133,12 +150,13 @@ export function useSSE(options: UseSSEOptions): UseSSEReturn {
   return { connected, error, reconnect };
 }
 
-interface ParsedSSEResult {
+export interface ParsedSSEResult {
   parsed: SSEEvent[];
   remaining: string;
 }
 
-function tryParseEvent(
+// Exported for testing
+export function tryParseEvent(
   eventType: string,
   eventData: string
 ): SSEEvent | undefined {
@@ -152,7 +170,11 @@ function tryParseEvent(
   }
 }
 
-function buildRemainingBuffer(eventType: string, eventData: string): string {
+// Exported for testing
+export function buildRemainingBuffer(
+  eventType: string,
+  eventData: string
+): string {
   let remaining = "";
   if (eventType) {
     remaining += `event: ${eventType}\n`;
@@ -163,7 +185,8 @@ function buildRemainingBuffer(eventType: string, eventData: string): string {
   return remaining;
 }
 
-function parseSSEBuffer(buffer: string): ParsedSSEResult {
+// Exported for testing
+export function parseSSEBuffer(buffer: string): ParsedSSEResult {
   const events: SSEEvent[] = [];
   const lines = buffer.split("\n");
 
