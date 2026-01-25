@@ -11,7 +11,7 @@ export interface UseParticipantSessionReturn {
   participantId: string | null;
   roomCode: string | null;
   error: string | null;
-  join: (code: string, data: JoinParticipantData) => Promise<void>;
+  join: (code: string, data: JoinParticipantData) => Promise<boolean>;
   leave: () => Promise<void>;
 }
 
@@ -65,7 +65,7 @@ export function useParticipantSession(): UseParticipantSessionReturn {
   );
 
   const join = useCallback(
-    async (code: string, data: JoinParticipantData) => {
+    async (code: string, data: JoinParticipantData): Promise<boolean> => {
       setStatus("joining");
       setError(null);
 
@@ -74,7 +74,7 @@ export function useParticipantSession(): UseParticipantSessionReturn {
       if (result.error) {
         setStatus("error");
         setError(result.error);
-        return;
+        return false;
       }
 
       if (result.data) {
@@ -82,7 +82,10 @@ export function useParticipantSession(): UseParticipantSessionReturn {
         setRoomCode(code);
         setStatus("joined");
         startHealthCheck(code, result.data.participant.id);
+        return true;
       }
+
+      return false;
     },
     [api, startHealthCheck]
   );

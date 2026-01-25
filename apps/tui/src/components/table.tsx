@@ -111,6 +111,20 @@ export function Table<T extends object>({
     return value.padEnd(width);
   };
 
+  // Generate a stable key from row content when id is not available
+  const getRowKey = (item: T, index: number): string => {
+    const itemWithId = item as { id?: string };
+    if (itemWithId.id) {
+      return itemWithId.id;
+    }
+    // Create a stable key from stringified content of first few columns
+    const contentKey = columns
+      .slice(0, 3)
+      .map((col) => getCellValue(item, col, index))
+      .join("-");
+    return contentKey || `row-${index}`;
+  };
+
   if (data.length === 0) {
     return (
       <box
@@ -156,7 +170,7 @@ export function Table<T extends object>({
       <scrollbox flexGrow={1} focused={focused}>
         {data.map((item, rowIndex) => {
           const isSelected = rowIndex === selectedIndex;
-          const rowKey = (item as { id?: string }).id ?? `row-${rowIndex}`;
+          const rowKey = getRowKey(item, rowIndex);
           return (
             <box
               backgroundColor={isSelected ? colors.surface : undefined}

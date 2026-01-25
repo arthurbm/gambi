@@ -49,7 +49,7 @@ export function JoinRoom({
       return;
     }
 
-    await session.join(roomCode.trim(), {
+    const success = await session.join(roomCode.trim(), {
       id: crypto.randomUUID(),
       nickname: nickname.trim() || generateNickname(),
       model: model.trim(),
@@ -58,7 +58,7 @@ export function JoinRoom({
       specs: shareSpecs && specs ? specs : undefined,
     });
 
-    if (session.status === "joined") {
+    if (success) {
       onNavigate("monitor", { roomCodes: [roomCode] });
     }
   }, [

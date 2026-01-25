@@ -1,39 +1,7 @@
 import { useKeyboard } from "@opentui/react";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 
-interface FormProps {
-  children: ReactNode;
-  fieldCount: number;
-  onSubmit: () => void;
-  onCancel?: () => void;
-}
-
-export function Form({ children, fieldCount, onSubmit, onCancel }: FormProps) {
-  const [_focusedIndex, setFocusedIndex] = useState(0);
-
-  useKeyboard(
-    (key) => {
-      if (key.name === "tab" || key.name === "down") {
-        setFocusedIndex((i) => (i + 1) % fieldCount);
-      } else if (key.name === "up" && key.shift) {
-        setFocusedIndex((i) => (i - 1 + fieldCount) % fieldCount);
-      } else if (key.name === "return") {
-        onSubmit();
-      } else if (key.name === "escape" && onCancel) {
-        onCancel();
-      }
-    },
-    { release: false }
-  );
-
-  return (
-    <box flexDirection="column" gap={1}>
-      {children}
-    </box>
-  );
-}
-
-// Export a hook for form field focus
+// Hook for form field focus management
 export function useFormFocus(totalFields: number) {
   const [focusedIndex, setFocusedIndex] = useState(0);
 

@@ -23,7 +23,7 @@ export function InputField({
   focused = false,
   width = 30,
 }: InputFieldProps) {
-  const _displayValue = type === "password" ? "•".repeat(value.length) : value;
+  const displayValue = type === "password" ? "•".repeat(value.length) : value;
 
   return (
     <box flexDirection="column" gap={0}>
@@ -39,7 +39,7 @@ export function InputField({
         onChange={onChange}
         placeholder={placeholder}
         textColor={colors.text}
-        value={value}
+        value={displayValue}
         width={width}
       />
       {error && <text fg={colors.error}>{error}</text>}
