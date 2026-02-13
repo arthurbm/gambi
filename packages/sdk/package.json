@@ -1,6 +1,6 @@
 {
   "name": "gambiarra-sdk",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "Share local LLMs across your network, effortlessly",
   "keywords": [
     "llm",
