@@ -435,8 +435,11 @@ bun run build
 ### Commands
 
 ```bash
-# Run development server (all apps)
+# Run hub server in development mode
 bun run dev
+
+# Run docs app
+bun run dev:docs
 
 # Type checking
 bun run check-types
@@ -464,7 +467,7 @@ bun run check-types
 
 ### Code Standards
 
-This project uses [Ultracite](https://github.com/Kikobeats/ultracite), a zero-config preset for Biome. See [.claude/CLAUDE.md](./.claude/CLAUDE.md) for detailed code standards.
+This project uses [Ultracite](https://github.com/Kikobeats/ultracite), a zero-config preset for Biome. See [CLAUDE.md](./CLAUDE.md) for detailed code standards.
 
 ### Releasing
 
@@ -562,7 +565,7 @@ Contributions are welcome! This is an early-stage project and we'd love your hel
 
 ### Development Guidelines
 
-- Follow the code standards in [.claude/CLAUDE.md](./.claude/CLAUDE.md)
+- Follow the code standards in [CLAUDE.md](./CLAUDE.md)
 - Write type-safe TypeScript
 - Add tests for new features
 - Update documentation as needed

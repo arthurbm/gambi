@@ -101,19 +101,19 @@ Command-line interface for managing hubs and participants.
 - `list` - List available rooms
 - `join` - Join a room with your LLM endpoint
 
-### `gambiarra`
+### `gambiarra-sdk`
 
 SDK for integrating with the Vercel AI SDK.
 
 **Installation:**
 ```bash
-npm install gambiarra
+npm install gambiarra-sdk
 ```
 
-Available on npm: https://www.npmjs.com/package/gambiarra
+Available on npm: https://www.npmjs.com/package/gambiarra-sdk
 
 ```typescript
-import { createGambiarra } from "gambiarra";
+import { createGambiarra } from "gambiarra-sdk";
 import { generateText } from "ai";
 
 const gambiarra = createGambiarra({ roomCode: "ABC123" });
@@ -265,4 +265,4 @@ The original architecture used WebSocket for all communication. This was replace
 3. **Better debugging** - HTTP requests are easier to inspect and test
 4. **Reduced complexity** - No need to manage WebSocket connections in the SDK
 
-The old WebSocket-based plan is preserved in `docs/architecture-v1-websocket.md` for reference.
+The old WebSocket-based plan is preserved in `docs/old/architecture-v1-websocket.md` for reference.
