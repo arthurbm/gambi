@@ -50,12 +50,12 @@ console.log("\nPublishing to npm...");
 
 if (PACKAGE === "all" || PACKAGE === "sdk") {
   console.log("\n--- gambiarra-sdk ---");
-  await $`cd packages/sdk && npm publish --access public`.nothrow();
+  await $`cd packages/sdk && npm publish --access public`;
 }
 
 if (PACKAGE === "all" || PACKAGE === "cli") {
   console.log("\n--- gambiarra (CLI) ---");
-  await $`cd packages/cli && npm publish --access public`.nothrow();
+  await $`cd packages/cli && npm publish --access public`;
 }
 
 console.log(`\n=== Published v${VERSION} successfully ===\n`);
