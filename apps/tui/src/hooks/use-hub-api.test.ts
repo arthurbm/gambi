@@ -45,7 +45,7 @@ describe("fetchJson", () => {
           headers: { "Content-Type": "application/json" },
         })
       )
-    );
+    ) as unknown as typeof fetch;
 
     const result = await fetchJson("http://test.com/api", TestSchema);
 
@@ -61,7 +61,7 @@ describe("fetchJson", () => {
           headers: { "Content-Type": "application/json" },
         })
       )
-    );
+    ) as unknown as typeof fetch;
 
     const result = await fetchJson("http://test.com/api", TestSchema);
 
@@ -77,7 +77,7 @@ describe("fetchJson", () => {
           statusText: "Internal Server Error",
         })
       )
-    );
+    ) as unknown as typeof fetch;
 
     const result = await fetchJson("http://test.com/api", TestSchema);
 
@@ -93,7 +93,7 @@ describe("fetchJson", () => {
           statusText: "Not Found",
         })
       )
-    );
+    ) as unknown as typeof fetch;
 
     const result = await fetchJson("http://test.com/api", TestSchema);
 
@@ -109,7 +109,7 @@ describe("fetchJson", () => {
           statusText: "Bad Request",
         })
       )
-    );
+    ) as unknown as typeof fetch;
 
     const result = await fetchJson("http://test.com/api", TestSchema);
 
@@ -118,7 +118,9 @@ describe("fetchJson", () => {
   });
 
   test("returns error on network failure", async () => {
-    globalThis.fetch = mock(() => Promise.reject(new Error("Failed to fetch")));
+    globalThis.fetch = mock(() =>
+      Promise.reject(new Error("Failed to fetch"))
+    ) as unknown as typeof fetch;
 
     const result = await fetchJson("http://test.com/api", TestSchema);
 
@@ -127,7 +129,9 @@ describe("fetchJson", () => {
   });
 
   test("returns generic error for non-Error exceptions", async () => {
-    globalThis.fetch = mock(() => Promise.reject("string error"));
+    globalThis.fetch = mock(() =>
+      Promise.reject("string error")
+    ) as unknown as typeof fetch;
 
     const result = await fetchJson("http://test.com/api", TestSchema);
 
@@ -143,7 +147,7 @@ describe("fetchJson", () => {
         })
       )
     );
-    globalThis.fetch = mockFetch;
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
 
     await fetchJson("http://test.com/api", TestSchema, {
       method: "POST",
@@ -151,7 +155,8 @@ describe("fetchJson", () => {
     });
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    const call = mockFetch.mock.calls[0];
-    expect(call[1]?.headers).toHaveProperty("Content-Type", "application/json");
+    const calls = mockFetch.mock.calls as unknown as [string, RequestInit?][];
+    const options = calls[0]?.[1];
+    expect(options?.headers).toHaveProperty("Content-Type", "application/json");
   });
 });

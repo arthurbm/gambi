@@ -1,5 +1,7 @@
+import type { HealthStatus } from "../store/session-store";
 import type { LogMetrics, ParticipantInfo } from "../types";
 import { colors, statusIndicators } from "../types";
+import { HealthIndicator } from "./health-indicator";
 
 const statusColorMap: Record<ParticipantInfo["status"], string> = {
   online: colors.success,
@@ -13,6 +15,8 @@ interface ParticipantCardProps {
   metrics?: LogMetrics;
   expanded?: boolean;
   selected?: boolean;
+  isOwnParticipant?: boolean;
+  ownHealthStatus?: HealthStatus;
 }
 
 export function ParticipantCard({
@@ -21,12 +25,24 @@ export function ParticipantCard({
   metrics,
   expanded = false,
   selected = false,
+  isOwnParticipant = false,
+  ownHealthStatus,
 }: ParticipantCardProps) {
   const status = isProcessing ? "busy" : participant.status;
   const indicator = statusIndicators[status];
   const statusColor = statusColorMap[status];
 
-  const borderColor = selected ? colors.primary : undefined;
+  // Own participant gets highlighted border, selected gets primary
+  function getBorderColor(): string | undefined {
+    if (isOwnParticipant) {
+      return colors.accent;
+    }
+    if (selected) {
+      return colors.primary;
+    }
+    return undefined;
+  }
+  const borderColor = getBorderColor();
 
   // Format metrics
   const metricsText =
@@ -44,15 +60,27 @@ export function ParticipantCard({
     >
       {/* Header line: status indicator + name + badge */}
       <box flexDirection="row" justifyContent="space-between">
-        <text>
-          <span fg={statusColor}>{indicator}</span>
-          <span fg={status === "offline" ? colors.muted : undefined}>
-            {" "}
-            {participant.nickname}
-          </span>
-          {selected && <span fg={colors.primary}> ◉</span>}
-          {status === "offline" && <span fg={colors.muted}> (offline)</span>}
-        </text>
+        <box flexDirection="row" gap={1}>
+          <text>
+            <span fg={statusColor}>{indicator}</span>
+            <span fg={status === "offline" ? colors.muted : undefined}>
+              {" "}
+              {participant.nickname}
+            </span>
+            {isOwnParticipant && <span fg={colors.accent}> YOU</span>}
+            {selected && !isOwnParticipant && (
+              <span fg={colors.primary}> ◉</span>
+            )}
+          </text>
+          {/* Health indicator: own participant uses session health, others derive from status */}
+          {isOwnParticipant && ownHealthStatus ? (
+            <HealthIndicator status={ownHealthStatus} />
+          ) : (
+            <HealthIndicator
+              status={status === "offline" ? "unhealthy" : "healthy"}
+            />
+          )}
+        </box>
         {isProcessing && (
           <text>
             <span fg={colors.warning}>{statusIndicators.request}</span>

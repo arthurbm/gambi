@@ -1,85 +1,50 @@
-import { createHub } from "@gambiarra/core/hub";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useHubStore } from "../store/hub-store";
 
-interface HubServer {
-  server: { stop: () => void };
-  url: string;
-  mdnsName?: string;
-  close: () => void;
-}
+export type { HubOptions as UseHubServerOptions } from "../store/hub-store";
 
-export interface UseHubServerOptions {
-  port?: number;
-  hostname?: string;
-  mdns?: boolean;
-}
+type HubOptions = import("../store/hub-store").HubOptions;
 
 export interface UseHubServerReturn {
   running: boolean;
+  status: "stopped" | "starting" | "running" | "stopping" | "error";
   url: string | null;
   mdnsName: string | null;
   error: string | null;
-  start: (options?: UseHubServerOptions) => void;
+  port: number;
+  hostname: string;
+  mdns: boolean;
+  start: (options?: HubOptions) => void;
   stop: () => void;
+  setConfig: (options: HubOptions) => void;
 }
 
+/**
+ * Hook to manage the hub server lifecycle.
+ * Now uses the global hub-store for persistence across navigation.
+ */
 export function useHubServer(): UseHubServerReturn {
-  const [running, setRunning] = useState(false);
-  const [url, setUrl] = useState<string | null>(null);
-  const [mdnsName, setMdnsName] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const hubRef = useRef<HubServer | null>(null);
-
-  const start = useCallback((options: UseHubServerOptions = {}) => {
-    if (hubRef.current) {
-      setError("Hub already running");
-      return;
-    }
-
-    try {
-      const hub = createHub({
-        port: options.port ?? 3000,
-        hostname: options.hostname ?? "0.0.0.0",
-        mdns: options.mdns ?? false,
-      });
-
-      hubRef.current = hub;
-      setUrl(hub.url);
-      setMdnsName(hub.mdnsName ?? null);
-      setRunning(true);
-      setError(null);
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to start hub";
-      setError(message);
-    }
-  }, []);
-
-  const stop = useCallback(() => {
-    if (hubRef.current) {
-      hubRef.current.close();
-      hubRef.current = null;
-      setRunning(false);
-      setUrl(null);
-      setMdnsName(null);
-    }
-  }, []);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (hubRef.current) {
-        hubRef.current.close();
-      }
-    };
-  }, []);
+  const status = useHubStore((s) => s.status);
+  const url = useHubStore((s) => s.url);
+  const mdnsName = useHubStore((s) => s.mdnsName);
+  const error = useHubStore((s) => s.error);
+  const port = useHubStore((s) => s.port);
+  const hostname = useHubStore((s) => s.hostname);
+  const mdns = useHubStore((s) => s.mdns);
+  const start = useHubStore((s) => s.start);
+  const stop = useHubStore((s) => s.stop);
+  const setConfig = useHubStore((s) => s.setConfig);
 
   return {
-    running,
+    running: status === "running",
+    status,
     url,
     mdnsName,
     error,
+    port,
+    hostname,
+    mdns,
     start,
     stop,
+    setConfig,
   };
 }

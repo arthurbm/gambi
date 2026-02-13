@@ -1,3 +1,4 @@
+import type { HealthStatus } from "../store/session-store";
 import type { LogMetrics, ParticipantInfo } from "../types";
 import { colors } from "../types";
 import { ParticipantCard } from "./participant-card";
@@ -8,6 +9,8 @@ interface ParticipantListProps {
   metrics?: Map<string, LogMetrics>;
   selectedId?: string;
   expanded?: boolean;
+  ownParticipantId?: string | null;
+  ownHealthStatus?: HealthStatus;
 }
 
 export function ParticipantList({
@@ -16,6 +19,8 @@ export function ParticipantList({
   metrics,
   selectedId,
   expanded = false,
+  ownParticipantId,
+  ownHealthStatus,
 }: ParticipantListProps) {
   const sortedParticipants = [...participants.values()].sort((a, b) => {
     // Online first, then busy, then offline
@@ -57,16 +62,21 @@ export function ParticipantList({
     >
       <text fg={colors.muted}>─ PARTICIPANTS ─</text>
       <scrollbox flexGrow={1}>
-        {sortedParticipants.map((participant) => (
-          <ParticipantCard
-            expanded={expanded}
-            isProcessing={processingRequests.has(participant.id)}
-            key={participant.id}
-            metrics={metrics?.get(participant.id)}
-            participant={participant}
-            selected={selectedId === participant.id}
-          />
-        ))}
+        {sortedParticipants.map((participant) => {
+          const isOwn = participant.id === ownParticipantId;
+          return (
+            <ParticipantCard
+              expanded={expanded}
+              isOwnParticipant={isOwn}
+              isProcessing={processingRequests.has(participant.id)}
+              key={participant.id}
+              metrics={metrics?.get(participant.id)}
+              ownHealthStatus={isOwn ? ownHealthStatus : undefined}
+              participant={participant}
+              selected={selectedId === participant.id}
+            />
+          );
+        })}
       </scrollbox>
     </box>
   );

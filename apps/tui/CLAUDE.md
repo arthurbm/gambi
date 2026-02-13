@@ -372,6 +372,24 @@ const getRowKey = (item: T, index: number): string => {
 
 ---
 
+## Linting & Formatting
+
+**IMPORTANTE**: Ultracite só funciona quando executado da **raiz do monorepo**.
+
+**WORKFLOW**: Rode `ultracite check` e `ultracite fix` apenas ao **final de cada EPIC**, não após cada task individual. Isso evita interrupções frequentes durante o desenvolvimento.
+
+```bash
+# Da raiz do monorepo (OBRIGATÓRIO)
+cd /path/to/gambiarra
+bun x ultracite check    # Verificar problemas
+bun x ultracite fix      # Corrigir automaticamente
+
+# Type checking
+bun run check-types      # Roda em todos os packages
+```
+
+---
+
 ## Running Locally
 
 ```bash

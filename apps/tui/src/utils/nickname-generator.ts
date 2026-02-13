@@ -1,0 +1,123 @@
+/**
+ * Generates a friendly nickname in the format "Adjective-Animal".
+ * Example: "Swift-Falcon", "Clever-Otter", "Brave-Wolf"
+ */
+
+const ADJECTIVES = [
+  "Swift",
+  "Clever",
+  "Brave",
+  "Bright",
+  "Calm",
+  "Daring",
+  "Eager",
+  "Fair",
+  "Gentle",
+  "Happy",
+  "Jolly",
+  "Kind",
+  "Lively",
+  "Merry",
+  "Noble",
+  "Proud",
+  "Quick",
+  "Rapid",
+  "Sharp",
+  "Smart",
+  "Smooth",
+  "Steady",
+  "Strong",
+  "Subtle",
+  "Sunny",
+  "Tidy",
+  "Vast",
+  "Vivid",
+  "Warm",
+  "Wild",
+  "Wise",
+  "Bold",
+  "Cool",
+  "Deep",
+  "Epic",
+  "Fast",
+  "Grand",
+  "Keen",
+  "Lucky",
+  "Mighty",
+  "Neat",
+  "Quiet",
+  "Royal",
+  "Silent",
+  "Tough",
+  "Ultra",
+  "Vital",
+  "Witty",
+  "Zen",
+  "Agile",
+];
+
+const ANIMALS = [
+  "Falcon",
+  "Otter",
+  "Wolf",
+  "Eagle",
+  "Bear",
+  "Tiger",
+  "Lion",
+  "Hawk",
+  "Owl",
+  "Fox",
+  "Deer",
+  "Lynx",
+  "Puma",
+  "Raven",
+  "Swan",
+  "Crane",
+  "Heron",
+  "Dolphin",
+  "Shark",
+  "Whale",
+  "Seal",
+  "Panther",
+  "Jaguar",
+  "Cheetah",
+  "Leopard",
+  "Koala",
+  "Panda",
+  "Badger",
+  "Beaver",
+  "Rabbit",
+  "Hare",
+  "Moose",
+  "Elk",
+  "Bison",
+  "Cobra",
+  "Viper",
+  "Python",
+  "Dragon",
+  "Phoenix",
+  "Griffin",
+  "Pegasus",
+  "Unicorn",
+  "Raptor",
+  "Condor",
+  "Osprey",
+  "Kestrel",
+  "Sparrow",
+  "Finch",
+  "Robin",
+  "Wren",
+];
+
+function randomElement<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)] as T;
+}
+
+/**
+ * Generates a friendly nickname like "Swift-Falcon" or "Clever-Otter".
+ */
+export function generateNickname(): string {
+  const adjective = randomElement(ADJECTIVES);
+  const animal = randomElement(ANIMALS);
+  return `${adjective}-${animal}`;
+}

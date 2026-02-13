@@ -1,8 +1,7 @@
-import { useKeyboard, useRenderer } from "@opentui/react";
+import { useKeyboard } from "@opentui/react";
 import { useState } from "react";
 import { Footer } from "../components/footer";
 import type { Screen } from "../hooks/use-navigation";
-import { useAppStore } from "../store/app-store";
 import { colors } from "../types";
 
 const LOGO = `
@@ -15,6 +14,7 @@ const LOGO = `
 `;
 
 interface MenuOption {
+  key: string;
   screen: Screen;
   name: string;
   description: string;
@@ -22,14 +22,35 @@ interface MenuOption {
 
 const menuOptions: MenuOption[] = [
   {
+    key: "h",
     screen: "serve",
-    name: "Serve Hub",
-    description: "Start a local hub server",
+    name: "Hub",
+    description: "Start/stop local hub server",
   },
-  { screen: "create", name: "Create Room", description: "Create a new room" },
-  { screen: "list", name: "List Rooms", description: "View available rooms" },
-  { screen: "join", name: "Join Room", description: "Join as LLM participant" },
-  { screen: "monitor", name: "Monitor", description: "Monitor room activity" },
+  {
+    key: "c",
+    screen: "create",
+    name: "Create Room",
+    description: "Create a new room",
+  },
+  {
+    key: "j",
+    screen: "join",
+    name: "Join Room",
+    description: "Join as LLM participant",
+  },
+  {
+    key: "l",
+    screen: "list",
+    name: "List Rooms",
+    description: "View available rooms",
+  },
+  {
+    key: "m",
+    screen: "monitor",
+    name: "Monitor",
+    description: "Monitor room activity",
+  },
 ];
 
 interface MainMenuProps {
@@ -38,56 +59,33 @@ interface MainMenuProps {
 }
 
 export function MainMenu({ onNavigate, onQuit }: MainMenuProps) {
-  const _renderer = useRenderer();
-  const hubUrl = useAppStore((s) => s.hubUrl);
-  const setHubUrl = useAppStore((s) => s.setHubUrl);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [editingUrl, setEditingUrl] = useState(false);
-  const [urlValue, setUrlValue] = useState(hubUrl);
-
-  const cancelEdit = () => {
-    setEditingUrl(false);
-    setUrlValue(hubUrl);
-  };
-
-  const confirmEdit = () => {
-    setEditingUrl(false);
-    setHubUrl(urlValue);
-  };
-
-  const handleMenuKey = (keyName: string) => {
-    const isUp = keyName === "up" || keyName === "k";
-    const isDown = keyName === "down" || keyName === "j";
-
-    if (isUp) {
-      setSelectedIndex((i) => (i > 0 ? i - 1 : menuOptions.length - 1));
-    } else if (isDown) {
-      setSelectedIndex((i) => (i < menuOptions.length - 1 ? i + 1 : 0));
-    } else if (keyName === "return") {
-      const option = menuOptions[selectedIndex];
-      if (option) {
-        onNavigate(option.screen);
-      }
-    } else if (keyName === "e") {
-      setEditingUrl(true);
-    }
-  };
 
   useKeyboard(
     (key) => {
-      if (editingUrl) {
-        if (key.name === "escape") {
-          cancelEdit();
-        } else if (key.name === "return") {
-          confirmEdit();
-        }
-        return;
-      }
       if (key.name === "q") {
         onQuit();
         return;
       }
-      handleMenuKey(key.name);
+
+      // Quick navigation by key
+      const option = menuOptions.find((o) => o.key === key.name);
+      if (option) {
+        onNavigate(option.screen);
+        return;
+      }
+
+      // Arrow navigation
+      if (key.name === "up" || key.name === "k") {
+        setSelectedIndex((i) => (i > 0 ? i - 1 : menuOptions.length - 1));
+      } else if (key.name === "down" || key.name === "j") {
+        setSelectedIndex((i) => (i < menuOptions.length - 1 ? i + 1 : 0));
+      } else if (key.name === "return") {
+        const selected = menuOptions[selectedIndex];
+        if (selected) {
+          onNavigate(selected.screen);
+        }
+      }
     },
     { release: false }
   );
@@ -99,41 +97,23 @@ export function MainMenu({ onNavigate, onQuit }: MainMenuProps) {
         <text fg={colors.primary}>{LOGO}</text>
       </box>
 
-      {/* Hub URL */}
       <box justifyContent="center" paddingBottom={1}>
-        <text>
-          <span fg={colors.muted}>Hub: </span>
-          {editingUrl ? (
-            <input
-              backgroundColor={colors.surface}
-              focused
-              onChange={setUrlValue}
-              value={urlValue}
-              width={40}
-            />
-          ) : (
-            <span fg={colors.accent}>{hubUrl}</span>
-          )}
-          {!editingUrl && <span fg={colors.muted}> (press e to edit)</span>}
-        </text>
+        <text fg={colors.muted}>Share LLMs on your network</text>
       </box>
 
       {/* Menu Options */}
-      <box
-        alignItems="center"
-        flexDirection="column"
-        flexGrow={1}
-        paddingTop={1}
-      >
+      <box flexDirection="column" flexGrow={1} gap={1} padding={1}>
         {menuOptions.map((option, index) => {
           const isSelected = index === selectedIndex;
           return (
-            <box key={option.screen} paddingLeft={2} paddingRight={2}>
+            <box key={option.screen}>
               <text>
                 <span fg={isSelected ? colors.primary : colors.muted}>
                   {isSelected ? "▸ " : "  "}
                 </span>
+                <span fg={colors.accent}>[{option.key}]</span>
                 <span fg={isSelected ? colors.text : colors.muted}>
+                  {" "}
                   {option.name}
                 </span>
                 <span fg={colors.muted}> - {option.description}</span>
@@ -143,12 +123,19 @@ export function MainMenu({ onNavigate, onQuit }: MainMenuProps) {
         })}
       </box>
 
+      {/* Quick tip */}
+      <box padding={1}>
+        <text fg={colors.muted}>
+          Tip: Press the letter key to jump directly, or use ↑↓ and Enter
+        </text>
+      </box>
+
       {/* Footer */}
       <Footer
         shortcuts={[
           { key: "↑↓", description: "Navigate" },
           { key: "Enter", description: "Select" },
-          { key: "e", description: "Edit URL" },
+          { key: "q", description: "Quit" },
         ]}
       />
     </box>
