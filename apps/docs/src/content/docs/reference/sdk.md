@@ -20,7 +20,7 @@ Creates a Gambiarra provider instance.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `roomCode` | `string` | — | Room code to connect to. Required. |
-| `hubUrl` | `string` | Auto-discover via mDNS | Hub URL (e.g. `http://localhost:3000`) |
+| `hubUrl` | `string` | `http://localhost:3000` | Hub URL |
 | `defaultProtocol` | `"openResponses" \| "chatCompletions"` | `"openResponses"` | Protocol used by the top-level routing helpers |
 
 ```typescript

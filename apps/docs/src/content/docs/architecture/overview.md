@@ -123,6 +123,28 @@ Gambiarra is designed for trusted local networks. Adding auth to every endpoint 
 
 These values are defined in `packages/core/src/types.ts` and can be adjusted.
 
+## Protocol Adapter Fallback
+
+The hub uses a protocol adapter system to handle the gap between Responses API and Chat Completions:
+
+```
+Request arrives (POST /rooms/:code/v1/responses)
+    │
+    ├─ Try openResponsesAdapter
+    │   └─ Forward to participant's /v1/responses
+    │      ├─ Success → stream response back
+    │      └─ 404/405/501 → SKIP, try next adapter
+    │
+    └─ Try chatCompletionsFallbackAdapter
+        └─ Convert request to chat/completions format
+           └─ Forward to participant's /v1/chat/completions
+              └─ Convert response back to Responses format
+```
+
+This means a client can always use the Responses API endpoint, even if the participant only supports Chat Completions. The hub converts transparently. The reverse also works — Chat Completions requests are forwarded directly.
+
+The conversion handles: message format mapping, tool calls, streaming events, and usage statistics. Some Responses API features (`previous_response_id`, `store`, `background`) are not available through the fallback — the hub returns a clear error listing unsupported fields.
+
 ## What the Hub Doesn't Do
 
 - **No agent harness** — the hub doesn't know or care if the participant is an Ollama instance, a coding agent, or a custom pipeline. It routes OpenAI-compatible requests. That's it.

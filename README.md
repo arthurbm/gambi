@@ -148,14 +148,14 @@ gambiarra serve --port 3000 --mdns
 ### 2. Create a Room
 
 ```bash
-gambiarra create
+gambiarra create --name "My Room"
 # Output: Room created! Code: ABC123
 ```
 
 ### 3. Join with Your LLM
 
 ```bash
-gambiarra join ABC123 \
+gambiarra join --code ABC123 \
   --endpoint http://localhost:11434 \
   --model llama3 \
   --nickname joao
@@ -191,10 +191,10 @@ console.log(result.text);
 gambiarra serve --mdns
 
 # Create a room
-gambiarra create
+gambiarra create --name "My Room"
 
 # Join with your endpoint
-gambiarra join ABC123 --endpoint http://localhost:11434 --model llama3
+gambiarra join --code ABC123 --endpoint http://localhost:11434 --model llama3
 
 # List available rooms
 gambiarra list
@@ -226,7 +226,7 @@ const result3 = await generateText({
   prompt: "What is the meaning of life?",
 });
 
-// Explicit legacy mode when you need chat/completions
+// Use Chat Completions instead of the default Responses API
 const legacy = createGambiarra({
   roomCode: "ABC123",
   defaultProtocol: "chatCompletions",
@@ -234,7 +234,7 @@ const legacy = createGambiarra({
 
 const result4 = await generateText({
   model: legacy.any(),
-  prompt: "Keep using chat/completions",
+  prompt: "Hello from chat/completions",
 });
 ```
 
@@ -266,7 +266,7 @@ gambiarra serve --port 3000 --mdns
 #### Create a Room
 
 ```bash
-gambiarra create
+gambiarra create --name "My Room"
 # Output: Room created! Code: XYZ789
 ```
 
@@ -284,13 +284,13 @@ gambiarra list
 
 ```bash
 # Ollama
-gambiarra join ABC123 \
+gambiarra join --code ABC123 \
   --endpoint http://localhost:11434 \
   --model llama3 \
   --nickname alice
 
 # LM Studio
-gambiarra join ABC123 \
+gambiarra join --code ABC123 \
   --endpoint http://localhost:1234 \
   --model mistral \
   --nickname bob
@@ -381,7 +381,7 @@ Gambiarra uses a **HTTP + SSE architecture** for simplicity and compatibility:
 │  • DELETE /rooms/:code/v1/responses/:id                   │
 │  • POST   /rooms/:code/v1/responses/:id/cancel            │
 │  • GET    /rooms/:code/v1/responses/:id/input_items       │
-│  • POST   /rooms/:code/v1/chat/completions (Legacy Proxy) │
+│  • POST   /rooms/:code/v1/chat/completions (Proxy)        │
 │  • GET    /rooms/:code/events       (SSE updates)          │
 └─────────────────────────────────────────────────────────────┘
        ▲                    ▲                      ▲

@@ -66,6 +66,12 @@ gambiarra create --name "My Room"
 
 Share this code with everyone who wants to join — via chat, projector, sticky note, whatever works.
 
+You can also create a password-protected room:
+
+```bash
+gambiarra create --name "Private Room" --password secret123
+```
+
 ### 3. Join with Your LLM
 
 Each person with an LLM endpoint joins the room:
@@ -86,7 +92,9 @@ gambiarra join --code ABC123 --model mistral --endpoint http://localhost:1234
 gambiarra join --code ABC123 --model llama3 --endpoint http://localhost:8000
 ```
 
-The CLI will probe your endpoint, detect available models, and register you in the room. Once joined, your LLM is available to everyone in the room.
+The CLI will probe your endpoint, detect available models and protocol capabilities, and register you in the room. It also shares your machine specs (CPU, RAM, GPU) automatically — use `--no-specs` if you prefer not to share.
+
+Once joined, your LLM is available to everyone in the room.
 
 ### 4. Use the SDK
 

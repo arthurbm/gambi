@@ -140,6 +140,24 @@ gambiarra list
 gambiarra list --json
 ```
 
+### `monitor`
+
+Open the TUI to monitor rooms in real-time.
+
+```bash
+gambiarra monitor [options]
+```
+
+**Options:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--hub`, `-H` | Hub URL | `http://localhost:3000` |
+
+The monitor shows participants, their status (online/offline), and a live activity log of events (joins, requests, errors) via SSE.
+
+**Tip:** Running `gambiarra` with no arguments in a terminal also opens the TUI with a full interactive menu (serve, create, join, list, monitor).
+
 ## Supported Providers
 
 Gambiarra works with any endpoint that exposes OpenResponses or OpenAI-compatible `chat/completions`:
