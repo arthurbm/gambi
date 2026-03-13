@@ -3,9 +3,7 @@ title: SDK Reference
 description: Complete reference for the Gambiarra SDK.
 ---
 
-The Gambiarra SDK provides Vercel AI SDK integration for using shared LLMs in your applications.
-
-The SDK is `OpenResponses-first` by default and keeps explicit legacy `chat/completions` support when you need it.
+The Gambiarra SDK provides a [Vercel AI SDK](https://sdk.vercel.ai/) provider for using shared LLMs through a Gambiarra hub.
 
 ## Installation
 
@@ -15,113 +13,98 @@ npm install gambiarra-sdk
 bun add gambiarra-sdk
 ```
 
-## Basic Usage
+## `createGambiarra(options)`
+
+Creates a Gambiarra provider instance.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `roomCode` | `string` | — | Room code to connect to. Required. |
+| `hubUrl` | `string` | Auto-discover via mDNS | Hub URL (e.g. `http://localhost:3000`) |
+| `defaultProtocol` | `"openResponses" \| "chatCompletions"` | `"openResponses"` | Protocol used by the top-level routing helpers |
 
 ```typescript
 import { createGambiarra } from "gambiarra-sdk";
-import { generateText } from "ai";
 
 const gambiarra = createGambiarra({
   roomCode: "ABC123",
   hubUrl: "http://localhost:3000",
 });
-
-const result = await generateText({
-  model: gambiarra.any(),
-  prompt: "Hello, Gambiarra!",
-});
 ```
 
-By default, `gambiarra.any()`, `gambiarra.model()`, and `gambiarra.participant()` use `openResponses`.
+## Protocol Selection
 
-## Configuration
-
-### `createGambiarra(options)`
-
-Creates a Gambiarra provider instance.
-
-**Options:**
-
-| Option | Type | Description | Required |
-|--------|------|-------------|----------|
-| `roomCode` | `string` | Room code to connect to | Yes |
-| `hubUrl` | `string` | Hub URL | No (auto-discover) |
-| `defaultProtocol` | `"openResponses" \| "chatCompletions"` | Default protocol used by the top-level routing helpers | No |
-
-### Protocol Selection
-
-Use the default `OpenResponses` mode:
+The SDK defaults to `openResponses`. Both protocols are first-class:
 
 ```typescript
+// Default: Responses API
 const gambiarra = createGambiarra({
   roomCode: "ABC123",
-  defaultProtocol: "openResponses",
 });
-```
 
-Use explicit legacy `chat/completions` mode:
-
-```typescript
+// Chat Completions
 const gambiarra = createGambiarra({
   roomCode: "ABC123",
   defaultProtocol: "chatCompletions",
 });
 ```
 
-You can also choose explicitly per namespace:
+You can also select per-call via namespaces:
 
 ```typescript
-const gambiarra = createGambiarra({ roomCode: "ABC123" });
-
-gambiarra.openResponses.any();
-gambiarra.chatCompletions.any();
+gambiarra.openResponses.any();      // Responses API
+gambiarra.chatCompletions.any();    // Chat Completions
 ```
 
 ## Model Routing
 
+Three routing methods are available. All return a Vercel AI SDK model instance.
+
 ### `gambiarra.any()`
 
-Route to any available participant.
+Routes to a random online participant.
 
 ```typescript
 const result = await generateText({
   model: gambiarra.any(),
-  prompt: "Explain quantum computing",
+  prompt: "Hello",
 });
 ```
 
 ### `gambiarra.participant(id)`
 
-Route to a specific participant by nickname.
+Routes to a specific participant by nickname or ID.
 
 ```typescript
 const result = await generateText({
-  model: gambiarra.participant("joao"),
-  prompt: "Write a haiku about TypeScript",
+  model: gambiarra.participant("alice"),
+  prompt: "Hello",
 });
 ```
 
 ### `gambiarra.model(name)`
 
-Route to a participant with a specific model.
+Routes to the first online participant running the specified model.
 
 ```typescript
 const result = await generateText({
   model: gambiarra.model("llama3"),
-  prompt: "What is the meaning of life?",
+  prompt: "Hello",
 });
 ```
 
-These routing helpers are also available under `gambiarra.openResponses` and `gambiarra.chatCompletions`.
+All routing methods are also available under `gambiarra.openResponses.*` and `gambiarra.chatCompletions.*`.
 
 ## Streaming
+
+Use `streamText` from the Vercel AI SDK:
 
 ```typescript
 import { streamText } from "ai";
 
 const stream = await streamText({
-  model: gambiarra.model("llama3"),
-  prompt: "Write a story about a robot",
+  model: gambiarra.any(),
+  prompt: "Write a story",
 });
 
 for await (const chunk of stream.textStream) {
@@ -129,7 +112,9 @@ for await (const chunk of stream.textStream) {
 }
 ```
 
-## Advanced Options
+## Generation Options
+
+Standard Vercel AI SDK options are supported:
 
 ```typescript
 const result = await generateText({
@@ -139,3 +124,5 @@ const result = await generateText({
   maxTokens: 500,
 });
 ```
+
+See the [Vercel AI SDK docs](https://sdk.vercel.ai/docs) for all available options.

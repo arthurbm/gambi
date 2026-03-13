@@ -32,7 +32,7 @@ The `--mdns` flag enables auto-discovery, so teammates don't need to know the IP
 ### Step 2: Create a Room
 
 ```bash
-gambiarra create
+gambiarra create --name "Hackathon"
 # Output: Room created! Code: XK7P2M
 ```
 
@@ -44,13 +44,13 @@ Each person with an LLM endpoint joins the room:
 
 ```bash
 # Alice (Ollama)
-gambiarra join XK7P2M \
+gambiarra join --code XK7P2M \
   --endpoint http://localhost:11434 \
   --model llama3 \
   --nickname alice
 
 # Carol (LM Studio)
-gambiarra join XK7P2M \
+gambiarra join --code XK7P2M \
   --endpoint http://localhost:1234 \
   --model mistral \
   --nickname carol
@@ -77,14 +77,24 @@ const result = await generateText({
 });
 ```
 
-If your stack still depends on legacy `chat/completions`, use:
+To use Chat Completions instead of the default Responses API:
 
 ```typescript
-const legacy = createGambiarra({
+const gambiarra = createGambiarra({
   roomCode: "XK7P2M",
   defaultProtocol: "chatCompletions",
 });
 ```
+
+Or skip the SDK entirely and use the API directly:
+
+```bash
+curl -X POST http://192.168.1.100:3000/rooms/XK7P2M/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "*", "messages": [{"role": "user", "content": "Hello!"}]}'
+```
+
+See the [API Reference](/reference/api/) for all endpoints.
 
 ## Tips for Hackathons
 
@@ -93,7 +103,7 @@ const legacy = createGambiarra({
 Give meaningful nicknames so you know who's who:
 
 ```bash
-gambiarra join XK7P2M --nickname "alice-4090" --model llama3 ...
+gambiarra join --code XK7P2M --nickname "alice-4090" --model llama3
 ```
 
 ### Target Specific Models
@@ -164,40 +174,29 @@ const gambiarra = createGambiarra({
 
 ## Example: Hackathon Starter
 
-Here's a complete example for a hackathon project:
-
 ```typescript
 // lib/ai.ts
 import { createGambiarra } from "gambiarra-sdk";
 
 export const gambiarra = createGambiarra({
   roomCode: process.env.GAMBIARRA_ROOM!,
-  hubUrl: process.env.GAMBIARRA_HUB, // Optional if using mDNS
+  hubUrl: process.env.GAMBIARRA_HUB,
 });
-
-// Defaults to openResponses
-
-// Use in your app
-import { gambiarra } from "./lib/ai";
-import { generateText, streamText } from "ai";
-
-// Quick generation
-export async function generate(prompt: string) {
-  const { text } = await generateText({
-    model: gambiarra.any(),
-    prompt,
-  });
-  return text;
-}
-
-// Streaming for chat
-export async function chat(messages: Message[]) {
-  return streamText({
-    model: gambiarra.any(),
-    messages,
-  });
-}
 ```
+
+Use it anywhere in your app:
+
+```typescript
+import { gambiarra } from "./lib/ai";
+import { generateText } from "ai";
+
+const { text } = await generateText({
+  model: gambiarra.any(),
+  prompt: "Generate a hackathon project idea",
+});
+```
+
+See the [SDK Reference](/reference/sdk/) for all routing methods and options.
 
 ## What's Next?
 
