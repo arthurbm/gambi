@@ -43,10 +43,11 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
+    "@clack/prompts": "^1.1.0",
     "@gambiarra/core": "workspace:*",
-    "tui": "workspace:*",
     "clipanion": "^4.0.0-rc.4",
-    "nanoid": "^5.1.5"
+    "nanoid": "^5.1.5",
+    "tui": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest"

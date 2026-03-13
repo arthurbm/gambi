@@ -1,4 +1,10 @@
+import { confirm, intro, text } from "@clack/prompts";
 import { Command, Option } from "clipanion";
+import {
+  handleCancel,
+  hasExplicitFlags,
+  isInteractive,
+} from "../utils/prompt.ts";
 
 interface RoomInfo {
   id: string;
@@ -23,7 +29,7 @@ export class ListCommand extends Command {
   static override usage = Command.Usage({
     description: "List available rooms on a hub",
     examples: [
-      ["List rooms", "gambiarra list"],
+      ["List rooms (interactive)", "gambiarra list"],
       ["List on custom hub", "gambiarra list --hub http://192.168.1.10:3000"],
     ],
   });
@@ -37,8 +43,30 @@ export class ListCommand extends Command {
   });
 
   async execute(): Promise<number> {
+    let hub = this.hub;
+    let json = this.json;
+
+    if (!hasExplicitFlags() && isInteractive()) {
+      intro("gambiarra list");
+
+      const hubResult = await text({
+        message: "Hub URL:",
+        defaultValue: "http://localhost:3000",
+        placeholder: "http://localhost:3000",
+      });
+      handleCancel(hubResult);
+      hub = hubResult as string;
+
+      const jsonResult = await confirm({
+        message: "Output as JSON?",
+        initialValue: false,
+      });
+      handleCancel(jsonResult);
+      json = jsonResult as boolean;
+    }
+
     try {
-      const response = await fetch(`${this.hub}/rooms`);
+      const response = await fetch(`${hub}/rooms`);
 
       if (!response.ok) {
         const data = (await response.json()) as ErrorResponse;
@@ -49,7 +77,7 @@ export class ListCommand extends Command {
       const data = (await response.json()) as ListRoomsResponse;
       const rooms = data.rooms;
 
-      if (this.json) {
+      if (json) {
         this.context.stdout.write(`${JSON.stringify(rooms, null, 2)}\n`);
       } else if (rooms.length === 0) {
         this.context.stdout.write("No rooms available.\n");
@@ -68,7 +96,7 @@ export class ListCommand extends Command {
 
       return 0;
     } catch (err) {
-      this.context.stderr.write(`Failed to connect to hub at ${this.hub}\n`);
+      this.context.stderr.write(`Failed to connect to hub at ${hub}\n`);
       this.context.stderr.write(`${err}\n`);
       return 1;
     }

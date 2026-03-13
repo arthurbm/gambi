@@ -142,24 +142,25 @@ bun remove gambiarra-sdk
 ### 1. Start the Hub Server
 
 ```bash
-gambiarra serve --port 3000 --mdns
+gambiarra serve
+# Or with flags: gambiarra serve --port 3000 --mdns
 ```
 
 ### 2. Create a Room
 
 ```bash
-gambiarra create --name "My Room"
-# Output: Room created! Code: ABC123
+gambiarra create
+# Or with flags: gambiarra create --name "My Room"
 ```
 
 ### 3. Join with Your LLM
 
 ```bash
-gambiarra join --code ABC123 \
-  --endpoint http://localhost:11434 \
-  --model llama3 \
-  --nickname joao
+gambiarra join
+# Or with flags: gambiarra join --code ABC123 --model llama3
 ```
+
+All commands support **interactive mode** — run without flags and you'll be guided through each option step by step. Flags still work for scripting and automation.
 
 ### 4. Use the SDK
 
@@ -187,17 +188,17 @@ console.log(result.text);
 ### CLI Interface
 
 ```bash
-# Start a hub server
-gambiarra serve --mdns
-
-# Create a room
-gambiarra create --name "My Room"
-
-# Join with your endpoint
-gambiarra join --code ABC123 --endpoint http://localhost:11434 --model llama3
-
-# List available rooms
+# All commands support interactive mode — just run the command:
+gambiarra serve
+gambiarra create
+gambiarra join
 gambiarra list
+
+# Or use flags for scripting:
+gambiarra serve --mdns
+gambiarra create --name "My Room"
+gambiarra join --code ABC123 --model llama3
+gambiarra list --json
 ```
 
 ### SDK Integration
@@ -256,44 +257,42 @@ bun run dev ABC123
 #### Start a Hub
 
 ```bash
-# Basic server
-gambiarra serve --port 3000
+# Interactive — prompts for port, host, mDNS:
+gambiarra serve
 
-# With mDNS auto-discovery
+# Or with flags:
 gambiarra serve --port 3000 --mdns
 ```
 
 #### Create a Room
 
 ```bash
+# Interactive — prompts for name and password:
+gambiarra create
+
+# Or with flags:
 gambiarra create --name "My Room"
-# Output: Room created! Code: XYZ789
 ```
 
 #### List Rooms
 
 ```bash
+# Interactive — prompts for hub URL and output format:
 gambiarra list
-# Output:
-# Available rooms:
-#   - ABC123 (3 participants)
-#   - XYZ789 (1 participant)
+
+# Or with flags:
+gambiarra list --json
 ```
 
 #### Join a Room
 
 ```bash
-# Ollama
-gambiarra join --code ABC123 \
-  --endpoint http://localhost:11434 \
-  --model llama3 \
-  --nickname alice
+# Interactive — select provider, model, set nickname:
+gambiarra join
 
-# LM Studio
-gambiarra join --code ABC123 \
-  --endpoint http://localhost:1234 \
-  --model mistral \
-  --nickname bob
+# Or with flags:
+gambiarra join --code ABC123 --model llama3
+gambiarra join --code ABC123 --model mistral --endpoint http://localhost:1234
 ```
 
 ### SDK Examples

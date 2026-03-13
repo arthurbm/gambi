@@ -67,8 +67,10 @@ Health e disponibilidade:
 
 Comportamento do CLI:
 - `gambiarra` sem argumentos em TTY abre TUI.
-- Subcomandos registrados hoje: `serve`, `create`, `join`, `list`.
-- `monitor` existe em `packages/cli/src/commands/monitor.ts`, mas nao esta registrado em `packages/cli/src/cli.ts`.
+- Subcomandos registrados hoje: `serve`, `create`, `join`, `list`, `monitor`.
+- Todos os comandos suportam modo interativo: quando rodados sem flags obrigatorias em TTY, promptam o usuario via `@clack/prompts`.
+- Flags continuam funcionando normalmente para scripting e automacao.
+- No modo interativo do `join`, o usuario seleciona provedor LLM (Ollama, LM Studio, vLLM ou custom) e modelo de uma lista.
 
 ## 5) Setup e comandos oficiais
 

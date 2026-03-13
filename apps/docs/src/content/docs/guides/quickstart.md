@@ -47,11 +47,17 @@ bun add gambiarra-sdk
 
 ## Basic Usage
 
+All CLI commands support **interactive mode** — run without flags and you'll be guided through each option. Flags still work for scripting.
+
 ### 1. Start the Hub Server
 
 Pick a machine on the network to be the hub. It doesn't need a GPU — the hub only routes requests between participants.
 
 ```bash
+# Interactive — prompts for port, host, mDNS:
+gambiarra serve
+
+# Or with flags:
 gambiarra serve --port 3000 --mdns
 ```
 
@@ -60,6 +66,10 @@ The `--mdns` flag enables auto-discovery so other machines on the network can fi
 ### 2. Create a Room
 
 ```bash
+# Interactive — prompts for room name and password:
+gambiarra create
+
+# Or with flags:
 gambiarra create --name "My Room"
 # Output: Room created! Code: ABC123
 ```
@@ -77,12 +87,16 @@ gambiarra create --name "Private Room" --password secret123
 Each person with an LLM endpoint joins the room:
 
 ```bash
-gambiarra join --code ABC123 \
-  --model llama3 \
-  --nickname joao
+# Interactive — select provider, model, set nickname:
+gambiarra join
+
+# Or with flags:
+gambiarra join --code ABC123 --model llama3
 ```
 
-The default endpoint is `http://localhost:11434` (Ollama). For other providers, use `--endpoint`:
+In interactive mode, you'll select your LLM provider from a list (Ollama, LM Studio, vLLM, or custom URL), then pick from detected models. You can also set a nickname and room password.
+
+With flags, the default endpoint is `http://localhost:11434` (Ollama). For other providers, use `--endpoint`:
 
 ```bash
 # LM Studio

@@ -1,7 +1,13 @@
 import { hostname as getHostname } from "node:os";
+import { confirm, intro, text } from "@clack/prompts";
 import { createHub } from "@gambiarra/core/hub";
 import { printLogo } from "@gambiarra/core/logo";
 import { Command, Option } from "clipanion";
+import {
+  handleCancel,
+  hasExplicitFlags,
+  isInteractive,
+} from "../utils/prompt.ts";
 
 export class ServeCommand extends Command {
   static override paths = [["serve"]];
@@ -9,7 +15,8 @@ export class ServeCommand extends Command {
   static override usage = Command.Usage({
     description: "Start the Gambiarra hub server",
     examples: [
-      ["Start on default port 3000", "gambiarra serve"],
+      ["Start with interactive setup", "gambiarra serve"],
+      ["Start on default port 3000", "gambiarra serve --port 3000"],
       ["Start on custom port", "gambiarra serve --port 8080"],
       ["Start with mDNS discovery", "gambiarra serve --mdns"],
     ],
@@ -32,31 +39,62 @@ export class ServeCommand extends Command {
   });
 
   async execute(): Promise<number> {
+    let port = this.port;
+    let host = this.host;
+    let mdns = this.mdns;
+
+    if (!hasExplicitFlags() && isInteractive()) {
+      intro("gambiarra serve");
+
+      const portResult = await text({
+        message: "Port:",
+        defaultValue: "3000",
+        placeholder: "3000",
+      });
+      handleCancel(portResult);
+      port = portResult as string;
+
+      const hostResult = await text({
+        message: "Host:",
+        defaultValue: "0.0.0.0",
+        placeholder: "0.0.0.0",
+      });
+      handleCancel(hostResult);
+      host = hostResult as string;
+
+      const mdnsResult = await confirm({
+        message: "Enable mDNS discovery?",
+        initialValue: false,
+      });
+      handleCancel(mdnsResult);
+      mdns = mdnsResult as boolean;
+    }
+
     if (!this.quiet) {
       printLogo();
     }
 
-    const port = Number.parseInt(this.port, 10);
-    if (Number.isNaN(port)) {
-      this.context.stderr.write(`Invalid port: ${this.port}\n`);
+    const portNum = Number.parseInt(port, 10);
+    if (Number.isNaN(portNum)) {
+      this.context.stderr.write(`Invalid port: ${port}\n`);
       return 1;
     }
 
     const hub = createHub({
-      port,
-      hostname: this.host,
-      mdns: this.mdns,
+      port: portNum,
+      hostname: host,
+      mdns,
     });
 
     this.context.stdout.write(`Hub started at ${hub.url}\n`);
     this.context.stdout.write(
-      `Health check: http://${this.host}:${port}/health\n`
+      `Health check: http://${host}:${portNum}/health\n`
     );
 
     if (hub.mdnsName) {
       const localHostname = getHostname();
       this.context.stdout.write(
-        `mDNS: http://${localHostname}.local:${port}\n`
+        `mDNS: http://${localHostname}.local:${portNum}\n`
       );
       this.context.stdout.write(
         `      Service: ${hub.mdnsName}._gambiarra._tcp.local\n`

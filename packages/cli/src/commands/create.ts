@@ -1,4 +1,6 @@
+import { intro, outro, password as passwordPrompt, text } from "@clack/prompts";
 import { Command, Option } from "clipanion";
+import { handleCancel, isInteractive } from "../utils/prompt.ts";
 
 interface CreateRoomResponse {
   room: {
@@ -21,6 +23,7 @@ export class CreateCommand extends Command {
   static override usage = Command.Usage({
     description: "Create a new room on a hub",
     examples: [
+      ["Create a room (interactive)", "gambiarra create"],
       ["Create a room", "gambiarra create --name 'My Room'"],
       [
         "Create on custom hub",
@@ -35,7 +38,7 @@ export class CreateCommand extends Command {
 
   name = Option.String("--name,-n", {
     description: "Room name",
-    required: true,
+    required: false,
   });
 
   password = Option.String("--password,-p", {
@@ -48,10 +51,40 @@ export class CreateCommand extends Command {
   });
 
   async execute(): Promise<number> {
+    let name = this.name;
+    let password = this.password;
+
+    if (!name && isInteractive()) {
+      intro("gambiarra create");
+
+      const nameResult = await text({
+        message: "Room name:",
+        validate: (v) => (v ? undefined : "Room name is required"),
+      });
+      handleCancel(nameResult);
+      name = nameResult as string;
+
+      if (password === undefined) {
+        const passwordResult = await passwordPrompt({
+          message: "Room password (leave empty for no password):",
+        });
+        handleCancel(passwordResult);
+        const pwd = passwordResult as string;
+        if (pwd) {
+          password = pwd;
+        }
+      }
+    } else if (!name) {
+      this.context.stderr.write(
+        "Error: --name is required (or run in a terminal for interactive mode)\n"
+      );
+      return 1;
+    }
+
     try {
-      const body: { name: string; password?: string } = { name: this.name };
-      if (this.password) {
-        body.password = this.password;
+      const body: { name: string; password?: string } = { name };
+      if (password) {
+        body.password = password;
       }
 
       const response = await fetch(`${this.hub}/rooms`, {
@@ -68,15 +101,20 @@ export class CreateCommand extends Command {
 
       const data = (await response.json()) as CreateRoomResponse;
 
-      this.context.stdout.write("Room created!\n");
-      this.context.stdout.write(`  Code: ${data.room.code}\n`);
-      this.context.stdout.write(`  ID: ${data.room.id}\n`);
-      if (this.password) {
-        this.context.stdout.write("  Protection: Password-protected\n");
+      const successMsg = [
+        "Room created!",
+        `  Code: ${data.room.code}`,
+        `  ID: ${data.room.id}`,
+        ...(password ? ["  Protection: Password-protected"] : []),
+        "",
+        "Share the code with participants to join.",
+      ].join("\n");
+
+      if (isInteractive() && !this.name) {
+        outro(successMsg);
+      } else {
+        this.context.stdout.write(`${successMsg}\n`);
       }
-      this.context.stdout.write(
-        "\nShare the code with participants to join.\n"
-      );
 
       return 0;
     } catch (err) {
