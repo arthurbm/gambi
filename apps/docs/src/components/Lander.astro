@@ -24,7 +24,7 @@ const features = [
   {
     title: "Universal",
     description:
-      "Works with Ollama, LM Studio, LocalAI, vLLM, and any OpenAI-compatible API.",
+      "Works with Ollama, LM Studio, LocalAI, vLLM, and any endpoint exposing OpenResponses or chat/completions.",
     icon: "plug",
   },
   {
@@ -228,6 +228,12 @@ const gambiarra = createGambiarra({
 const result = await generateText({
   model: gambiarra.any(),
   prompt: "Hello, Gambiarra!",
+});
+
+// Explicit legacy mode is still available
+const legacy = createGambiarra({
+  roomCode: "ABC123",
+  defaultProtocol: "chatCompletions",
 });
 
 console.log(result.text);`}</code></pre>

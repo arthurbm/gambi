@@ -20,6 +20,7 @@ export interface CreateParticipantOptions {
   password?: string;
   specs?: ParticipantInfo["specs"];
   config?: ParticipantInfo["config"];
+  capabilities?: ParticipantInfo["capabilities"];
 }
 
 /**

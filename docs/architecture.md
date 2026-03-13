@@ -4,7 +4,7 @@ This document describes the current architecture of Gambiarra, a system for shar
 
 ## Overview
 
-Gambiarra enables multiple users on a local network to share their LLM endpoints (Ollama, LM Studio, LocalAI, vLLM, or any OpenAI-compatible API) through a central hub. The system is designed to work seamlessly with the Vercel AI SDK.
+Gambiarra enables multiple users on a local network to share their LLM endpoints (Ollama, LM Studio, LocalAI, vLLM, or any endpoint that exposes OpenResponses or chat/completions) through a central hub. The system is designed to work seamlessly with the Vercel AI SDK.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -19,9 +19,14 @@ Gambiarra enables multiple users on a local network to share their LLM endpoints
 │  │ POST   /rooms/:code/health       ← Health check (10s interval)     │    │
 │  │ GET    /rooms/:code/participants ← List participants               │    │
 │  │                                                                    │    │
-│  │ OpenAI-Compatible (Proxy):                                         │    │
-│  │ POST   /rooms/:code/v1/chat/completions                           │    │
-│  │ GET    /rooms/:code/v1/models                                     │    │
+│  │ LLM Proxy (Responses-first):                                      │    │
+│  │ POST   /rooms/:code/v1/responses                                 │    │
+│  │ GET    /rooms/:code/v1/responses/:id                             │    │
+│  │ DELETE /rooms/:code/v1/responses/:id                             │    │
+│  │ POST   /rooms/:code/v1/responses/:id/cancel                      │    │
+│  │ GET    /rooms/:code/v1/responses/:id/input_items                 │    │
+│  │ POST   /rooms/:code/v1/chat/completions                          │    │
+│  │ GET    /rooms/:code/v1/models                                    │    │
 │  │                                                                    │    │
 │  │ SSE (for TUI):                                                    │    │
 │  │ GET    /rooms/:code/events                                        │    │
@@ -51,6 +56,17 @@ Gambiarra follows the principle of **feature parity across all endpoints**. Each
 | **CLI** | DevOps / Power Users | Scripts, automation, and CI/CD pipelines |
 | **TUI** | Human Operators | Interactive real-time monitoring and management |
 
+### Architecture Pattern
+
+Internally, Gambiarra follows a **Ports and Adapters** style. The public edge is `OpenResponses-first`, but the hub core does not hardcode that as its only internal shape.
+
+- The hub defines protocol adapter ports for request creation and stored-response lifecycle operations.
+- `openResponses` and `chatCompletions` are the first concrete adapters registered today.
+- Adapter selection is ordered and explicit: the public `responses` edge tries the `openResponses` adapter first, then falls back to the `chatCompletions` adapter when required.
+- The SDK follows the same pattern through a protocol namespace factory registry, with `openResponses` as the default public protocol.
+
+This is intentionally close to the “generic interface + interpreter” style you see in systems like Effect: the core talks to capabilities, and concrete protocol behavior lives at the edge.
+
 ### Invocation Pattern
 
 | Command | Result |
@@ -72,7 +88,9 @@ Gambiarra follows the principle of **feature parity across all endpoints**. Each
 | Join room | POST /rooms/:code/join | `gambiarra join` | Join dialog |
 | Leave room | DELETE /rooms/:code/leave/:id | Auto on exit | Leave action |
 | Health check | POST /rooms/:code/health | Auto (background) | Auto (background) |
-| Chat completion | POST /rooms/:code/v1/chat/completions | Via SDK | N/A (monitoring only) |
+| Responses create | POST /rooms/:code/v1/responses | Via SDK | N/A (monitoring only) |
+| Responses lifecycle | `/rooms/:code/v1/responses/:id*` | HTTP/API clients | N/A (monitoring only) |
+| Chat completion (legacy) | POST /rooms/:code/v1/chat/completions | Via SDK or explicit legacy mode | N/A (monitoring only) |
 | Real-time events | SSE subscription | - | Built-in |
 | Serve hub | - | `gambiarra serve` | Embedded server |
 
@@ -85,7 +103,8 @@ The project is a Bun + Turbo monorepo with the following packages:
 Core library containing the hub server and shared utilities.
 
 **Key files:**
-- `hub.ts` - HTTP server with OpenAI-compatible proxy
+- `hub.ts` - HTTP server with protocol adapter registry, Responses-first proxy, and legacy chat/completions compatibility
+- `protocol-adapters.ts` - Adapter contracts used by the hub core and SDK exports
 - `room.ts` - Room and participant management
 - `sse.ts` - Server-Sent Events for real-time updates
 - `mdns.ts` - mDNS (Bonjour/Zeroconf) service discovery
@@ -135,6 +154,16 @@ const result3 = await generateText({
   model: gambiarra.model("llama3"),
   prompt: "Hello!",
 });
+
+const legacy = createGambiarra({
+  roomCode: "ABC123",
+  defaultProtocol: "chatCompletions",
+});
+
+const result4 = await generateText({
+  model: legacy.any(),
+  prompt: "Legacy chat/completions flow",
+});
 ```
 
 ### `tui`
@@ -168,12 +197,12 @@ Participant                Hub
 ```
 SDK                        Hub                     Participant
  │                          │                           │
- │  POST /rooms/:code/v1/chat/completions              │
+ │  POST /rooms/:code/v1/responses                     │
  │  { model: "participant-id", messages, stream }      │
  │ ────────────────────────►│                          │
  │                          │                          │
- │                          │  POST /v1/chat/completions
- │                          │  { model: "llama3", messages }
+ │                          │  POST /v1/responses
+ │                          │  { model: "llama3", input, stream }
  │                          │ ─────────────────────────►│
  │                          │                          │
  │                          │  SSE Stream / JSON       │
@@ -213,7 +242,7 @@ Service format: `gambiarra-hub-{port}._gambiarra._tcp.local`
 
 ## Supported Providers
 
-Any server with an OpenAI-compatible API:
+Any server with OpenResponses or OpenAI-compatible chat/completions:
 
 | Provider | Default Endpoint |
 |----------|-----------------|
@@ -231,9 +260,13 @@ Any server with an OpenAI-compatible API:
   id: string;
   nickname: string;
   model: string;
-  endpoint: string;  // OpenAI-compatible API URL
+  endpoint: string;  // LLM API base URL
   config: GenerationConfig;
   specs: MachineSpecs;
+  capabilities: {
+    openResponses: "supported" | "unsupported" | "unknown";
+    chatCompletions: "supported" | "unsupported" | "unknown";
+  };
   status: "online" | "offline" | "busy";
   joinedAt: number;
   lastSeen: number;  // Timestamp of last health check
@@ -242,7 +275,7 @@ Any server with an OpenAI-compatible API:
 
 ### GenerationConfig
 
-Standard OpenAI-compatible parameters:
+Standard chat/completions-compatible generation parameters:
 
 ```typescript
 {
@@ -260,8 +293,8 @@ Standard OpenAI-compatible parameters:
 
 The original architecture used WebSocket for all communication. This was replaced with HTTP + SSE for:
 
-1. **Simpler SDK integration** - Uses `@ai-sdk/openai-compatible` instead of custom LanguageModelV3
-2. **Standard API** - Hub exposes OpenAI-compatible endpoints that work with any client
+1. **Simpler SDK integration** - Uses `@ai-sdk/open-responses` by default, with explicit legacy `@ai-sdk/openai-compatible` support
+2. **Standard API** - Hub exposes OpenResponses as the primary public protocol and keeps chat/completions for compatibility
 3. **Better debugging** - HTTP requests are easier to inspect and test
 4. **Reduced complexity** - No need to manage WebSocket connections in the SDK
 

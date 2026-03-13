@@ -101,7 +101,7 @@ gambiarra list
 
 ## Supported Providers
 
-Gambiarra works with any OpenAI-compatible API:
+Gambiarra works with endpoints that expose OpenResponses or OpenAI-compatible `chat/completions`:
 
 | Provider | Default Endpoint |
 |----------|------------------|

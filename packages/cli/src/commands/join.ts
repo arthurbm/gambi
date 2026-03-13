@@ -1,3 +1,4 @@
+import { probeEndpoint } from "@gambiarra/core/endpoint";
 import { HEALTH_CHECK_INTERVAL } from "@gambiarra/core/types";
 import { Command, Option } from "clipanion";
 import { nanoid } from "nanoid";
@@ -17,43 +18,11 @@ interface JoinResponse {
   roomId: string;
 }
 
-interface OllamaTagsResponse {
-  models?: { name: string }[];
-}
-
-async function getOllamaModels(endpoint: string): Promise<string[]> {
-  try {
-    // Try Ollama API format
-    const ollamaResponse = await fetch(`${endpoint}/api/tags`);
-    if (ollamaResponse.ok) {
-      const data = (await ollamaResponse.json()) as OllamaTagsResponse;
-      return data.models?.map((m) => m.name) ?? [];
-    }
-  } catch {
-    // Not Ollama, try OpenAI format
-  }
-
-  try {
-    // Try OpenAI-compatible format
-    const openaiResponse = await fetch(`${endpoint}/v1/models`);
-    if (openaiResponse.ok) {
-      const data = (await openaiResponse.json()) as {
-        data?: { id: string }[];
-      };
-      return data.data?.map((m) => m.id) ?? [];
-    }
-  } catch {
-    // Neither format worked
-  }
-
-  return [];
-}
-
 export class JoinCommand extends Command {
   static override paths = [["join"]];
 
   static override usage = Command.Usage({
-    description: "Join a room and expose your OpenAI-compatible endpoint",
+    description: "Join a room and expose your LLM endpoint",
     examples: [
       [
         "Join with Ollama",
@@ -85,7 +54,7 @@ export class JoinCommand extends Command {
   });
 
   endpoint = Option.String("--endpoint,-e", "http://localhost:11434", {
-    description: "OpenAI-compatible API endpoint (Ollama, LM Studio, etc.)",
+    description: "LLM endpoint URL (OpenResponses or chat/completions capable)",
   });
 
   nickname = Option.String("--nickname,-n", {
@@ -114,7 +83,8 @@ export class JoinCommand extends Command {
     if (!this.noSpecs) {
       this.context.stdout.write(`Detected specs: ${formatSpecs(specs)}\n\n`);
     }
-    const models = await getOllamaModels(this.endpoint);
+    const probe = await probeEndpoint(this.endpoint);
+    const models = probe.models;
 
     if (models.length === 0) {
       this.context.stderr.write(`No models found at ${this.endpoint}\n`);
@@ -143,6 +113,7 @@ export class JoinCommand extends Command {
         endpoint: this.endpoint,
         specs,
         config: {},
+        capabilities: probe.capabilities,
       };
 
       if (this.password) {

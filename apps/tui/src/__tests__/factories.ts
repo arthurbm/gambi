@@ -35,6 +35,10 @@ export function createParticipant(
     lastSeen: now,
     specs: {},
     config: {},
+    capabilities: {
+      openResponses: "unknown",
+      chatCompletions: "unknown",
+    },
     ...overrides,
   };
 }

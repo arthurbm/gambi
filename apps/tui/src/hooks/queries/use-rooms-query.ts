@@ -1,6 +1,7 @@
 import {
   type GenerationConfig,
   type MachineSpecs,
+  type ParticipantCapabilities,
   ParticipantInfo,
   RoomInfoPublic,
 } from "@gambiarra/core/types";
@@ -55,6 +56,7 @@ export interface JoinParticipantData {
   password?: string;
   specs?: z.infer<typeof MachineSpecs>;
   config?: z.infer<typeof GenerationConfig>;
+  capabilities?: ParticipantCapabilities;
 }
 
 // ============================================================================

@@ -43,13 +43,14 @@
 
 ## What is Gambiarra?
 
-**Gambiarra** is a local-first LLM sharing system that allows multiple users on a network to pool their LLM resources together. Think of it as a "LLM Club" where everyone shares their Ollama, LM Studio, LocalAI, or any OpenAI-compatible endpoint.
+**Gambiarra** is a local-first LLM sharing system that allows multiple users on a network to pool their LLM resources together. Think of it as a "LLM Club" where everyone shares their Ollama, LM Studio, LocalAI, or any endpoint that speaks OpenResponses or OpenAI-compatible chat/completions.
 
 ### Why Gambiarra?
 
 - **Local-First**: Your data stays on your network
 - **Resource Sharing**: Pool LLM endpoints across your team
-- **Universal Compatibility**: Works with any OpenAI-compatible API
+- **OpenResponses First**: Prefers `v1/responses` by default and falls back to `chat/completions` when needed
+- **Universal Compatibility**: Works with OpenResponses and OpenAI-compatible chat/completions APIs
 - **Vercel AI SDK Integration**: Drop-in replacement for your AI SDK workflows
 - **Auto-Discovery**: mDNS/Bonjour support for zero-config networking
 - **Real-time Monitoring**: Beautiful TUI for tracking room activity
@@ -224,6 +225,17 @@ const result3 = await generateText({
   model: gambiarra.model("llama3"),
   prompt: "What is the meaning of life?",
 });
+
+// Explicit legacy mode when you need chat/completions
+const legacy = createGambiarra({
+  roomCode: "ABC123",
+  defaultProtocol: "chatCompletions",
+});
+
+const result4 = await generateText({
+  model: legacy.any(),
+  prompt: "Keep using chat/completions",
+});
 ```
 
 ### Terminal UI
@@ -364,7 +376,12 @@ Gambiarra uses a **HTTP + SSE architecture** for simplicity and compatibility:
 │  • POST   /rooms                    (Create room)          │
 │  • GET    /rooms                    (List rooms)           │
 │  • POST   /rooms/:code/join         (Join room)            │
-│  • POST   /rooms/:code/v1/chat/completions (Proxy)        │
+│  • POST   /rooms/:code/v1/responses (Proxy)               │
+│  • GET    /rooms/:code/v1/responses/:id                   │
+│  • DELETE /rooms/:code/v1/responses/:id                   │
+│  • POST   /rooms/:code/v1/responses/:id/cancel            │
+│  • GET    /rooms/:code/v1/responses/:id/input_items       │
+│  • POST   /rooms/:code/v1/chat/completions (Legacy Proxy) │
 │  • GET    /rooms/:code/events       (SSE updates)          │
 └─────────────────────────────────────────────────────────────┘
        ▲                    ▲                      ▲
@@ -381,6 +398,8 @@ Gambiarra uses a **HTTP + SSE architecture** for simplicity and compatibility:
 - **Participants**: LLM endpoints registered in a room (Ollama, LM Studio, etc.)
 - **SDK**: Vercel AI SDK provider that proxies to the hub
 - **TUI**: Real-time monitoring interface using Server-Sent Events
+
+Internally, the hub uses a protocol adapter registry. `OpenResponses` is the default public path, but the core stays open to additional protocol adapters instead of baking protocol-specific branching into every call site.
 
 ### Model Routing
 
@@ -508,7 +527,7 @@ The workflow will:
 
 ## Supported Providers
 
-Gambiarra works with any **OpenAI-compatible API**:
+Gambiarra works with endpoints that expose **OpenResponses** or **OpenAI-compatible chat/completions**:
 
 | Provider | Default Endpoint | Notes |
 |----------|------------------|-------|

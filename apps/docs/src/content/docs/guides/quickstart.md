@@ -32,6 +32,7 @@ bun add -g gambiarra
 ### SDK
 
 The SDK provides Vercel AI SDK integration for using shared LLMs in your applications.
+It defaults to `OpenResponses` and keeps legacy `chat/completions` available explicitly.
 
 ```bash
 npm install gambiarra-sdk
@@ -80,6 +81,16 @@ const result = await generateText({
 });
 
 console.log(result.text);
+```
+
+If you need explicit legacy mode:
+
+```typescript
+const gambiarra = createGambiarra({
+  roomCode: "ABC123",
+  hubUrl: "http://localhost:3000",
+  defaultProtocol: "chatCompletions",
+});
 ```
 
 ## Next Steps

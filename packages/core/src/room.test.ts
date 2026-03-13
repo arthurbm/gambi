@@ -13,6 +13,10 @@ function createMockParticipant(
     endpoint: overrides.endpoint ?? "http://localhost:11434",
     specs: overrides.specs ?? {},
     config: overrides.config ?? {},
+    capabilities: overrides.capabilities ?? {
+      openResponses: "unknown",
+      chatCompletions: "unknown",
+    },
     status: overrides.status ?? "online",
     joinedAt: overrides.joinedAt ?? now,
     lastSeen: overrides.lastSeen ?? now,

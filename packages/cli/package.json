@@ -4,6 +4,8 @@
   "description": "CLI for Gambiarra - Share local LLMs across your network",
   "keywords": [
     "llm",
+    "openresponses",
+    "open-responses",
     "ollama",
     "ai",
     "cli",

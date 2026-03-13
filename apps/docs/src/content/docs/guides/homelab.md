@@ -150,11 +150,11 @@ Simple shell script to test:
 
 ```bash
 #!/bin/bash
-curl -X POST http://192.168.1.100:3000/rooms/YOURCODE/v1/chat/completions \
+curl -X POST http://192.168.1.100:3000/rooms/YOURCODE/v1/responses \
   -H "Content-Type: application/json" \
   -d '{
     "model": "*",
-    "messages": [{"role": "user", "content": "Hello!"}]
+    "input": "Hello!"
   }'
 ```
 

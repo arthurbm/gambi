@@ -4,6 +4,8 @@
   "description": "Share local LLMs across your network, effortlessly",
   "keywords": [
     "llm",
+    "openresponses",
+    "open-responses",
     "ollama",
     "ai",
     "vercel-ai-sdk",
@@ -41,6 +43,7 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/open-responses": "^1.0.6",
     "@ai-sdk/openai-compatible": "^2.0.2",
     "zod": "^4.3.5"
   },

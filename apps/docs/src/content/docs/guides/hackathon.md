@@ -77,6 +77,15 @@ const result = await generateText({
 });
 ```
 
+If your stack still depends on legacy `chat/completions`, use:
+
+```typescript
+const legacy = createGambiarra({
+  roomCode: "XK7P2M",
+  defaultProtocol: "chatCompletions",
+});
+```
+
 ## Tips for Hackathons
 
 ### Use Nicknames
@@ -165,6 +174,8 @@ export const gambiarra = createGambiarra({
   roomCode: process.env.GAMBIARRA_ROOM!,
   hubUrl: process.env.GAMBIARRA_HUB, // Optional if using mDNS
 });
+
+// Defaults to openResponses
 
 // Use in your app
 import { gambiarra } from "./lib/ai";
