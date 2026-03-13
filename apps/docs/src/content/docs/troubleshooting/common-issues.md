@@ -131,9 +131,9 @@ Gambiarra's hub includes CORS headers by default. If you're still seeing errors:
 
 2. **Test endpoint directly** - Verify the LLM endpoint works:
    ```bash
-   curl http://localhost:11434/v1/chat/completions \
+   curl http://localhost:11434/v1/responses \
      -H "Content-Type: application/json" \
-     -d '{"model": "llama3", "messages": [{"role": "user", "content": "Hi"}]}'
+     -d '{"model": "llama3", "input": "Hi"}'
    ```
 
 3. **Open an issue** - If the problem persists, [open an issue on GitHub](https://github.com/arthurbm/gambiarra/issues) with:

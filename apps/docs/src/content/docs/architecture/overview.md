@@ -17,7 +17,12 @@ Gambiarra uses a **HTTP + SSE architecture** for simplicity and compatibility wi
 │  • POST   /rooms                    (Create room)          │
 │  • GET    /rooms                    (List rooms)           │
 │  • POST   /rooms/:code/join         (Join room)            │
-│  • POST   /rooms/:code/v1/chat/completions (Proxy)        │
+│  • POST   /rooms/:code/v1/responses (Primary Proxy)       │
+│  • GET    /rooms/:code/v1/responses/:id                   │
+│  • DELETE /rooms/:code/v1/responses/:id                   │
+│  • POST   /rooms/:code/v1/responses/:id/cancel            │
+│  • GET    /rooms/:code/v1/responses/:id/input_items       │
+│  • POST   /rooms/:code/v1/chat/completions (Legacy Proxy) │
 │  • GET    /rooms/:code/events       (SSE updates)          │
 └─────────────────────────────────────────────────────────────┘
        ▲                    ▲                      ▲
@@ -47,7 +52,7 @@ A virtual space where participants register their LLM endpoints. Each room has:
 ### Participant
 
 An LLM endpoint registered in a room:
-- Ollama, LM Studio, LocalAI, vLLM, or any OpenAI-compatible API
+- Ollama, LM Studio, LocalAI, vLLM, or any endpoint exposing OpenResponses or chat/completions
 - Sends health checks every 10 seconds
 - Marked offline after 30 seconds of no response
 
@@ -56,6 +61,7 @@ An LLM endpoint registered in a room:
 A Vercel AI SDK provider that:
 - Connects to the hub
 - Routes requests based on participant ID, model name, or random selection
+- Uses `OpenResponses` by default, with explicit legacy `chat/completions` mode
 - Supports streaming and non-streaming responses
 
 ## Communication Flow
@@ -82,10 +88,10 @@ Participant                Hub
 ```
 SDK                        Hub                     Participant
  │                          │                           │
- │  POST /rooms/:code/v1/chat/completions              │
+ │  POST /rooms/:code/v1/responses                     │
  │ ────────────────────────►│                          │
  │                          │                          │
- │                          │  POST /v1/chat/completions
+ │                          │  POST /v1/responses
  │                          │ ─────────────────────────►│
  │                          │                          │
  │                          │  Response / Stream       │
@@ -99,8 +105,8 @@ SDK                        Hub                     Participant
 
 We chose HTTP + SSE over WebSocket for:
 
-1. **Simpler SDK integration** - Uses standard `@ai-sdk/openai-compatible` instead of custom protocol
-2. **Standard API** - Hub exposes OpenAI-compatible endpoints that work with any client
+1. **Simpler SDK integration** - Uses standard `@ai-sdk/open-responses` by default, with explicit legacy `@ai-sdk/openai-compatible` support
+2. **Standard API** - Hub exposes `Responses API` as the primary public edge and keeps `chat/completions` for compatibility
 3. **Better debugging** - HTTP requests are easier to inspect and test
 4. **Reduced complexity** - No need to manage WebSocket connections in the SDK
 

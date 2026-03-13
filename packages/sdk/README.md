@@ -104,8 +104,18 @@ import { generateText } from "ai";
 const gambiarra = createGambiarra({ roomCode: "ABC123" });
 
 const result = await generateText({
-  model: gambiarra.any(), // Random online participant
+  model: gambiarra.any(), // Defaults to OpenResponses
   prompt: "Hello, world!",
+});
+
+const legacy = createGambiarra({
+  roomCode: "ABC123",
+  defaultProtocol: "chatCompletions",
+});
+
+const legacyResult = await generateText({
+  model: legacy.any(),
+  prompt: "Use explicit legacy chat/completions mode",
 });
 ```
 

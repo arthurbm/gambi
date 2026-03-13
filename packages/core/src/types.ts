@@ -10,6 +10,22 @@ export type {
 } from "openai/resources/chat/completions";
 
 export type { Model, ModelDeleted } from "openai/resources/models";
+export type {
+  InputItemListParams,
+  ResponseItemList,
+} from "openai/resources/responses/input-items";
+export type {
+  Response,
+  ResponseCreateParams,
+  ResponseCreateParamsNonStreaming,
+  ResponseCreateParamsStreaming,
+  ResponseInputItem,
+  ResponseRetrieveParams,
+  ResponseRetrieveParamsNonStreaming,
+  ResponseRetrieveParamsStreaming,
+  ResponseStreamEvent,
+  ResponseUsage,
+} from "openai/resources/responses/responses";
 
 // Health check interval in milliseconds
 export const HEALTH_CHECK_INTERVAL = 10_000;
@@ -47,13 +63,26 @@ export type MachineSpecs = z.infer<typeof MachineSpecs>;
 export const ParticipantStatus = z.enum(["online", "busy", "offline"]);
 export type ParticipantStatus = z.infer<typeof ParticipantStatus>;
 
+export const ProtocolSupport = z.enum(["supported", "unsupported", "unknown"]);
+export type ProtocolSupport = z.infer<typeof ProtocolSupport>;
+
+export const ParticipantCapabilities = z.object({
+  openResponses: ProtocolSupport.default("unknown"),
+  chatCompletions: ProtocolSupport.default("unknown"),
+});
+export type ParticipantCapabilities = z.infer<typeof ParticipantCapabilities>;
+
 export const ParticipantInfo = z.object({
   id: z.string(),
   nickname: z.string(),
   model: z.string(),
-  endpoint: z.string().url(), // OpenAI-compatible API endpoint (Ollama, LM Studio, etc.)
+  endpoint: z.string().url(), // Endpoint exposing OpenResponses and/or chat/completions
   config: GenerationConfig,
   specs: MachineSpecs,
+  capabilities: ParticipantCapabilities.default({
+    openResponses: "unknown",
+    chatCompletions: "unknown",
+  }),
   status: ParticipantStatus,
   joinedAt: z.number(),
   lastSeen: z.number(), // Timestamp of last health check

@@ -291,6 +291,7 @@ export function JoinRoom({
       endpoint: endpointTrimmed,
       password: formValues.password || undefined,
       specs: formValues.shareSpecs && specs ? specs : undefined,
+      capabilities: endpointQuery.data?.capabilities,
     });
 
     if (success) {
@@ -298,7 +299,15 @@ export function JoinRoom({
       setLastLlmEndpoint(endpointTrimmed);
       onNavigate("monitor", { roomCodes: [formValues.roomCode] });
     }
-  }, [formValues, specs, session, onNavigate, trigger, setLastLlmEndpoint]);
+  }, [
+    endpointQuery.data?.capabilities,
+    formValues,
+    specs,
+    session,
+    onNavigate,
+    trigger,
+    setLastLlmEndpoint,
+  ]);
 
   // Keyboard handlers
   const handleJoinedKey = useCallback(
@@ -415,9 +424,14 @@ export function JoinRoom({
           placeholder="http://localhost:11434"
           statusIndicator={
             <EndpointStatusIndicator
-              isError={endpointQuery.isError || (endpointQuery.isSuccess && !endpointQuery.data?.success)}
+              isError={
+                endpointQuery.isError ||
+                (endpointQuery.isSuccess && !endpointQuery.data?.success)
+              }
               isLoading={endpointQuery.isLoading || endpointQuery.isFetching}
-              isSuccess={endpointQuery.isSuccess && endpointQuery.data?.success === true}
+              isSuccess={
+                endpointQuery.isSuccess && endpointQuery.data?.success === true
+              }
             />
           }
           value={formValues.endpoint}

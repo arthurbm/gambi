@@ -3,21 +3,23 @@ import { createHub, type Hub } from "@gambiarra/core/hub";
 import { Room } from "@gambiarra/core/room";
 import { ClientError, createClient } from "./client.ts";
 
+function getRandomPort(): number {
+  return 30_000 + Math.floor(Math.random() * 20_000);
+}
+
 describe("HTTP Client", () => {
   let hub: Hub;
-  const TEST_PORT = 3998;
+  let client: ReturnType<typeof createClient>;
 
   beforeAll(() => {
-    hub = createHub({ port: TEST_PORT, hostname: "127.0.0.1" });
+    hub = createHub({ port: getRandomPort(), hostname: "127.0.0.1" });
     Room.clear();
+    client = createClient({ hubUrl: hub.url });
   });
 
   afterAll(() => {
     hub.close();
   });
-
-  const client = createClient({ hubUrl: `http://127.0.0.1:${TEST_PORT}` });
-
   describe("create", () => {
     test("creates a new room", async () => {
       const { room, hostId } = await client.create("Test Room");
@@ -30,7 +32,7 @@ describe("HTTP Client", () => {
     test("throws ClientError on failure", async () => {
       // Invalid request (empty name will fail validation)
       await expect(
-        fetch(`http://127.0.0.1:${TEST_PORT}/rooms`, {
+        fetch(`${hub.url}/rooms`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({}),

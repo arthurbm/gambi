@@ -6,6 +6,7 @@ export {
   type Hub,
   type HubOptions,
   type ModelsListResponse,
+  type ResponsesCreateRequest,
 } from "@gambiarra/core/hub";
 
 /**

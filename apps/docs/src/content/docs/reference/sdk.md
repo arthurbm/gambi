@@ -5,6 +5,8 @@ description: Complete reference for the Gambiarra SDK.
 
 The Gambiarra SDK provides Vercel AI SDK integration for using shared LLMs in your applications.
 
+The SDK is `OpenResponses-first` by default and keeps explicit legacy `chat/completions` support when you need it.
+
 ## Installation
 
 ```bash
@@ -30,6 +32,8 @@ const result = await generateText({
 });
 ```
 
+By default, `gambiarra.any()`, `gambiarra.model()`, and `gambiarra.participant()` use `openResponses`.
+
 ## Configuration
 
 ### `createGambiarra(options)`
@@ -42,6 +46,36 @@ Creates a Gambiarra provider instance.
 |--------|------|-------------|----------|
 | `roomCode` | `string` | Room code to connect to | Yes |
 | `hubUrl` | `string` | Hub URL | No (auto-discover) |
+| `defaultProtocol` | `"openResponses" \| "chatCompletions"` | Default protocol used by the top-level routing helpers | No |
+
+### Protocol Selection
+
+Use the default `OpenResponses` mode:
+
+```typescript
+const gambiarra = createGambiarra({
+  roomCode: "ABC123",
+  defaultProtocol: "openResponses",
+});
+```
+
+Use explicit legacy `chat/completions` mode:
+
+```typescript
+const gambiarra = createGambiarra({
+  roomCode: "ABC123",
+  defaultProtocol: "chatCompletions",
+});
+```
+
+You can also choose explicitly per namespace:
+
+```typescript
+const gambiarra = createGambiarra({ roomCode: "ABC123" });
+
+gambiarra.openResponses.any();
+gambiarra.chatCompletions.any();
+```
 
 ## Model Routing
 
@@ -77,6 +111,8 @@ const result = await generateText({
   prompt: "What is the meaning of life?",
 });
 ```
+
+These routing helpers are also available under `gambiarra.openResponses` and `gambiarra.chatCompletions`.
 
 ## Streaming
 

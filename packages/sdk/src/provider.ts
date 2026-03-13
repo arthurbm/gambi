@@ -1,9 +1,15 @@
+import { createOpenResponses } from "@ai-sdk/open-responses";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import type { LanguageModelV3 } from "@ai-sdk/provider";
 import type { ParticipantInfo } from "@gambiarra/core/types";
+
+export type GambiarraProtocol = "openResponses" | "chatCompletions";
+const DEFAULT_PROTOCOL: GambiarraProtocol = "openResponses";
 
 export interface GambiarraOptions {
   hubUrl?: string;
   roomCode: string;
+  defaultProtocol?: GambiarraProtocol;
 }
 
 export interface GambiarraModel {
@@ -11,6 +17,7 @@ export interface GambiarraModel {
   nickname: string;
   model: string;
   endpoint: string;
+  capabilities: ParticipantInfo["capabilities"];
 }
 
 interface ParticipantsResponse {
@@ -28,75 +35,87 @@ interface ModelsResponse {
       nickname: string;
       model: string;
       endpoint: string;
+      capabilities?: ParticipantInfo["capabilities"];
     };
   }>;
 }
 
-export interface GambiarraProvider {
-  /** Use a specific participant by ID */
-  participant: (
-    id: string
-  ) => ReturnType<ReturnType<typeof createOpenAICompatible>>;
-  /** Use a specific model name (routes to first participant with that model) */
-  model: (
-    name: string
-  ) => ReturnType<ReturnType<typeof createOpenAICompatible>>;
-  /** Use any available participant */
-  any: () => ReturnType<ReturnType<typeof createOpenAICompatible>>;
-  /** List all participants in the room */
-  listParticipants: () => Promise<ParticipantInfo[]>;
-  /** List available models (OpenAI-compatible format) */
+export interface GambiarraProtocolNamespace {
+  participant: (id: string) => LanguageModelV3;
+  model: (name: string) => LanguageModelV3;
+  any: () => LanguageModelV3;
+}
+
+export interface GambiarraProvider extends GambiarraProtocolNamespace {
+  chatCompletions: GambiarraProtocolNamespace;
+  defaultProtocol: GambiarraProtocol;
   listModels: () => Promise<GambiarraModel[]>;
-  /** Base URL for direct API access */
+  listParticipants: () => Promise<ParticipantInfo[]>;
+  openResponses: GambiarraProtocolNamespace;
   baseURL: string;
+}
+
+type ProtocolNamespaceFactory = (baseURL: string) => GambiarraProtocolNamespace;
+
+const protocolNamespaceFactories: Record<
+  GambiarraProtocol,
+  ProtocolNamespaceFactory
+> = {
+  openResponses(baseURL) {
+    const provider = createOpenResponses({
+      url: `${baseURL}/responses`,
+      name: "gambiarra",
+    });
+
+    return {
+      participant: (id: string) => provider(id),
+      model: (name: string) => provider(`model:${name}`),
+      any: () => provider("*"),
+    };
+  },
+  chatCompletions(baseURL) {
+    const provider = createOpenAICompatible({
+      baseURL,
+      name: "gambiarra",
+    });
+
+    return {
+      participant: (id: string) => provider(id),
+      model: (name: string) => provider(`model:${name}`),
+      any: () => provider("*"),
+    };
+  },
+};
+
+function createNamespace(
+  protocol: GambiarraProtocol,
+  baseURL: string
+): GambiarraProtocolNamespace {
+  return protocolNamespaceFactories[protocol](baseURL);
 }
 
 /**
  * Create a Gambiarra provider for use with AI SDK.
  *
- * @example
- * ```typescript
- * import { createGambiarra } from "gambiarra-sdk";
- * import { generateText } from "ai";
- *
- * const gambiarra = createGambiarra({ roomCode: "ABC123" });
- *
- * // Use any available participant
- * const result = await generateText({
- *   model: gambiarra.any(),
- *   prompt: "Hello!",
- * });
- *
- * // Use a specific participant
- * const result2 = await generateText({
- *   model: gambiarra.participant("participant-id"),
- *   prompt: "Hello!",
- * });
- *
- * // Use a specific model type
- * const result3 = await generateText({
- *   model: gambiarra.model("llama3"),
- *   prompt: "Hello!",
- * });
- * ```
+ * Defaults to OpenResponses and keeps chat/completions available explicitly.
  */
 export function createGambiarra(options: GambiarraOptions): GambiarraProvider {
   const hubUrl = options.hubUrl ?? "http://localhost:3000";
   const baseURL = `${hubUrl}/rooms/${options.roomCode}/v1`;
+  const defaultProtocol = options.defaultProtocol ?? DEFAULT_PROTOCOL;
 
-  // Create the base OpenAI-compatible provider
-  const createProvider = (modelId: string) => {
-    const provider = createOpenAICompatible({
-      baseURL,
-      name: "gambiarra",
-    });
-    return provider(modelId);
-  };
+  const openResponses = createNamespace("openResponses", baseURL);
+  const chatCompletions = createNamespace("chatCompletions", baseURL);
+  const selectedNamespace =
+    defaultProtocol === "openResponses" ? openResponses : chatCompletions;
 
   return {
-    participant: (id: string) => createProvider(id),
-    model: (name: string) => createProvider(`model:${name}`),
-    any: () => createProvider("*"),
+    participant: (id: string) => selectedNamespace.participant(id),
+    model: (name: string) => selectedNamespace.model(name),
+    any: () => selectedNamespace.any(),
+    openResponses,
+    chatCompletions,
+    defaultProtocol,
 
     async listParticipants(): Promise<ParticipantInfo[]> {
       const response = await fetch(
@@ -115,11 +134,15 @@ export function createGambiarra(options: GambiarraOptions): GambiarraProvider {
         throw new Error(`Failed to fetch models: ${response.statusText}`);
       }
       const data = (await response.json()) as ModelsResponse;
-      return data.data.map((m) => ({
-        id: m.id,
-        nickname: m.gambiarra?.nickname ?? m.owned_by,
-        model: m.gambiarra?.model ?? m.id,
-        endpoint: m.gambiarra?.endpoint ?? "",
+      return data.data.map((model) => ({
+        id: model.id,
+        nickname: model.gambiarra?.nickname ?? model.owned_by,
+        model: model.gambiarra?.model ?? model.id,
+        endpoint: model.gambiarra?.endpoint ?? "",
+        capabilities: model.gambiarra?.capabilities ?? {
+          openResponses: "unknown",
+          chatCompletions: "unknown",
+        },
       }));
     },
 
@@ -127,5 +150,4 @@ export function createGambiarra(options: GambiarraOptions): GambiarraProvider {
   };
 }
 
-// Re-export types
 export type { ParticipantInfo } from "@gambiarra/core/types";

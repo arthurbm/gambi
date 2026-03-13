@@ -5,8 +5,10 @@
   "exports": {
     "./types": "./src/types.ts",
     "./protocol": "./src/protocol.ts",
+    "./protocol-adapters": "./src/protocol-adapters.ts",
     "./room": "./src/room.ts",
     "./participant": "./src/participant.ts",
+    "./endpoint": "./src/endpoint-capabilities.ts",
     "./hub": "./src/hub.ts",
     "./logo": "./src/logo.ts"
   },
