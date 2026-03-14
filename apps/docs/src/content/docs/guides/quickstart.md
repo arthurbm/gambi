@@ -15,7 +15,7 @@ This tutorial walks you through setting up Gambiarra from scratch. By the end, y
 
 ### CLI
 
-The CLI allows you to start hubs, create rooms, and join as a participant. Pre-built binaries are available for **Linux** (x64), **macOS** (x64, Apple Silicon), and **Windows** (x64).
+The CLI allows you to start hubs, create rooms, and join as a participant. Pre-built binaries are available for **Linux** (x64), **macOS** (Apple Silicon), and **Windows** (x64).
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
@@ -25,6 +25,8 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
     curl -fsSL https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/install.sh | bash
     ```
     The script auto-detects your OS and architecture, downloads the correct binary, and installs it to `/usr/local/bin`.
+
+    > **macOS Intel (x64):** Standalone binaries are only available for Apple Silicon. On Intel Macs, use the **npm / bun** tab instead.
   </TabItem>
   <TabItem label="Windows" icon="laptop">
     ```powershell
@@ -40,7 +42,7 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
     # Via bun
     bun add -g gambiarra
     ```
-    Works on any platform with Node.js or Bun installed.
+    Works on any platform with Node.js or Bun installed, including macOS Intel.
   </TabItem>
 </Tabs>
 
