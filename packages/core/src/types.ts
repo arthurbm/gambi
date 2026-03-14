@@ -72,6 +72,9 @@ export const ParticipantCapabilities = z.object({
 });
 export type ParticipantCapabilities = z.infer<typeof ParticipantCapabilities>;
 
+export const ParticipantAuthHeaders = z.record(z.string().min(1), z.string());
+export type ParticipantAuthHeaders = z.infer<typeof ParticipantAuthHeaders>;
+
 export const ParticipantInfo = z.object({
   id: z.string(),
   nickname: z.string(),
@@ -89,6 +92,20 @@ export const ParticipantInfo = z.object({
 });
 
 export type ParticipantInfo = z.infer<typeof ParticipantInfo>;
+
+export const ParticipantRegistration = z.object({
+  id: z.string(),
+  nickname: z.string(),
+  model: z.string(),
+  endpoint: z.string().url(),
+  password: z.string().optional(),
+  specs: MachineSpecs.optional(),
+  config: GenerationConfig.optional(),
+  capabilities: ParticipantCapabilities.optional(),
+  authHeaders: ParticipantAuthHeaders.optional(),
+});
+
+export type ParticipantRegistration = z.infer<typeof ParticipantRegistration>;
 
 // Internal room info schema (includes sensitive fields like passwordHash)
 export const RoomInfoInternal = z.object({

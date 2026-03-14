@@ -1,5 +1,9 @@
 // HTTP client for interacting with remote Gambiarra hubs
-import type { ParticipantInfo, RoomInfo } from "./types.ts";
+import type {
+  ParticipantAuthHeaders,
+  ParticipantInfo,
+  RoomInfo,
+} from "./types.ts";
 
 /**
  * Options for creating a Gambiarra HTTP client
@@ -21,6 +25,7 @@ export interface CreateParticipantOptions {
   specs?: ParticipantInfo["specs"];
   config?: ParticipantInfo["config"];
   capabilities?: ParticipantInfo["capabilities"];
+  authHeaders?: ParticipantAuthHeaders;
 }
 
 /**

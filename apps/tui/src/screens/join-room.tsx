@@ -1,3 +1,4 @@
+import type { ParticipantAuthHeaders } from "@gambiarra/core/types";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useKeyboard } from "@opentui/react";
 import { useCallback, useState } from "react";
@@ -27,6 +28,45 @@ const joinRoomSchema = z.object({
 });
 
 type JoinRoomFormData = z.infer<typeof joinRoomSchema>;
+
+interface AuthHeaderEnvEntry {
+  envVar: string;
+  name: string;
+}
+
+function resolveAuthHeadersFromEnv(entries: AuthHeaderEnvEntry[]): {
+  authHeaders: ParticipantAuthHeaders;
+  error: string | null;
+} {
+  const authHeaders: ParticipantAuthHeaders = {};
+
+  for (const entry of entries) {
+    const name = entry.name.trim();
+    const envVar = entry.envVar.trim();
+
+    if (!(name && envVar)) {
+      return {
+        authHeaders: {},
+        error: "Header name and env var are required for each auth header.",
+      };
+    }
+
+    const value = process.env[envVar];
+    if (!value) {
+      return {
+        authHeaders: {},
+        error: `Environment variable '${envVar}' is not set.`,
+      };
+    }
+
+    authHeaders[name] = value;
+  }
+
+  return {
+    authHeaders,
+    error: null,
+  };
+}
 
 // Reusable form field component
 function FormField({
@@ -114,16 +154,26 @@ function ModelSuggestions({ models }: { models: string[] }) {
 
 // Advanced fields component
 function AdvancedFields({
+  authHeaderEntries,
+  authHeaderEnvVar,
+  authHeaderName,
   focusedField,
   formValues,
   setValue,
+  setAuthHeaderEnvVar,
+  setAuthHeaderName,
   shareSpecs,
   specs,
   specsLoading,
 }: {
+  authHeaderEntries: AuthHeaderEnvEntry[];
+  authHeaderEnvVar: string;
+  authHeaderName: string;
   focusedField: number;
   formValues: JoinRoomFormData;
   setValue: (field: keyof JoinRoomFormData, value: string | boolean) => void;
+  setAuthHeaderEnvVar: (value: string) => void;
+  setAuthHeaderName: (value: string) => void;
   shareSpecs: boolean;
   specs: MachineSpecs | undefined;
   specsLoading: boolean;
@@ -148,12 +198,45 @@ function AdvancedFields({
         width={30}
       />
 
+      <FormField
+        focused={focusedField === 5}
+        label="Auth header name"
+        onChange={setAuthHeaderName}
+        placeholder="Authorization"
+        value={authHeaderName}
+        width={24}
+      />
+
+      <FormField
+        focused={focusedField === 6}
+        label="Auth header env var"
+        onChange={setAuthHeaderEnvVar}
+        placeholder="OPENROUTER_API_KEY"
+        value={authHeaderEnvVar}
+        width={24}
+      >
+        <box paddingLeft={1}>
+          <text fg={colors.muted}>Press + to add, d to remove last</text>
+        </box>
+      </FormField>
+
+      {authHeaderEntries.length > 0 && (
+        <box flexDirection="column" paddingLeft={1}>
+          <text fg={colors.muted}>Auth headers from env:</text>
+          {authHeaderEntries.map((entry) => (
+            <text fg={colors.muted} key={`${entry.name}:${entry.envVar}`}>
+              {entry.name} ← ${entry.envVar}
+            </text>
+          ))}
+        </box>
+      )}
+
       <box>
         <text>
-          <span fg={focusedField === 5 ? colors.primary : colors.muted}>
+          <span fg={focusedField === 7 ? colors.primary : colors.muted}>
             [{shareSpecs ? "x" : " "}] Share machine specs
           </span>
-          {focusedField === 5 && (
+          {focusedField === 7 && (
             <span fg={colors.muted}> (press space to toggle)</span>
           )}
         </text>
@@ -169,6 +252,21 @@ function AdvancedFields({
           <text fg={colors.muted}>Detecting specs...</text>
         </box>
       )}
+
+      <box paddingTop={1}>
+        <text fg={colors.muted}>
+          {authHeaderEntries.length > 0
+            ? `${authHeaderEntries.length} auth header(s) configured`
+            : "No auth headers configured"}
+        </text>
+      </box>
+
+      <box flexDirection="row" gap={2} paddingTop={1}>
+        <text fg={colors.muted}>+</text>
+        <text fg={colors.muted}>add header</text>
+        <text fg={colors.muted}>d</text>
+        <text fg={colors.muted}>remove last</text>
+      </box>
     </>
   );
 }
@@ -264,20 +362,34 @@ export function JoinRoom({
   // Watch all form values
   const formValues = watch();
 
-  // Endpoint test query (with built-in debounce via staleTime)
-  const endpointQuery = useEndpointTestQuery(formValues.endpoint);
-  const availableModels = endpointQuery.data?.models ?? [];
-
   // UI state
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [focusedField, setFocusedField] = useState(initialRoomCode ? 1 : 0);
+  const [authHeaderName, setAuthHeaderName] = useState("");
+  const [authHeaderEnvVar, setAuthHeaderEnvVar] = useState("");
+  const [authHeaderEntries, setAuthHeaderEntries] = useState<
+    AuthHeaderEnvEntry[]
+  >([]);
+  const authHeaderResolution = resolveAuthHeadersFromEnv(authHeaderEntries);
+
+  // Endpoint test query (with built-in debounce via staleTime)
+  const endpointQuery = useEndpointTestQuery(
+    formValues.endpoint,
+    authHeaderResolution.authHeaders,
+    authHeaderResolution.error === null
+  );
+  const availableModels = endpointQuery.data?.models ?? [];
 
   // Field configuration
   const essentialFields = 3;
-  const totalFields = showAdvanced ? 6 : essentialFields;
+  const totalFields = showAdvanced ? 8 : essentialFields;
 
   // Form submission
   const handleJoin = useCallback(async () => {
+    if (authHeaderResolution.error) {
+      return;
+    }
+
     const valid = await trigger();
     if (!valid) {
       return;
@@ -292,6 +404,7 @@ export function JoinRoom({
       password: formValues.password || undefined,
       specs: formValues.shareSpecs && specs ? specs : undefined,
       capabilities: endpointQuery.data?.capabilities,
+      authHeaders: authHeaderResolution.authHeaders,
     });
 
     if (success) {
@@ -301,6 +414,8 @@ export function JoinRoom({
     }
   }, [
     endpointQuery.data?.capabilities,
+    authHeaderResolution.authHeaders,
+    authHeaderResolution.error,
     formValues,
     specs,
     session,
@@ -338,6 +453,26 @@ export function JoinRoom({
     [focusedField, availableModels, setValue]
   );
 
+  const addAuthHeaderEntry = useCallback(() => {
+    const name = authHeaderName.trim();
+    const envVar = authHeaderEnvVar.trim();
+    if (!(name && envVar)) {
+      return;
+    }
+
+    setAuthHeaderEntries((entries) => {
+      const nextEntries = entries.filter((entry) => entry.name !== name);
+      nextEntries.push({ name, envVar });
+      return nextEntries;
+    });
+    setAuthHeaderName("");
+    setAuthHeaderEnvVar("");
+  }, [authHeaderEnvVar, authHeaderName]);
+
+  const removeLastAuthHeaderEntry = useCallback(() => {
+    setAuthHeaderEntries((entries) => entries.slice(0, -1));
+  }, []);
+
   const handleFormKey = useCallback(
     (keyName: string, sequence: string | undefined) => {
       switch (keyName) {
@@ -351,8 +486,18 @@ export function JoinRoom({
           setShowAdvanced((v) => !v);
           break;
         case "space":
-          if (focusedField === 5 && showAdvanced) {
+          if (focusedField === 7 && showAdvanced) {
             setValue("shareSpecs", !formValues.shareSpecs);
+          }
+          break;
+        case "+":
+          if (showAdvanced) {
+            addAuthHeaderEntry();
+          }
+          break;
+        case "d":
+          if (showAdvanced && authHeaderEntries.length > 0) {
+            removeLastAuthHeaderEntry();
           }
           break;
         default:
@@ -363,11 +508,14 @@ export function JoinRoom({
     [
       totalFields,
       handleJoin,
+      addAuthHeaderEntry,
+      authHeaderEntries.length,
       focusedField,
       showAdvanced,
       handleModelSelection,
       setValue,
       formValues.shareSpecs,
+      removeLastAuthHeaderEntry,
     ]
   );
 
@@ -473,8 +621,13 @@ export function JoinRoom({
         {/* Advanced fields */}
         {showAdvanced && (
           <AdvancedFields
+            authHeaderEntries={authHeaderEntries}
+            authHeaderEnvVar={authHeaderEnvVar}
+            authHeaderName={authHeaderName}
             focusedField={focusedField}
             formValues={formValues}
+            setAuthHeaderEnvVar={setAuthHeaderEnvVar}
+            setAuthHeaderName={setAuthHeaderName}
             setValue={setValue}
             shareSpecs={formValues.shareSpecs}
             specs={specs}
@@ -482,6 +635,9 @@ export function JoinRoom({
           />
         )}
 
+        {authHeaderResolution.error && (
+          <text fg={colors.error}>Error: {authHeaderResolution.error}</text>
+        )}
         {session.error && <text fg={colors.error}>Error: {session.error}</text>}
         {session.status === "joining" && (
           <text fg={colors.muted}>Joining room...</text>
@@ -496,6 +652,12 @@ export function JoinRoom({
             key: "a",
             description: showAdvanced ? "Hide advanced" : "Advanced",
           },
+          ...(showAdvanced
+            ? [
+                { key: "+", description: "Add auth header" },
+                { key: "d", description: "Remove last header" },
+              ]
+            : []),
           { key: "Enter", description: "Join" },
         ]}
       />

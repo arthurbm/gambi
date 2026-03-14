@@ -7,12 +7,26 @@ function getRandomPort(): number {
   return 30_000 + Math.floor(Math.random() * 20_000);
 }
 
+function createHubWithRetry(): Hub {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      return createHub({ port: getRandomPort(), hostname: "127.0.0.1" });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError;
+}
+
 describe("HTTP Client", () => {
   let hub: Hub;
   let client: ReturnType<typeof createClient>;
 
   beforeAll(() => {
-    hub = createHub({ port: getRandomPort(), hostname: "127.0.0.1" });
+    hub = createHubWithRetry();
     Room.clear();
     client = createClient({ hubUrl: hub.url });
   });
@@ -76,6 +90,23 @@ describe("HTTP Client", () => {
       expect(participant.id).toBe("participant-1");
       expect(participant.nickname).toBe("Test Bot");
       expect(roomId).toBe(room.id);
+    });
+
+    test("accepts auth headers without exposing them in the response", async () => {
+      const { room } = await client.create("Authenticated Room");
+
+      const { participant } = await client.join(room.code, {
+        id: "participant-2",
+        nickname: "Remote Bot",
+        model: "gpt-4o-mini",
+        endpoint: "https://api.example.com",
+        authHeaders: {
+          Authorization: "Bearer secret-token",
+        },
+      });
+
+      expect(participant.id).toBe("participant-2");
+      expect(participant).not.toHaveProperty("authHeaders");
     });
 
     test("throws ClientError for non-existent room", async () => {

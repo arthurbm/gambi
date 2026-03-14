@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 import {
   PARTICIPANT_TIMEOUT,
+  type ParticipantAuthHeaders,
   type ParticipantInfo,
   type RoomInfo,
 } from "./types.ts";
@@ -29,7 +30,12 @@ const codeToRoomId = new Map<string, string>();
 
 interface RoomState {
   info: RoomInfo;
-  participants: Map<string, ParticipantInfo>;
+  participants: Map<string, StoredParticipant>;
+}
+
+export interface StoredParticipant {
+  authHeaders: ParticipantAuthHeaders;
+  info: ParticipantInfo;
 }
 
 async function create(
@@ -91,13 +97,20 @@ function remove(id: string): boolean {
   return true;
 }
 
-function addParticipant(roomId: string, participant: ParticipantInfo): boolean {
+function addParticipant(
+  roomId: string,
+  participant: ParticipantInfo,
+  authHeaders: ParticipantAuthHeaders = {}
+): boolean {
   const room = rooms.get(roomId);
   if (!room) {
     return false;
   }
 
-  room.participants.set(participant.id, participant);
+  room.participants.set(participant.id, {
+    info: participant,
+    authHeaders,
+  });
   return true;
 }
 
@@ -112,13 +125,22 @@ function removeParticipant(roomId: string, participantId: string): boolean {
 
 function getParticipants(roomId: string): ParticipantInfo[] {
   const room = rooms.get(roomId);
-  return room ? Array.from(room.participants.values()) : [];
+  return room
+    ? Array.from(room.participants.values(), (entry) => entry.info)
+    : [];
 }
 
 function getParticipant(
   roomId: string,
   participantId: string
 ): ParticipantInfo | undefined {
+  return rooms.get(roomId)?.participants.get(participantId)?.info;
+}
+
+function getParticipantRecord(
+  roomId: string,
+  participantId: string
+): StoredParticipant | undefined {
   return rooms.get(roomId)?.participants.get(participantId);
 }
 
@@ -127,7 +149,7 @@ function updateParticipantStatus(
   participantId: string,
   status: ParticipantInfo["status"]
 ): boolean {
-  const participant = rooms.get(roomId)?.participants.get(participantId);
+  const participant = rooms.get(roomId)?.participants.get(participantId)?.info;
   if (!participant) {
     return false;
   }
@@ -137,7 +159,7 @@ function updateParticipantStatus(
 }
 
 function updateLastSeen(roomId: string, participantId: string): boolean {
-  const participant = rooms.get(roomId)?.participants.get(participantId);
+  const participant = rooms.get(roomId)?.participants.get(participantId)?.info;
   if (!participant) {
     return false;
   }
@@ -156,9 +178,9 @@ function findParticipantByModel(
     return undefined;
   }
 
-  for (const participant of room.participants.values()) {
-    if (participant.model === model && participant.status === "online") {
-      return participant;
+  for (const entry of room.participants.values()) {
+    if (entry.info.model === model && entry.info.status === "online") {
+      return entry.info;
     }
   }
   return undefined;
@@ -172,9 +194,10 @@ function getRandomOnlineParticipant(
     return undefined;
   }
 
-  const online = Array.from(room.participants.values()).filter(
-    (p) => p.status === "online"
-  );
+  const online = Array.from(
+    room.participants.values(),
+    (entry) => entry.info
+  ).filter((participant) => participant.status === "online");
 
   if (online.length === 0) {
     return undefined;
@@ -187,7 +210,8 @@ function checkStaleParticipants(): { roomId: string; participantId: string }[] {
   const now = Date.now();
 
   for (const [roomId, room] of rooms) {
-    for (const participant of room.participants.values()) {
+    for (const entry of room.participants.values()) {
+      const participant = entry.info;
       if (now - participant.lastSeen > PARTICIPANT_TIMEOUT) {
         participant.status = "offline";
         stale.push({ roomId, participantId: participant.id });
@@ -237,6 +261,7 @@ export const Room = {
   removeParticipant,
   getParticipants,
   getParticipant,
+  getParticipantRecord,
   updateParticipantStatus,
   updateLastSeen,
   findParticipantByModel,

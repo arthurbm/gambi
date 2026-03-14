@@ -1,6 +1,7 @@
 import {
   type GenerationConfig,
   type MachineSpecs,
+  type ParticipantAuthHeaders,
   type ParticipantCapabilities,
   ParticipantInfo,
   RoomInfoPublic,
@@ -57,6 +58,7 @@ export interface JoinParticipantData {
   specs?: z.infer<typeof MachineSpecs>;
   config?: z.infer<typeof GenerationConfig>;
   capabilities?: ParticipantCapabilities;
+  authHeaders?: ParticipantAuthHeaders;
 }
 
 // ============================================================================

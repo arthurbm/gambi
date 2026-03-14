@@ -19,7 +19,12 @@ import {
 } from "./protocol-adapters.ts";
 import { Room } from "./room.ts";
 import { SSE } from "./sse.ts";
-import { HEALTH_CHECK_INTERVAL, type ParticipantInfo } from "./types.ts";
+import {
+  HEALTH_CHECK_INTERVAL,
+  type ParticipantAuthHeaders,
+  type ParticipantInfo,
+  ParticipantRegistration,
+} from "./types.ts";
 
 export interface HubOptions {
   port?: number;
@@ -113,6 +118,37 @@ function participantUrl(participant: ParticipantInfo, path: string): string {
   return `${normalizeEndpoint(participant.endpoint)}${path}`;
 }
 
+function createParticipantRequestHeaders(
+  authHeaders: ParticipantAuthHeaders,
+  headers?: RequestInit["headers"]
+): Headers {
+  const mergedHeaders = new Headers(headers);
+  for (const [name, value] of Object.entries(authHeaders)) {
+    mergedHeaders.set(name, value);
+  }
+  return mergedHeaders;
+}
+
+function createJsonParticipantHeaders(
+  authHeaders: ParticipantAuthHeaders
+): Headers {
+  const headers = createParticipantRequestHeaders(authHeaders);
+  headers.set("Content-Type", "application/json");
+  return headers;
+}
+
+function fetchParticipant(
+  participant: ParticipantInfo,
+  authHeaders: ParticipantAuthHeaders,
+  path: string,
+  init?: RequestInit
+): Promise<Response> {
+  return fetch(participantUrl(participant, path), {
+    ...init,
+    headers: createParticipantRequestHeaders(authHeaders, init?.headers),
+  });
+}
+
 function isResponseLike(value: unknown): value is { id: string } {
   return (
     typeof value === "object" &&
@@ -183,20 +219,26 @@ async function joinRoom(req: Request, code: string): Promise<Response> {
     return error("Room not found", 404);
   }
 
-  const body = (await req.json()) as {
-    id: string;
-    nickname: string;
-    model: string;
-    endpoint: string;
-    password?: string;
-    specs?: ParticipantInfo["specs"];
-    config?: ParticipantInfo["config"];
-    capabilities?: ParticipantInfo["capabilities"];
-  };
-
-  if (!(body.id && body.nickname && body.model && body.endpoint)) {
+  const bodyInput = (await req.json()) as Record<string, unknown>;
+  if (
+    !(
+      bodyInput.id &&
+      bodyInput.nickname &&
+      bodyInput.model &&
+      bodyInput.endpoint
+    )
+  ) {
     return error("Missing required fields: id, nickname, model, endpoint");
   }
+
+  const parsedBody = ParticipantRegistration.safeParse(bodyInput);
+  if (!parsedBody.success) {
+    return error(
+      `Invalid participant registration: ${parsedBody.error.message}`
+    );
+  }
+
+  const body = parsedBody.data;
 
   // Validate password if room is protected
   const isPasswordValid = await Room.validatePassword(
@@ -221,7 +263,7 @@ async function joinRoom(req: Request, code: string): Promise<Response> {
     lastSeen: now,
   };
 
-  Room.addParticipant(room.id, participant);
+  Room.addParticipant(room.id, participant, body.authHeaders ?? {});
 
   SSE.broadcast("participant:joined", participant, code);
 
@@ -371,6 +413,7 @@ function resolveParticipant(
   modelId: string
 ):
   | {
+      authHeaders: ParticipantAuthHeaders;
       room: NonNullable<ReturnType<typeof Room.getByCode>>;
       participant: ParticipantInfo;
     }
@@ -389,7 +432,16 @@ function resolveParticipant(
     return error("Participant is offline", 503);
   }
 
-  return { room, participant };
+  const participantRecord = Room.getParticipantRecord(room.id, participant.id);
+  if (!participantRecord) {
+    return error("Participant connection details not found", 404);
+  }
+
+  return {
+    room,
+    participant,
+    authHeaders: participantRecord.authHeaders,
+  };
 }
 
 function isProtocolFallbackStatus(status: number): boolean {
@@ -1101,6 +1153,7 @@ async function forwardNativeResponsesCreate(
 }
 
 async function proxyFallbackResponsesCreate(
+  authHeaders: ParticipantAuthHeaders,
   participant: ParticipantInfo,
   body: ResponsesCreateRequest,
   entry: ResponseRegistryEntry
@@ -1120,11 +1173,13 @@ async function proxyFallbackResponsesCreate(
   const responseId = createSyntheticResponseId();
   rememberResponse(responseId, entry);
 
-  const response = await fetch(
-    participantUrl(participant, "/v1/chat/completions"),
+  const response = await fetchParticipant(
+    participant,
+    authHeaders,
+    "/v1/chat/completions",
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: createJsonParticipantHeaders(authHeaders),
       body: JSON.stringify({ ...chatRequest, model: participant.model }),
     }
   );
@@ -1162,6 +1217,7 @@ async function proxyFallbackResponsesCreate(
 
 async function proxyStoredOpenResponses(
   req: Request,
+  authHeaders: ParticipantAuthHeaders,
   participant: ParticipantInfo,
   responseId: string,
   entry: ResponseRegistryEntry,
@@ -1179,9 +1235,9 @@ async function proxyStoredOpenResponses(
     method = "GET";
   }
 
-  const response = await fetch(participantUrl(participant, path), {
+  const response = await fetchParticipant(participant, authHeaders, path, {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers: createJsonParticipantHeaders(authHeaders),
   });
 
   if (response.status === 404 && action === undefined) {
@@ -1217,12 +1273,17 @@ const openResponsesAdapter: ResponsesProtocolAdapter = {
   id: "openResponses",
   canCreate: (participant) =>
     participant.capabilities.openResponses !== "unsupported",
-  async create({ participant, request, entry }) {
-    const response = await fetch(participantUrl(participant, "/v1/responses"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...request, model: participant.model }),
-    });
+  async create({ authHeaders, participant, request, entry }) {
+    const response = await fetchParticipant(
+      participant,
+      authHeaders,
+      "/v1/responses",
+      {
+        method: "POST",
+        headers: createJsonParticipantHeaders(authHeaders),
+        body: JSON.stringify({ ...request, model: participant.model }),
+      }
+    );
 
     if (isProtocolFallbackStatus(response.status)) {
       return ADAPTER_SKIP;
@@ -1230,9 +1291,17 @@ const openResponsesAdapter: ResponsesProtocolAdapter = {
 
     return forwardNativeResponsesCreate(response, request.stream, entry);
   },
-  proxyStoredResponse({ action, entry, participant, req, responseId }) {
+  proxyStoredResponse({
+    action,
+    authHeaders,
+    entry,
+    participant,
+    req,
+    responseId,
+  }) {
     return proxyStoredOpenResponses(
       req,
+      authHeaders,
       participant,
       responseId,
       entry,
@@ -1245,8 +1314,13 @@ const chatCompletionsFallbackAdapter: ResponsesProtocolAdapter = {
   id: "chatCompletions",
   canCreate: (participant) =>
     participant.capabilities.chatCompletions !== "unsupported",
-  create({ entry, participant, request }) {
-    return proxyFallbackResponsesCreate(participant, request, entry);
+  create({ authHeaders, entry, participant, request }) {
+    return proxyFallbackResponsesCreate(
+      authHeaders,
+      participant,
+      request,
+      entry
+    );
   },
 };
 
@@ -1266,12 +1340,14 @@ const responsesLifecycleAdapters = new Map<
 
 const chatCompletionsAdapter: ChatCompletionsProtocolAdapter = {
   id: "chatCompletions",
-  async create({ participant, request }) {
-    const response = await fetch(
-      participantUrl(participant, "/v1/chat/completions"),
+  async create({ authHeaders, participant, request }) {
+    const response = await fetchParticipant(
+      participant,
+      authHeaders,
+      "/v1/chat/completions",
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: createJsonParticipantHeaders(authHeaders),
         body: JSON.stringify({ ...request, model: participant.model }),
       }
     );
@@ -1298,7 +1374,7 @@ async function proxyResponsesCreate(
     return resolved;
   }
 
-  const { room, participant } = resolved;
+  const { authHeaders, room, participant } = resolved;
   const baseEntry = {
     participantId: participant.id,
     roomId: room.id,
@@ -1321,6 +1397,7 @@ async function proxyResponsesCreate(
         adapterId: adapter.id,
       };
       const response = await adapter.create({
+        authHeaders,
         entry,
         participant,
         request: body,
@@ -1355,7 +1432,7 @@ async function proxyChatCompletions(
     return resolved;
   }
 
-  const { participant } = resolved;
+  const { authHeaders, participant } = resolved;
 
   SSE.broadcast(
     "llm:request",
@@ -1365,6 +1442,7 @@ async function proxyChatCompletions(
 
   try {
     return await chatCompletionsAdapter.create({
+      authHeaders,
       participant,
       request: body,
     });
@@ -1383,6 +1461,7 @@ function getStoredParticipant(
   responseId: string
 ):
   | {
+      authHeaders: ParticipantAuthHeaders;
       entry: ResponseRegistryEntry;
       participant: ParticipantInfo;
       room: NonNullable<ReturnType<typeof Room.getByCode>>;
@@ -1398,12 +1477,20 @@ function getStoredParticipant(
     return error("Response not found", 404);
   }
 
-  const participant = Room.getParticipant(room.id, entry.participantId);
-  if (!participant) {
+  const participantRecord = Room.getParticipantRecord(
+    room.id,
+    entry.participantId
+  );
+  if (!participantRecord) {
     return error("Participant not found for response", 404);
   }
 
-  return { entry, participant, room };
+  return {
+    entry,
+    participant: participantRecord.info,
+    authHeaders: participantRecord.authHeaders,
+    room,
+  };
 }
 
 function getLifecycleUnsupportedResponse(): Response {
@@ -1424,7 +1511,7 @@ async function proxyStoredResponse(
     return storedParticipant;
   }
 
-  const { entry, participant } = storedParticipant;
+  const { authHeaders, entry, participant } = storedParticipant;
   const adapter = responsesLifecycleAdapters.get(entry.adapterId);
   if (!adapter?.proxyStoredResponse) {
     return getLifecycleUnsupportedResponse();
@@ -1432,6 +1519,7 @@ async function proxyStoredResponse(
 
   return await adapter.proxyStoredResponse({
     action,
+    authHeaders,
     entry,
     participant,
     req,
