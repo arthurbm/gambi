@@ -1,0 +1,57 @@
+name: Build Binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to attach binaries to (e.g., v0.2.2)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: bun-linux-x64
+            artifact: gambiarra-linux-x64
+          - os: macos-latest
+            target: bun-darwin-x64
+            artifact: gambiarra-darwin-x64
+          - os: macos-latest
+            target: bun-darwin-arm64
+            artifact: gambiarra-darwin-arm64
+          - os: windows-latest
+            target: bun-windows-x64
+            artifact: gambiarra-windows-x64.exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build binary
+        run: |
+          cd packages/cli
+          bun build ./src/cli.ts --compile --target=${{ matrix.target }} --outfile=../../${{ matrix.artifact }}
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload ${{ inputs.tag }} ${{ matrix.artifact }} --clobber

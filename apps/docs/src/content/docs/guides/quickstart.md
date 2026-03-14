@@ -15,25 +15,64 @@ This tutorial walks you through setting up Gambiarra from scratch. By the end, y
 
 ### CLI
 
-The CLI allows you to start hubs, create rooms, and join as a participant.
+The CLI allows you to start hubs, create rooms, and join as a participant. Pre-built binaries are available for **Linux** (x64), **macOS** (x64, Apple Silicon), and **Windows** (x64).
 
-**Via curl (recommended):**
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Tabs>
+  <TabItem label="Linux / macOS" icon="linux">
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/install.sh | bash
+    ```
+    The script auto-detects your OS and architecture, downloads the correct binary, and installs it to `/usr/local/bin`.
+  </TabItem>
+  <TabItem label="Windows" icon="laptop">
+    ```powershell
+    irm https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/install.ps1 | iex
+    ```
+    The script downloads the binary to `%LOCALAPPDATA%\gambiarra\` and adds it to your user PATH.
+  </TabItem>
+  <TabItem label="npm / bun" icon="seti:npm">
+    ```bash
+    # Via npm
+    npm install -g gambiarra
+
+    # Via bun
+    bun add -g gambiarra
+    ```
+    Works on any platform with Node.js or Bun installed.
+  </TabItem>
+</Tabs>
+
+Verify the installation:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/install.sh | bash
+gambiarra --version
 ```
 
-**Via npm:**
+### Uninstallation
 
-```bash
-npm install -g gambiarra
-```
+<Tabs>
+  <TabItem label="Linux / macOS" icon="linux">
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/uninstall.sh | bash
+    ```
+  </TabItem>
+  <TabItem label="Windows" icon="laptop">
+    ```powershell
+    irm https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/uninstall.ps1 | iex
+    ```
+  </TabItem>
+  <TabItem label="npm / bun" icon="seti:npm">
+    ```bash
+    # If installed via npm
+    npm uninstall -g gambiarra
 
-**Via bun:**
-
-```bash
-bun add -g gambiarra
-```
+    # If installed via bun
+    bun remove -g gambiarra
+    ```
+  </TabItem>
+</Tabs>
 
 ### SDK
 

@@ -9,11 +9,49 @@ All commands support **interactive mode** — run without flags in a terminal an
 
 ## Installation
 
-```bash
-npm install -g gambiarra
-# or
-bun add -g gambiarra
-```
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Tabs>
+  <TabItem label="Linux / macOS" icon="linux">
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/install.sh | bash
+    ```
+  </TabItem>
+  <TabItem label="Windows" icon="laptop">
+    ```powershell
+    irm https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/install.ps1 | iex
+    ```
+  </TabItem>
+  <TabItem label="npm / bun" icon="seti:npm">
+    ```bash
+    npm install -g gambiarra
+    # or
+    bun add -g gambiarra
+    ```
+  </TabItem>
+</Tabs>
+
+### Uninstallation
+
+<Tabs>
+  <TabItem label="Linux / macOS" icon="linux">
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/uninstall.sh | bash
+    ```
+  </TabItem>
+  <TabItem label="Windows" icon="laptop">
+    ```powershell
+    irm https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/uninstall.ps1 | iex
+    ```
+  </TabItem>
+  <TabItem label="npm / bun" icon="seti:npm">
+    ```bash
+    npm uninstall -g gambiarra
+    # or
+    bun remove -g gambiarra
+    ```
+  </TabItem>
+</Tabs>
 
 ## Interactive Mode
 

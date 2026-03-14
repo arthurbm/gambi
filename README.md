@@ -72,19 +72,25 @@
 
 The CLI allows you to start hubs, create rooms, and join as a participant.
 
-**Via curl (recommended - standalone binary):**
+**Linux / macOS (recommended - standalone binary):**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/install.sh | bash
 ```
 
-**Via npm:**
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/install.ps1 | iex
+```
+
+**Via npm (any platform):**
 
 ```bash
 npm install -g gambiarra
 ```
 
-**Via bun:**
+**Via bun (any platform):**
 
 ```bash
 bun add -g gambiarra
@@ -99,9 +105,16 @@ gambiarra --version
 **Uninstall:**
 
 ```bash
-# If installed via curl (standalone binary)
-sudo rm /usr/local/bin/gambiarra
+# Linux / macOS (standalone binary)
+curl -fsSL https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/uninstall.sh | bash
+```
 
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/uninstall.ps1 | iex
+```
+
+```bash
 # If installed via npm
 npm uninstall -g gambiarra
 

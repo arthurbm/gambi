@@ -50,7 +50,7 @@ detect_platform() {
 # Get the latest release version
 get_latest_version() {
   local version
-  version=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"cli-v([^"]+)".*/\1/')
+  version=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
 
   if [ -z "$version" ]; then
     error "Failed to get latest version. Check your internet connection."
@@ -75,7 +75,7 @@ install() {
     binary_name="${binary_name}.exe"
   fi
 
-  download_url="https://github.com/${REPO}/releases/download/cli-v${version}/${binary_name}"
+  download_url="https://github.com/${REPO}/releases/download/v${version}/${binary_name}"
   info "Downloading from: ${download_url}"
 
   # Create temp file
