@@ -124,13 +124,15 @@ gambiarra join --code <room-code> --model <model> [options]
 | `--model`, `-m` | Model to expose | Required (prompted in interactive mode) |
 | `--endpoint`, `-e` | LLM endpoint URL | `http://localhost:11434` |
 | `--nickname`, `-n` | Display name | Auto-generated |
+| `--header` | Auth header in the format `Header=Value` | None |
+| `--header-env` | Auth header in the format `Header=ENV_VAR` | None |
 | `--password`, `-p` | Room password (if protected) | None |
 | `--hub`, `-H` | Hub URL | `http://localhost:3000` |
 | `--no-specs` | Don't share machine specs | `false` |
 
 The CLI automatically probes your endpoint to detect available models and protocol capabilities (Responses API vs Chat Completions).
 
-In interactive mode, you'll select your LLM provider from a list (Ollama, LM Studio, vLLM, or custom URL), and then choose from the detected models.
+In interactive mode, you'll select your LLM provider from a list (Ollama, LM Studio, vLLM, or custom URL), optionally add auth headers, and then choose from the detected models.
 
 **Examples:**
 
@@ -150,6 +152,13 @@ gambiarra join --code ABC123 \
 gambiarra join --code ABC123 \
   --model llama3 \
   --nickname "alice-4090"
+
+# Join a remote provider securely
+export OPENROUTER_AUTH="Bearer sk-or-..."
+gambiarra join --code ABC123 \
+  --model meta-llama/llama-3.1-8b-instruct:free \
+  --endpoint https://openrouter.ai/api \
+  --header-env Authorization=OPENROUTER_AUTH
 
 # Join a password-protected room
 gambiarra join --code ABC123 \

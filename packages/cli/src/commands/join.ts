@@ -9,7 +9,10 @@ import {
 } from "@clack/prompts";
 import type { EndpointProbeResult } from "@gambiarra/core/endpoint";
 import { probeEndpoint } from "@gambiarra/core/endpoint";
-import type { ParticipantCapabilities } from "@gambiarra/core/types";
+import type {
+  ParticipantAuthHeaders,
+  ParticipantCapabilities,
+} from "@gambiarra/core/types";
 import { HEALTH_CHECK_INTERVAL } from "@gambiarra/core/types";
 import { Command, Option } from "clipanion";
 import { nanoid } from "nanoid";
@@ -31,6 +34,7 @@ interface JoinResponse {
 }
 
 interface JoinInputs {
+  authHeaders: ParticipantAuthHeaders;
   code: string;
   model: string;
   endpoint: string;
@@ -38,6 +42,86 @@ interface JoinInputs {
   password: string | undefined;
   noSpecs: boolean;
   capabilities: ParticipantCapabilities;
+}
+
+function parseHeaderAssignment(input: string): { name: string; value: string } {
+  const separatorIndex = input.indexOf("=");
+  if (separatorIndex <= 0 || separatorIndex === input.length - 1) {
+    throw new Error(
+      `Invalid header assignment '${input}'. Use the format Header=Value.`
+    );
+  }
+
+  const name = input.slice(0, separatorIndex).trim();
+  const value = input.slice(separatorIndex + 1).trim();
+  if (!(name && value)) {
+    throw new Error(
+      `Invalid header assignment '${input}'. Header name and value are required.`
+    );
+  }
+
+  return { name, value };
+}
+
+function resolveAuthHeaders(
+  rawHeaders: string[],
+  envHeaders: string[]
+): ParticipantAuthHeaders {
+  const authHeaders: ParticipantAuthHeaders = {};
+
+  for (const header of rawHeaders) {
+    const { name, value } = parseHeaderAssignment(header);
+    authHeaders[name] = value;
+  }
+
+  for (const header of envHeaders) {
+    const { name, value: envVar } = parseHeaderAssignment(header);
+    const envValue = process.env[envVar];
+    if (!envValue) {
+      throw new Error(
+        `Environment variable '${envVar}' is required for header '${name}'.`
+      );
+    }
+    authHeaders[name] = envValue;
+  }
+
+  return authHeaders;
+}
+
+async function promptAuthHeaders(): Promise<ParticipantAuthHeaders> {
+  const shouldAddHeaders = await confirm({
+    message: "Does this endpoint require auth headers?",
+    initialValue: false,
+  });
+  handleCancel(shouldAddHeaders);
+
+  if (!shouldAddHeaders) {
+    return {};
+  }
+
+  const authHeaders: ParticipantAuthHeaders = {};
+
+  while (true) {
+    const headerNameResult = await text({
+      message: "Header name (leave empty to finish):",
+      placeholder: "Authorization",
+    });
+    handleCancel(headerNameResult);
+
+    const headerName = (headerNameResult as string).trim();
+    if (!headerName) {
+      return authHeaders;
+    }
+
+    const headerValueResult = await passwordPrompt({
+      message: `Value for ${headerName}:`,
+      validate: (value) =>
+        value?.trim() ? undefined : "Header value is required",
+    });
+    handleCancel(headerValueResult);
+
+    authHeaders[headerName] = (headerValueResult as string).trim();
+  }
 }
 
 async function promptEndpoint(currentEndpoint: string): Promise<string> {
@@ -74,12 +158,13 @@ async function promptEndpoint(currentEndpoint: string): Promise<string> {
 
 async function promptModels(
   endpoint: string,
+  authHeaders: ParticipantAuthHeaders,
   stderr: NodeJS.WritableStream
 ): Promise<{ model: string; probe: EndpointProbeResult } | null> {
   const s = spinner();
   s.start("Detecting available models...");
 
-  const probe = await probeEndpoint(endpoint);
+  const probe = await probeEndpoint(endpoint, { authHeaders });
 
   if (probe.models.length === 0) {
     s.stop("No models found");
@@ -103,6 +188,7 @@ async function promptModels(
 
 async function collectInteractiveInputs(
   defaults: {
+    authHeaders: ParticipantAuthHeaders;
     code: string | undefined;
     model: string | undefined;
     endpoint: string;
@@ -114,7 +200,8 @@ async function collectInteractiveInputs(
 ): Promise<JoinInputs | null> {
   intro("gambiarra join");
 
-  let { code, model, endpoint, nickname, password, noSpecs } = defaults;
+  let { authHeaders, code, model, endpoint, nickname, password, noSpecs } =
+    defaults;
 
   if (!code) {
     const codeResult = await text({
@@ -126,11 +213,12 @@ async function collectInteractiveInputs(
   }
 
   endpoint = await promptEndpoint(endpoint);
+  authHeaders = await promptAuthHeaders();
 
   let capabilities: ParticipantCapabilities | undefined;
 
   if (!model) {
-    const result = await promptModels(endpoint, stderr);
+    const result = await promptModels(endpoint, authHeaders, stderr);
     if (!result) {
       return null;
     }
@@ -171,11 +259,20 @@ async function collectInteractiveInputs(
   }
 
   if (!capabilities) {
-    const probe = await probeEndpoint(endpoint);
+    const probe = await probeEndpoint(endpoint, { authHeaders });
     capabilities = probe.capabilities;
   }
 
-  return { code, model, endpoint, nickname, password, noSpecs, capabilities };
+  return {
+    authHeaders,
+    code,
+    model,
+    endpoint,
+    nickname,
+    password,
+    noSpecs,
+    capabilities,
+  };
 }
 
 export class JoinCommand extends Command {
@@ -222,6 +319,14 @@ export class JoinCommand extends Command {
     description: "Display name for your endpoint",
   });
 
+  headers = Option.Array("--header", [], {
+    description: "Auth header in the format Header=Value",
+  });
+
+  headerEnv = Option.Array("--header-env", [], {
+    description: "Auth header in the format Header=ENV_VAR",
+  });
+
   password = Option.String("--password,-p", {
     description: "Room password (if the room is password-protected)",
     required: false,
@@ -237,7 +342,16 @@ export class JoinCommand extends Command {
 
   private resolveInputs(): Omit<JoinInputs, "capabilities"> | null {
     if (this.code && this.model) {
+      let authHeaders: ParticipantAuthHeaders;
+      try {
+        authHeaders = resolveAuthHeaders(this.headers, this.headerEnv);
+      } catch (error) {
+        this.context.stderr.write(`${error}\n`);
+        return null;
+      }
+
       return {
+        authHeaders,
         code: this.code,
         model: this.model,
         endpoint: this.endpoint,
@@ -292,6 +406,7 @@ export class JoinCommand extends Command {
         {
           code: this.code,
           model: this.model,
+          authHeaders: {},
           endpoint: this.endpoint,
           nickname: this.nickname,
           password: this.password,
@@ -311,7 +426,7 @@ export class JoinCommand extends Command {
 
       // Probe endpoint and detect specs concurrently
       const [probe, specs] = await Promise.all([
-        probeEndpoint(resolved.endpoint),
+        probeEndpoint(resolved.endpoint, { authHeaders: resolved.authHeaders }),
         resolved.noSpecs
           ? Promise.resolve({ cpu: "Hidden" as const, ram: 0 })
           : detectSpecs(),
@@ -333,6 +448,7 @@ export class JoinCommand extends Command {
         code: resolved.code,
         model: resolved.model,
         endpoint: resolved.endpoint,
+        authHeaders: resolved.authHeaders,
         password: resolved.password,
         participantId,
         finalNickname,
@@ -342,8 +458,16 @@ export class JoinCommand extends Command {
       });
     }
 
-    const { code, model, endpoint, nickname, password, noSpecs, capabilities } =
-      inputs;
+    const {
+      authHeaders,
+      code,
+      model,
+      endpoint,
+      nickname,
+      password,
+      noSpecs,
+      capabilities,
+    } = inputs;
 
     const specs = noSpecs ? { cpu: "Hidden", ram: 0 } : await detectSpecs();
 
@@ -354,6 +478,7 @@ export class JoinCommand extends Command {
       code,
       model,
       endpoint,
+      authHeaders,
       password,
       participantId,
       finalNickname,
@@ -367,6 +492,7 @@ export class JoinCommand extends Command {
     code: string;
     model: string;
     endpoint: string;
+    authHeaders: ParticipantAuthHeaders;
     password: string | undefined;
     participantId: string;
     finalNickname: string;
@@ -378,6 +504,7 @@ export class JoinCommand extends Command {
       code,
       model,
       endpoint,
+      authHeaders,
       password,
       participantId,
       finalNickname,
@@ -396,6 +523,10 @@ export class JoinCommand extends Command {
         config: {},
         capabilities,
       };
+
+      if (Object.keys(authHeaders).length > 0) {
+        body.authHeaders = authHeaders;
+      }
 
       if (password) {
         body.password = password;

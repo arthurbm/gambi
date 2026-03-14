@@ -79,6 +79,40 @@ function getRandomPort(): number {
   return 30_000 + Math.floor(Math.random() * 20_000);
 }
 
+function startServerWithRetry(
+  fetch: (req: Request) => Response | Promise<Response>
+) {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      return Bun.serve({
+        port: getRandomPort(),
+        hostname: "127.0.0.1",
+        fetch,
+      });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError;
+}
+
+function createHubWithRetry(): Hub {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      return createHub({ port: getRandomPort(), hostname: "127.0.0.1" });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError;
+}
+
 function createResponsePayload(
   responseId: string,
   model: string,
@@ -196,156 +230,169 @@ function createStreamingResponsesPayload(
   });
 }
 
-function createMockParticipantServer(mode: "responses" | "chat-only") {
+function createMockParticipantServer(
+  mode: "responses" | "chat-only",
+  authHeader?: { name: string; value: string }
+) {
   const responses = new Map<string, ReturnType<typeof createResponsePayload>>();
   const calls = {
     chatCompletions: 0,
     responses: 0,
   };
 
-  const server = Bun.serve({
-    port: getRandomPort(),
-    hostname: "127.0.0.1",
-    async fetch(req) {
-      const url = new URL(req.url);
+  const server = startServerWithRetry(async (req) => {
+    const url = new URL(req.url);
 
-      if (url.pathname === "/v1/responses" && req.method === "POST") {
-        calls.responses += 1;
-        if (mode === "chat-only") {
-          return new Response("Not Found", { status: 404 });
-        }
+    if (authHeader) {
+      const receivedAuthHeader = req.headers.get(authHeader.name);
+      if (receivedAuthHeader !== authHeader.value) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+    }
 
-        const body = (await req.json()) as { model?: string; stream?: boolean };
-        const responseId = `resp_${calls.responses}`;
-        const payload = createResponsePayload(
-          responseId,
-          body.model ?? "llama3",
-          "native response"
+    if (url.pathname === "/v1/models" && req.method === "GET") {
+      return Response.json({
+        object: "list",
+        data: [{ id: "llama3", object: "model", owned_by: "mock" }],
+      });
+    }
+
+    if (url.pathname === "/v1/responses" && req.method === "POST") {
+      calls.responses += 1;
+      if (mode === "chat-only") {
+        return new Response("Not Found", { status: 404 });
+      }
+
+      const body = (await req.json()) as { model?: string; stream?: boolean };
+      const responseId = `resp_${calls.responses}`;
+      const payload = createResponsePayload(
+        responseId,
+        body.model ?? "llama3",
+        "native response"
+      );
+      responses.set(responseId, payload);
+
+      if (body.stream) {
+        return new Response(
+          createStreamingResponsesPayload(responseId, "native response"),
+          {
+            headers: { "Content-Type": "text/event-stream" },
+          }
         );
-        responses.set(responseId, payload);
-
-        if (body.stream) {
-          return new Response(
-            createStreamingResponsesPayload(responseId, "native response"),
-            {
-              headers: { "Content-Type": "text/event-stream" },
-            }
-          );
-        }
-
-        return Response.json(payload);
       }
 
-      if (
-        url.pathname.startsWith("/v1/responses/") &&
-        !url.pathname.endsWith("/cancel") &&
-        !url.pathname.endsWith("/input_items") &&
-        req.method === "GET"
-      ) {
-        const responseId = url.pathname.split("/").pop() ?? "";
-        const payload = responses.get(responseId);
-        return payload
-          ? Response.json(payload)
-          : new Response("Not Found", { status: 404 });
-      }
+      return Response.json(payload);
+    }
 
-      if (url.pathname.endsWith("/cancel") && req.method === "POST") {
-        const responseId = url.pathname.split("/")[3] ?? "";
-        const payload = responses.get(responseId);
-        return payload
-          ? Response.json(payload)
-          : new Response("Not Found", { status: 404 });
-      }
+    if (
+      url.pathname.startsWith("/v1/responses/") &&
+      !url.pathname.endsWith("/cancel") &&
+      !url.pathname.endsWith("/input_items") &&
+      req.method === "GET"
+    ) {
+      const responseId = url.pathname.split("/").pop() ?? "";
+      const payload = responses.get(responseId);
+      return payload
+        ? Response.json(payload)
+        : new Response("Not Found", { status: 404 });
+    }
 
-      if (url.pathname.endsWith("/input_items") && req.method === "GET") {
-        return Response.json({
-          object: "list",
-          first_id: "item_1",
-          has_more: false,
-          last_id: "item_1",
-          data: [
-            {
-              id: "item_1",
-              type: "message",
-              role: "user",
-              content: "Hello from input items",
-            },
-          ],
-        });
-      }
+    if (url.pathname.endsWith("/cancel") && req.method === "POST") {
+      const responseId = url.pathname.split("/")[3] ?? "";
+      const payload = responses.get(responseId);
+      return payload
+        ? Response.json(payload)
+        : new Response("Not Found", { status: 404 });
+    }
 
-      if (
-        url.pathname.startsWith("/v1/responses/") &&
-        !url.pathname.endsWith("/cancel") &&
-        req.method === "DELETE"
-      ) {
-        const responseId = url.pathname.split("/").pop() ?? "";
-        responses.delete(responseId);
-        return new Response(null, { status: 204 });
-      }
-
-      if (url.pathname === "/v1/chat/completions" && req.method === "POST") {
-        calls.chatCompletions += 1;
-        const body = (await req.json()) as { model?: string; stream?: boolean };
-
-        if (body.stream) {
-          const encoder = new TextEncoder();
-          const chunks = [
-            `data: ${JSON.stringify({
-              id: "chatcmpl_stream",
-              object: "chat.completion.chunk",
-              created: Math.floor(Date.now() / 1000),
-              model: body.model ?? "llama3",
-              choices: [{ index: 0, delta: { content: "fallback stream" } }],
-            })}\n\n`,
-            `data: ${JSON.stringify({
-              id: "chatcmpl_stream",
-              object: "chat.completion.chunk",
-              created: Math.floor(Date.now() / 1000),
-              model: body.model ?? "llama3",
-              choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-            })}\n\n`,
-            "data: [DONE]\n\n",
-          ];
-
-          return new Response(
-            new ReadableStream({
-              start(controller) {
-                for (const chunk of chunks) {
-                  controller.enqueue(encoder.encode(chunk));
-                }
-                controller.close();
-              },
-            }),
-            { headers: { "Content-Type": "text/event-stream" } }
-          );
-        }
-
-        return Response.json({
-          id: "chatcmpl_1",
-          object: "chat.completion",
-          created: Math.floor(Date.now() / 1000),
-          model: body.model ?? "llama3",
-          choices: [
-            {
-              index: 0,
-              finish_reason: "stop",
-              message: {
-                role: "assistant",
-                content: "fallback response",
-              },
-            },
-          ],
-          usage: {
-            prompt_tokens: 4,
-            completion_tokens: 2,
-            total_tokens: 6,
+    if (url.pathname.endsWith("/input_items") && req.method === "GET") {
+      return Response.json({
+        object: "list",
+        first_id: "item_1",
+        has_more: false,
+        last_id: "item_1",
+        data: [
+          {
+            id: "item_1",
+            type: "message",
+            role: "user",
+            content: "Hello from input items",
           },
-        });
+        ],
+      });
+    }
+
+    if (
+      url.pathname.startsWith("/v1/responses/") &&
+      !url.pathname.endsWith("/cancel") &&
+      req.method === "DELETE"
+    ) {
+      const responseId = url.pathname.split("/").pop() ?? "";
+      responses.delete(responseId);
+      return new Response(null, { status: 204 });
+    }
+
+    if (url.pathname === "/v1/chat/completions" && req.method === "POST") {
+      calls.chatCompletions += 1;
+      const body = (await req.json()) as { model?: string; stream?: boolean };
+
+      if (body.stream) {
+        const encoder = new TextEncoder();
+        const chunks = [
+          `data: ${JSON.stringify({
+            id: "chatcmpl_stream",
+            object: "chat.completion.chunk",
+            created: Math.floor(Date.now() / 1000),
+            model: body.model ?? "llama3",
+            choices: [{ index: 0, delta: { content: "fallback stream" } }],
+          })}\n\n`,
+          `data: ${JSON.stringify({
+            id: "chatcmpl_stream",
+            object: "chat.completion.chunk",
+            created: Math.floor(Date.now() / 1000),
+            model: body.model ?? "llama3",
+            choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+          })}\n\n`,
+          "data: [DONE]\n\n",
+        ];
+
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              for (const chunk of chunks) {
+                controller.enqueue(encoder.encode(chunk));
+              }
+              controller.close();
+            },
+          }),
+          { headers: { "Content-Type": "text/event-stream" } }
+        );
       }
 
-      return new Response("Not Found", { status: 404 });
-    },
+      return Response.json({
+        id: "chatcmpl_1",
+        object: "chat.completion",
+        created: Math.floor(Date.now() / 1000),
+        model: body.model ?? "llama3",
+        choices: [
+          {
+            index: 0,
+            finish_reason: "stop",
+            message: {
+              role: "assistant",
+              content: "fallback response",
+            },
+          },
+        ],
+        usage: {
+          prompt_tokens: 4,
+          completion_tokens: 2,
+          total_tokens: 6,
+        },
+      });
+    }
+
+    return new Response("Not Found", { status: 404 });
   });
 
   return {
@@ -360,7 +407,7 @@ describe("Hub", () => {
   let baseUrl: string;
 
   beforeAll(() => {
-    hub = createHub({ port: getRandomPort(), hostname: "127.0.0.1" });
+    hub = createHubWithRetry();
     baseUrl = hub.url;
   });
 
@@ -387,6 +434,7 @@ describe("Hub", () => {
       nickname: string;
       model: string;
       endpoint: string;
+      authHeaders?: Record<string, string>;
       capabilities?: {
         openResponses: "supported" | "unsupported" | "unknown";
         chatCompletions: "supported" | "unsupported" | "unknown";
@@ -479,6 +527,7 @@ describe("Hub", () => {
       expect(joinData.participant.id).toBe("participant-1");
       expect(joinData.participant.nickname).toBe("test-user");
       expect(joinData.roomId).toBe(room.id);
+      expect("authHeaders" in joinData.participant).toBe(false);
     });
 
     test("returns error for non-existent room", async () => {
@@ -594,6 +643,7 @@ describe("Hub", () => {
       const firstParticipant = data.participants[0];
       expect(firstParticipant).toBeDefined();
       expect(firstParticipant?.nickname).toBe("test-user");
+      expect(firstParticipant).not.toHaveProperty("authHeaders");
     });
 
     test("returns error for non-existent room", async () => {
@@ -719,6 +769,67 @@ describe("Hub", () => {
           { method: "DELETE" }
         );
         expect(deleteResponse.status).toBe(204);
+      } finally {
+        participantServer.close();
+      }
+    });
+
+    test("forwards stored auth headers without exposing them publicly", async () => {
+      const participantServer = createMockParticipantServer("responses", {
+        name: "Authorization",
+        value: "Bearer secret-token",
+      });
+
+      try {
+        const { room } = await createRoom("Authenticated Responses Room");
+        const joined = JoinResponseSchema.parse(
+          await (
+            await fetch(`${baseUrl}/rooms/${room.code}/join`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                id: "participant-auth",
+                nickname: "auth-server",
+                model: "llama3",
+                endpoint: participantServer.url,
+                authHeaders: {
+                  Authorization: "Bearer secret-token",
+                },
+                capabilities: {
+                  openResponses: "supported",
+                  chatCompletions: "supported",
+                },
+              }),
+            })
+          ).json()
+        );
+
+        expect(joined.participant).not.toHaveProperty("authHeaders");
+
+        const participantsResponse = await fetch(
+          `${baseUrl}/rooms/${room.code}/participants`
+        );
+        const participants = ParticipantsResponseSchema.parse(
+          await participantsResponse.json()
+        );
+        expect(participants.participants[0]).not.toHaveProperty("authHeaders");
+
+        const createResponse = await fetch(
+          `${baseUrl}/rooms/${room.code}/v1/responses`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: "participant-auth",
+              input: "Hello secure provider",
+            }),
+          }
+        );
+        const created = ResponseSchema.parse(await createResponse.json());
+
+        expect(createResponse.status).toBe(200);
+        expect(created.output_text).toBe("native response");
+        expect(participantServer.calls.responses).toBe(1);
       } finally {
         participantServer.close();
       }

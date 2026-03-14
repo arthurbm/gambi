@@ -148,7 +148,7 @@ The conversion handles: message format mapping, tool calls, streaming events, an
 ## What the Hub Doesn't Do
 
 - **No agent harness** — the hub doesn't know or care if the participant is an Ollama instance, a coding agent, or a custom pipeline. It routes OpenAI-compatible requests. That's it.
-- **No auth header forwarding** — the hub doesn't forward `Authorization` headers to participants. Cloud APIs that require auth need a [local proxy](/guides/remote-providers/).
+- **No secret exposure in public APIs** — participant auth headers can be registered privately for remote providers, but they stay in hub memory only and are never returned by participant listing endpoints.
 - **No request transformation** — if a request comes in as Responses API and the participant only supports Chat Completions (or vice versa), the hub adapts the protocol automatically. But it doesn't modify the actual content.
 
 ## Model Routing

@@ -1,9 +1,16 @@
-import type { ParticipantCapabilities } from "./types.ts";
+import type {
+  ParticipantAuthHeaders,
+  ParticipantCapabilities,
+} from "./types.ts";
 
 export interface EndpointProbeResult {
   success: boolean;
   models: string[];
   capabilities: ParticipantCapabilities;
+}
+
+export interface EndpointProbeOptions {
+  authHeaders?: ParticipantAuthHeaders;
 }
 
 const TRAILING_SLASH_REGEX = /\/$/;
@@ -13,11 +20,25 @@ function createTimeoutSignal(): AbortSignal {
   return AbortSignal.timeout(REQUEST_TIMEOUT_MS);
 }
 
-async function probePostEndpoint(url: string): Promise<boolean | "unknown"> {
+function createProbeHeaders(
+  authHeaders: ParticipantAuthHeaders = {},
+  contentType = false
+): Headers {
+  const headers = new Headers(authHeaders);
+  if (contentType) {
+    headers.set("Content-Type", "application/json");
+  }
+  return headers;
+}
+
+async function probePostEndpoint(
+  url: string,
+  authHeaders: ParticipantAuthHeaders = {}
+): Promise<boolean | "unknown"> {
   try {
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: createProbeHeaders(authHeaders, true),
       body: "{}",
       signal: createTimeoutSignal(),
     });
@@ -37,12 +58,15 @@ async function probePostEndpoint(url: string): Promise<boolean | "unknown"> {
 }
 
 export async function probeEndpoint(
-  endpoint: string
+  endpoint: string,
+  options: EndpointProbeOptions = {}
 ): Promise<EndpointProbeResult> {
   const baseUrl = endpoint.replace(TRAILING_SLASH_REGEX, "");
+  const authHeaders = options.authHeaders ?? {};
   let models: string[] = [];
   try {
     const tagsResponse = await fetch(`${baseUrl}/api/tags`, {
+      headers: createProbeHeaders(authHeaders),
       signal: createTimeoutSignal(),
     });
 
@@ -59,6 +83,7 @@ export async function probeEndpoint(
 
   try {
     const modelsResponse = await fetch(`${baseUrl}/v1/models`, {
+      headers: createProbeHeaders(authHeaders),
       signal: createTimeoutSignal(),
     });
 
@@ -76,8 +101,8 @@ export async function probeEndpoint(
   }
 
   const [chatCompletionsProbe, responsesProbe] = await Promise.all([
-    probePostEndpoint(`${baseUrl}/v1/chat/completions`),
-    probePostEndpoint(`${baseUrl}/v1/responses`),
+    probePostEndpoint(`${baseUrl}/v1/chat/completions`, authHeaders),
+    probePostEndpoint(`${baseUrl}/v1/responses`, authHeaders),
   ]);
 
   let chatCompletions: ParticipantCapabilities["chatCompletions"] = "unknown";

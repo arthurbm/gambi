@@ -192,11 +192,16 @@ curl -X POST http://localhost:3000/rooms/ABC123/join \
     "id": "my-unique-id",
     "nickname": "alice",
     "model": "llama3",
-    "endpoint": "http://192.168.1.10:11434"
+    "endpoint": "https://openrouter.ai/api",
+    "authHeaders": {
+      "Authorization": "Bearer sk-..."
+    }
   }'
 ```
 
-Optional fields: `"password"`, `"specs"`, `"config"`, `"capabilities"`.
+Optional fields: `"password"`, `"specs"`, `"config"`, `"capabilities"`, `"authHeaders"`.
+
+`authHeaders` are kept only in hub memory and are never returned by participant listing endpoints.
 
 ### DELETE /rooms/:code/leave/:participantId
 

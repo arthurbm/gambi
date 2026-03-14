@@ -16,54 +16,60 @@ When you join a room with a remote provider, the hub forwards requests from othe
 
 The hub auto-detects which protocol(s) your endpoint supports when you join.
 
-## The Auth Header Limitation
+## Join With CLI
 
-The hub currently does **not** forward `Authorization` headers when proxying requests to participants. This means cloud APIs that require a Bearer token won't work as a direct endpoint.
-
-**Workaround:** run a tiny local proxy that adds your API key.
-
-### Local Auth Proxy
-
-Create a file `proxy.ts`:
-
-```typescript
-const TARGET = "https://openrouter.ai/api"; // or any provider
-const API_KEY = process.env.API_KEY!;
-
-Bun.serve({
-  port: 8787,
-  fetch(req) {
-    const url = new URL(req.url);
-    return fetch(`${TARGET}${url.pathname}`, {
-      method: req.method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${API_KEY}`,
-      },
-      body: req.body,
-    });
-  },
-});
-
-console.log("Auth proxy running on http://localhost:8787");
-```
-
-Run it:
+For automation, prefer `--header-env` so secrets don't end up in shell history.
 
 ```bash
-API_KEY="sk-..." bun proxy.ts
+export OPENROUTER_AUTH="Bearer sk-or-..."
+
+gambiarra join --code ABC123 \
+  --endpoint https://openrouter.ai/api \
+  --model meta-llama/llama-3.1-8b-instruct:free \
+  --nickname my-openrouter \
+  --header-env Authorization=OPENROUTER_AUTH
 ```
 
-Then join using your local proxy as the endpoint:
+You can also send extra provider-specific headers:
 
 ```bash
 gambiarra join --code ABC123 \
-  --endpoint http://localhost:8787 \
+  --endpoint https://openrouter.ai/api \
   --model meta-llama/llama-3.1-8b-instruct:free \
-  --nickname my-openrouter
+  --nickname my-openrouter \
+  --header-env Authorization=OPENROUTER_AUTH \
+  --header "HTTP-Referer=https://my-app.example"
 ```
 
-The proxy runs on your machine, adds the auth header, and forwards to the cloud API. The hub sees it as a regular local endpoint.
+If you prefer interactive mode, `gambiarra join` now prompts for auth headers after you choose the endpoint. Header values are collected via hidden prompts.
+
+## Join With TUI
+
+The TUI keeps remote auth secure by referencing environment variables instead of storing raw secret values in the UI state.
+
+1. Export the header value you want to use:
+
+```bash
+export OPENAI_AUTH="Bearer sk-..."
+```
+
+2. Open the TUI join flow.
+3. Expand **Advanced options**.
+4. Add an auth header entry such as:
+   - Header name: `Authorization`
+   - Env var: `OPENAI_AUTH`
+
+The TUI resolves the environment variable locally before probing models and joining the room. The raw secret is never persisted to Gambiarra config files.
+
+## Join Through The API Or SDK
+
+`POST /rooms/:code/join` now accepts an optional `authHeaders` object. Those headers are stored only in hub memory and are used for:
+
+- endpoint probing (`/v1/models`, `/v1/responses`, `/v1/chat/completions`)
+- proxied inference requests
+- Responses lifecycle routes
+
+They are **not** returned by `GET /rooms/:code/participants`, `GET /rooms/:code/v1/models`, or join responses.
 
 ## Popular Providers
 
@@ -80,9 +86,15 @@ The proxy runs on your machine, adds the auth header, and forwards to the cloud 
 When you join with a cloud provider:
 - **Your API key** is used for every request routed to you
 - **You pay** for the tokens consumed
-- Other participants don't see your API key — it stays on your machine (in the proxy)
+- Other participants don't see your API key — the hub keeps headers only in memory and does not expose them in participant listings
 
 Choose a model you're comfortable paying for, or use free-tier models for experimentation.
+
+## Security Notes
+
+- Gambiarra sends `authHeaders` from the joining client to the hub, then stores them in memory for as long as that participant is registered.
+- In trusted local networks, that's usually enough.
+- If your hub is reachable outside your LAN, put it behind HTTPS or a reverse proxy before sending provider credentials through it.
 
 ## When to Use Which Protocol
 
