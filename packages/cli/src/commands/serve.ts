@@ -2,7 +2,7 @@ import { hostname as getHostname } from "node:os";
 import { confirm, intro, text } from "@clack/prompts";
 import { createHub } from "@gambiarra/core/hub";
 import { printLogo } from "@gambiarra/core/logo";
-import { Command, Option } from "clipanion";
+import { Command, Option } from "../utils/option.ts";
 import {
   handleCancel,
   hasExplicitFlags,

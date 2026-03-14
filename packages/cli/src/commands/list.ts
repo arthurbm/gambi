@@ -1,5 +1,5 @@
 import { confirm, intro, text } from "@clack/prompts";
-import { Command, Option } from "clipanion";
+import { Command, Option } from "../utils/option.ts";
 import {
   handleCancel,
   hasExplicitFlags,

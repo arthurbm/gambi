@@ -15,7 +15,7 @@ import type {
   RuntimeConfig,
 } from "@gambiarra/core/types";
 import { HEALTH_CHECK_INTERVAL } from "@gambiarra/core/types";
-import { Command, Option } from "clipanion";
+import { Command, Option } from "../utils/option.ts";
 import { nanoid } from "nanoid";
 import { handleCancel, isInteractive, LLM_PROVIDERS } from "../utils/prompt.ts";
 import {

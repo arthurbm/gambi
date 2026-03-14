@@ -1,5 +1,5 @@
 import { intro, outro, password as passwordPrompt, text } from "@clack/prompts";
-import { Command, Option } from "clipanion";
+import { Command, Option } from "../utils/option.ts";
 import { handleCancel, isInteractive } from "../utils/prompt.ts";
 import {
   hasRuntimeConfig,

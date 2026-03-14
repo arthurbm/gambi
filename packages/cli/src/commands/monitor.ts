@@ -1,5 +1,4 @@
-import { Command, Option } from "clipanion";
-import { startTUI } from "tui";
+import { Command, Option } from "../utils/option.ts";
 
 export class MonitorCommand extends Command {
   static override paths = [["monitor"]];
@@ -20,7 +19,9 @@ export class MonitorCommand extends Command {
   });
 
   async execute(): Promise<number> {
-    await startTUI({ hubUrl: this.hub });
-    return 0;
+    this.context.stderr.write(
+      "TUI is not bundled in the standalone binary.\nInstall via npm/bun for TUI support: npm install -g gambiarra\nThen run: gambiarra monitor\n",
+    );
+    return 1;
   }
 }

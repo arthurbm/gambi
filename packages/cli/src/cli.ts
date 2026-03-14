@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { Builtins, Cli } from "clipanion";
+import { Builtins, Cli } from "./utils/option.ts";
 import { CreateCommand } from "./commands/create.ts";
 import { JoinCommand } from "./commands/join.ts";
 import { ListCommand } from "./commands/list.ts";
