@@ -5,7 +5,7 @@ set -e
 # Usage: curl -fsSL https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/install.sh | bash
 
 REPO="arthurbm/gambiarra"
-INSTALL_DIR="${GAMBIARRA_INSTALL_DIR:-/usr/local/bin}"
+INSTALL_DIR="${GAMBIARRA_INSTALL_DIR:-$HOME/.local/bin}"
 BINARY_NAME="gambiarra"
 
 # Colors
@@ -94,6 +94,9 @@ install() {
   # Make executable
   chmod +x "$temp_file"
 
+  # Ensure install directory exists
+  mkdir -p "$INSTALL_DIR"
+
   # Install to destination
   if [ -w "$INSTALL_DIR" ]; then
     mv "$temp_file" "${INSTALL_DIR}/${BINARY_NAME}"
@@ -104,13 +107,22 @@ install() {
 
   info "Installed gambiarra to ${INSTALL_DIR}/${BINARY_NAME}"
 
+  # Check if install dir is in PATH
+  case ":$PATH:" in
+    *":${INSTALL_DIR}:"*) ;;
+    *)
+      warn "${INSTALL_DIR} is not in your PATH."
+      warn "Add it by running:"
+      warn "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc"
+      warn "Then restart your terminal or run: source ~/.bashrc"
+      return
+      ;;
+  esac
+
   # Verify installation
   if command -v gambiarra &> /dev/null; then
     info "Installation successful!"
     gambiarra --version
-  else
-    warn "gambiarra installed but not found in PATH."
-    warn "Add ${INSTALL_DIR} to your PATH, or run: ${INSTALL_DIR}/${BINARY_NAME}"
   fi
 }
 

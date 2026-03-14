@@ -46,8 +46,7 @@
     "@clack/prompts": "^1.1.0",
     "@gambiarra/core": "workspace:*",
     "clipanion": "^4.0.0-rc.4",
-    "nanoid": "^5.1.5",
-    "tui": "workspace:*"
+    "nanoid": "^5.1.5"
   },
   "devDependencies": {
     "@types/bun": "latest"
