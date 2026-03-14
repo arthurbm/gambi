@@ -1,9 +1,11 @@
 import { nanoid } from "nanoid";
 import type {
-  GenerationConfig,
   MachineSpecs,
   ParticipantCapabilities,
   ParticipantInfo,
+  ParticipantInfoInternal,
+  RuntimeConfig,
+  RuntimeConfigPublic,
 } from "./types.ts";
 
 export interface CreateParticipantOptions {
@@ -11,11 +13,11 @@ export interface CreateParticipantOptions {
   model: string;
   endpoint: string; // Endpoint exposing OpenResponses and/or chat/completions
   specs?: MachineSpecs;
-  config?: GenerationConfig;
+  config?: RuntimeConfig;
   capabilities?: ParticipantCapabilities;
 }
 
-function create(options: CreateParticipantOptions): ParticipantInfo {
+function create(options: CreateParticipantOptions): ParticipantInfoInternal {
   const now = Date.now();
   return {
     id: nanoid(),
@@ -35,16 +37,34 @@ function create(options: CreateParticipantOptions): ParticipantInfo {
 }
 
 function mergeConfig(
-  base: GenerationConfig,
-  overrides?: Partial<GenerationConfig>
-): GenerationConfig {
+  base: RuntimeConfig,
+  overrides?: Partial<RuntimeConfig>
+): RuntimeConfig {
   return {
     ...base,
     ...overrides,
   };
 }
 
+function toPublicConfig(config: RuntimeConfig): RuntimeConfigPublic {
+  const { instructions, ...rest } = config;
+  return {
+    ...rest,
+    hasInstructions:
+      typeof instructions === "string" && instructions.trim().length > 0,
+  };
+}
+
+function toPublicInfo(participant: ParticipantInfoInternal): ParticipantInfo {
+  return {
+    ...participant,
+    config: toPublicConfig(participant.config),
+  };
+}
+
 export const Participant = {
   create,
   mergeConfig,
+  toPublicConfig,
+  toPublicInfo,
 } as const;

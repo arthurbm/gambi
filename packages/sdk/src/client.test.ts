@@ -53,6 +53,21 @@ describe("HTTP Client", () => {
         }).then((res) => res.json())
       ).resolves.toHaveProperty("error");
     });
+
+    test("supports room defaults via options object", async () => {
+      const { room } = await client.create("Configured Room", {
+        defaults: {
+          instructions: "Room instructions",
+          temperature: 0.4,
+        },
+      });
+
+      expect(room.defaults).toEqual({
+        hasInstructions: true,
+        temperature: 0.4,
+      });
+      expect(room.defaults).not.toHaveProperty("instructions");
+    });
   });
 
   describe("list", () => {
@@ -107,6 +122,27 @@ describe("HTTP Client", () => {
 
       expect(participant.id).toBe("participant-2");
       expect(participant).not.toHaveProperty("authHeaders");
+    });
+
+    test("redacts instructions in public participant responses", async () => {
+      const { room } = await client.create("Configured Participant Room");
+
+      const { participant } = await client.join(room.code, {
+        id: "participant-3",
+        nickname: "Configured Bot",
+        model: "llama3",
+        endpoint: "http://localhost:11434",
+        config: {
+          instructions: "Private instructions",
+          temperature: 0.6,
+        },
+      });
+
+      expect(participant.config).toEqual({
+        hasInstructions: true,
+        temperature: 0.6,
+      });
+      expect(participant.config).not.toHaveProperty("instructions");
     });
 
     test("throws ClientError for non-existent room", async () => {

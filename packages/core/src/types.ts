@@ -51,6 +51,18 @@ export type GenerationConfig = z.infer<typeof GenerationConfig>;
 export const OllamaConfig = GenerationConfig;
 export type OllamaConfig = GenerationConfig;
 
+export const RuntimeConfig = GenerationConfig.extend({
+  instructions: z.string().trim().min(1).optional(),
+});
+
+export type RuntimeConfig = z.infer<typeof RuntimeConfig>;
+
+export const RuntimeConfigPublic = GenerationConfig.extend({
+  hasInstructions: z.boolean().default(false),
+});
+
+export type RuntimeConfigPublic = z.infer<typeof RuntimeConfigPublic>;
+
 export const MachineSpecs = z.object({
   gpu: z.string().optional(),
   vram: z.number().optional(),
@@ -75,12 +87,12 @@ export type ParticipantCapabilities = z.infer<typeof ParticipantCapabilities>;
 export const ParticipantAuthHeaders = z.record(z.string().min(1), z.string());
 export type ParticipantAuthHeaders = z.infer<typeof ParticipantAuthHeaders>;
 
-export const ParticipantInfo = z.object({
+export const ParticipantInfoInternal = z.object({
   id: z.string(),
   nickname: z.string(),
   model: z.string(),
   endpoint: z.string().url(), // Endpoint exposing OpenResponses and/or chat/completions
-  config: GenerationConfig,
+  config: RuntimeConfig,
   specs: MachineSpecs,
   capabilities: ParticipantCapabilities.default({
     openResponses: "unknown",
@@ -89,6 +101,24 @@ export const ParticipantInfo = z.object({
   status: ParticipantStatus,
   joinedAt: z.number(),
   lastSeen: z.number(), // Timestamp of last health check
+});
+
+export type ParticipantInfoInternal = z.infer<typeof ParticipantInfoInternal>;
+
+export const ParticipantInfo = z.object({
+  id: z.string(),
+  nickname: z.string(),
+  model: z.string(),
+  endpoint: z.string().url(),
+  config: RuntimeConfigPublic,
+  specs: MachineSpecs,
+  capabilities: ParticipantCapabilities.default({
+    openResponses: "unknown",
+    chatCompletions: "unknown",
+  }),
+  status: ParticipantStatus,
+  joinedAt: z.number(),
+  lastSeen: z.number(),
 });
 
 export type ParticipantInfo = z.infer<typeof ParticipantInfo>;
@@ -100,7 +130,7 @@ export const ParticipantRegistration = z.object({
   endpoint: z.string().url(),
   password: z.string().optional(),
   specs: MachineSpecs.optional(),
-  config: GenerationConfig.optional(),
+  config: RuntimeConfig.optional(),
   capabilities: ParticipantCapabilities.optional(),
   authHeaders: ParticipantAuthHeaders.optional(),
 });
@@ -114,11 +144,19 @@ export const RoomInfoInternal = z.object({
   name: z.string(),
   hostId: z.string(),
   createdAt: z.number(),
+  defaults: RuntimeConfig.optional(),
   passwordHash: z.string().optional(), // Hashed password for room protection
 });
 
 // Public room info schema (excludes sensitive fields for API responses)
-export const RoomInfoPublic = RoomInfoInternal.omit({ passwordHash: true });
+export const RoomInfoPublic = z.object({
+  id: z.string(),
+  code: z.string(),
+  name: z.string(),
+  hostId: z.string(),
+  createdAt: z.number(),
+  defaults: RuntimeConfigPublic.optional(),
+});
 
 // Type aliases
 export type RoomInfo = z.infer<typeof RoomInfoInternal>; // Internal type

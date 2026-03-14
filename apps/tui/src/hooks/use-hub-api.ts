@@ -1,10 +1,10 @@
 import {
-  type GenerationConfig,
   type MachineSpecs,
   type ParticipantAuthHeaders,
   type ParticipantCapabilities,
   ParticipantInfo,
   RoomInfoPublic,
+  type RuntimeConfig,
 } from "@gambiarra/core/types";
 import { useCallback } from "react";
 import { z } from "zod";
@@ -63,18 +63,21 @@ export interface JoinParticipantData {
   endpoint: string;
   password?: string;
   specs?: z.infer<typeof MachineSpecs>;
-  config?: z.infer<typeof GenerationConfig>;
+  config?: RuntimeConfig;
   capabilities?: ParticipantCapabilities;
   authHeaders?: ParticipantAuthHeaders;
+}
+
+export interface CreateRoomData {
+  defaults?: RuntimeConfig;
+  name: string;
+  password?: string;
 }
 
 export interface UseHubApiReturn {
   checkHub: () => Promise<ApiResult<HealthResponse>>;
   listRooms: () => Promise<ApiResult<ListRoomsResponse>>;
-  createRoom: (
-    name: string,
-    password?: string
-  ) => Promise<ApiResult<CreateRoomResponse>>;
+  createRoom: (data: CreateRoomData) => Promise<ApiResult<CreateRoomResponse>>;
   joinRoom: (
     code: string,
     participantData: JoinParticipantData
@@ -158,10 +161,10 @@ export function useHubApi(): UseHubApiReturn {
   );
 
   const createRoom = useCallback(
-    (name: string, password?: string): Promise<ApiResult<CreateRoomResponse>> =>
+    (data: CreateRoomData): Promise<ApiResult<CreateRoomResponse>> =>
       fetchJson(`${hubUrl}/rooms`, CreateRoomResponse, {
         method: "POST",
-        body: JSON.stringify({ name, password }),
+        body: JSON.stringify(data),
       }),
     [hubUrl]
   );

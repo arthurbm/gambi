@@ -16,7 +16,17 @@ const HealthResponseSchema = z.object({
 });
 
 const RoomResponseSchema = z.object({
-  room: z.object({ id: z.string(), code: z.string(), name: z.string() }),
+  room: z.object({
+    id: z.string(),
+    code: z.string(),
+    name: z.string(),
+    defaults: z
+      .object({
+        hasInstructions: z.boolean(),
+        temperature: z.number().optional(),
+      })
+      .optional(),
+  }),
   hostId: z.string(),
 });
 
@@ -29,7 +39,15 @@ const RoomsListResponseSchema = z.object({
 });
 
 const JoinResponseSchema = z.object({
-  participant: z.object({ id: z.string(), nickname: z.string() }),
+  participant: z.object({
+    id: z.string(),
+    nickname: z.string(),
+    config: z.object({
+      hasInstructions: z.boolean(),
+      temperature: z.number().optional(),
+      max_tokens: z.number().optional(),
+    }),
+  }),
   roomId: z.string(),
 });
 
@@ -38,7 +56,16 @@ const SuccessResponseSchema = z.object({
 });
 
 const ParticipantsResponseSchema = z.object({
-  participants: z.array(z.object({ nickname: z.string() })),
+  participants: z.array(
+    z.object({
+      nickname: z.string(),
+      config: z.object({
+        hasInstructions: z.boolean(),
+        temperature: z.number().optional(),
+        max_tokens: z.number().optional(),
+      }),
+    })
+  ),
 });
 
 const ModelsResponseSchema = z.object({
@@ -239,6 +266,8 @@ function createMockParticipantServer(
     chatCompletions: 0,
     responses: 0,
   };
+  let lastChatCompletionsBody: unknown;
+  let lastResponsesBody: unknown;
 
   const server = startServerWithRetry(async (req) => {
     const url = new URL(req.url);
@@ -264,6 +293,7 @@ function createMockParticipantServer(
       }
 
       const body = (await req.json()) as { model?: string; stream?: boolean };
+      lastResponsesBody = body;
       const responseId = `resp_${calls.responses}`;
       const payload = createResponsePayload(
         responseId,
@@ -335,6 +365,7 @@ function createMockParticipantServer(
     if (url.pathname === "/v1/chat/completions" && req.method === "POST") {
       calls.chatCompletions += 1;
       const body = (await req.json()) as { model?: string; stream?: boolean };
+      lastChatCompletionsBody = body;
 
       if (body.stream) {
         const encoder = new TextEncoder();
@@ -398,6 +429,8 @@ function createMockParticipantServer(
   return {
     calls,
     close: () => server.stop(),
+    lastChatCompletionsBody: () => lastChatCompletionsBody,
+    lastResponsesBody: () => lastResponsesBody,
     url: `http://127.0.0.1:${server.port}`,
   };
 }
@@ -418,11 +451,18 @@ describe("Hub", () => {
   beforeEach(() => {
     Room.clear();
   });
-  async function createRoom(name: string) {
+  async function createRoom(
+    name: string,
+    defaults?: {
+      instructions?: string;
+      max_tokens?: number;
+      temperature?: number;
+    }
+  ) {
     const res = await fetch(`${baseUrl}/rooms`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ defaults, name }),
     });
     return RoomResponseSchema.parse(await res.json());
   }
@@ -434,6 +474,11 @@ describe("Hub", () => {
       nickname: string;
       model: string;
       endpoint: string;
+      config?: {
+        instructions?: string;
+        max_tokens?: number;
+        temperature?: number;
+      };
       authHeaders?: Record<string, string>;
       capabilities?: {
         openResponses: "supported" | "unsupported" | "unknown";
@@ -486,6 +531,19 @@ describe("Hub", () => {
       expect(res.status).toBe(400);
       expect(data.error).toBe("Name is required");
     });
+
+    test("accepts room defaults and redacts instructions in public responses", async () => {
+      const { room } = await createRoom("Configured Room", {
+        instructions: "Room-level system prompt",
+        temperature: 0.3,
+      });
+
+      expect(room.defaults).toEqual({
+        hasInstructions: true,
+        temperature: 0.3,
+      });
+      expect(room.defaults).not.toHaveProperty("instructions");
+    });
   });
 
   describe("GET /rooms", () => {
@@ -528,6 +586,7 @@ describe("Hub", () => {
       expect(joinData.participant.nickname).toBe("test-user");
       expect(joinData.roomId).toBe(room.id);
       expect("authHeaders" in joinData.participant).toBe(false);
+      expect(joinData.participant.config.hasInstructions).toBe(false);
     });
 
     test("returns error for non-existent room", async () => {
@@ -554,6 +613,44 @@ describe("Hub", () => {
 
       expect(res.status).toBe(400);
       expect(data.error).toContain("Missing required fields");
+    });
+
+    test("redacts participant instructions in join and list responses", async () => {
+      const { room } = await createRoom("Test Room");
+      const { data } = await joinRoom(room.code, {
+        id: "participant-redacted",
+        nickname: "config-user",
+        model: "llama3",
+        endpoint: "http://localhost:11434",
+        config: {
+          instructions: "Never leak me",
+          temperature: 0.5,
+          max_tokens: 256,
+        },
+      });
+
+      const joinData = JoinResponseSchema.parse(data);
+      expect(joinData.participant.config).toEqual({
+        hasInstructions: true,
+        temperature: 0.5,
+        max_tokens: 256,
+      });
+      expect(joinData.participant.config).not.toHaveProperty("instructions");
+
+      const participantsResponse = await fetch(
+        `${baseUrl}/rooms/${room.code}/participants`
+      );
+      const participantsData = ParticipantsResponseSchema.parse(
+        await participantsResponse.json()
+      );
+      expect(participantsData.participants[0]?.config).toEqual({
+        hasInstructions: true,
+        temperature: 0.5,
+        max_tokens: 256,
+      });
+      expect(participantsData.participants[0]?.config).not.toHaveProperty(
+        "instructions"
+      );
     });
   });
 
@@ -917,6 +1014,115 @@ describe("Hub", () => {
         expect(text).toContain("response.output_text.delta");
         expect(text).toContain("fallback stream");
         expect(text).toContain("response.completed");
+      } finally {
+        participantServer.close();
+      }
+    });
+
+    test("merges room, participant, and request defaults for responses", async () => {
+      const participantServer = createMockParticipantServer("responses");
+
+      try {
+        const { room } = await createRoom("Merged Responses Room", {
+          instructions: "Room instructions",
+          temperature: 0.2,
+          max_tokens: 128,
+        });
+        await joinRoom(room.code, {
+          id: "participant-merged-responses",
+          nickname: "merge-server",
+          model: "llama3",
+          endpoint: participantServer.url,
+          config: {
+            instructions: "Participant instructions",
+            temperature: 0.4,
+            max_tokens: 256,
+          },
+          capabilities: {
+            openResponses: "supported",
+            chatCompletions: "supported",
+          },
+        });
+
+        const createResponse = await fetch(
+          `${baseUrl}/rooms/${room.code}/v1/responses`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: "participant-merged-responses",
+              input: "Hello merged defaults",
+              temperature: 0.9,
+            }),
+          }
+        );
+
+        expect(createResponse.status).toBe(200);
+        expect(participantServer.lastResponsesBody()).toMatchObject({
+          instructions: "Participant instructions",
+          max_output_tokens: 256,
+          model: "llama3",
+          temperature: 0.9,
+        });
+      } finally {
+        participantServer.close();
+      }
+    });
+  });
+
+  describe("Chat Completions API", () => {
+    test("injects merged defaults into chat/completions requests", async () => {
+      const participantServer = createMockParticipantServer("chat-only");
+
+      try {
+        const { room } = await createRoom("Merged Chat Room", {
+          instructions: "Room instructions",
+          temperature: 0.2,
+        });
+        await joinRoom(room.code, {
+          id: "participant-merged-chat",
+          nickname: "chat-server",
+          model: "llama3",
+          endpoint: participantServer.url,
+          config: {
+            instructions: "Participant instructions",
+            temperature: 0.4,
+            max_tokens: 321,
+          },
+          capabilities: {
+            openResponses: "unsupported",
+            chatCompletions: "supported",
+          },
+        });
+
+        const completionResponse = await fetch(
+          `${baseUrl}/rooms/${room.code}/v1/chat/completions`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: "participant-merged-chat",
+              messages: [{ role: "user", content: "Hello chat defaults" }],
+            }),
+          }
+        );
+
+        expect(completionResponse.status).toBe(200);
+        expect(participantServer.lastChatCompletionsBody()).toMatchObject({
+          max_tokens: 321,
+          model: "llama3",
+          temperature: 0.4,
+        });
+        expect(participantServer.lastChatCompletionsBody()).toHaveProperty(
+          "messages"
+        );
+        const requestBody = participantServer.lastChatCompletionsBody() as {
+          messages: Array<{ content: string | null; role: string }>;
+        };
+        expect(requestBody.messages[0]).toEqual({
+          role: "system",
+          content: "Participant instructions",
+        });
       } finally {
         participantServer.close();
       }

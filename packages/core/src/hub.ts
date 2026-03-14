@@ -10,6 +10,7 @@ import type {
   ResponseUsage,
 } from "openai/resources/responses/responses";
 import { mDNS } from "./mdns.ts";
+import { Participant } from "./participant.ts";
 import {
   ADAPTER_SKIP,
   type ChatCompletionsProtocolAdapter,
@@ -23,7 +24,9 @@ import {
   HEALTH_CHECK_INTERVAL,
   type ParticipantAuthHeaders,
   type ParticipantInfo,
+  type ParticipantInfoInternal,
   ParticipantRegistration,
+  RuntimeConfig,
 } from "./types.ts";
 
 export interface HubOptions {
@@ -103,7 +106,7 @@ function corsHeaders(): Response {
   });
 }
 
-function getDefaultCapabilities(): ParticipantInfo["capabilities"] {
+function getDefaultCapabilities(): ParticipantInfoInternal["capabilities"] {
   return {
     openResponses: "unknown",
     chatCompletions: "unknown",
@@ -114,7 +117,10 @@ function normalizeEndpoint(endpoint: string): string {
   return endpoint.replace(TRAILING_SLASH_REGEX, "");
 }
 
-function participantUrl(participant: ParticipantInfo, path: string): string {
+function participantUrl(
+  participant: ParticipantInfoInternal,
+  path: string
+): string {
   return `${normalizeEndpoint(participant.endpoint)}${path}`;
 }
 
@@ -138,7 +144,7 @@ function createJsonParticipantHeaders(
 }
 
 function fetchParticipant(
-  participant: ParticipantInfo,
+  participant: ParticipantInfoInternal,
   authHeaders: ParticipantAuthHeaders,
   path: string,
   init?: RequestInit
@@ -191,15 +197,130 @@ function extractTextContent(content: unknown): string {
     .join("\n");
 }
 
+function buildMergedDefaults(
+  roomDefaults: RuntimeConfig | undefined,
+  participantConfig: RuntimeConfig
+): RuntimeConfig {
+  return Participant.mergeConfig(roomDefaults ?? {}, participantConfig);
+}
+
+function applyResponsesDefaults(
+  request: ResponsesCreateRequest,
+  defaults: RuntimeConfig
+): ResponsesCreateRequest {
+  const mergedRequest = { ...request };
+
+  if (mergedRequest.instructions == null && defaults.instructions) {
+    mergedRequest.instructions = defaults.instructions;
+  }
+  if (mergedRequest.temperature == null && defaults.temperature !== undefined) {
+    mergedRequest.temperature = defaults.temperature;
+  }
+  if (mergedRequest.top_p == null && defaults.top_p !== undefined) {
+    mergedRequest.top_p = defaults.top_p;
+  }
+  if (
+    mergedRequest.max_output_tokens == null &&
+    defaults.max_tokens !== undefined
+  ) {
+    mergedRequest.max_output_tokens = defaults.max_tokens;
+  }
+  if (mergedRequest.stop_sequences == null && defaults.stop !== undefined) {
+    mergedRequest.stop_sequences = defaults.stop;
+  }
+  if (
+    mergedRequest.frequency_penalty == null &&
+    defaults.frequency_penalty !== undefined
+  ) {
+    mergedRequest.frequency_penalty = defaults.frequency_penalty;
+  }
+  if (
+    mergedRequest.presence_penalty == null &&
+    defaults.presence_penalty !== undefined
+  ) {
+    mergedRequest.presence_penalty = defaults.presence_penalty;
+  }
+  if (mergedRequest.seed == null && defaults.seed !== undefined) {
+    mergedRequest.seed = defaults.seed;
+  }
+
+  return mergedRequest;
+}
+
+function hasSystemMessage(
+  messages: ChatCompletionRequest["messages"]
+): boolean {
+  return messages.some((message) => message.role === "system");
+}
+
+function applyChatCompletionsDefaults(
+  request: ChatCompletionRequest,
+  defaults: RuntimeConfig
+): ChatCompletionRequest {
+  const mergedRequest: ChatCompletionRequest = {
+    ...request,
+    messages: [...request.messages],
+  };
+
+  if (!hasSystemMessage(mergedRequest.messages) && defaults.instructions) {
+    mergedRequest.messages.unshift({
+      role: "system",
+      content: defaults.instructions,
+    });
+  }
+  if (mergedRequest.temperature == null && defaults.temperature !== undefined) {
+    mergedRequest.temperature = defaults.temperature;
+  }
+  if (mergedRequest.top_p == null && defaults.top_p !== undefined) {
+    mergedRequest.top_p = defaults.top_p;
+  }
+  if (mergedRequest.max_tokens == null && defaults.max_tokens !== undefined) {
+    mergedRequest.max_tokens = defaults.max_tokens;
+  }
+  if (mergedRequest.stop == null && defaults.stop !== undefined) {
+    mergedRequest.stop = defaults.stop;
+  }
+  if (
+    mergedRequest.frequency_penalty == null &&
+    defaults.frequency_penalty !== undefined
+  ) {
+    mergedRequest.frequency_penalty = defaults.frequency_penalty;
+  }
+  if (
+    mergedRequest.presence_penalty == null &&
+    defaults.presence_penalty !== undefined
+  ) {
+    mergedRequest.presence_penalty = defaults.presence_penalty;
+  }
+  if (mergedRequest.seed == null && defaults.seed !== undefined) {
+    mergedRequest.seed = defaults.seed;
+  }
+
+  return mergedRequest;
+}
+
 // Route handlers
 async function createRoom(req: Request): Promise<Response> {
-  const body = (await req.json()) as { name: string; password?: string };
+  const body = (await req.json()) as {
+    defaults?: unknown;
+    name?: string;
+    password?: string;
+  };
   if (!body.name) {
     return error("Name is required");
   }
 
+  let defaults: RuntimeConfig | undefined;
+  if (body.defaults !== undefined) {
+    const parsedDefaults = RuntimeConfig.safeParse(body.defaults);
+    if (!parsedDefaults.success) {
+      return error(`Invalid room defaults: ${parsedDefaults.error.message}`);
+    }
+    defaults = parsedDefaults.data;
+  }
+
   const hostId = crypto.randomUUID();
-  const room = await Room.create(body.name, hostId, body.password);
+  const room = await Room.create(body.name, hostId, body.password, defaults);
 
   // Strip password hash from public responses to prevent offline brute-force attacks
   const publicRoom = Room.toPublic(room);
@@ -250,7 +371,7 @@ async function joinRoom(req: Request, code: string): Promise<Response> {
   }
 
   const now = Date.now();
-  const participant: ParticipantInfo = {
+  const participant: ParticipantInfoInternal = {
     id: body.id,
     nickname: body.nickname,
     model: body.model,
@@ -265,9 +386,11 @@ async function joinRoom(req: Request, code: string): Promise<Response> {
 
   Room.addParticipant(room.id, participant, body.authHeaders ?? {});
 
-  SSE.broadcast("participant:joined", participant, code);
+  const publicParticipant = Participant.toPublicInfo(participant);
 
-  return json({ participant, roomId: room.id }, 201);
+  SSE.broadcast("participant:joined", publicParticipant, code);
+
+  return json({ participant: publicParticipant, roomId: room.id }, 201);
 }
 
 function leaveRoom(code: string, participantId: string): Response {
@@ -390,7 +513,7 @@ export interface ResponsesCreateRequest {
 function findParticipant(
   roomId: string,
   modelId: string
-): ParticipantInfo | undefined {
+): ParticipantInfoInternal | undefined {
   if (modelId === "*" || modelId === "any") {
     return Room.getRandomOnlineParticipant(roomId);
   }
@@ -400,9 +523,9 @@ function findParticipant(
     return Room.findParticipantByModel(roomId, actualModel);
   }
 
-  const participant = Room.getParticipant(roomId, modelId);
-  if (participant) {
-    return participant;
+  const participantRecord = Room.getParticipantRecord(roomId, modelId);
+  if (participantRecord) {
+    return participantRecord.info;
   }
 
   return Room.findParticipantByModel(roomId, modelId);
@@ -415,7 +538,7 @@ function resolveParticipant(
   | {
       authHeaders: ParticipantAuthHeaders;
       room: NonNullable<ReturnType<typeof Room.getByCode>>;
-      participant: ParticipantInfo;
+      participant: ParticipantInfoInternal;
     }
   | Response {
   const room = Room.getByCode(code);
@@ -1154,7 +1277,7 @@ async function forwardNativeResponsesCreate(
 
 async function proxyFallbackResponsesCreate(
   authHeaders: ParticipantAuthHeaders,
-  participant: ParticipantInfo,
+  participant: ParticipantInfoInternal,
   body: ResponsesCreateRequest,
   entry: ResponseRegistryEntry
 ): Promise<Response> {
@@ -1218,7 +1341,7 @@ async function proxyFallbackResponsesCreate(
 async function proxyStoredOpenResponses(
   req: Request,
   authHeaders: ParticipantAuthHeaders,
-  participant: ParticipantInfo,
+  participant: ParticipantInfoInternal,
   responseId: string,
   entry: ResponseRegistryEntry,
   action?: "cancel" | "input_items"
@@ -1375,6 +1498,10 @@ async function proxyResponsesCreate(
   }
 
   const { authHeaders, room, participant } = resolved;
+  const request = applyResponsesDefaults(
+    body,
+    buildMergedDefaults(room.defaults, participant.config)
+  );
   const baseEntry = {
     participantId: participant.id,
     roomId: room.id,
@@ -1400,7 +1527,7 @@ async function proxyResponsesCreate(
         authHeaders,
         entry,
         participant,
-        request: body,
+        request,
       });
 
       if (response !== ADAPTER_SKIP) {
@@ -1432,7 +1559,11 @@ async function proxyChatCompletions(
     return resolved;
   }
 
-  const { authHeaders, participant } = resolved;
+  const { authHeaders, room, participant } = resolved;
+  const request = applyChatCompletionsDefaults(
+    body,
+    buildMergedDefaults(room.defaults, participant.config)
+  );
 
   SSE.broadcast(
     "llm:request",
@@ -1444,7 +1575,7 @@ async function proxyChatCompletions(
     return await chatCompletionsAdapter.create({
       authHeaders,
       participant,
-      request: body,
+      request,
     });
   } catch (proxyError) {
     SSE.broadcast(
@@ -1463,7 +1594,7 @@ function getStoredParticipant(
   | {
       authHeaders: ParticipantAuthHeaders;
       entry: ResponseRegistryEntry;
-      participant: ParticipantInfo;
+      participant: ParticipantInfoInternal;
       room: NonNullable<ReturnType<typeof Room.getByCode>>;
     }
   | Response {

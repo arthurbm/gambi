@@ -19,6 +19,7 @@ export type {
   ParticipantAuthHeaders,
   ParticipantCapabilities,
   ParticipantInfo,
+  ParticipantInfoInternal,
   ParticipantRegistration,
   ParticipantStatus,
   Response,
@@ -33,6 +34,9 @@ export type {
   ResponseStreamEvent,
   ResponseUsage,
   RoomInfo,
+  RoomInfoPublic,
+  RuntimeConfig,
+  RuntimeConfigPublic,
 } from "@gambiarra/core/types";
 // Re-export Zod schemas for runtime validation (with Schema suffix to avoid conflicts)
 // Re-export constants
@@ -47,7 +51,11 @@ export {
   PARTICIPANT_TIMEOUT,
   ParticipantAuthHeaders as ParticipantAuthHeadersSchema,
   ParticipantInfo as ParticipantInfoSchema,
+  ParticipantInfoInternal as ParticipantInfoInternalSchema,
   ParticipantRegistration as ParticipantRegistrationSchema,
   ParticipantStatus as ParticipantStatusSchema,
   RoomInfo as RoomInfoSchema,
+  RoomInfoPublic as RoomInfoPublicSchema,
+  RuntimeConfig as RuntimeConfigSchema,
+  RuntimeConfigPublic as RuntimeConfigPublicSchema,
 } from "@gambiarra/core/types";

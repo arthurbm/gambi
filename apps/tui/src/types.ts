@@ -8,7 +8,8 @@ export type {
   MachineSpecs,
   ParticipantInfo,
   ParticipantStatus,
-  RoomInfo,
+  RoomInfoPublic as RoomInfo,
+  RuntimeConfig,
 } from "@gambiarra/core/types";
 
 // TUI-specific types

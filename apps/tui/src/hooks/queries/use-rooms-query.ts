@@ -1,10 +1,10 @@
 import {
-  type GenerationConfig,
   type MachineSpecs,
   type ParticipantAuthHeaders,
   type ParticipantCapabilities,
   ParticipantInfo,
   RoomInfoPublic,
+  type RuntimeConfig,
 } from "@gambiarra/core/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
@@ -56,9 +56,15 @@ export interface JoinParticipantData {
   endpoint: string;
   password?: string;
   specs?: z.infer<typeof MachineSpecs>;
-  config?: z.infer<typeof GenerationConfig>;
+  config?: RuntimeConfig;
   capabilities?: ParticipantCapabilities;
   authHeaders?: ParticipantAuthHeaders;
+}
+
+export interface CreateRoomData {
+  defaults?: RuntimeConfig;
+  name: string;
+  password?: string;
 }
 
 // ============================================================================
@@ -137,7 +143,7 @@ export function useCreateRoom() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: { name: string; password?: string }) =>
+    mutationFn: (data: CreateRoomData) =>
       fetchAndParse(`${hubUrl}/rooms`, CreateRoomResponse, {
         method: "POST",
         body: JSON.stringify(data),

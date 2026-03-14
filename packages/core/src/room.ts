@@ -1,9 +1,13 @@
 import { nanoid } from "nanoid";
+import { Participant } from "./participant.ts";
 import {
   PARTICIPANT_TIMEOUT,
   type ParticipantAuthHeaders,
   type ParticipantInfo,
+  type ParticipantInfoInternal,
   type RoomInfo,
+  type RoomInfoPublic,
+  type RuntimeConfig,
 } from "./types.ts";
 
 // Password hashing utilities using Bun's native password API
@@ -20,9 +24,12 @@ async function verifyPassword(
 }
 
 // Converts internal RoomInfo to public RoomInfo (strips sensitive fields)
-function toPublic(room: RoomInfo): Omit<RoomInfo, "passwordHash"> {
-  const { passwordHash, ...publicRoom } = room;
-  return publicRoom;
+function toPublic(room: RoomInfo): RoomInfoPublic {
+  const { passwordHash, defaults, ...publicRoom } = room;
+  return {
+    ...publicRoom,
+    defaults: defaults ? Participant.toPublicConfig(defaults) : undefined,
+  };
 }
 
 const rooms = new Map<string, RoomState>();
@@ -35,13 +42,14 @@ interface RoomState {
 
 export interface StoredParticipant {
   authHeaders: ParticipantAuthHeaders;
-  info: ParticipantInfo;
+  info: ParticipantInfoInternal;
 }
 
 async function create(
   name: string,
   hostId: string,
-  password?: string
+  password?: string,
+  defaults?: RuntimeConfig
 ): Promise<RoomInfo> {
   const id = nanoid();
   const code = nanoid(6).toUpperCase();
@@ -52,6 +60,7 @@ async function create(
     name,
     hostId,
     createdAt: Date.now(),
+    defaults,
     passwordHash: password ? await hashPassword(password) : undefined,
   };
 
@@ -73,11 +82,11 @@ function getByCode(code: string): RoomInfo | undefined {
   return id ? rooms.get(id)?.info : undefined;
 }
 
-function list(): Omit<RoomInfo, "passwordHash">[] {
+function list(): RoomInfoPublic[] {
   return Array.from(rooms.values()).map((r) => toPublic(r.info));
 }
 
-function listWithParticipantCount(): (Omit<RoomInfo, "passwordHash"> & {
+function listWithParticipantCount(): (RoomInfoPublic & {
   participantCount: number;
 })[] {
   return Array.from(rooms.values()).map((r) => ({
@@ -99,7 +108,7 @@ function remove(id: string): boolean {
 
 function addParticipant(
   roomId: string,
-  participant: ParticipantInfo,
+  participant: ParticipantInfoInternal,
   authHeaders: ParticipantAuthHeaders = {}
 ): boolean {
   const room = rooms.get(roomId);
@@ -126,7 +135,9 @@ function removeParticipant(roomId: string, participantId: string): boolean {
 function getParticipants(roomId: string): ParticipantInfo[] {
   const room = rooms.get(roomId);
   return room
-    ? Array.from(room.participants.values(), (entry) => entry.info)
+    ? Array.from(room.participants.values(), (entry) =>
+        Participant.toPublicInfo(entry.info)
+      )
     : [];
 }
 
@@ -134,7 +145,8 @@ function getParticipant(
   roomId: string,
   participantId: string
 ): ParticipantInfo | undefined {
-  return rooms.get(roomId)?.participants.get(participantId)?.info;
+  const participant = rooms.get(roomId)?.participants.get(participantId)?.info;
+  return participant ? Participant.toPublicInfo(participant) : undefined;
 }
 
 function getParticipantRecord(
@@ -147,7 +159,7 @@ function getParticipantRecord(
 function updateParticipantStatus(
   roomId: string,
   participantId: string,
-  status: ParticipantInfo["status"]
+  status: ParticipantInfoInternal["status"]
 ): boolean {
   const participant = rooms.get(roomId)?.participants.get(participantId)?.info;
   if (!participant) {
@@ -172,7 +184,7 @@ function updateLastSeen(roomId: string, participantId: string): boolean {
 function findParticipantByModel(
   roomId: string,
   model: string
-): ParticipantInfo | undefined {
+): ParticipantInfoInternal | undefined {
   const room = rooms.get(roomId);
   if (!room) {
     return undefined;
@@ -188,7 +200,7 @@ function findParticipantByModel(
 
 function getRandomOnlineParticipant(
   roomId: string
-): ParticipantInfo | undefined {
+): ParticipantInfoInternal | undefined {
   const room = rooms.get(roomId);
   if (!room) {
     return undefined;
