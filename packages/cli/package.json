@@ -1,6 +1,6 @@
 {
   "name": "gambiarra",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "CLI for Gambiarra - Share local LLMs across your network",
   "keywords": [
     "llm",
