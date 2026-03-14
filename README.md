@@ -150,17 +150,27 @@ gambiarra serve
 
 ```bash
 gambiarra create
-# Or with flags: gambiarra create --name "My Room"
+# Or with flags: gambiarra create --name "My Room" --config ./room-defaults.json
 ```
 
 ### 3. Join with Your LLM
 
 ```bash
 gambiarra join
-# Or with flags: gambiarra join --code ABC123 --model llama3
+# Or with flags: gambiarra join --code ABC123 --model llama3 --config ./participant-config.json
 ```
 
 All commands support **interactive mode** — run without flags and you'll be guided through each option step by step. Flags still work for scripting and automation.
+
+Example config JSON:
+
+```json
+{
+  "instructions": "Always answer in Brazilian Portuguese.",
+  "temperature": 0.4,
+  "max_tokens": 512
+}
+```
 
 ### 4. Use the SDK
 
@@ -196,10 +206,58 @@ gambiarra list
 
 # Or use flags for scripting:
 gambiarra serve --mdns
-gambiarra create --name "My Room"
-gambiarra join --code ABC123 --model llama3
+gambiarra create --name "My Room" --config ./room-defaults.json
+gambiarra join --code ABC123 --model llama3 --config ./participant-config.json
 gambiarra list --json
 ```
+
+Room defaults are merged at request time with precedence `room defaults -> participant defaults -> runtime request`. Public room/participant listings expose only a safe summary such as `hasInstructions`, not the raw instructions text.
+
+### Runtime Defaults
+
+Use runtime defaults when you want a room or participant to contribute reusable behavior without forcing every client request to repeat the same settings.
+
+Example room defaults:
+
+```json
+{
+  "instructions": "Answer in Brazilian Portuguese.",
+  "temperature": 0.3,
+  "max_tokens": 512
+}
+```
+
+Create a room with defaults:
+
+```bash
+gambiarra create --name "Portuguese Room" --config ./room-defaults.json
+```
+
+Example participant defaults:
+
+```json
+{
+  "instructions": "Prefer concise technical answers.",
+  "temperature": 0.6
+}
+```
+
+Join with participant defaults:
+
+```bash
+gambiarra join --code ABC123 --model llama3 --config ./participant-config.json
+```
+
+Merge behavior:
+
+- Room defaults apply first.
+- Participant defaults override room defaults.
+- The request sent by the client overrides both.
+
+Public API behavior:
+
+- Sensitive instruction text is stored by the hub but not exposed in public room or participant listings.
+- Public responses expose summary fields such as `hasInstructions` instead.
 
 ### SDK Integration
 
@@ -272,6 +330,7 @@ gambiarra create
 
 # Or with flags:
 gambiarra create --name "My Room"
+gambiarra create --name "My Room" --config ./room-defaults.json
 ```
 
 #### List Rooms
@@ -293,6 +352,7 @@ gambiarra join
 # Or with flags:
 gambiarra join --code ABC123 --model llama3
 gambiarra join --code ABC123 --model mistral --endpoint http://localhost:1234
+gambiarra join --code ABC123 --model llama3 --config ./participant-config.json
 ```
 
 ### SDK Examples

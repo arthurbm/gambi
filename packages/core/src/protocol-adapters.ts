@@ -1,5 +1,8 @@
 import type { ChatCompletionRequest, ResponsesCreateRequest } from "./hub.ts";
-import type { ParticipantAuthHeaders, ParticipantInfo } from "./types.ts";
+import type {
+  ParticipantAuthHeaders,
+  ParticipantInfoInternal,
+} from "./types.ts";
 
 export const ADAPTER_SKIP = Symbol("adapter-skip");
 export type AdapterSkip = typeof ADAPTER_SKIP;
@@ -18,7 +21,7 @@ export interface ResponseRegistryEntry {
 export interface ResponsesCreateAdapterContext {
   authHeaders: ParticipantAuthHeaders;
   entry: ResponseRegistryEntry;
-  participant: ParticipantInfo;
+  participant: ParticipantInfoInternal;
   request: ResponsesCreateRequest;
 }
 
@@ -26,20 +29,20 @@ export interface StoredResponseAdapterContext {
   action?: "cancel" | "input_items";
   authHeaders: ParticipantAuthHeaders;
   entry: ResponseRegistryEntry;
-  participant: ParticipantInfo;
+  participant: ParticipantInfoInternal;
   req: Request;
   responseId: string;
 }
 
 export interface ChatCompletionsAdapterContext {
   authHeaders: ParticipantAuthHeaders;
-  participant: ParticipantInfo;
+  participant: ParticipantInfoInternal;
   request: ChatCompletionRequest;
 }
 
 export interface ResponsesProtocolAdapter {
   id: ProtocolAdapterId;
-  canCreate: (participant: ParticipantInfo) => boolean;
+  canCreate: (participant: ParticipantInfoInternal) => boolean;
   create: (
     context: ResponsesCreateAdapterContext
   ) => Promise<Response | AdapterSkip>;

@@ -1,16 +1,17 @@
 import { z } from "zod";
 import {
-  GenerationConfig,
   LlmMetrics,
   MachineSpecs,
   ParticipantInfo,
   RoomInfoPublic,
+  RuntimeConfig,
 } from "./types.ts";
 
 // Room messages
 export const RoomCreateMessage = z.object({
   type: z.literal("room:create"),
   name: z.string(),
+  defaults: RuntimeConfig.optional(),
 });
 
 export const RoomCreatedMessage = z.object({
@@ -28,7 +29,7 @@ export const RoomJoinMessage = z.object({
     model: z.string(),
     endpoint: z.string().url(),
     specs: MachineSpecs,
-    config: GenerationConfig,
+    config: RuntimeConfig,
   }),
 });
 
@@ -59,7 +60,7 @@ export const LlmRequestMessage = z.object({
   requestId: z.string(),
   targetId: z.string(),
   prompt: z.string(),
-  options: GenerationConfig.optional(),
+  options: RuntimeConfig.optional(),
 });
 
 export const LlmTokenMessage = z.object({

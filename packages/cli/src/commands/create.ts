@@ -1,6 +1,11 @@
 import { intro, outro, password as passwordPrompt, text } from "@clack/prompts";
 import { Command, Option } from "clipanion";
 import { handleCancel, isInteractive } from "../utils/prompt.ts";
+import {
+  hasRuntimeConfig,
+  loadRuntimeConfigFile,
+  promptRuntimeConfig,
+} from "../utils/runtime-config.ts";
 
 interface CreateRoomResponse {
   room: {
@@ -46,6 +51,11 @@ export class CreateCommand extends Command {
     required: false,
   });
 
+  configPath = Option.String("--config", {
+    description: "Path to a JSON file with room defaults",
+    required: false,
+  });
+
   hub = Option.String("--hub,-H", "http://localhost:3000", {
     description: "Hub URL",
   });
@@ -53,6 +63,16 @@ export class CreateCommand extends Command {
   async execute(): Promise<number> {
     let name = this.name;
     let password = this.password;
+    let defaults = this.configPath
+      ? await loadRuntimeConfigFile(this.configPath).catch((error) => {
+          this.context.stderr.write(`${error}\n`);
+          return null;
+        })
+      : {};
+
+    if (defaults === null) {
+      return 1;
+    }
 
     if (!name && isInteractive()) {
       intro("gambiarra create");
@@ -74,6 +94,13 @@ export class CreateCommand extends Command {
           password = pwd;
         }
       }
+
+      try {
+        defaults = await promptRuntimeConfig("room", defaults);
+      } catch (error) {
+        this.context.stderr.write(`${error}\n`);
+        return 1;
+      }
     } else if (!name) {
       this.context.stderr.write(
         "Error: --name is required (or run in a terminal for interactive mode)\n"
@@ -82,9 +109,16 @@ export class CreateCommand extends Command {
     }
 
     try {
-      const body: { name: string; password?: string } = { name };
+      const body: {
+        defaults?: typeof defaults;
+        name: string;
+        password?: string;
+      } = { name };
       if (password) {
         body.password = password;
+      }
+      if (hasRuntimeConfig(defaults)) {
+        body.defaults = defaults;
       }
 
       const response = await fetch(`${this.hub}/rooms`, {

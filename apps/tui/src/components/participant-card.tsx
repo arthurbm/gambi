@@ -123,6 +123,9 @@ export function ParticipantCard({
               )}
             </box>
           )}
+          {participant.config.hasInstructions && (
+            <text fg={colors.muted}> Prompt defaults configured</text>
+          )}
         </>
       )}
     </box>

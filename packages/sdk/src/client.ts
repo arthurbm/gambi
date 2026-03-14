@@ -2,7 +2,8 @@
 import type {
   ParticipantAuthHeaders,
   ParticipantInfo,
-  RoomInfo,
+  RoomInfoPublic,
+  RuntimeConfig,
 } from "./types.ts";
 
 /**
@@ -23,16 +24,21 @@ export interface CreateParticipantOptions {
   endpoint: string;
   password?: string;
   specs?: ParticipantInfo["specs"];
-  config?: ParticipantInfo["config"];
+  config?: RuntimeConfig;
   capabilities?: ParticipantInfo["capabilities"];
   authHeaders?: ParticipantAuthHeaders;
+}
+
+export interface CreateRoomOptions {
+  password?: string;
+  defaults?: RuntimeConfig;
 }
 
 /**
  * Response when creating a room
  */
 export interface CreateRoomResponse {
-  room: RoomInfo;
+  room: RoomInfoPublic;
   hostId: string;
 }
 
@@ -51,10 +57,13 @@ export interface JoinRoomResponse {
  */
 export interface GambiarraClient {
   /** Create a new room with optional password protection */
-  create(name: string, password?: string): Promise<CreateRoomResponse>;
+  create(
+    name: string,
+    passwordOrOptions?: string | CreateRoomOptions
+  ): Promise<CreateRoomResponse>;
 
   /** List all rooms */
-  list(): Promise<RoomInfo[]>;
+  list(): Promise<RoomInfoPublic[]>;
 
   /** Join a room as a participant */
   join(
@@ -143,10 +152,24 @@ export function createClient(options: ClientOptions = {}): GambiarraClient {
   }
 
   return {
-    create(name: string, password?: string): Promise<CreateRoomResponse> {
-      const body: { name: string; password?: string } = { name };
-      if (password) {
-        body.password = password;
+    create(
+      name: string,
+      passwordOrOptions?: string | CreateRoomOptions
+    ): Promise<CreateRoomResponse> {
+      const options =
+        typeof passwordOrOptions === "string"
+          ? { password: passwordOrOptions }
+          : passwordOrOptions;
+      const body: {
+        defaults?: RuntimeConfig;
+        name: string;
+        password?: string;
+      } = { name };
+      if (options?.password) {
+        body.password = options.password;
+      }
+      if (options?.defaults) {
+        body.defaults = options.defaults;
       }
       return request("/rooms", {
         method: "POST",
@@ -154,8 +177,8 @@ export function createClient(options: ClientOptions = {}): GambiarraClient {
       });
     },
 
-    async list(): Promise<RoomInfo[]> {
-      const response = await request<{ rooms: RoomInfo[] }>("/rooms");
+    async list(): Promise<RoomInfoPublic[]> {
+      const response = await request<{ rooms: RoomInfoPublic[] }>("/rooms");
       return response.rooms;
     },
 

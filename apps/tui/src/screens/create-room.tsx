@@ -1,3 +1,4 @@
+import type { RuntimeConfig } from "@gambiarra/core/types";
 import { useKeyboard } from "@opentui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Footer } from "../components/footer";
@@ -33,6 +34,39 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
+function buildRuntimeConfig(options: {
+  instructions: string;
+  maxTokens: string;
+  temperature: string;
+}): { config: RuntimeConfig; error: string | null } {
+  const config: RuntimeConfig = {};
+
+  const instructions = options.instructions.trim();
+  if (instructions) {
+    config.instructions = instructions;
+  }
+
+  const temperature = options.temperature.trim();
+  if (temperature) {
+    const parsedTemperature = Number(temperature);
+    if (Number.isNaN(parsedTemperature)) {
+      return { config: {}, error: "Temperature must be a number" };
+    }
+    config.temperature = parsedTemperature;
+  }
+
+  const maxTokens = options.maxTokens.trim();
+  if (maxTokens) {
+    const parsedMaxTokens = Number(maxTokens);
+    if (Number.isNaN(parsedMaxTokens)) {
+      return { config: {}, error: "Max tokens must be a number" };
+    }
+    config.max_tokens = parsedMaxTokens;
+  }
+
+  return { config, error: null };
+}
+
 export function CreateRoom({ onNavigate, onBack, canGoBack }: CreateRoomProps) {
   const createRoom = useCreateRoom();
   const addRoom = useAppStore((s) => s.addRoom);
@@ -40,6 +74,9 @@ export function CreateRoom({ onNavigate, onBack, canGoBack }: CreateRoomProps) {
   const [step, setStep] = useState<Step>("form");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
+  const [instructions, setInstructions] = useState("");
+  const [temperature, setTemperature] = useState("");
+  const [maxTokens, setMaxTokens] = useState("");
   const [focusedField, setFocusedField] = useState(0);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [createdRoom, setCreatedRoom] = useState<{
@@ -80,10 +117,27 @@ export function CreateRoom({ onNavigate, onBack, canGoBack }: CreateRoomProps) {
       return;
     }
 
+    const runtimeConfig = buildRuntimeConfig({
+      instructions,
+      maxTokens,
+      temperature,
+    });
+    if (runtimeConfig.error) {
+      setValidationError(runtimeConfig.error);
+      return;
+    }
+
     setValidationError(null);
 
     createRoom.mutate(
-      { name: name.trim(), password: password || undefined },
+      {
+        defaults:
+          Object.keys(runtimeConfig.config).length > 0
+            ? runtimeConfig.config
+            : undefined,
+        name: name.trim(),
+        password: password || undefined,
+      },
       {
         onSuccess: (data) => {
           setCreatedRoom({
@@ -96,7 +150,15 @@ export function CreateRoom({ onNavigate, onBack, canGoBack }: CreateRoomProps) {
         },
       }
     );
-  }, [createRoom, name, password, addRoom]);
+  }, [
+    addRoom,
+    createRoom,
+    instructions,
+    maxTokens,
+    name,
+    password,
+    temperature,
+  ]);
 
   const handleSuccessKey = useCallback(
     (keyName: string) => {
@@ -133,7 +195,7 @@ export function CreateRoom({ onNavigate, onBack, canGoBack }: CreateRoomProps) {
           onBack();
           break;
         case "tab":
-          setFocusedField((i) => (i + 1) % 2);
+          setFocusedField((i) => (i + 1) % 5);
           break;
         case "return":
           handleSubmit();
@@ -307,6 +369,44 @@ export function CreateRoom({ onNavigate, onBack, canGoBack }: CreateRoomProps) {
             value={password}
             width={40}
           />
+        </box>
+
+        <box flexDirection="column">
+          <text fg={colors.text}>Room instructions / system prompt</text>
+          <input
+            backgroundColor={focusedField === 2 ? colors.surface : undefined}
+            focused={focusedField === 2}
+            onChange={setInstructions}
+            placeholder="Optional room-wide default instructions"
+            value={instructions}
+            width={60}
+          />
+        </box>
+
+        <box flexDirection="row" gap={2}>
+          <box flexDirection="column">
+            <text fg={colors.text}>Temperature</text>
+            <input
+              backgroundColor={focusedField === 3 ? colors.surface : undefined}
+              focused={focusedField === 3}
+              onChange={setTemperature}
+              placeholder="Optional"
+              value={temperature}
+              width={16}
+            />
+          </box>
+
+          <box flexDirection="column">
+            <text fg={colors.text}>Max tokens</text>
+            <input
+              backgroundColor={focusedField === 4 ? colors.surface : undefined}
+              focused={focusedField === 4}
+              onChange={setMaxTokens}
+              placeholder="Optional"
+              value={maxTokens}
+              width={16}
+            />
+          </box>
         </box>
 
         {/* Error message */}

@@ -34,7 +34,7 @@ export function createParticipant(
     joinedAt: now,
     lastSeen: now,
     specs: {},
-    config: {},
+    config: { hasInstructions: false },
     capabilities: {
       openResponses: "unknown",
       chatCompletions: "unknown",

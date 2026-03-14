@@ -12,11 +12,17 @@ import { probeEndpoint } from "@gambiarra/core/endpoint";
 import type {
   ParticipantAuthHeaders,
   ParticipantCapabilities,
+  RuntimeConfig,
 } from "@gambiarra/core/types";
 import { HEALTH_CHECK_INTERVAL } from "@gambiarra/core/types";
 import { Command, Option } from "clipanion";
 import { nanoid } from "nanoid";
 import { handleCancel, isInteractive, LLM_PROVIDERS } from "../utils/prompt.ts";
+import {
+  hasRuntimeConfig,
+  loadRuntimeConfigFile,
+  promptRuntimeConfig,
+} from "../utils/runtime-config.ts";
 import { detectSpecs, formatSpecs } from "../utils/specs.ts";
 
 interface ErrorResponse {
@@ -42,6 +48,7 @@ interface JoinInputs {
   password: string | undefined;
   noSpecs: boolean;
   capabilities: ParticipantCapabilities;
+  config: RuntimeConfig;
 }
 
 function parseHeaderAssignment(input: string): { name: string; value: string } {
@@ -190,6 +197,7 @@ async function collectInteractiveInputs(
   defaults: {
     authHeaders: ParticipantAuthHeaders;
     code: string | undefined;
+    config: RuntimeConfig;
     model: string | undefined;
     endpoint: string;
     nickname: string | undefined;
@@ -263,8 +271,11 @@ async function collectInteractiveInputs(
     capabilities = probe.capabilities;
   }
 
+  const config = await promptRuntimeConfig("participant", defaults.config);
+
   return {
     authHeaders,
+    config,
     code,
     model,
     endpoint,
@@ -336,11 +347,32 @@ export class JoinCommand extends Command {
     description: "Hub URL",
   });
 
+  configPath = Option.String("--config", {
+    description: "Path to a JSON file with participant defaults",
+    required: false,
+  });
+
   noSpecs = Option.Boolean("--no-specs", false, {
     description: "Don't share machine specs (CPU, RAM, GPU)",
   });
 
-  private resolveInputs(): Omit<JoinInputs, "capabilities"> | null {
+  private async loadConfig(): Promise<RuntimeConfig | null> {
+    if (!this.configPath) {
+      return {};
+    }
+
+    try {
+      return await loadRuntimeConfigFile(this.configPath);
+    } catch (error) {
+      this.context.stderr.write(`${error}\n`);
+      return null;
+    }
+  }
+
+  private async resolveInputs(): Promise<Omit<
+    JoinInputs,
+    "capabilities"
+  > | null> {
     if (this.code && this.model) {
       let authHeaders: ParticipantAuthHeaders;
       try {
@@ -350,9 +382,15 @@ export class JoinCommand extends Command {
         return null;
       }
 
+      const config = await this.loadConfig();
+      if (config === null) {
+        return null;
+      }
+
       return {
         authHeaders,
         code: this.code,
+        config,
         model: this.model,
         endpoint: this.endpoint,
         nickname: this.nickname,
@@ -371,6 +409,110 @@ export class JoinCommand extends Command {
       );
     }
     return null;
+  }
+
+  private async collectInputsForExecution(
+    interactive: boolean
+  ): Promise<JoinInputs | null> {
+    if (!interactive) {
+      const resolved = await this.resolveInputs();
+      if (!resolved) {
+        return null;
+      }
+      return {
+        ...resolved,
+        capabilities: {
+          openResponses: "unknown",
+          chatCompletions: "unknown",
+        },
+      };
+    }
+
+    const config = await this.loadConfig();
+    if (config === null) {
+      return null;
+    }
+
+    return collectInteractiveInputs(
+      {
+        code: this.code,
+        model: this.model,
+        authHeaders: {},
+        config,
+        endpoint: this.endpoint,
+        nickname: this.nickname,
+        password: this.password,
+        noSpecs: this.noSpecs,
+      },
+      this.context.stderr
+    );
+  }
+
+  private async executeInteractiveJoin(inputs: JoinInputs): Promise<number> {
+    const {
+      authHeaders,
+      config,
+      code,
+      model,
+      endpoint,
+      nickname,
+      password,
+      noSpecs,
+      capabilities,
+    } = inputs;
+
+    const specs = noSpecs ? { cpu: "Hidden", ram: 0 } : await detectSpecs();
+    const participantId = nanoid();
+    const finalNickname = nickname ?? `${model}@${participantId.slice(0, 6)}`;
+
+    return this.registerAndListen({
+      code,
+      config,
+      model,
+      endpoint,
+      authHeaders,
+      password,
+      participantId,
+      finalNickname,
+      specs,
+      capabilities,
+      interactive: true,
+    });
+  }
+
+  private async executeNonInteractiveJoin(inputs: JoinInputs): Promise<number> {
+    const [probe, specs] = await Promise.all([
+      probeEndpoint(inputs.endpoint, { authHeaders: inputs.authHeaders }),
+      inputs.noSpecs
+        ? Promise.resolve({ cpu: "Hidden" as const, ram: 0 })
+        : detectSpecs(),
+    ]);
+
+    if (!this.validateProbe(probe, inputs.endpoint, inputs.model)) {
+      return 1;
+    }
+
+    if (!inputs.noSpecs) {
+      this.context.stdout.write(`Detected specs: ${formatSpecs(specs)}\n\n`);
+    }
+
+    const participantId = nanoid();
+    const finalNickname =
+      inputs.nickname ?? `${inputs.model}@${participantId.slice(0, 6)}`;
+
+    return this.registerAndListen({
+      code: inputs.code,
+      config: inputs.config,
+      model: inputs.model,
+      endpoint: inputs.endpoint,
+      authHeaders: inputs.authHeaders,
+      password: inputs.password,
+      participantId,
+      finalNickname,
+      specs,
+      capabilities: probe.capabilities,
+      interactive: false,
+    });
   }
 
   private validateProbe(
@@ -399,97 +541,19 @@ export class JoinCommand extends Command {
 
   async execute(): Promise<number> {
     const interactive = isInteractive() && !(this.code && this.model);
-    let inputs: JoinInputs;
-
-    if (interactive) {
-      const result = await collectInteractiveInputs(
-        {
-          code: this.code,
-          model: this.model,
-          authHeaders: {},
-          endpoint: this.endpoint,
-          nickname: this.nickname,
-          password: this.password,
-          noSpecs: this.noSpecs,
-        },
-        this.context.stderr
-      );
-      if (!result) {
-        return 1;
-      }
-      inputs = result;
-    } else {
-      const resolved = this.resolveInputs();
-      if (!resolved) {
-        return 1;
-      }
-
-      // Probe endpoint and detect specs concurrently
-      const [probe, specs] = await Promise.all([
-        probeEndpoint(resolved.endpoint, { authHeaders: resolved.authHeaders }),
-        resolved.noSpecs
-          ? Promise.resolve({ cpu: "Hidden" as const, ram: 0 })
-          : detectSpecs(),
-      ]);
-
-      if (!this.validateProbe(probe, resolved.endpoint, resolved.model)) {
-        return 1;
-      }
-
-      if (!resolved.noSpecs) {
-        this.context.stdout.write(`Detected specs: ${formatSpecs(specs)}\n\n`);
-      }
-
-      const participantId = nanoid();
-      const finalNickname =
-        resolved.nickname ?? `${resolved.model}@${participantId.slice(0, 6)}`;
-
-      return this.registerAndListen({
-        code: resolved.code,
-        model: resolved.model,
-        endpoint: resolved.endpoint,
-        authHeaders: resolved.authHeaders,
-        password: resolved.password,
-        participantId,
-        finalNickname,
-        specs,
-        capabilities: probe.capabilities,
-        interactive: false,
-      });
+    const inputs = await this.collectInputsForExecution(interactive);
+    if (!inputs) {
+      return 1;
     }
 
-    const {
-      authHeaders,
-      code,
-      model,
-      endpoint,
-      nickname,
-      password,
-      noSpecs,
-      capabilities,
-    } = inputs;
-
-    const specs = noSpecs ? { cpu: "Hidden", ram: 0 } : await detectSpecs();
-
-    const participantId = nanoid();
-    const finalNickname = nickname ?? `${model}@${participantId.slice(0, 6)}`;
-
-    return this.registerAndListen({
-      code,
-      model,
-      endpoint,
-      authHeaders,
-      password,
-      participantId,
-      finalNickname,
-      specs,
-      capabilities,
-      interactive: true,
-    });
+    return interactive
+      ? this.executeInteractiveJoin(inputs)
+      : this.executeNonInteractiveJoin(inputs);
   }
 
   private async registerAndListen(opts: {
     code: string;
+    config: RuntimeConfig;
     model: string;
     endpoint: string;
     authHeaders: ParticipantAuthHeaders;
@@ -502,6 +566,7 @@ export class JoinCommand extends Command {
   }): Promise<number> {
     const {
       code,
+      config,
       model,
       endpoint,
       authHeaders,
@@ -520,9 +585,13 @@ export class JoinCommand extends Command {
         model,
         endpoint,
         specs,
-        config: {},
+        config,
         capabilities,
       };
+
+      if (!hasRuntimeConfig(config)) {
+        body.config = undefined;
+      }
 
       if (Object.keys(authHeaders).length > 0) {
         body.authHeaders = authHeaders;

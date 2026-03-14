@@ -24,7 +24,18 @@ const joinRoomSchema = z.object({
   model: z.string().min(1, "Model is required"),
   nickname: z.string(),
   password: z.string(),
+  instructions: z.string(),
+  maxTokens: z
+    .string()
+    .refine((value) => !(value.trim() && Number.isNaN(Number(value))), {
+      message: "Max tokens must be a number",
+    }),
   shareSpecs: z.boolean(),
+  temperature: z
+    .string()
+    .refine((value) => !(value.trim() && Number.isNaN(Number(value))), {
+      message: "Temperature must be a number",
+    }),
 });
 
 type JoinRoomFormData = z.infer<typeof joinRoomSchema>;
@@ -66,6 +77,31 @@ function resolveAuthHeadersFromEnv(entries: AuthHeaderEnvEntry[]): {
     authHeaders,
     error: null,
   };
+}
+
+function buildRuntimeConfigFromForm(formValues: JoinRoomFormData) {
+  const config: {
+    instructions?: string;
+    max_tokens?: number;
+    temperature?: number;
+  } = {};
+
+  const instructions = formValues.instructions.trim();
+  if (instructions) {
+    config.instructions = instructions;
+  }
+
+  const temperature = formValues.temperature.trim();
+  if (temperature) {
+    config.temperature = Number(temperature);
+  }
+
+  const maxTokens = formValues.maxTokens.trim();
+  if (maxTokens) {
+    config.max_tokens = Number(maxTokens);
+  }
+
+  return config;
 }
 
 // Reusable form field component
@@ -159,24 +195,32 @@ function AdvancedFields({
   authHeaderName,
   focusedField,
   formValues,
+  maxTokensError,
   setValue,
   setAuthHeaderEnvVar,
   setAuthHeaderName,
   shareSpecs,
   specs,
   specsLoading,
+  temperatureError,
 }: {
   authHeaderEntries: AuthHeaderEnvEntry[];
   authHeaderEnvVar: string;
   authHeaderName: string;
   focusedField: number;
   formValues: JoinRoomFormData;
-  setValue: (field: keyof JoinRoomFormData, value: string | boolean) => void;
+  maxTokensError?: string;
+  setValue: (
+    field: keyof JoinRoomFormData,
+    value: string | boolean,
+    options?: { shouldValidate?: boolean }
+  ) => void;
   setAuthHeaderEnvVar: (value: string) => void;
   setAuthHeaderName: (value: string) => void;
   shareSpecs: boolean;
   specs: MachineSpecs | undefined;
   specsLoading: boolean;
+  temperatureError?: string;
 }) {
   return (
     <>
@@ -200,6 +244,35 @@ function AdvancedFields({
 
       <FormField
         focused={focusedField === 5}
+        label="Instructions / system prompt"
+        onChange={(v) => setValue("instructions", v)}
+        placeholder="Optional participant default instructions"
+        value={formValues.instructions}
+        width={60}
+      />
+
+      <FormField
+        error={temperatureError}
+        focused={focusedField === 6}
+        label="Temperature"
+        onChange={(v) => setValue("temperature", v, { shouldValidate: true })}
+        placeholder="Optional"
+        value={formValues.temperature}
+        width={16}
+      />
+
+      <FormField
+        error={maxTokensError}
+        focused={focusedField === 7}
+        label="Max tokens"
+        onChange={(v) => setValue("maxTokens", v, { shouldValidate: true })}
+        placeholder="Optional"
+        value={formValues.maxTokens}
+        width={16}
+      />
+
+      <FormField
+        focused={focusedField === 8}
         label="Auth header name"
         onChange={setAuthHeaderName}
         placeholder="Authorization"
@@ -208,7 +281,7 @@ function AdvancedFields({
       />
 
       <FormField
-        focused={focusedField === 6}
+        focused={focusedField === 9}
         label="Auth header env var"
         onChange={setAuthHeaderEnvVar}
         placeholder="OPENROUTER_API_KEY"
@@ -233,10 +306,10 @@ function AdvancedFields({
 
       <box>
         <text>
-          <span fg={focusedField === 7 ? colors.primary : colors.muted}>
+          <span fg={focusedField === 10 ? colors.primary : colors.muted}>
             [{shareSpecs ? "x" : " "}] Share machine specs
           </span>
-          {focusedField === 7 && (
+          {focusedField === 10 && (
             <span fg={colors.muted}> (press space to toggle)</span>
           )}
         </text>
@@ -355,7 +428,10 @@ export function JoinRoom({
       model: "",
       nickname: generateNickname(),
       password: "",
+      instructions: "",
+      maxTokens: "",
       shareSpecs: true,
+      temperature: "",
     },
   });
 
@@ -382,7 +458,7 @@ export function JoinRoom({
 
   // Field configuration
   const essentialFields = 3;
-  const totalFields = showAdvanced ? 8 : essentialFields;
+  const totalFields = showAdvanced ? 11 : essentialFields;
 
   // Form submission
   const handleJoin = useCallback(async () => {
@@ -403,6 +479,7 @@ export function JoinRoom({
       endpoint: endpointTrimmed,
       password: formValues.password || undefined,
       specs: formValues.shareSpecs && specs ? specs : undefined,
+      config: buildRuntimeConfigFromForm(formValues),
       capabilities: endpointQuery.data?.capabilities,
       authHeaders: authHeaderResolution.authHeaders,
     });
@@ -486,7 +563,7 @@ export function JoinRoom({
           setShowAdvanced((v) => !v);
           break;
         case "space":
-          if (focusedField === 7 && showAdvanced) {
+          if (focusedField === 10 && showAdvanced) {
             setValue("shareSpecs", !formValues.shareSpecs);
           }
           break;
@@ -626,12 +703,14 @@ export function JoinRoom({
             authHeaderName={authHeaderName}
             focusedField={focusedField}
             formValues={formValues}
+            maxTokensError={errors.maxTokens?.message}
             setAuthHeaderEnvVar={setAuthHeaderEnvVar}
             setAuthHeaderName={setAuthHeaderName}
             setValue={setValue}
             shareSpecs={formValues.shareSpecs}
             specs={specs}
             specsLoading={specsLoading}
+            temperatureError={errors.temperature?.message}
           />
         )}
 

@@ -94,6 +94,22 @@ This is intentionally close to the “generic interface + interpreter” style y
 | Real-time events | SSE subscription | - | Built-in |
 | Serve hub | - | `gambiarra serve` | Embedded server |
 
+### Runtime Defaults
+
+- Rooms can define runtime defaults when created.
+- Participants can register runtime defaults when they join.
+- The hub merges defaults at proxy time with precedence `room defaults -> participant defaults -> runtime request`.
+- Public room and participant endpoints expose only a redacted summary for sensitive fields such as instructions/system prompts.
+
+Example:
+
+- Room sets `instructions = "Answer in Portuguese"` and `temperature = 0.3`
+- Participant joins with `temperature = 0.6`
+- Client sends a request with `temperature = 0.9`
+- Final proxied request uses:
+  - `instructions = "Answer in Portuguese"`
+  - `temperature = 0.9`
+
 ## Packages
 
 The project is a Bun + Turbo monorepo with the following packages:
@@ -116,9 +132,9 @@ Command-line interface for managing hubs and participants.
 
 **Commands:**
 - `serve` - Start a hub server (with optional `--mdns` flag)
-- `create` - Create a new room
+- `create` - Create a new room, optionally with runtime defaults from JSON
 - `list` - List available rooms
-- `join` - Join a room with your LLM endpoint
+- `join` - Join a room with your LLM endpoint and optional runtime defaults
 
 ### `gambiarra-sdk`
 
@@ -178,7 +194,7 @@ Terminal UI for monitoring rooms and participants in real-time (uses SSE).
 Participant                Hub
     │                       │
     │  POST /rooms/:code/join
-    │  { id, nickname, model, endpoint, specs }
+    │  { id, nickname, model, endpoint, specs, config? }
     │ ──────────────────────►
     │                       │
     │  201 Created          │
@@ -261,7 +277,7 @@ Any server with OpenResponses or OpenAI-compatible chat/completions:
   nickname: string;
   model: string;
   endpoint: string;  // LLM API base URL
-  config: GenerationConfig;
+  config: RuntimeConfigPublic;
   specs: MachineSpecs;
   capabilities: {
     openResponses: "supported" | "unsupported" | "unknown";
@@ -273,12 +289,13 @@ Any server with OpenResponses or OpenAI-compatible chat/completions:
 }
 ```
 
-### GenerationConfig
+### RuntimeConfigPublic
 
-Standard chat/completions-compatible generation parameters:
+Public room/participant defaults summary:
 
 ```typescript
 {
+  hasInstructions: boolean;
   temperature?: number;
   top_p?: number;
   max_tokens?: number;

@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { Participant } from "./participant.ts";
 import { Room } from "./room.ts";
-import type { ParticipantInfo } from "./types.ts";
+import type { ParticipantInfoInternal } from "./types.ts";
 
 function createMockParticipant(
-  overrides: Partial<ParticipantInfo> = {}
-): ParticipantInfo {
+  overrides: Partial<ParticipantInfoInternal> = {}
+): ParticipantInfoInternal {
   const now = Date.now();
   return {
     id: overrides.id ?? crypto.randomUUID(),
@@ -140,7 +141,9 @@ describe("Room", () => {
       const added = Room.addParticipant(room.id, participant);
 
       expect(added).toBe(true);
-      expect(Room.getParticipants(room.id)).toContainEqual(participant);
+      expect(Room.getParticipants(room.id)).toContainEqual(
+        Participant.toPublicInfo(participant)
+      );
     });
 
     test("addParticipant returns false for non-existent room", () => {
@@ -158,7 +161,9 @@ describe("Room", () => {
       const removed = Room.removeParticipant(room.id, participant.id);
 
       expect(removed).toBe(true);
-      expect(Room.getParticipants(room.id)).not.toContainEqual(participant);
+      expect(Room.getParticipants(room.id)).not.toContainEqual(
+        Participant.toPublicInfo(participant)
+      );
     });
 
     test("removeParticipant returns false for non-existent participant", async () => {
@@ -175,7 +180,7 @@ describe("Room", () => {
 
       const found = Room.getParticipant(room.id, participant.id);
 
-      expect(found).toEqual(participant);
+      expect(found).toEqual(Participant.toPublicInfo(participant));
     });
 
     test("getParticipant returns undefined for non-existent participant", async () => {
