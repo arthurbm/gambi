@@ -271,7 +271,13 @@ async function collectInteractiveInputs(
     capabilities = probe.capabilities;
   }
 
-  const config = await promptRuntimeConfig("participant", defaults.config);
+  let config: RuntimeConfig;
+  try {
+    config = await promptRuntimeConfig("participant", defaults.config);
+  } catch (error) {
+    stderr.write(`${error}\n`);
+    return null;
+  }
 
   return {
     authHeaders,

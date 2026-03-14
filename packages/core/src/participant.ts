@@ -51,7 +51,7 @@ function toPublicConfig(config: RuntimeConfig): RuntimeConfigPublic {
   return {
     ...rest,
     hasInstructions:
-      typeof instructions === "string" && instructions.length > 0,
+      typeof instructions === "string" && instructions.trim().length > 0,
   };
 }
 

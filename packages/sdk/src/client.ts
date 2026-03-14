@@ -56,7 +56,7 @@ export interface JoinRoomResponse {
  * Provides methods for managing rooms and participants via HTTP.
  */
 export interface GambiarraClient {
-  /** Create a new room with optional password protection */
+  /** Create a new room with an optional password and runtime defaults */
   create(
     name: string,
     passwordOrOptions?: string | CreateRoomOptions
@@ -156,7 +156,7 @@ export function createClient(options: ClientOptions = {}): GambiarraClient {
       name: string,
       passwordOrOptions?: string | CreateRoomOptions
     ): Promise<CreateRoomResponse> {
-      const options =
+      const createOptions =
         typeof passwordOrOptions === "string"
           ? { password: passwordOrOptions }
           : passwordOrOptions;
@@ -165,11 +165,11 @@ export function createClient(options: ClientOptions = {}): GambiarraClient {
         name: string;
         password?: string;
       } = { name };
-      if (options?.password) {
-        body.password = options.password;
+      if (createOptions?.password) {
+        body.password = createOptions.password;
       }
-      if (options?.defaults) {
-        body.defaults = options.defaults;
+      if (createOptions?.defaults) {
+        body.defaults = createOptions.defaults;
       }
       return request("/rooms", {
         method: "POST",
