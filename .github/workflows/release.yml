@@ -88,9 +88,6 @@ jobs:
           - os: ubuntu-latest
             target: bun-linux-x64
             artifact: gambiarra-linux-x64
-          - os: macos-13
-            target: bun-darwin-x64
-            artifact: gambiarra-darwin-x64
           - os: macos-latest
             target: bun-darwin-arm64
             artifact: gambiarra-darwin-arm64
@@ -146,7 +143,6 @@ jobs:
           name: v${{ needs.publish.outputs.version }}
           files: |
             artifacts/gambiarra-linux-x64/gambiarra-linux-x64
-            artifacts/gambiarra-darwin-x64/gambiarra-darwin-x64
             artifacts/gambiarra-darwin-arm64/gambiarra-darwin-arm64
             artifacts/gambiarra-windows-x64.exe/gambiarra-windows-x64.exe
           generate_release_notes: true

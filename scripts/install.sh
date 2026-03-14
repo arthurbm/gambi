@@ -44,6 +44,10 @@ detect_platform() {
     *) error "Unsupported architecture: $(uname -m)" ;;
   esac
 
+  if [ "$os" = "darwin" ] && [ "$arch" = "x64" ]; then
+    error "macOS Intel (x64) binaries are not available. Install via npm or bun instead:\n  npm install -g gambiarra\n  bun add -g gambiarra"
+  fi
+
   echo "${os}-${arch}"
 }
 

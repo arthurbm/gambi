@@ -20,9 +20,6 @@ jobs:
           - os: ubuntu-latest
             target: bun-linux-x64
             artifact: gambiarra-linux-x64
-          - os: macos-13
-            target: bun-darwin-x64
-            artifact: gambiarra-darwin-x64
           - os: macos-latest
             target: bun-darwin-arm64
             artifact: gambiarra-darwin-arm64
