@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to attach binaries to (e.g., v0.2.2)"
+        description: "Release tag to attach binaries to (e.g., v0.2.3)"
         required: true
         type: string
 
@@ -13,21 +13,7 @@ permissions:
 
 jobs:
   build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: bun-linux-x64
-            artifact: gambi-linux-x64
-          - os: macos-latest
-            target: bun-darwin-arm64
-            artifact: gambi-darwin-arm64
-          - os: windows-latest
-            target: bun-windows-x64
-            artifact: gambi-windows-x64.exe
-
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -41,12 +27,13 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Build binary
+      - name: Build distribution
         run: |
-          cd packages/cli
-          bun build ./src/cli.ts --compile --target=${{ matrix.target }} --outfile=../../${{ matrix.artifact }}
+          VERSION="${{ inputs.tag }}"
+          VERSION="${VERSION#v}"
+          GAMBI_RELEASE_VERSION="$VERSION" bun run --cwd packages/cli build
 
       - name: Upload to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload ${{ inputs.tag }} ${{ matrix.artifact }} --clobber
+        run: gh release upload ${{ inputs.tag }} packages/cli/dist/releases/* --clobber

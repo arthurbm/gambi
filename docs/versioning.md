@@ -1,146 +1,163 @@
-# Versioning Strategy
+# Versioning and Release Process
 
-This document explains the versioning strategy for Gambi packages.
+This document explains how Gambi versions and releases its packages.
 
 ## Decision: Synchronized Versions
 
-All Gambi packages use **synchronized versions** - when a release is made, all packages are bumped to the same version number.
+All Gambi packages use **synchronized versions**. When a release happens, every package moves to the same version number.
 
+Example:
+
+```text
+gambi                 0.2.4
+gambi-linux-x64       0.2.4
+gambi-linux-arm64     0.2.4
+gambi-darwin-arm64    0.2.4
+gambi-darwin-x64      0.2.4
+gambi-windows-x64     0.2.4
+gambi-sdk             0.2.4
+@gambi/core           0.2.4
 ```
-gambi (CLI):     0.1.2
-gambi-sdk:      0.1.2
-@gambi/core:     0.1.2  (internal)
-```
 
-### Why Synchronized?
+We keep this model because it makes compatibility obvious and keeps release tooling simple.
 
-We evaluated two approaches:
+## Package Layout
 
-| Approach | Used By | Pros | Cons |
-|----------|---------|------|------|
-| **Synchronized** | React, Angular, OpenCode | Simple, guaranteed compatibility | Version bump without changes |
-| **Independent** | Babel, AWS SDK | Versions reflect real changes | Complex, compatibility issues |
+| Package | Published | Purpose |
+|---------|-----------|---------|
+| `gambi` | Yes | Public wrapper package that launches the platform binary |
+| `gambi-linux-x64` | Yes | Linux x64 CLI binary |
+| `gambi-linux-arm64` | Yes | Linux arm64 CLI binary |
+| `gambi-darwin-arm64` | Yes | macOS Apple Silicon CLI binary |
+| `gambi-darwin-x64` | Yes | macOS Intel CLI binary |
+| `gambi-windows-x64` | Yes | Windows x64 CLI binary |
+| `gambi-sdk` | Yes | SDK package for app integrations |
+| `@gambi/core` | No | Internal core library |
+| `@gambi/config` | No | Internal shared config |
+| `packages/cli` workspace | No | Source workspace used to build the wrapper and binary packages |
 
-**We chose synchronized versions because:**
+Important detail:
 
-1. **Project Size** - Gambi is small; independent versioning overhead doesn't pay off
-2. **Shared Core** - SDK and CLI depend on the same core; they should evolve together
-3. **Simplicity** - Less chance of errors, less tooling required
-4. **Compatibility** - Users know that `0.1.2` of everything works together
+- `packages/cli/package.json` is `private: true`
+- the npm package named `gambi` is generated under `packages/cli/dist/npm/gambi`
+- platform packages are generated under `packages/cli/dist/npm/gambi-<platform>-<arch>`
 
-### The "Cost" is Low
+## How the CLI Distribution Works
 
-Bumping a version without changes in a specific package:
-- Users run `npm update` and get the same code (no harm)
-- Doesn't break anything
-- Semver is about **compatibility**, not "amount of changes"
+The CLI uses a **wrapper + platform binaries** architecture.
 
-## Package Structure
-
-| Package | npm Name | Published | Notes |
-|---------|----------|-----------|-------|
-| CLI | `gambi` | Yes | Main product, includes TUI |
-| SDK | `gambi-sdk` | Yes | For developers integrating with Vercel AI SDK |
-| Core | `@gambi/core` | No | Internal, bundled into SDK/CLI |
-| TUI | `tui` | No | Internal, `private: true`, used by CLI |
-| Config | `@gambi/config` | No | Internal, `private: true` |
-| Docs | `docs` | No | Documentation site |
-
-## When to Release
-
-| Change | Release Needed? | Package to Select |
-|--------|-----------------|-------------------|
-| Bug fix in SDK | Yes | `sdk` or `all` |
-| New feature in CLI | Yes | `cli` or `all` |
-| UI fix in TUI | Yes (if users need it) | `cli` or `all` |
-| Refactor in Core | Depends | If affects SDK/CLI behavior |
-| Documentation only | No | Just commit and push |
-| Internal refactor | No | Just commit and push |
-
-**Key insight:** Release is for delivering something to external users. Internal changes are just normal commits.
+1. `packages/cli` contains the source code for the CLI.
+2. `bun run --cwd packages/cli build` compiles one binary per supported platform.
+3. The build also generates:
+   - a wrapper package `gambi`
+   - one binary package per platform
+   - GitHub Release assets under `packages/cli/dist/releases`
+4. The wrapper package declares the binary packages as `optionalDependencies`.
+5. During installation, the package manager installs the wrapper and only the matching platform binary.
+6. At runtime, the wrapper resolves the installed platform binary and executes it.
 
 ## Release Workflow
 
-Releases are automated via GitHub Actions with an OpenCode-style workflow.
+The source of truth for releasing is:
 
-### How It Works
+- `.github/workflows/release.yml`
+- `scripts/publish.ts`
 
-1. Workflow is triggered manually (not by tags)
-2. You select: bump type (`patch`/`minor`/`major`) and package (`all`/`sdk`/`cli`)
-3. CI calculates the new version automatically
-4. CI updates ALL `package.json` files (synchronized)
-5. CI builds and publishes to npm
-6. CI commits, tags, and pushes
-7. CI builds binaries and creates GitHub Release (if CLI)
+### Release Stages
 
-### Via GitHub UI
+The workflow runs in four stages:
 
-1. Go to **Actions** > **Release** > **Run workflow**
-2. Select bump type: `patch`, `minor`, or `major`
-3. Select package: `all`, `sdk`, or `cli`
-4. Click **Run workflow**
+1. `version`
+   Calculates the next synchronized version from the selected bump type.
+2. `build-cli`
+   Builds the CLI distribution once and uploads `packages/cli/dist` as a workflow artifact.
+3. `publish`
+   Downloads the prebuilt CLI distribution, updates repository package versions, publishes npm packages, commits the version bump, tags the release, and pushes.
+4. `github-release`
+   Uploads the same prebuilt CLI binaries to the GitHub Release.
 
-### Via GitHub CLI
+This matters because the CLI is built **once** and reused for both npm publishing and GitHub release assets. That avoids divergent artifacts.
+
+## Publish Order
+
+When the release includes the CLI, npm publishing must happen in this order:
+
+1. `gambi-linux-x64`
+2. `gambi-linux-arm64`
+3. `gambi-darwin-arm64`
+4. `gambi-darwin-x64`
+5. `gambi-windows-x64`
+6. `gambi`
+
+The wrapper must be published last, because it depends on the binary packages already existing in the registry.
+
+## How to Trigger a Release
+
+### GitHub UI
+
+1. Open **Actions**
+2. Open **Release**
+3. Click **Run workflow**
+4. Choose:
+   - `patch`, `minor`, or `major`
+   - `all`, `sdk`, or `cli`
+
+### GitHub CLI
 
 ```bash
-# Release all packages with patch bump (0.1.1 → 0.1.2)
+# Release everything
 gh workflow run release.yml -f bump=patch -f package=all
 
-# Release only SDK with minor bump (0.1.1 → 0.2.0)
+# Release only the SDK
 gh workflow run release.yml -f bump=minor -f package=sdk
 
-# Release only CLI with major bump (0.1.1 → 1.0.0)
-gh workflow run release.yml -f bump=major -f package=cli
+# Release only the CLI
+gh workflow run release.yml -f bump=minor -f package=cli
 
-# Watch the workflow progress
+# Watch the run
 gh run watch
 ```
 
-### What Each Option Does
+## What Each Release Mode Publishes
 
-| Package | npm Publish | GitHub Release | Binaries |
-|---------|-------------|----------------|----------|
-| `all` | SDK + CLI | Yes | Yes |
-| `sdk` | SDK only | No | No |
-| `cli` | CLI only | Yes | Yes |
+| Package selector | npm publish | GitHub Release assets |
+|------------------|-------------|------------------------|
+| `all` | `gambi-sdk`, all CLI binary packages, wrapper `gambi` | Yes |
+| `sdk` | `gambi-sdk` | No |
+| `cli` | all CLI binary packages, wrapper `gambi` | Yes |
 
-**Note:** Version is always synchronized across all packages, regardless of which package you publish.
+## Local Validation Before Merging Release Changes
 
-## Semantic Versioning
-
-We follow [SemVer](https://semver.org/):
-
-- **MAJOR** (1.0.0): Breaking changes
-- **MINOR** (0.1.0): New features, backward compatible
-- **PATCH** (0.0.1): Bug fixes, backward compatible
-
-### Examples
+When touching CLI distribution or release tooling, validate at least:
 
 ```bash
-# Bug fix in SDK
-gh workflow run release.yml -f bump=patch -f package=sdk
-
-# New feature in CLI (e.g., new command)
-gh workflow run release.yml -f bump=minor -f package=cli
-
-# Breaking change in API
-gh workflow run release.yml -f bump=major -f package=all
+bun run --cwd packages/cli check-types
+bun run --cwd packages/cli build
+npm pack --dry-run --cache /tmp/npm-cache ./packages/cli/dist/npm/gambi
+npm pack --dry-run --cache /tmp/npm-cache ./packages/cli/dist/npm/gambi-linux-x64
+bun run --cwd packages/sdk build
 ```
 
-## Future Considerations
-
-If Gambi grows significantly and independent versioning becomes necessary, we can adopt **Changesets**:
+Useful smoke checks:
 
 ```bash
-bunx changeset        # Create changeset describing the change
-bunx changeset version  # Calculate versions automatically
-bunx changeset publish  # Publish
+node ./packages/cli/dist/npm/gambi/bin/gambi --version
+node ./packages/cli/dist/npm/gambi/bin/gambi --help
 ```
 
-For now, synchronized versions are the right choice for simplicity and maintainability.
+## Rules for Everyday Development
 
-## References
+- Do not bump versions manually in feature PRs.
+- Let the release workflow update synchronized versions.
+- Treat `packages/cli/dist` as generated output only.
+- If a change affects install, publish, wrapper resolution, or platform binaries, update this document and `AGENTS.md` in the same PR.
 
-- [OpenCode](https://github.com/anomalyco/opencode) - Uses synchronized versions
-- [Semantic Versioning](https://semver.org/)
-- [Changesets](https://github.com/changesets/changesets) - For independent versioning
+## Deferred Follow-Ups
+
+These are intentionally out of scope for the current architecture:
+
+- beta channel with npm dist-tags
+- musl/baseline variants and CPU capability fallbacks
+- automated install smoke tests across platforms
+- extra distribution channels like Homebrew or AUR
+- richer release observability and post-publish verification

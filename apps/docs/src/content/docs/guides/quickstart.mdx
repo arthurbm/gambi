@@ -11,13 +11,13 @@ This tutorial walks you through setting up Gambi from scratch. By the end, you'l
 
 - **A machine to run the hub** — any computer on the network (doesn't need a GPU, it just routes traffic)
 - **At least one LLM endpoint** — Ollama, LM Studio, vLLM, or any OpenAI-compatible API
-- **Bun or Node.js** installed
+- **Node.js** only if you plan to install the CLI through npm
 
 ## Installation
 
 ### CLI
 
-The CLI allows you to start hubs, create rooms, and join as a participant. Pre-built binaries are available for **Linux** (x64), **macOS** (Apple Silicon), and **Windows** (x64).
+The CLI allows you to start hubs, create rooms, and join as a participant. Pre-built binaries are available for **Linux** (x64/arm64), **macOS** (Apple Silicon and Intel), and **Windows** (x64).
 
 <Tabs>
   <TabItem label="Linux / macOS" icon="linux">
@@ -25,8 +25,6 @@ The CLI allows you to start hubs, create rooms, and join as a participant. Pre-b
     curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.sh | bash
     ```
     The script auto-detects your OS and architecture, downloads the correct binary, and installs it to `/usr/local/bin`.
-
-    > **macOS Intel (x64):** Standalone binaries are only available for Apple Silicon. On Intel Macs, use the **npm / bun** tab instead.
   </TabItem>
   <TabItem label="Windows" icon="laptop">
     ```powershell
@@ -42,7 +40,7 @@ The CLI allows you to start hubs, create rooms, and join as a participant. Pre-b
     # Via bun
     bun add -g gambi
     ```
-    Works on any platform with Node.js or Bun installed, including macOS Intel.
+    The published `gambi` package is a wrapper that installs only the matching platform binary for your machine. npm users only need Node.js; Bun is not required at runtime.
   </TabItem>
 </Tabs>
 

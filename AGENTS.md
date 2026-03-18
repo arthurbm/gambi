@@ -1,7 +1,7 @@
 # AGENTS.md - Guia Operacional para Agentes de Código
 
 Escopo: este arquivo orienta agentes que iniciam trabalho no repositório `gambi`.
-Status de validação: conteúdo conferido no código em 2026-02-13.
+Status de validação: conteúdo conferido no código em 2026-03-18.
 
 ## 1) Objetivo do projeto
 
@@ -27,7 +27,7 @@ Regra obrigatória:
 
 Workspaces:
 - `packages/core`: hub HTTP, sala/participante, SSE, mDNS e schemas/tipos.
-- `packages/cli`: binário `gambi` e subcomandos de operação.
+- `packages/cli`: workspace fonte do CLI `gambi`; a distribuição publicada é gerada em `packages/cli/dist`.
 - `packages/sdk`: provider para AI SDK e cliente HTTP.
 - `apps/tui`: interface terminal (OpenTUI + React) para operação/monitoramento.
 - `apps/docs`: documentação (Astro Starlight).
@@ -128,7 +128,7 @@ Passo 2: editar com delta minimo
 
 Passo 3: validar por area tocada
 - Mudou `packages/core`: rodar testes de core e `check-types` de core.
-- Mudou `packages/cli`: validar `--help`, comando afetado e `check-types` do CLI.
+- Mudou `packages/cli`: validar `--help`, comando afetado, `check-types` do CLI e o build de distribuição.
 - Mudou `packages/sdk`: rodar testes de sdk e `check-types` de sdk.
 - Mudou `apps/tui`: rodar `bun run --cwd apps/tui test`.
 - Mudou contratos HTTP/tipos publicos: revisar `README.md` e `docs/architecture.md`.
@@ -187,6 +187,28 @@ Sempre que houver mudanca de contrato publico, atualizar no mesmo PR:
 - `README.md` para UX de uso.
 - `docs/architecture.md` para arquitetura e fluxos.
 - `docs/versioning.md` se houver mudanca de processo de release/versionamento.
+- `docs/release-architecture.md` se houver mudanca relevante na arquitetura de distribuicao/publicacao do CLI.
+
+## 11.1) Processo de release do CLI
+
+Arquitetura atual do CLI:
+- `packages/cli` e um workspace `private: true` com o codigo-fonte do CLI.
+- O pacote npm publico `gambi` e os pacotes `gambi-<os>-<arch>` sao gerados em `packages/cli/dist/npm`.
+- Os assets de GitHub Release sao gerados em `packages/cli/dist/releases`.
+
+Fluxo oficial:
+- Fonte de verdade do release: `.github/workflows/release.yml` e `scripts/publish.ts`.
+- O workflow calcula uma versao sincronizada, builda o CLI uma vez, reutiliza esse artifact no publish npm e depois publica os mesmos binarios no GitHub Release.
+- Ordem obrigatoria de publish do CLI: primeiro os pacotes binarios, depois o wrapper `gambi`.
+- Nao fazer bump manual de versao em PRs normais; deixe isso para o workflow de release.
+
+Validacao recomendada quando tocar distribuicao/release:
+```bash
+bun run --cwd packages/cli check-types
+bun run --cwd packages/cli build
+npm pack --dry-run --cache /tmp/npm-cache ./packages/cli/dist/npm/gambi
+node ./packages/cli/dist/npm/gambi/bin/gambi --version
+```
 
 ## 12) Skills locais disponiveis para agentes
 
