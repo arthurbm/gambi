@@ -45,6 +45,11 @@ description: Troubleshooting common problems with Gambiarra
    ping hub-ip
    ```
 
+4. **Participant published `localhost` to a remote hub** - `localhost` only works on the participant machine itself.
+   - Let Gambiarra auto-rewrite it in interactive mode
+   - Or pass `--network-endpoint http://<participant-lan-ip>:11434`
+   - Use `--no-network-rewrite` only if you intentionally want to opt out
+
 ## mDNS Discovery Not Working
 
 **Symptoms:**

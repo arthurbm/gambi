@@ -160,15 +160,19 @@ gambiarra join --code <room-code> --model <model> [options]
 |--------|-------------|---------|
 | `--code`, `-c` | Room code to join | Required (prompted in interactive mode) |
 | `--model`, `-m` | Model to expose | Required (prompted in interactive mode) |
-| `--endpoint`, `-e` | LLM endpoint URL | `http://localhost:11434` |
+| `--endpoint`, `-e` | Local LLM endpoint URL used for probing and inference | `http://localhost:11434` |
+| `--network-endpoint` | Network-reachable URL to publish to the hub | Auto-detected when needed |
 | `--nickname`, `-n` | Display name | Auto-generated |
 | `--header` | Auth header in the format `Header=Value` | None |
 | `--header-env` | Auth header in the format `Header=ENV_VAR` | None |
 | `--password`, `-p` | Room password (if protected) | None |
 | `--hub`, `-H` | Hub URL | `http://localhost:3000` |
 | `--no-specs` | Don't share machine specs | `false` |
+| `--no-network-rewrite` | Disable automatic localhost-to-LAN rewrite for remote hubs | `false` |
 
-The CLI automatically probes your endpoint to detect available models and protocol capabilities (Responses API vs Chat Completions).
+The CLI automatically probes your local endpoint to detect available models and protocol capabilities (Responses API vs Chat Completions).
+
+When the hub is remote and your local endpoint is loopback-only (for example `http://localhost:11434`), Gambiarra tries to publish a LAN-reachable URL automatically. In interactive mode, the CLI explains the rewrite and lets you confirm or override it. Use `--network-endpoint` when you want to publish a specific URL yourself.
 
 In interactive mode, you'll select your LLM provider from a list (Ollama, LM Studio, vLLM, or custom URL), optionally add auth headers, and then choose from the detected models.
 
@@ -185,6 +189,13 @@ gambiarra join --code ABC123 --model llama3
 gambiarra join --code ABC123 \
   --model mistral \
   --endpoint http://localhost:1234
+
+# Join a remote hub and publish an explicit LAN URL
+gambiarra join --code ABC123 \
+  --hub http://192.168.1.10:3000 \
+  --model llama3 \
+  --endpoint http://localhost:11434 \
+  --network-endpoint http://192.168.1.25:11434
 
 # Join with custom nickname
 gambiarra join --code ABC123 \

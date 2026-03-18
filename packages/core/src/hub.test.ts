@@ -484,11 +484,15 @@ describe("Hub", () => {
         openResponses: "supported" | "unsupported" | "unknown";
         chatCompletions: "supported" | "unsupported" | "unknown";
       };
-    }
+    },
+    headers?: Record<string, string>
   ) {
     const res = await fetch(`${baseUrl}/rooms/${code}/join`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+      },
       body: JSON.stringify(participant),
     });
     return { res, data: await res.json() };
@@ -613,6 +617,25 @@ describe("Hub", () => {
 
       expect(res.status).toBe(400);
       expect(data.error).toContain("Missing required fields");
+    });
+
+    test("rejects loopback endpoints when the participant joins remotely", async () => {
+      const { room } = await createRoom("Remote Room");
+      const { res, data } = await joinRoom(
+        room.code,
+        {
+          id: "participant-remote",
+          nickname: "remote-user",
+          model: "llama3",
+          endpoint: "http://localhost:11434",
+        },
+        { "x-forwarded-for": "192.168.1.50" }
+      );
+
+      expect(res.status).toBe(400);
+      const errorData = ErrorResponseSchema.parse(data);
+      expect(errorData.error).toContain("only reachable on the participant machine");
+      expect(errorData.error).toContain("--network-endpoint");
     });
 
     test("redacts participant instructions in join and list responses", async () => {

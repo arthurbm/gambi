@@ -51,8 +51,11 @@ const RESPONSES_PATH_REGEX =
 const TRAILING_SLASH_REGEX = /\/$/;
 const SSE_LINE_SPLIT_REGEX = /\r?\n/;
 const SSE_EVENT_SEPARATOR = "\n\n";
+const FORWARDED_IP_SEPARATOR_REGEX = /,/;
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
+const UNSPECIFIED_HOSTS = new Set(["0.0.0.0", "::"]);
 
 interface AccumulatedToolCall {
   arguments: string;
@@ -115,6 +118,55 @@ function getDefaultCapabilities(): ParticipantInfoInternal["capabilities"] {
 
 function normalizeEndpoint(endpoint: string): string {
   return endpoint.replace(TRAILING_SLASH_REGEX, "");
+}
+
+function isLoopbackLikeHost(hostname: string): boolean {
+  const normalizedHostname = hostname.toLowerCase();
+  return (
+    LOOPBACK_HOSTS.has(normalizedHostname) ||
+    UNSPECIFIED_HOSTS.has(normalizedHostname)
+  );
+}
+
+function isLoopbackRequesterIp(address: string): boolean {
+  return (
+    address === "::1" ||
+    address === "127.0.0.1" ||
+    address.startsWith("127.") ||
+    address === "::ffff:127.0.0.1" ||
+    address.startsWith("::ffff:127.")
+  );
+}
+
+function getRequesterIp(
+  req: Request,
+  server?: { requestIP: (req: Request) => { address: string } | null }
+): string | null {
+  const forwarded = req.headers
+    .get("x-forwarded-for")
+    ?.split(FORWARDED_IP_SEPARATOR_REGEX)[0]
+    ?.trim();
+  if (forwarded) {
+    return forwarded;
+  }
+
+  return server?.requestIP(req)?.address ?? null;
+}
+
+function getRemoteLoopbackJoinError(
+  requesterIp: string | null,
+  endpoint: string
+): string | null {
+  if (!(requesterIp && !isLoopbackRequesterIp(requesterIp))) {
+    return null;
+  }
+
+  const hostname = new URL(endpoint).hostname;
+  if (!isLoopbackLikeHost(hostname)) {
+    return null;
+  }
+
+  return `Endpoint '${endpoint}' is only reachable on the participant machine. You joined from ${requesterIp}, so publish a network-reachable URL instead (for example via '--network-endpoint').`;
 }
 
 function participantUrl(
@@ -334,7 +386,11 @@ function listRooms(): Response {
   return json({ rooms: Room.listWithParticipantCount() });
 }
 
-async function joinRoom(req: Request, code: string): Promise<Response> {
+async function joinRoom(
+  req: Request,
+  code: string,
+  requesterIp: string | null
+): Promise<Response> {
   const room = Room.getByCode(code);
   if (!room) {
     return error("Room not found", 404);
@@ -360,6 +416,13 @@ async function joinRoom(req: Request, code: string): Promise<Response> {
   }
 
   const body = parsedBody.data;
+  const remoteLoopbackJoinError = getRemoteLoopbackJoinError(
+    requesterIp,
+    body.endpoint
+  );
+  if (remoteLoopbackJoinError) {
+    return error(remoteLoopbackJoinError, 400);
+  }
 
   // Validate password if room is protected
   const isPasswordValid = await Room.validatePassword(
@@ -1542,9 +1605,21 @@ async function proxyResponsesCreate(
   } catch (proxyError) {
     SSE.broadcast(
       "llm:error",
-      { participantId: participant.id, error: String(proxyError) },
+      {
+        participantId: participant.id,
+        nickname: participant.nickname,
+        endpoint: participant.endpoint,
+        model: body.model,
+        error: String(proxyError),
+      },
       code
     );
+    console.error("[gambiarra] responses proxy failed", {
+      participantId: participant.id,
+      nickname: participant.nickname,
+      endpoint: participant.endpoint,
+      error: String(proxyError),
+    });
     return error(`Failed to proxy request: ${proxyError}`, 502);
   }
 }
@@ -1580,9 +1655,21 @@ async function proxyChatCompletions(
   } catch (proxyError) {
     SSE.broadcast(
       "llm:error",
-      { participantId: participant.id, error: String(proxyError) },
+      {
+        participantId: participant.id,
+        nickname: participant.nickname,
+        endpoint: participant.endpoint,
+        model: body.model,
+        error: String(proxyError),
+      },
       code
     );
+    console.error("[gambiarra] chat proxy failed", {
+      participantId: participant.id,
+      nickname: participant.nickname,
+      endpoint: participant.endpoint,
+      error: String(proxyError),
+    });
     return error(`Failed to proxy request: ${proxyError}`, 502);
   }
 }
@@ -1717,10 +1804,11 @@ function handleRoomRoute(
   req: Request,
   method: string,
   path: string,
-  code: string
+  code: string,
+  requesterIp: string | null
 ): Promise<Response> | Response | null {
   if (path === `/rooms/${code}/join` && method === "POST") {
-    return joinRoom(req, code);
+    return joinRoom(req, code, requesterIp);
   }
 
   if (LEAVE_PATH_REGEX.test(path) && method === "DELETE") {
@@ -1808,7 +1896,14 @@ export function createHub(options: HubOptions = {}): Hub {
 
       const roomMatch = path.match(ROOM_PATH_REGEX);
       if (roomMatch?.[1]) {
-        const result = handleRoomRoute(req, method, path, roomMatch[1]);
+        const requesterIp = getRequesterIp(req, server);
+        const result = handleRoomRoute(
+          req,
+          method,
+          path,
+          roomMatch[1],
+          requesterIp
+        );
         if (result) {
           return result;
         }
