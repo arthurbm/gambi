@@ -38,11 +38,14 @@ for (const file of pkgjsons) {
 console.log("\nInstalling dependencies...");
 await $`bun install`;
 
-// 3. Build SDK (CLI doesn't need build for npm - it publishes source files)
-// CLI binaries are built separately in the build-binaries job
-console.log("\nBuilding SDK...");
+// 3. Build publishable artifacts
+console.log("\nBuilding publishable artifacts...");
 if (PACKAGE === "all" || PACKAGE === "sdk") {
-  await $`bun run build --filter=gambi-sdk`;
+  await $`bun run --cwd packages/sdk build`;
+}
+
+if (PACKAGE === "all" || PACKAGE === "cli") {
+  await $`bun run --cwd packages/cli build`;
 }
 
 // 4. Publish to npm

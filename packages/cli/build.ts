@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { mkdir, rm } from "node:fs/promises";
+import { chmod, mkdir, rm } from "node:fs/promises";
 import { $ } from "bun";
 
 const TARGETS = [
@@ -10,21 +10,32 @@ const TARGETS = [
 ] as const;
 
 async function build() {
+  const { version } = (await Bun.file("./package.json").json()) as {
+    version: string;
+  };
+  const versionDefine = `process.env.GAMBI_CLI_VERSION=${JSON.stringify(version)}`;
+
   // 1. Clean dist/
   await rm("./dist", { recursive: true, force: true });
-  await mkdir("./dist", { recursive: true });
+  await mkdir("./dist/npm", { recursive: true });
   console.log("✓ Cleaned dist/");
 
-  // 2. Build for each target
+  // 2. Build the npm bundle used by `npm install -g gambi`
+  console.log("  Building npm bundle...");
+  await $`bun build ./src/cli.ts --target=bun --define ${versionDefine} --outfile=./dist/npm/gambi.js`;
+  await chmod("./dist/npm/gambi.js", 0o755);
+  console.log("✓ Built dist/npm/gambi.js");
+
+  // 3. Build standalone binaries for release artifacts
   const results = await Promise.allSettled(
     TARGETS.map(async ({ target, output }) => {
       console.log(`  Building ${output}...`);
-      await $`bun build ./src/cli.ts --compile --target=${target} --outfile=./dist/${output}`;
+      await $`bun build ./src/cli.ts --compile --target=${target} --define ${versionDefine} --outfile=./dist/${output}`;
       return output;
     })
   );
 
-  // 3. Report results
+  // 4. Report results
   let success = 0;
   let failed = 0;
 

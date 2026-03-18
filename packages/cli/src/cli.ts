@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { readFileSync } from "node:fs";
 import { Builtins, Cli } from "./utils/option.ts";
 import { CreateCommand } from "./commands/create.ts";
 import { JoinCommand } from "./commands/join.ts";
@@ -6,10 +7,26 @@ import { ListCommand } from "./commands/list.ts";
 import { MonitorCommand } from "./commands/monitor.ts";
 import { ServeCommand } from "./commands/serve.ts";
 
+function resolveCliVersion() {
+  if (process.env.GAMBI_CLI_VERSION) {
+    return process.env.GAMBI_CLI_VERSION;
+  }
+
+  try {
+    const packageJsonUrl = new URL("../package.json", import.meta.url);
+    const packageJson = JSON.parse(readFileSync(packageJsonUrl, "utf8")) as {
+      version?: string;
+    };
+    return packageJson.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
 const cli = new Cli({
   binaryLabel: "gambi",
   binaryName: "gambi",
-  binaryVersion: "0.0.1",
+  binaryVersion: resolveCliVersion(),
 });
 
 cli.register(ServeCommand);

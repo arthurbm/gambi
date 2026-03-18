@@ -59,11 +59,53 @@ jobs:
       - name: Calculate new version
         id: version
         run: |
-          CURRENT=$(node -p "require('./packages/sdk/package.json').version")
+          CURRENT=$(node <<'NODE'
+          const fs = require('node:fs');
+
+          const packageInput = process.env.RELEASE_PACKAGE || 'all';
+          const filesByPackage = {
+            all: [
+              'apps/docs/package.json',
+              'packages/cli/package.json',
+              'packages/config/package.json',
+              'packages/core/package.json',
+              'packages/sdk/package.json',
+            ],
+            cli: ['packages/cli/package.json'],
+            sdk: ['packages/sdk/package.json'],
+          };
+
+          function compareSemver(left, right) {
+            const leftParts = left.split('.').map(Number);
+            const rightParts = right.split('.').map(Number);
+
+            for (let index = 0; index < Math.max(leftParts.length, rightParts.length); index++) {
+              const leftPart = leftParts[index] ?? 0;
+              const rightPart = rightParts[index] ?? 0;
+
+              if (leftPart !== rightPart) {
+                return leftPart - rightPart;
+              }
+            }
+
+            return 0;
+          }
+
+          const versions = filesByPackage[packageInput].map((file) => {
+            const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
+            return pkg.version;
+          });
+
+          versions.sort(compareSemver);
+          process.stdout.write(versions.at(-1));
+          NODE
+          )
           NEW=$(bunx semver -i ${{ inputs.bump }} $CURRENT)
           echo "current=$CURRENT" >> $GITHUB_OUTPUT
           echo "version=$NEW" >> $GITHUB_OUTPUT
           echo "Bumping version: $CURRENT -> $NEW"
+        env:
+          RELEASE_PACKAGE: ${{ inputs.package }}
 
       - name: Update versions and publish
         run: bun run scripts/publish.ts ${{ steps.version.outputs.version }}
@@ -113,8 +155,10 @@ jobs:
 
       - name: Build binary
         run: |
+          VERSION=$(node -p "require('./packages/cli/package.json').version")
+          DEFINE=$(node -e "process.stdout.write('process.env.GAMBI_CLI_VERSION=' + JSON.stringify(process.argv[1]))" "$VERSION")
           cd packages/cli
-          bun build ./src/cli.ts --compile --target=${{ matrix.target }} --outfile=../../${{ matrix.artifact }}
+          bun build ./src/cli.ts --compile --target=${{ matrix.target }} --define "$DEFINE" --outfile=../../${{ matrix.artifact }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
