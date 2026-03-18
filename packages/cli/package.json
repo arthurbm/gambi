@@ -1,6 +1,6 @@
 {
   "name": "gambi",
-  "version": "0.2.4",
+  "version": "0.2.3",
   "description": "CLI for Gambi - Share local LLMs across your network",
   "keywords": [
     "llm",
