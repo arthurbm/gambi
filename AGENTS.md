@@ -198,8 +198,9 @@ Arquitetura atual do CLI:
 
 Fluxo oficial:
 - Fonte de verdade do release: `.github/workflows/release.yml` e `scripts/publish.ts`.
-- O workflow calcula uma versao sincronizada, builda o CLI uma vez, reutiliza esse artifact no publish npm e depois publica os mesmos binarios no GitHub Release.
+- O workflow captura um commit de origem, calcula uma versao sincronizada, builda o CLI uma vez, reutiliza esse artifact no publish npm e depois publica os mesmos binarios no GitHub Release.
 - Ordem obrigatoria de publish do CLI: primeiro os pacotes binarios, depois o wrapper `gambi`.
+- O workflow oficial de release publica sempre o conjunto sincronizado de pacotes; nao fazer release parcial de `sdk` ou `cli`.
 - Nao fazer bump manual de versao em PRs normais; deixe isso para o workflow de release.
 
 Validacao recomendada quando tocar distribuicao/release:

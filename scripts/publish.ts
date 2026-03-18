@@ -13,14 +13,12 @@ interface CliDistributionManifest {
 }
 
 const VERSION = process.env.VERSION || Bun.argv[2];
-const PACKAGE = process.env.PACKAGE || Bun.argv[3] || "all";
 const NPM_TAG = process.env.NPM_TAG || "latest";
 
 if (!VERSION) {
   console.error("Error: VERSION required");
-  console.error("Usage: bun run scripts/publish.ts <version> [package]");
+  console.error("Usage: bun run scripts/publish.ts <version>");
   console.error("  version: semver version (e.g., 0.1.2)");
-  console.error("  package: all | sdk | cli (default: all)");
   process.exit(1);
 }
 
@@ -58,7 +56,6 @@ async function ensureCliDistribution() {
 }
 
 console.log(`\n=== Publishing Gambi v${VERSION} ===\n`);
-console.log(`Package: ${PACKAGE}`);
 console.log(`npm tag: ${NPM_TAG}\n`);
 
 const pkgjsons = await Array.fromAsync(
@@ -85,34 +82,21 @@ console.log("\nInstalling dependencies...");
 await $`bun install`;
 
 console.log("\nBuilding publishable artifacts...");
-if (PACKAGE === "all" || PACKAGE === "sdk") {
-  await $`bun run --cwd packages/sdk build`;
-}
+await $`bun run --cwd packages/sdk build`;
 
-let cliManifest: CliDistributionManifest | undefined;
-if (PACKAGE === "all" || PACKAGE === "cli") {
-  cliManifest = await ensureCliDistribution();
-}
+const cliManifest = await ensureCliDistribution();
 
 console.log("\nPublishing to npm...");
 
-if (PACKAGE === "all" || PACKAGE === "sdk") {
-  console.log("\n--- gambi-sdk ---");
-  await $`cd packages/sdk && npm publish --access public --tag ${NPM_TAG}`;
+console.log("\n--- gambi-sdk ---");
+await $`cd packages/sdk && npm publish --access public --tag ${NPM_TAG}`;
+
+for (const binaryPackage of cliManifest.binaryPackages) {
+  console.log(`\n--- ${binaryPackage.packageName} ---`);
+  await $`cd ${binaryPackage.packageDir} && npm publish --access public --tag ${NPM_TAG}`;
 }
 
-if (PACKAGE === "all" || PACKAGE === "cli") {
-  if (!cliManifest) {
-    throw new Error("CLI distribution manifest was not generated");
-  }
-
-  for (const binaryPackage of cliManifest.binaryPackages) {
-    console.log(`\n--- ${binaryPackage.packageName} ---`);
-    await $`cd ${binaryPackage.packageDir} && npm publish --access public --tag ${NPM_TAG}`;
-  }
-
-  console.log("\n--- gambi ---");
-  await $`cd ${cliManifest.wrapperPackageDir} && npm publish --access public --tag ${NPM_TAG}`;
-}
+console.log("\n--- gambi ---");
+await $`cd ${cliManifest.wrapperPackageDir} && npm publish --access public --tag ${NPM_TAG}`;
 
 console.log(`\n=== Published v${VERSION} successfully ===\n`);

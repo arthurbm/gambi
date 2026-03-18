@@ -151,6 +151,20 @@ This matters because otherwise CI could:
 
 The artifact-based flow prevents that.
 
+## Why the Release Is Pinned to One Commit
+
+The release workflow captures one source commit up front and every later checkout uses that exact ref.
+
+This prevents a subtle but serious failure mode:
+
+- the version job reads one revision
+- the CLI build job reads a newer revision
+- the publish job reads yet another revision
+
+If that happened, npm packages, Git tags, and GitHub Release assets could all refer to different source states.
+
+Pinning the workflow to one commit keeps the release auditable and reproducible.
+
 ## How OpenCode Influenced This
 
 OpenCode uses the same broad architecture:
@@ -186,6 +200,12 @@ What we intentionally did **not** copy yet:
 - broader multi-product release orchestration
 
 That makes the Gambi version simpler than OpenCode, but still structurally robust.
+
+Another intentional difference:
+
+- Gambi currently releases the synchronized package set together instead of supporting partial CLI-only or SDK-only releases
+
+That keeps the versioning model honest and avoids tags that imply package versions which were never actually published.
 
 ## In Short
 

@@ -68,7 +68,7 @@ The source of truth for releasing is:
 The workflow runs in four stages:
 
 1. `version`
-   Calculates the next synchronized version from the selected bump type.
+   Captures the exact source commit for the release and calculates the next synchronized version from the selected bump type.
 2. `build-cli`
    Builds the CLI distribution once and uploads `packages/cli/dist` as a workflow artifact.
 3. `publish`
@@ -76,7 +76,7 @@ The workflow runs in four stages:
 4. `github-release`
    Uploads the same prebuilt CLI binaries to the GitHub Release.
 
-This matters because the CLI is built **once** and reused for both npm publishing and GitHub release assets. That avoids divergent artifacts.
+This matters because the release is pinned to one commit and the CLI is built **once** and reused for both npm publishing and GitHub release assets. That avoids divergent artifacts.
 
 ## Publish Order
 
@@ -98,33 +98,32 @@ The wrapper must be published last, because it depends on the binary packages al
 1. Open **Actions**
 2. Open **Release**
 3. Click **Run workflow**
-4. Choose:
-   - `patch`, `minor`, or `major`
-   - `all`, `sdk`, or `cli`
+4. Choose `patch`, `minor`, or `major`
 
 ### GitHub CLI
 
 ```bash
-# Release everything
-gh workflow run release.yml -f bump=patch -f package=all
-
-# Release only the SDK
-gh workflow run release.yml -f bump=minor -f package=sdk
-
-# Release only the CLI
-gh workflow run release.yml -f bump=minor -f package=cli
+# Release the synchronized package set
+gh workflow run release.yml -f bump=patch
 
 # Watch the run
 gh run watch
 ```
 
-## What Each Release Mode Publishes
+The release workflow always publishes the synchronized package set:
 
-| Package selector | npm publish | GitHub Release assets |
-|------------------|-------------|------------------------|
-| `all` | `gambi-sdk`, all CLI binary packages, wrapper `gambi` | Yes |
-| `sdk` | `gambi-sdk` | No |
-| `cli` | all CLI binary packages, wrapper `gambi` | Yes |
+- `gambi-sdk`
+- all CLI binary packages
+- wrapper `gambi`
+- GitHub Release assets built from the same CLI artifact
+
+## Manual Binary Rebuilds
+
+The `Build Binaries` workflow exists only for maintenance cases where you need to rebuild and attach CLI assets to an existing release tag.
+
+Important rule:
+
+- this workflow must build from the selected tag itself, not from current `main`
 
 ## Local Validation Before Merging Release Changes
 

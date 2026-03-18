@@ -598,20 +598,13 @@ Releases are automated via GitHub Actions. The workflow updates synchronized ver
 
 1. Go to **Actions** > **Release** > **Run workflow**
 2. Select bump type: `patch`, `minor`, or `major`
-3. Select package: `all`, `sdk`, or `cli`
-4. Click **Run workflow**
+3. Click **Run workflow**
 
 **Via GitHub CLI:**
 
 ```bash
-# Release all packages with patch bump
-gh workflow run release.yml -f bump=patch -f package=all
-
-# Release only SDK with minor bump
-gh workflow run release.yml -f bump=minor -f package=sdk
-
-# Release only CLI with major bump
-gh workflow run release.yml -f bump=major -f package=cli
+# Release the synchronized package set
+gh workflow run release.yml -f bump=patch
 
 # Watch the workflow progress
 gh run watch
@@ -619,12 +612,12 @@ gh run watch
 
 The workflow will:
 - Calculate the new version (e.g., 0.1.1 → 0.1.2 for patch)
+- Pin the release to one source commit
 - Update all `package.json` files
 - Build the CLI distribution once and reuse it across publish and release
 - Publish the CLI binary packages before the `gambi` wrapper
 - Build and publish to npm
 - Commit and tag the release
-- Build binaries for all platforms (if releasing CLI)
 - Create a GitHub Release with binaries
 
 For a deeper explanation of the release pipeline and package layout, see:

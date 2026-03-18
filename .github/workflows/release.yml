@@ -11,15 +11,6 @@ on:
           - patch
           - minor
           - major
-      package:
-        description: "Package to release"
-        required: true
-        type: choice
-        default: "all"
-        options:
-          - all
-          - sdk
-          - cli
 
 permissions:
   contents: write
@@ -29,6 +20,7 @@ jobs:
   version:
     runs-on: ubuntu-latest
     outputs:
+      ref: ${{ steps.ref.outputs.ref }}
       version: ${{ steps.version.outputs.version }}
 
     steps:
@@ -37,24 +29,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Capture release ref
+        id: ref
+        run: echo "ref=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Calculate new version
         id: version
         run: |
           VERSION=$(node <<'NODE'
           const fs = require("node:fs");
 
-          const packageInput = process.env.RELEASE_PACKAGE || "all";
-          const filesByPackage = {
-            all: [
-              "apps/docs/package.json",
-              "packages/cli/package.json",
-              "packages/config/package.json",
-              "packages/core/package.json",
-              "packages/sdk/package.json",
-            ],
-            cli: ["packages/cli/package.json"],
-            sdk: ["packages/sdk/package.json"],
-          };
+          const files = [
+            "apps/docs/package.json",
+            "packages/cli/package.json",
+            "packages/config/package.json",
+            "packages/core/package.json",
+            "packages/sdk/package.json",
+          ];
 
           function compareSemver(left, right) {
             const leftParts = left.split(".").map(Number);
@@ -86,7 +77,7 @@ jobs:
             return `${major}.${minor}.${patch + 1}`;
           }
 
-          const versions = filesByPackage[packageInput].map((file) => {
+          const versions = files.map((file) => {
             const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
             return pkg.version;
           });
@@ -100,7 +91,6 @@ jobs:
           echo "Releasing version: $VERSION"
         env:
           RELEASE_BUMP: ${{ inputs.bump }}
-          RELEASE_PACKAGE: ${{ inputs.package }}
 
   build-cli:
     needs: version
@@ -111,6 +101,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ needs.version.outputs.ref }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -118,23 +109,16 @@ jobs:
           bun-version: latest
 
       - name: Install dependencies
-        if: inputs.package == 'all' || inputs.package == 'cli'
         run: bun install
 
       - name: Build CLI distribution
-        if: inputs.package == 'all' || inputs.package == 'cli'
         run: GAMBI_RELEASE_VERSION=${{ needs.version.outputs.version }} bun run --cwd packages/cli build
 
       - name: Upload CLI distribution
-        if: inputs.package == 'all' || inputs.package == 'cli'
         uses: actions/upload-artifact@v4
         with:
           name: gambi-cli-dist
           path: packages/cli/dist
-
-      - name: Skip CLI distribution
-        if: inputs.package == 'sdk'
-        run: echo "Skipping CLI build for SDK-only release."
 
   publish:
     needs: [version, build-cli]
@@ -145,6 +129,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ needs.version.outputs.ref }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -158,7 +143,6 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Download CLI distribution
-        if: inputs.package == 'all' || inputs.package == 'cli'
         uses: actions/download-artifact@v4
         with:
           name: gambi-cli-dist
@@ -170,7 +154,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Publish packages
-        run: bun run scripts/publish.ts ${{ needs.version.outputs.version }} ${{ inputs.package }}
+        run: bun run scripts/publish.ts ${{ needs.version.outputs.version }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -183,7 +167,6 @@ jobs:
 
   github-release:
     needs: [version, build-cli, publish]
-    if: inputs.package == 'all' || inputs.package == 'cli'
     runs-on: ubuntu-latest
 
     steps:
