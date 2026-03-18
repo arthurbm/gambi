@@ -1,18 +1,18 @@
-# Gambiarra - Notas de Arquitetura
+# Gambi - Notas de Arquitetura
 
 Documento complementar ao plano principal com detalhes técnicos adicionais.
 
 ## Referências Importantes
 
 ### OpenCode (Inspiração Principal)
-- Repositório: `/home/arthur/Documents/PESSOAL/GAMBIARRA-CLUB/opencode`
+- Repositório: `/home/arthur/Documents/PESSOAL/GAMBI-CLUB/opencode`
 - TUI: `packages/opencode/src/cli/cmd/tui/app.tsx`
 - SDK: `packages/sdk/js/`
 - OpenAPI: `packages/sdk/openapi.json`
 - Server: `packages/opencode/src/server/server.ts`
 
 ### Projeto Atual
-- Repositório: `/home/arthur/Documents/PESSOAL/GAMBIARRA-CLUB/gambiarra`
+- Repositório: `/home/arthur/Documents/PESSOAL/GAMBI-CLUB/gambi`
 - TUI já configurada: `apps/tui/` (usa @opentui/react)
 - Docs já configuradas: `apps/docs/` (Starlight)
 - Linting: `biome.json` + Ultracite
@@ -62,7 +62,7 @@ await Bun.build({
   entrypoints: ["./src/index.ts"],
   compile: {
     target: "bun-linux-x64",
-    outfile: "./dist/gambiarra-linux",
+    outfile: "./dist/gambi-linux",
   },
   minify: true,
   bytecode: true, // Startup mais rápido
@@ -107,7 +107,7 @@ import { createOllama } from "@ai-sdk/ollama";
 import { customProvider } from "ai";
 
 // Wrapper que roteia para participantes
-export function createGambiarraProvider(client: GambiarraClient) {
+export function createGambiProvider(client: GambiClient) {
   return customProvider({
     languageModels: {
       // Mapeia IDs de modelo para participantes
@@ -162,7 +162,7 @@ import starlight from '@astrojs/starlight';
 export default defineConfig({
   integrations: [
     starlight({
-      title: 'Gambiarra',
+      title: 'Gambi',
       defaultLocale: 'pt-br',
       locales: {
         'pt-br': { label: 'Português', lang: 'pt-BR' },

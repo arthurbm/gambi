@@ -5,7 +5,7 @@ import {
   ParticipantInfo,
   RoomInfoPublic,
   type RuntimeConfig,
-} from "@gambiarra/core/types";
+} from "@gambi/core/types";
 import { useCallback } from "react";
 import { z } from "zod";
 import { useAppStore } from "../store/app-store";

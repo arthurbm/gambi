@@ -22,17 +22,17 @@ export interface PublishOptions {
  *
  * @example
  * ```typescript
- * import { mDNS } from "@gambiarra/core/mdns";
+ * import { mDNS } from "@gambi/core/mdns";
  *
- * // Publish a Gambiarra hub
+ * // Publish a Gambi hub
  * mDNS.publish({
- *   name: "gambiarra-ABC123",
+ *   name: "gambi-ABC123",
  *   port: 3000,
  *   txt: { roomCode: "ABC123" },
  * });
  *
  * // Unpublish when done
- * mDNS.unpublish("gambiarra-ABC123");
+ * mDNS.unpublish("gambi-ABC123");
  * ```
  */
 export function publish(options: PublishOptions): Service {
@@ -40,7 +40,7 @@ export function publish(options: PublishOptions): Service {
 
   const service = bonjour.publish({
     name: options.name,
-    type: options.type ?? "gambiarra",
+    type: options.type ?? "gambi",
     port: options.port,
     txt: options.txt,
   });
@@ -89,14 +89,14 @@ export interface DiscoveredService {
 }
 
 /**
- * Browse for Gambiarra services on the network
+ * Browse for Gambi services on the network
  */
 export function browse(
   callback: (service: DiscoveredService) => void
 ): () => void {
   const bonjour = getInstance();
 
-  const browser: Browser = bonjour.find({ type: "gambiarra" }, (service) => {
+  const browser: Browser = bonjour.find({ type: "gambi" }, (service) => {
     callback({
       name: service.name,
       port: service.port,

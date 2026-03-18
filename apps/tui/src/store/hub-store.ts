@@ -1,4 +1,4 @@
-import { createHub } from "@gambiarra/core/hub";
+import { createHub } from "@gambi/core/hub";
 import { create } from "zustand";
 
 interface HubServer {

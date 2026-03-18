@@ -1,4 +1,4 @@
-import type { RuntimeConfig } from "@gambiarra/core/types";
+import type { RuntimeConfig } from "@gambi/core/types";
 import { useKeyboard } from "@opentui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Footer } from "../components/footer";
@@ -269,7 +269,7 @@ export function CreateRoom({ onNavigate, onBack, canGoBack }: CreateRoomProps) {
               </text>
               <box backgroundColor={colors.surface} paddingLeft={1}>
                 <text fg={colors.accent}>
-                  gambiarra join {createdRoom.code} --endpoint {"<"}llm-url{">"}{" "}
+                  gambi join {createdRoom.code} --endpoint {"<"}llm-url{">"}{" "}
                   --model {"<"}model{">"}
                 </text>
               </box>

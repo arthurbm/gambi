@@ -28,15 +28,15 @@ export class CreateCommand extends Command {
   static override usage = Command.Usage({
     description: "Create a new room on a hub",
     examples: [
-      ["Create a room (interactive)", "gambiarra create"],
-      ["Create a room", "gambiarra create --name 'My Room'"],
+      ["Create a room (interactive)", "gambi create"],
+      ["Create a room", "gambi create --name 'My Room'"],
       [
         "Create on custom hub",
-        "gambiarra create --name 'My Room' --hub http://192.168.1.10:3000",
+        "gambi create --name 'My Room' --hub http://192.168.1.10:3000",
       ],
       [
         "Create a password-protected room",
-        "gambiarra create --name 'My Room' --password secret123",
+        "gambi create --name 'My Room' --password secret123",
       ],
     ],
   });
@@ -75,7 +75,7 @@ export class CreateCommand extends Command {
     }
 
     if (!name && isInteractive()) {
-      intro("gambiarra create");
+      intro("gambi create");
 
       const nameResult = await text({
         message: "Room name:",

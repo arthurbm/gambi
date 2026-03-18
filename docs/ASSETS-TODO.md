@@ -44,10 +44,10 @@ bun run dev <ROOM_CODE>
 ### CLI
 ```bash
 # Gravar output colorido
-gambiarra serve --port 3000
-gambiarra create
-gambiarra join <CODE> --endpoint http://localhost:11434 --model llama3 --nickname demo
-gambiarra list
+gambi serve --port 3000
+gambi create
+gambi join <CODE> --endpoint http://localhost:11434 --model llama3 --nickname demo
+gambi list
 ```
 
 ## Depois de Adicionar

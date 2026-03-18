@@ -1,10 +1,10 @@
 #!/bin/bash
 set -e
 
-# Gambiarra CLI Uninstaller
-# Usage: curl -fsSL https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/uninstall.sh | bash
+# Gambi CLI Uninstaller
+# Usage: curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.sh | bash
 
-BINARY_NAME="gambiarra"
+BINARY_NAME="gambi"
 DEFAULT_INSTALL_DIR="$HOME/.local/bin"
 
 # Colors
@@ -35,10 +35,10 @@ uninstall() {
   elif [ -f "${DEFAULT_INSTALL_DIR}/${BINARY_NAME}" ]; then
     binary_path="${DEFAULT_INSTALL_DIR}/${BINARY_NAME}"
   else
-    error "gambiarra not found. Nothing to uninstall."
+    error "gambi not found. Nothing to uninstall."
   fi
 
-  info "Found gambiarra at: ${binary_path}"
+  info "Found gambi at: ${binary_path}"
 
   # Remove the binary
   if [ -w "$(dirname "$binary_path")" ]; then
@@ -48,12 +48,12 @@ uninstall() {
     sudo rm "$binary_path"
   fi
 
-  info "gambiarra has been uninstalled successfully."
+  info "gambi has been uninstalled successfully."
 }
 
 main() {
   echo ""
-  echo "  Gambiarra CLI Uninstaller"
+  echo "  Gambi CLI Uninstaller"
   echo ""
 
   uninstall

@@ -1,4 +1,4 @@
-// HTTP client for interacting with remote Gambiarra hubs
+// HTTP client for interacting with remote Gambi hubs
 import type {
   ParticipantAuthHeaders,
   ParticipantInfo,
@@ -7,7 +7,7 @@ import type {
 } from "./types.ts";
 
 /**
- * Options for creating a Gambiarra HTTP client
+ * Options for creating a Gambi HTTP client
  */
 export interface ClientOptions {
   /** Base URL of the hub (default: http://localhost:3000) */
@@ -51,11 +51,11 @@ export interface JoinRoomResponse {
 }
 
 /**
- * HTTP client for interacting with a remote Gambiarra hub
+ * HTTP client for interacting with a remote Gambi hub
  *
  * Provides methods for managing rooms and participants via HTTP.
  */
-export interface GambiarraClient {
+export interface GambiClient {
   /** Create a new room with an optional password and runtime defaults */
   create(
     name: string,
@@ -100,14 +100,14 @@ export class ClientError extends Error {
 }
 
 /**
- * Create a new Gambiarra HTTP client
+ * Create a new Gambi HTTP client
  *
  * @param options - Client configuration options
  * @returns A client instance for interacting with the hub
  *
  * @example
  * ```typescript
- * import { createClient } from "gambiarra-sdk/client";
+ * import { createClient } from "gambi-sdk/client";
  *
  * const client = createClient({ hubUrl: "http://hub.example.com:3000" });
  *
@@ -124,7 +124,7 @@ export class ClientError extends Error {
  * });
  * ```
  */
-export function createClient(options: ClientOptions = {}): GambiarraClient {
+export function createClient(options: ClientOptions = {}): GambiClient {
   const hubUrl = options.hubUrl ?? "http://localhost:3000";
 
   async function request<T>(path: string, init?: RequestInit): Promise<T> {

@@ -1,11 +1,11 @@
 ---
 title: Home Lab Setup
-description: Run Gambiarra as a permanent service in your home lab
+description: Run Gambi as a permanent service in your home lab
 ---
 
 # Home Lab Setup
 
-Want to share your gaming PC's LLM with your laptop, tablet, or other devices? This guide covers setting up Gambiarra as a permanent service in your home lab.
+Want to share your gaming PC's LLM with your laptop, tablet, or other devices? This guide covers setting up Gambi as a permanent service in your home lab.
 
 ## The Scenario
 
@@ -13,7 +13,7 @@ You have:
 - **Server**: Desktop/gaming PC with GPU running Ollama 24/7
 - **Clients**: Laptop, tablet, phone, or other devices that want to use the LLM
 
-With Gambiarra, you can access your server's LLM from anywhere on your home network.
+With Gambi, you can access your server's LLM from anywhere on your home network.
 
 ## Architecture
 
@@ -35,25 +35,25 @@ With Gambiarra, you can access your server's LLM from anywhere on your home netw
 
 ## Server Setup
 
-### 1. Install Gambiarra
+### 1. Install Gambi
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.sh | bash
 ```
 
 ### 2. Create a Systemd Service
 
-Create `/etc/systemd/system/gambiarra-hub.service`:
+Create `/etc/systemd/system/gambi-hub.service`:
 
 ```ini
 [Unit]
-Description=Gambiarra Hub
+Description=Gambi Hub
 After=network.target
 
 [Service]
 Type=simple
 User=your-username
-ExecStart=/usr/local/bin/gambiarra serve --port 3000 --mdns
+ExecStart=/usr/local/bin/gambi serve --port 3000 --mdns
 Restart=always
 RestartSec=10
 
@@ -64,8 +64,8 @@ WantedBy=multi-user.target
 Enable and start:
 
 ```bash
-sudo systemctl enable gambiarra-hub
-sudo systemctl start gambiarra-hub
+sudo systemctl enable gambi-hub
+sudo systemctl start gambi-hub
 ```
 
 ### 3. Create a Persistent Room
@@ -74,17 +74,17 @@ You'll want the same room code every time. Create a startup script:
 
 ```bash
 #!/bin/bash
-# /home/your-username/gambiarra-setup.sh
+# /home/your-username/gambi-setup.sh
 
 # Wait for hub to be ready
 sleep 5
 
 # Create room (or use existing)
-ROOM_CODE=$(gambiarra create 2>/dev/null | grep -oP 'Code: \K\w+')
+ROOM_CODE=$(gambi create 2>/dev/null | grep -oP 'Code: \K\w+')
 echo "Room code: $ROOM_CODE"
 
 # Join with local Ollama
-gambiarra join $ROOM_CODE \
+gambi join $ROOM_CODE \
   --endpoint http://localhost:11434 \
   --model llama3 \
   --nickname homelab-gpu
@@ -94,15 +94,15 @@ Or add another systemd service for the participant:
 
 ```ini
 [Unit]
-Description=Gambiarra Participant
-After=gambiarra-hub.service ollama.service
-Requires=gambiarra-hub.service
+Description=Gambi Participant
+After=gambi-hub.service ollama.service
+Requires=gambi-hub.service
 
 [Service]
 Type=simple
 User=your-username
 ExecStartPre=/bin/sleep 5
-ExecStart=/usr/local/bin/gambiarra join YOURCODE --endpoint http://localhost:11434 --model llama3 --nickname homelab
+ExecStart=/usr/local/bin/gambi join YOURCODE --endpoint http://localhost:11434 --model llama3 --nickname homelab
 Restart=always
 RestartSec=10
 
@@ -119,16 +119,16 @@ For a truly permanent setup, you can hardcode a room code. Check the hub logs fo
 ### From Another Machine
 
 ```typescript
-import { createGambiarra } from "gambiarra-sdk";
+import { createGambi } from "gambi-sdk";
 import { generateText } from "ai";
 
-const gambiarra = createGambiarra({
+const gambi = createGambi({
   roomCode: "YOUR_ROOM_CODE",
   hubUrl: "http://192.168.1.100:3000", // Your server's IP
 });
 
 const result = await generateText({
-  model: gambiarra.any(),
+  model: gambi.any(),
   prompt: "Hello from my laptop!",
 });
 ```
@@ -138,7 +138,7 @@ const result = await generateText({
 If mDNS works on your network (most home networks), you can skip the IP:
 
 ```typescript
-const gambiarra = createGambiarra({
+const gambi = createGambi({
   roomCode: "YOUR_ROOM_CODE",
   // Hub discovered automatically via mDNS
 });
@@ -162,7 +162,7 @@ curl -X POST http://192.168.1.100:3000/rooms/YOURCODE/v1/responses \
 
 ### Home Network Only
 
-Gambiarra is designed for trusted local networks. Don't expose it to the internet without additional security measures.
+Gambi is designed for trusted local networks. Don't expose it to the internet without additional security measures.
 
 ### Firewall Rules
 
@@ -183,13 +183,13 @@ You can run multiple models on the same server:
 
 ```bash
 # Terminal 1: Join with llama3
-gambiarra join YOURCODE \
+gambi join YOURCODE \
   --endpoint http://localhost:11434 \
   --model llama3 \
   --nickname homelab-llama
 
 # Terminal 2: Join with mistral (same Ollama, different model)
-gambiarra join YOURCODE \
+gambi join YOURCODE \
   --endpoint http://localhost:11434 \
   --model mistral \
   --nickname homelab-mistral
@@ -200,13 +200,13 @@ Then target specific models from clients:
 ```typescript
 // Use llama for code
 const code = await generateText({
-  model: gambiarra.model("llama3"),
+  model: gambi.model("llama3"),
   prompt: "Write a function...",
 });
 
 // Use mistral for text
 const text = await generateText({
-  model: gambiarra.model("mistral"),
+  model: gambi.model("mistral"),
   prompt: "Write an email...",
 });
 ```
@@ -216,28 +216,28 @@ const text = await generateText({
 ### Check Hub Status
 
 ```bash
-sudo systemctl status gambiarra-hub
+sudo systemctl status gambi-hub
 ```
 
 ### View Logs
 
 ```bash
-sudo journalctl -u gambiarra-hub -f
+sudo journalctl -u gambi-hub -f
 ```
 
 ### List Participants
 
 ```bash
-gambiarra list
+gambi list
 ```
 
 ## Troubleshooting
 
 ### Service Won't Start
 
-1. Check logs: `sudo journalctl -u gambiarra-hub -n 50`
-2. Verify gambiarra is installed: `which gambiarra`
-3. Test manually: `gambiarra serve --port 3000`
+1. Check logs: `sudo journalctl -u gambi-hub -n 50`
+2. Verify gambi is installed: `which gambi`
+3. Test manually: `gambi serve --port 3000`
 
 ### Can't Connect from Client
 

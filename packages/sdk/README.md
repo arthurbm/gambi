@@ -1,32 +1,32 @@
-# gambiarra-sdk
+# gambi-sdk
 
-[![npm version](https://img.shields.io/npm/v/gambiarra-sdk)](https://www.npmjs.com/package/gambiarra-sdk)
-[![npm downloads](https://img.shields.io/npm/dm/gambiarra-sdk)](https://www.npmjs.com/package/gambiarra-sdk)
+[![npm version](https://img.shields.io/npm/v/gambi-sdk)](https://www.npmjs.com/package/gambi-sdk)
+[![npm downloads](https://img.shields.io/npm/dm/gambi-sdk)](https://www.npmjs.com/package/gambi-sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-TypeScript SDK for Gambiarra - a distributed LLM coordination system.
+TypeScript SDK for Gambi - a distributed LLM coordination system.
 
 ## Installation
 
 ```bash
-npm install gambiarra-sdk
+npm install gambi-sdk
 ```
 
 or
 
 ```bash
-bun add gambiarra-sdk
+bun add gambi-sdk
 ```
 
 or
 
 ```bash
-pnpm add gambiarra-sdk
+pnpm add gambi-sdk
 ```
 
 ## Overview
 
-The SDK provides organized namespaces for interacting with Gambiarra hubs:
+The SDK provides organized namespaces for interacting with Gambi hubs:
 
 - **`rooms`** - Manage rooms and participants
 - **`participants`** - Create and configure participants
@@ -39,7 +39,7 @@ The SDK provides organized namespaces for interacting with Gambiarra hubs:
 ### Creating a Local Hub
 
 ```typescript
-import { hub, rooms, participants } from "gambiarra-sdk";
+import { hub, rooms, participants } from "gambi-sdk";
 
 // Create a hub
 const myHub = hub.create({ port: 3000 });
@@ -65,10 +65,10 @@ rooms.addParticipant(room.id, participant);
 
 ### Using the HTTP Client
 
-Connect to a remote Gambiarra hub:
+Connect to a remote Gambi hub:
 
 ```typescript
-import { createClient } from "gambiarra-sdk";
+import { createClient } from "gambi-sdk";
 
 const client = createClient({ hubUrl: "http://hub.example.com:3000" });
 
@@ -95,20 +95,20 @@ await client.leave(room.code, "participant-1");
 
 ### With Vercel AI SDK
 
-Use Gambiarra as an AI provider:
+Use Gambi as an AI provider:
 
 ```typescript
-import { createGambiarra } from "gambiarra-sdk";
+import { createGambi } from "gambi-sdk";
 import { generateText } from "ai";
 
-const gambiarra = createGambiarra({ roomCode: "ABC123" });
+const gambi = createGambi({ roomCode: "ABC123" });
 
 const result = await generateText({
-  model: gambiarra.any(), // Defaults to OpenResponses
+  model: gambi.any(), // Defaults to OpenResponses
   prompt: "Hello, world!",
 });
 
-const legacy = createGambiarra({
+const legacy = createGambi({
   roomCode: "ABC123",
   defaultProtocol: "chatCompletions",
 });
@@ -242,7 +242,7 @@ import type {
   MachineSpecs,
   HubConfig,
   NetworkConfig,
-} from "gambiarra-sdk";
+} from "gambi-sdk";
 ```
 
 ### Runtime Validation
@@ -254,7 +254,7 @@ import {
   ParticipantInfoSchema,
   RoomInfoSchema,
   GenerationConfigSchema,
-} from "gambiarra-sdk";
+} from "gambi-sdk";
 
 // Validate at runtime
 const result = ParticipantInfoSchema.parse(data);
@@ -266,17 +266,17 @@ Import only what you need for optimal bundle size:
 
 ```typescript
 // Import specific namespaces
-import { rooms, participants, hub } from "gambiarra-sdk";
+import { rooms, participants, hub } from "gambi-sdk";
 
 // Or destructure what you need
-import { createClient, createGambiarra } from "gambiarra-sdk";
+import { createClient, createGambi } from "gambi-sdk";
 ```
 
 Modern bundlers (webpack, esbuild, rollup) will tree-shake unused exports.
 
 ## Architecture
 
-The SDK is a **zero-duplication wrapper** around `@gambiarra/core`:
+The SDK is a **zero-duplication wrapper** around `@gambi/core`:
 
 - **`types.ts`** - Re-exports all core types
 - **`protocol.ts`** - Re-exports protocol messages
@@ -293,7 +293,7 @@ The SDK is a **zero-duplication wrapper** around `@gambiarra/core`:
 ### Complete Workflow
 
 ```typescript
-import { hub, rooms, participants } from "gambiarra-sdk";
+import { hub, rooms, participants } from "gambi-sdk";
 
 // 1. Create hub
 const myHub = hub.create({ port: 3000 });
@@ -343,7 +343,7 @@ for (const { roomId, participantId } of stale) {
 ### Error Handling
 
 ```typescript
-import { ClientError } from "gambiarra-sdk";
+import { ClientError } from "gambi-sdk";
 
 try {
   await client.join("INVALID", participant);

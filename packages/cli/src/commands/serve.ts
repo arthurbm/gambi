@@ -1,7 +1,7 @@
 import { hostname as getHostname } from "node:os";
 import { confirm, intro, text } from "@clack/prompts";
-import { createHub } from "@gambiarra/core/hub";
-import { printLogo } from "@gambiarra/core/logo";
+import { createHub } from "@gambi/core/hub";
+import { printLogo } from "@gambi/core/logo";
 import { Command, Option } from "../utils/option.ts";
 import {
   handleCancel,
@@ -13,12 +13,12 @@ export class ServeCommand extends Command {
   static override paths = [["serve"]];
 
   static override usage = Command.Usage({
-    description: "Start the Gambiarra hub server",
+    description: "Start the Gambi hub server",
     examples: [
-      ["Start with interactive setup", "gambiarra serve"],
-      ["Start on default port 3000", "gambiarra serve --port 3000"],
-      ["Start on custom port", "gambiarra serve --port 8080"],
-      ["Start with mDNS discovery", "gambiarra serve --mdns"],
+      ["Start with interactive setup", "gambi serve"],
+      ["Start on default port 3000", "gambi serve --port 3000"],
+      ["Start on custom port", "gambi serve --port 8080"],
+      ["Start with mDNS discovery", "gambi serve --mdns"],
     ],
   });
 
@@ -44,7 +44,7 @@ export class ServeCommand extends Command {
     let mdns = this.mdns;
 
     if (!hasExplicitFlags() && isInteractive()) {
-      intro("gambiarra serve");
+      intro("gambi serve");
 
       const portResult = await text({
         message: "Port:",
@@ -97,7 +97,7 @@ export class ServeCommand extends Command {
         `mDNS: http://${localHostname}.local:${portNum}\n`
       );
       this.context.stdout.write(
-        `      Service: ${hub.mdnsName}._gambiarra._tcp.local\n`
+        `      Service: ${hub.mdnsName}._gambi._tcp.local\n`
       );
     }
 

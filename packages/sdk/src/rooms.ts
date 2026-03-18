@@ -1,11 +1,11 @@
 // Re-export Room namespace from core (DRY - zero duplication)
-import { Room } from "@gambiarra/core/room";
+import { Room } from "@gambi/core/room";
 
 /**
  * Room management namespace
  *
  * Provides functions for creating, managing, and querying rooms.
- * Rooms are the core organizational unit in Gambiarra, containing participants
+ * Rooms are the core organizational unit in Gambi, containing participants
  * and managing their lifecycle.
  */
 export const rooms = {

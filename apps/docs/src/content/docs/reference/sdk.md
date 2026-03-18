@@ -1,21 +1,21 @@
 ---
 title: SDK Reference
-description: Complete reference for the Gambiarra SDK.
+description: Complete reference for the Gambi SDK.
 ---
 
-The Gambiarra SDK provides a [Vercel AI SDK](https://sdk.vercel.ai/) provider for using shared LLMs through a Gambiarra hub.
+The Gambi SDK provides a [Vercel AI SDK](https://sdk.vercel.ai/) provider for using shared LLMs through a Gambi hub.
 
 ## Installation
 
 ```bash
-npm install gambiarra-sdk
+npm install gambi-sdk
 # or
-bun add gambiarra-sdk
+bun add gambi-sdk
 ```
 
-## `createGambiarra(options)`
+## `createGambi(options)`
 
-Creates a Gambiarra provider instance.
+Creates a Gambi provider instance.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -24,9 +24,9 @@ Creates a Gambiarra provider instance.
 | `defaultProtocol` | `"openResponses" \| "chatCompletions"` | `"openResponses"` | Protocol used by the top-level routing helpers |
 
 ```typescript
-import { createGambiarra } from "gambiarra-sdk";
+import { createGambi } from "gambi-sdk";
 
-const gambiarra = createGambiarra({
+const gambi = createGambi({
   roomCode: "ABC123",
   hubUrl: "http://localhost:3000",
 });
@@ -38,12 +38,12 @@ The SDK defaults to `openResponses`. Both protocols are first-class:
 
 ```typescript
 // Default: Responses API
-const gambiarra = createGambiarra({
+const gambi = createGambi({
   roomCode: "ABC123",
 });
 
 // Chat Completions
-const gambiarra = createGambiarra({
+const gambi = createGambi({
   roomCode: "ABC123",
   defaultProtocol: "chatCompletions",
 });
@@ -52,48 +52,48 @@ const gambiarra = createGambiarra({
 You can also select per-call via namespaces:
 
 ```typescript
-gambiarra.openResponses.any();      // Responses API
-gambiarra.chatCompletions.any();    // Chat Completions
+gambi.openResponses.any();      // Responses API
+gambi.chatCompletions.any();    // Chat Completions
 ```
 
 ## Model Routing
 
 Three routing methods are available. All return a Vercel AI SDK model instance.
 
-### `gambiarra.any()`
+### `gambi.any()`
 
 Routes to a random online participant.
 
 ```typescript
 const result = await generateText({
-  model: gambiarra.any(),
+  model: gambi.any(),
   prompt: "Hello",
 });
 ```
 
-### `gambiarra.participant(id)`
+### `gambi.participant(id)`
 
 Routes to a specific participant by nickname or ID.
 
 ```typescript
 const result = await generateText({
-  model: gambiarra.participant("alice"),
+  model: gambi.participant("alice"),
   prompt: "Hello",
 });
 ```
 
-### `gambiarra.model(name)`
+### `gambi.model(name)`
 
 Routes to the first online participant running the specified model.
 
 ```typescript
 const result = await generateText({
-  model: gambiarra.model("llama3"),
+  model: gambi.model("llama3"),
   prompt: "Hello",
 });
 ```
 
-All routing methods are also available under `gambiarra.openResponses.*` and `gambiarra.chatCompletions.*`.
+All routing methods are also available under `gambi.openResponses.*` and `gambi.chatCompletions.*`.
 
 ## Streaming
 
@@ -103,7 +103,7 @@ Use `streamText` from the Vercel AI SDK:
 import { streamText } from "ai";
 
 const stream = await streamText({
-  model: gambiarra.any(),
+  model: gambi.any(),
   prompt: "Write a story",
 });
 
@@ -118,7 +118,7 @@ Standard Vercel AI SDK options are supported:
 
 ```typescript
 const result = await generateText({
-  model: gambiarra.any(),
+  model: gambi.any(),
   prompt: "Explain recursion",
   temperature: 0.7,
   maxTokens: 500,

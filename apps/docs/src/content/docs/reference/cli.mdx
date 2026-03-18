@@ -1,32 +1,34 @@
 ---
 title: CLI Reference
-description: Complete reference for Gambiarra CLI commands.
+description: Complete reference for Gambi CLI commands.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-The Gambiarra CLI provides commands for managing hubs, rooms, and participants.
+The Gambi CLI provides commands for managing hubs, rooms, and participants.
 
 All commands support **interactive mode** — run without flags in a terminal and you'll be guided through each option step by step. Flags still work for scripting and automation.
+
+If you're coming from the old package and binary names, read [Migrate from Gambiarra](/guides/migrate-from-gambiarra/).
 
 ## Installation
 
 <Tabs>
   <TabItem label="Linux / macOS" icon="linux">
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/install.sh | bash
+    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.sh | bash
     ```
   </TabItem>
   <TabItem label="Windows" icon="laptop">
     ```powershell
-    irm https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/install.ps1 | iex
+    irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.ps1 | iex
     ```
   </TabItem>
   <TabItem label="npm / bun" icon="seti:npm">
     ```bash
-    npm install -g gambiarra
+    npm install -g gambi
     # or
-    bun add -g gambiarra
+    bun add -g gambi
     ```
   </TabItem>
 </Tabs>
@@ -36,19 +38,19 @@ All commands support **interactive mode** — run without flags in a terminal an
 <Tabs>
   <TabItem label="Linux / macOS" icon="linux">
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/uninstall.sh | bash
+    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.sh | bash
     ```
   </TabItem>
   <TabItem label="Windows" icon="laptop">
     ```powershell
-    irm https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/uninstall.ps1 | iex
+    irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.ps1 | iex
     ```
   </TabItem>
   <TabItem label="npm / bun" icon="seti:npm">
     ```bash
-    npm uninstall -g gambiarra
+    npm uninstall -g gambi
     # or
-    bun remove -g gambiarra
+    bun remove -g gambi
     ```
   </TabItem>
 </Tabs>
@@ -58,7 +60,7 @@ All commands support **interactive mode** — run without flags in a terminal an
 When you run any command without its required flags in a terminal (TTY), the CLI enters interactive mode and prompts you for each option:
 
 ```
-┌  gambiarra join
+┌  gambi join
 │
 ◇  Room code:
 │  ABC123
@@ -75,7 +77,7 @@ When you run any command without its required flags in a terminal (TTY), the CLI
 └  Joined room ABC123!
 ```
 
-Interactive mode is disabled when piping input (`echo "x" | gambiarra create`), so scripts work as before.
+Interactive mode is disabled when piping input (`echo "x" | gambi create`), so scripts work as before.
 
 ## Commands
 
@@ -85,10 +87,10 @@ Start a hub server.
 
 ```bash
 # Interactive — prompts for port, host, mDNS:
-gambiarra serve
+gambi serve
 
 # With flags:
-gambiarra serve [options]
+gambi serve [options]
 ```
 
 **Options:**
@@ -103,7 +105,7 @@ gambiarra serve [options]
 **Example:**
 
 ```bash
-gambiarra serve --port 3000 --mdns
+gambi serve --port 3000 --mdns
 ```
 
 ### `create`
@@ -112,10 +114,10 @@ Create a new room on a hub.
 
 ```bash
 # Interactive — prompts for name and password:
-gambiarra create
+gambi create
 
 # With flags:
-gambiarra create --name "Room Name" [options]
+gambi create --name "Room Name" [options]
 ```
 
 **Options:**
@@ -130,16 +132,16 @@ gambiarra create --name "Room Name" [options]
 
 ```bash
 # Create a room interactively
-gambiarra create
+gambi create
 
 # Create with flags
-gambiarra create --name "My Room"
+gambi create --name "My Room"
 
 # Create on a custom hub
-gambiarra create --name "My Room" --hub http://192.168.1.10:3000
+gambi create --name "My Room" --hub http://192.168.1.10:3000
 
 # Create a password-protected room
-gambiarra create --name "My Room" --password secret123
+gambi create --name "My Room" --password secret123
 ```
 
 ### `join`
@@ -148,10 +150,10 @@ Join a room and expose your LLM endpoint.
 
 ```bash
 # Interactive — select provider, model, set nickname:
-gambiarra join
+gambi join
 
 # With flags:
-gambiarra join --code <room-code> --model <model> [options]
+gambi join --code <room-code> --model <model> [options]
 ```
 
 **Options:**
@@ -172,7 +174,7 @@ gambiarra join --code <room-code> --model <model> [options]
 
 The CLI automatically probes your local endpoint to detect available models and protocol capabilities (Responses API vs Chat Completions).
 
-When the hub is remote and your local endpoint is loopback-only (for example `http://localhost:11434`), Gambiarra tries to publish a LAN-reachable URL automatically. In interactive mode, the CLI explains the rewrite and lets you confirm or override it. Use `--network-endpoint` when you want to publish a specific URL yourself.
+When the hub is remote and your local endpoint is loopback-only (for example `http://localhost:11434`), Gambi tries to publish a LAN-reachable URL automatically. In interactive mode, the CLI explains the rewrite and lets you confirm or override it. Use `--network-endpoint` when you want to publish a specific URL yourself.
 
 In interactive mode, you'll select your LLM provider from a list (Ollama, LM Studio, vLLM, or custom URL), optionally add auth headers, and then choose from the detected models.
 
@@ -180,37 +182,37 @@ In interactive mode, you'll select your LLM provider from a list (Ollama, LM Stu
 
 ```bash
 # Join interactively — guided through all options
-gambiarra join
+gambi join
 
 # Join with Ollama
-gambiarra join --code ABC123 --model llama3
+gambi join --code ABC123 --model llama3
 
 # Join with LM Studio
-gambiarra join --code ABC123 \
+gambi join --code ABC123 \
   --model mistral \
   --endpoint http://localhost:1234
 
 # Join a remote hub and publish an explicit LAN URL
-gambiarra join --code ABC123 \
+gambi join --code ABC123 \
   --hub http://192.168.1.10:3000 \
   --model llama3 \
   --endpoint http://localhost:11434 \
   --network-endpoint http://192.168.1.25:11434
 
 # Join with custom nickname
-gambiarra join --code ABC123 \
+gambi join --code ABC123 \
   --model llama3 \
   --nickname "alice-4090"
 
 # Join a remote provider securely
 export OPENROUTER_AUTH="Bearer sk-or-..."
-gambiarra join --code ABC123 \
+gambi join --code ABC123 \
   --model meta-llama/llama-3.1-8b-instruct:free \
   --endpoint https://openrouter.ai/api \
   --header-env Authorization=OPENROUTER_AUTH
 
 # Join a password-protected room
-gambiarra join --code ABC123 \
+gambi join --code ABC123 \
   --model llama3 \
   --password secret123
 ```
@@ -221,10 +223,10 @@ List available rooms on a hub.
 
 ```bash
 # Interactive — prompts for hub URL and output format:
-gambiarra list
+gambi list
 
 # With flags:
-gambiarra list [options]
+gambi list [options]
 ```
 
 **Options:**
@@ -237,7 +239,7 @@ gambiarra list [options]
 **Example:**
 
 ```bash
-gambiarra list
+gambi list
 # Output:
 # Available rooms:
 #   ABC123  My Room
@@ -245,7 +247,7 @@ gambiarra list
 #   XYZ789  Test Room
 #     Participants: 1
 
-gambiarra list --json
+gambi list --json
 ```
 
 ### `monitor`
@@ -253,7 +255,7 @@ gambiarra list --json
 Open the TUI to monitor rooms in real-time.
 
 ```bash
-gambiarra monitor [options]
+gambi monitor [options]
 ```
 
 **Options:**
@@ -264,11 +266,11 @@ gambiarra monitor [options]
 
 The monitor shows participants, their status (online/offline), and a live activity log of events (joins, requests, errors) via SSE.
 
-**Tip:** Running `gambiarra` with no arguments in a terminal also opens the TUI with a full interactive menu (serve, create, join, list, monitor).
+**Tip:** The standalone CLI currently shows help when you run `gambi` without arguments. Use `gambi monitor` to open the TUI.
 
 ## Supported Providers
 
-Gambiarra works with any endpoint that exposes OpenResponses or OpenAI-compatible `chat/completions`:
+Gambi works with any endpoint that exposes OpenResponses or OpenAI-compatible `chat/completions`:
 
 | Provider | Default Endpoint | Protocols |
 |----------|------------------|-----------|

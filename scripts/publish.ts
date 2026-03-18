@@ -13,7 +13,7 @@ if (!VERSION) {
   process.exit(1);
 }
 
-console.log(`\n=== Publishing Gambiarra v${VERSION} ===\n`);
+console.log(`\n=== Publishing Gambi v${VERSION} ===\n`);
 console.log(`Package: ${PACKAGE}\n`);
 
 // 1. Find and update all package.json files
@@ -42,19 +42,19 @@ await $`bun install`;
 // CLI binaries are built separately in the build-binaries job
 console.log("\nBuilding SDK...");
 if (PACKAGE === "all" || PACKAGE === "sdk") {
-  await $`bun run build --filter=gambiarra-sdk`;
+  await $`bun run build --filter=gambi-sdk`;
 }
 
 // 4. Publish to npm
 console.log("\nPublishing to npm...");
 
 if (PACKAGE === "all" || PACKAGE === "sdk") {
-  console.log("\n--- gambiarra-sdk ---");
+  console.log("\n--- gambi-sdk ---");
   await $`cd packages/sdk && npm publish --access public`;
 }
 
 if (PACKAGE === "all" || PACKAGE === "cli") {
-  console.log("\n--- gambiarra (CLI) ---");
+  console.log("\n--- gambi (CLI) ---");
   await $`cd packages/cli && npm publish --access public`;
 }
 

@@ -510,12 +510,12 @@ function listModels(code: string): Response {
     (participant) => participant.status === "online"
   );
 
-  const models: GambiarraModel[] = participants.map((participant) => ({
+  const models: GambiModel[] = participants.map((participant) => ({
     id: participant.id,
     object: "model" as const,
     created: Math.floor(participant.joinedAt / 1000),
     owned_by: participant.nickname,
-    gambiarra: {
+    gambi: {
       nickname: participant.nickname,
       model: participant.model,
       endpoint: participant.endpoint,
@@ -527,12 +527,12 @@ function listModels(code: string): Response {
   return json(response);
 }
 
-export interface GambiarraModel {
+export interface GambiModel {
   id: string;
   object: "model";
   created: number;
   owned_by: string;
-  gambiarra: {
+  gambi: {
     nickname: string;
     model: string;
     endpoint: string;
@@ -542,7 +542,7 @@ export interface GambiarraModel {
 
 export interface ModelsListResponse {
   object: "list";
-  data: GambiarraModel[];
+  data: GambiModel[];
 }
 
 export interface ChatCompletionRequest {
@@ -1614,7 +1614,7 @@ async function proxyResponsesCreate(
       },
       code
     );
-    console.error("[gambiarra] responses proxy failed", {
+    console.error("[gambi] responses proxy failed", {
       participantId: participant.id,
       nickname: participant.nickname,
       endpoint: participant.endpoint,
@@ -1664,7 +1664,7 @@ async function proxyChatCompletions(
       },
       code
     );
-    console.error("[gambiarra] chat proxy failed", {
+    console.error("[gambi] chat proxy failed", {
       participantId: participant.id,
       nickname: participant.nickname,
       endpoint: participant.endpoint,
@@ -1853,7 +1853,7 @@ export function createHub(options: HubOptions = {}): Hub {
 
   let mdnsName: string | undefined;
   if (enableMdns) {
-    mdnsName = `gambiarra-hub-${port}`;
+    mdnsName = `gambi-hub-${port}`;
     mDNS.publish({
       name: mdnsName,
       port,

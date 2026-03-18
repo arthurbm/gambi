@@ -9,16 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Package renamed from `@gambiarra/sdk` to `gambiarra-sdk` (npm scope unavailable)
+- Package renamed from `@gambi/sdk` to `gambi-sdk` (npm scope unavailable)
 
 ## [0.1.0] - 2026-01-09
 
 ### Added
 
-- Initial npm release as `gambiarra` (without scope)
-- Complete SDK wrapper exposing 100% of @gambiarra/core functionality
+- Initial npm release as `gambi` (without scope)
+- Complete SDK wrapper exposing 100% of @gambi/core functionality
 - Organized namespace API: `rooms`, `participants`, `hub`
-- Vercel AI SDK provider integration via `createGambiarra()`
+- Vercel AI SDK provider integration via `createGambi()`
 - HTTP client for remote hub interactions via `createClient()`
 - Full TypeScript support with auto-generated .d.ts files
 - Tree-shakeable subpath exports for optimal bundle size
@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Package name from `@gambiarra/sdk` to `gambiarra`
+- Package name from `@gambi/sdk` to `gambi`
 - Build system: TypeScript compiler (tsc) for simplicity and reliability
 - All exports now point to compiled `dist/` files instead of source `.ts` files
 
@@ -38,4 +38,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Proper npm metadata (description, keywords, repository, license)
 - PublishConfig for public access
 
-[0.1.0]: https://github.com/arthurbm/gambiarra/releases/tag/v0.1.0
+[0.1.0]: https://github.com/arthurbm/gambi/releases/tag/v0.1.0

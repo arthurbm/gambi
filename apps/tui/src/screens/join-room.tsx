@@ -1,4 +1,4 @@
-import type { ParticipantAuthHeaders } from "@gambiarra/core/types";
+import type { ParticipantAuthHeaders } from "@gambi/core/types";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useKeyboard } from "@opentui/react";
 import { useCallback, useState } from "react";

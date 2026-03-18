@@ -19,7 +19,7 @@ export function Header({ hubUrl, roomCount, connected }: HeaderProps) {
       paddingRight={1}
     >
       <box flexDirection="row">
-        <ascii-font font="tiny" text="GAMBIARRA" />
+        <ascii-font font="tiny" text="GAMBI" />
       </box>
       <box flexDirection="row" gap={2}>
         <text fg={colors.muted}>Hub: {hubUrl}</text>

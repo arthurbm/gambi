@@ -1,15 +1,15 @@
 # Versioning Strategy
 
-This document explains the versioning strategy for Gambiarra packages.
+This document explains the versioning strategy for Gambi packages.
 
 ## Decision: Synchronized Versions
 
-All Gambiarra packages use **synchronized versions** - when a release is made, all packages are bumped to the same version number.
+All Gambi packages use **synchronized versions** - when a release is made, all packages are bumped to the same version number.
 
 ```
-gambiarra (CLI):     0.1.2
-gambiarra-sdk:      0.1.2
-@gambiarra/core:     0.1.2  (internal)
+gambi (CLI):     0.1.2
+gambi-sdk:      0.1.2
+@gambi/core:     0.1.2  (internal)
 ```
 
 ### Why Synchronized?
@@ -23,7 +23,7 @@ We evaluated two approaches:
 
 **We chose synchronized versions because:**
 
-1. **Project Size** - Gambiarra is small; independent versioning overhead doesn't pay off
+1. **Project Size** - Gambi is small; independent versioning overhead doesn't pay off
 2. **Shared Core** - SDK and CLI depend on the same core; they should evolve together
 3. **Simplicity** - Less chance of errors, less tooling required
 4. **Compatibility** - Users know that `0.1.2` of everything works together
@@ -39,11 +39,11 @@ Bumping a version without changes in a specific package:
 
 | Package | npm Name | Published | Notes |
 |---------|----------|-----------|-------|
-| CLI | `gambiarra` | Yes | Main product, includes TUI |
-| SDK | `gambiarra-sdk` | Yes | For developers integrating with Vercel AI SDK |
-| Core | `@gambiarra/core` | No | Internal, bundled into SDK/CLI |
+| CLI | `gambi` | Yes | Main product, includes TUI |
+| SDK | `gambi-sdk` | Yes | For developers integrating with Vercel AI SDK |
+| Core | `@gambi/core` | No | Internal, bundled into SDK/CLI |
 | TUI | `tui` | No | Internal, `private: true`, used by CLI |
-| Config | `@gambiarra/config` | No | Internal, `private: true` |
+| Config | `@gambi/config` | No | Internal, `private: true` |
 | Docs | `docs` | No | Documentation site |
 
 ## When to Release
@@ -129,7 +129,7 @@ gh workflow run release.yml -f bump=major -f package=all
 
 ## Future Considerations
 
-If Gambiarra grows significantly and independent versioning becomes necessary, we can adopt **Changesets**:
+If Gambi grows significantly and independent versioning becomes necessary, we can adopt **Changesets**:
 
 ```bash
 bunx changeset        # Create changeset describing the change

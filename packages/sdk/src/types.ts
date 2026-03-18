@@ -37,7 +37,7 @@ export type {
   RoomInfoPublic,
   RuntimeConfig,
   RuntimeConfigPublic,
-} from "@gambiarra/core/types";
+} from "@gambi/core/types";
 // Re-export Zod schemas for runtime validation (with Schema suffix to avoid conflicts)
 // Re-export constants
 export {
@@ -58,4 +58,4 @@ export {
   RoomInfoPublic as RoomInfoPublicSchema,
   RuntimeConfig as RuntimeConfigSchema,
   RuntimeConfigPublic as RuntimeConfigPublicSchema,
-} from "@gambiarra/core/types";
+} from "@gambi/core/types";

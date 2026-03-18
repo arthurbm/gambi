@@ -1,8 +1,8 @@
-# Plano: TUI como Cliente Completo do Gambiarra
+# Plano: TUI como Cliente Completo do Gambi
 
 ## Resumo Executivo
 
-Transformar a TUI de ferramenta de monitoramento para **cliente completo** do Gambiarra, implementando todas as funcionalidades do core. A TUI será o ponto de entrada padrão quando o usuário executar `gambiarra` sem subcomando.
+Transformar a TUI de ferramenta de monitoramento para **cliente completo** do Gambi, implementando todas as funcionalidades do core. A TUI será o ponto de entrada padrão quando o usuário executar `gambi` sem subcomando.
 
 ## Decisões Tomadas
 
@@ -18,13 +18,13 @@ Transformar a TUI de ferramenta de monitoramento para **cliente completo** do Ga
 
 | Comando | O que abre |
 |---------|------------|
-| `gambiarra` | **TUI** - Interface interativa com todas as funcionalidades |
-| `gambiarra serve` | CLI - Inicia hub (scripting) |
-| `gambiarra create` | CLI - Cria room (scripting) |
-| `gambiarra join` | CLI - Join como participante (scripting) |
-| `gambiarra list` | CLI - Lista rooms (scripting) |
+| `gambi` | **TUI** - Interface interativa com todas as funcionalidades |
+| `gambi serve` | CLI - Inicia hub (scripting) |
+| `gambi create` | CLI - Cria room (scripting) |
+| `gambi join` | CLI - Join como participante (scripting) |
+| `gambi list` | CLI - Lista rooms (scripting) |
 
-**A TUI é acessada APENAS via `gambiarra` (sem subcomando).**
+**A TUI é acessada APENAS via `gambi` (sem subcomando).**
 
 Subcomandos (`serve`, `create`, `join`, `list`) são responsabilidade da CLI e existem para automação/scripting. Usuários interativos usam a TUI.
 
@@ -33,14 +33,14 @@ Subcomandos (`serve`, `create`, `join`, `list`) são responsabilidade da CLI e e
 ## Estrutura de Issues no Beads
 
 ```
-EPIC: gambiarra-xxxx "TUI Full Client"
-├── gambiarra-xxxx.1 "Documentar filosofia"
-├── gambiarra-xxxx.2 "Sistema de navegação" (EPIC filho)
-│   ├── gambiarra-xxxx.2.1 "Hook use-navigation"
-│   ├── gambiarra-xxxx.2.2 "Refatorar app.tsx"
-│   └── gambiarra-xxxx.2.3 "Footer dinâmico"
-├── gambiarra-xxxx.3 "Menu principal"
-├── gambiarra-xxxx.4 "Listagem de rooms" (EPIC filho)
+EPIC: gambi-xxxx "TUI Full Client"
+├── gambi-xxxx.1 "Documentar filosofia"
+├── gambi-xxxx.2 "Sistema de navegação" (EPIC filho)
+│   ├── gambi-xxxx.2.1 "Hook use-navigation"
+│   ├── gambi-xxxx.2.2 "Refatorar app.tsx"
+│   └── gambi-xxxx.2.3 "Footer dinâmico"
+├── gambi-xxxx.3 "Menu principal"
+├── gambi-xxxx.4 "Listagem de rooms" (EPIC filho)
 │   ├── ...
 └── ...
 ```
@@ -67,13 +67,13 @@ Registrar no docs/architecture.md a filosofia de que todas as pontas (SDK, CLI, 
   - SDK: Integração programática para aplicações JS/TS (compatível com Vercel AI SDK)
   - CLI: Scripts e automação
   - TUI: Uso interativo humano
-- [ ] Mencionar que `gambiarra` sem subcomando abre a TUI
+- [ ] Mencionar que `gambi` sem subcomando abre a TUI
 
 **Exemplo de conteúdo**:
 ```markdown
 ## Design Philosophy
 
-Gambiarra follows the principle of **feature parity across all endpoints**:
+Gambi follows the principle of **feature parity across all endpoints**:
 
 - **SDK**: Programmatic integration for JavaScript/TypeScript applications (compatible with Vercel AI SDK)
 - **CLI**: Scripting and automation for CI/CD and power users
@@ -85,7 +85,7 @@ All three endpoints implement the complete core functionality. Users can:
 - Monitor activity
 - Start hub servers (CLI and TUI only)
 
-Running `gambiarra` without a subcommand opens the TUI interface.
+Running `gambi` without a subcommand opens the TUI interface.
 ```
 
 ---
@@ -170,7 +170,7 @@ Implementar tela inicial da TUI com navegação para todas as funcionalidades di
 **Arquivo**: `apps/tui/src/screens/main-menu.tsx`
 
 **Acceptance Criteria**:
-- [ ] Header com logo GAMBIARRA (usar `LOGO_COMPACT` do core)
+- [ ] Header com logo GAMBI (usar `LOGO_COMPACT` do core)
 - [ ] Input para Hub URL (editável, default: http://localhost:3000)
 - [ ] Lista de opções usando `<select>`:
   1. Serve Hub - Start a local hub server
@@ -415,7 +415,7 @@ Criar tela que permite iniciar um hub server diretamente da TUI.
 **Arquivo**: `apps/tui/src/hooks/use-hub-server.ts`
 
 **Acceptance Criteria**:
-- [ ] Wrapper para `createHub()` de `@gambiarra/core/hub`
+- [ ] Wrapper para `createHub()` de `@gambi/core/hub`
 - [ ] Funções: `start(options)`, `stop()`
 - [ ] Estado: `running`, `url`, `mdnsName`, `error`
 - [ ] Cleanup automático quando componente desmonta
@@ -439,7 +439,7 @@ Criar tela que permite iniciar um hub server diretamente da TUI.
   - Status: ● Running (verde)
   - URL: http://host:port
   - Health: http://host:port/health
-  - mDNS Service: gambiarra-{port} (se ativo)
+  - mDNS Service: gambi-{port} (se ativo)
 - [ ] Quando parado:
   - Status: ○ Stopped (cinza)
 - [ ] Warning ao sair: "Hub will stop when you leave this screen"
@@ -492,10 +492,10 @@ Mover lógica atual do dashboard para nova estrutura de telas.
 
 ### EPIC 10: Integração CLI
 
-**Título**: Fazer gambiarra sem subcomando abrir TUI
+**Título**: Fazer gambi sem subcomando abrir TUI
 
 **Descrição**:
-Modificar CLI para que `gambiarra` abra a TUI por padrão.
+Modificar CLI para que `gambi` abra a TUI por padrão.
 
 #### Task 10.1: Modificar cli.ts para default TUI
 
@@ -504,7 +504,7 @@ Modificar CLI para que `gambiarra` abra a TUI por padrão.
 **Acceptance Criteria**:
 - [ ] Sem subcomando → chamar `startTUI({})`
 - [ ] Remover comando `monitor` (agora é via TUI)
-- [ ] `gambiarra serve/create/join/list` → mantém CLI
+- [ ] `gambi serve/create/join/list` → mantém CLI
 - [ ] Detectar se é TTY, se não for, mostrar help
 
 **Dependências**: Task 3.2
@@ -524,7 +524,7 @@ Modificar CLI para que `gambiarra` abra a TUI por padrão.
 
 - Salvar último hub URL usado
 - Salvar último endpoint LLM
-- Usar arquivo `~/.gambiarra/config.json`
+- Usar arquivo `~/.gambi/config.json`
 
 ---
 
@@ -599,7 +599,7 @@ Modificar CLI para que `gambiarra` abra a TUI por padrão.
 
 ```bash
 # 1. Sem subcomando abre TUI
-gambiarra
+gambi
 # → Deve abrir menu principal
 
 # 2. Serve Hub
@@ -607,7 +607,7 @@ gambiarra
 # → Hub deve iniciar na porta 3000
 
 # 3. Create Room (outro terminal)
-gambiarra
+gambi
 # Selecionar "Create Room" → Nome: "Test" → Create
 # → Deve mostrar código gerado
 
@@ -616,7 +616,7 @@ gambiarra
 # → Deve mostrar room criada
 
 # 5. Join Room (outro terminal)
-gambiarra
+gambi
 # Selecionar "Join Room" → Código → Endpoint → Model
 # → Deve entrar e manter health check
 
@@ -639,14 +639,14 @@ gambiarra
 ```bash
 # Epic principal
 bd create "TUI Full Client: Implementar todas funcionalidades do core" -t epic -p 1 \
-  -d "Transformar a TUI de ferramenta de monitoramento para cliente completo do Gambiarra.
-A TUI será o ponto de entrada padrão (gambiarra sem subcomando).
+  -d "Transformar a TUI de ferramenta de monitoramento para cliente completo do Gambi.
+A TUI será o ponto de entrada padrão (gambi sem subcomando).
 
 Acceptance Criteria:
 - Menu principal com todas as opções
 - Telas: Serve Hub, Create Room, List Rooms, Join Room, Monitor
 - Navegação entre telas com histórico
-- gambiarra sem subcomando abre TUI"
+- gambi sem subcomando abre TUI"
 
 # Epic 1 - Doc
 bd create "Documentar filosofia de paridade de features" -t epic --parent <main-epic> \
@@ -660,7 +660,7 @@ Acceptance Criteria:
 - Nova seção 'Design Philosophy' após 'Overview'
 - Explicar paridade de features entre SDK, CLI e TUI
 - Descrever papel de cada ponta
-- Mencionar que gambiarra sem subcomando abre TUI"
+- Mencionar que gambi sem subcomando abre TUI"
 
 # Epic 2 - Navegação
 bd create "Sistema de navegação entre telas" -t epic --parent <main-epic> \

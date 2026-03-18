@@ -1,1 +1,1 @@
-# `@gambiarra/core`
+# `@gambi/core`

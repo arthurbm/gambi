@@ -87,13 +87,13 @@ jobs:
         include:
           - os: ubuntu-latest
             target: bun-linux-x64
-            artifact: gambiarra-linux-x64
+            artifact: gambi-linux-x64
           - os: macos-latest
             target: bun-darwin-arm64
-            artifact: gambiarra-darwin-arm64
+            artifact: gambi-darwin-arm64
           - os: windows-latest
             target: bun-windows-x64
-            artifact: gambiarra-windows-x64.exe
+            artifact: gambi-windows-x64.exe
 
     runs-on: ${{ matrix.os }}
 
@@ -142,9 +142,9 @@ jobs:
           tag_name: v${{ needs.publish.outputs.version }}
           name: v${{ needs.publish.outputs.version }}
           files: |
-            artifacts/gambiarra-linux-x64/gambiarra-linux-x64
-            artifacts/gambiarra-darwin-arm64/gambiarra-darwin-arm64
-            artifacts/gambiarra-windows-x64.exe/gambiarra-windows-x64.exe
+            artifacts/gambi-linux-x64/gambi-linux-x64
+            artifacts/gambi-darwin-arm64/gambi-darwin-arm64
+            artifacts/gambi-windows-x64.exe/gambi-windows-x64.exe
           generate_release_notes: true
           draft: false
           prerelease: false

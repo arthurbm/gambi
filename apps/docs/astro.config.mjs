@@ -5,7 +5,7 @@ import starlightLlmsTxt from "starlight-llms-txt";
 
 // https://astro.build/config
 export default defineConfig({
-  site: "https://gambiarra.dev",
+  site: "https://gambi.sh",
   vite: {
     ssr: {
       noExternal: ["zod"],
@@ -15,7 +15,7 @@ export default defineConfig({
     starlight({
       plugins: [
         starlightLlmsTxt({
-          projectName: "Gambiarra",
+          projectName: "Gambi",
           description:
             "Local-first LLM sharing hub. Pool Ollama, LM Studio, or any OpenAI-compatible endpoint with your team via rooms and an HTTP proxy. Expose a single OpenAI-compatible API that routes to any participant.",
           promote: [
@@ -27,7 +27,7 @@ export default defineConfig({
           demote: ["guides/homelab*", "architecture/*"],
         }),
       ],
-      title: "Gambiarra",
+      title: "Gambi",
       customCss: ["./src/styles/custom.css"],
       components: {
         Hero: "./src/components/Hero.astro",
@@ -36,7 +36,7 @@ export default defineConfig({
         {
           icon: "github",
           label: "GitHub",
-          href: "https://github.com/arthurbm/gambiarra",
+          href: "https://github.com/arthurbm/gambi",
         },
       ],
       sidebar: [
@@ -44,6 +44,10 @@ export default defineConfig({
           label: "Guides",
           items: [
             { label: "Quick Start", slug: "guides/quickstart" },
+            {
+              label: "Migrate from Gambiarra",
+              slug: "guides/migrate-from-gambiarra",
+            },
             { label: "Challenges & Dynamics", slug: "guides/challenges" },
             { label: "Hackathon Setup", slug: "guides/hackathon" },
             { label: "Remote Providers", slug: "guides/remote-providers" },
@@ -61,6 +65,10 @@ export default defineConfig({
         {
           label: "Architecture",
           autogenerate: { directory: "architecture" },
+        },
+        {
+          label: "Explanation",
+          autogenerate: { directory: "explanation" },
         },
         {
           label: "Troubleshooting",

@@ -1,17 +1,17 @@
 ---
 title: Architecture Overview
-description: How Gambiarra works under the hood — design decisions and trade-offs
+description: How Gambi works under the hood — design decisions and trade-offs
 ---
 
 # Architecture Overview
 
-Gambiarra uses an **HTTP + SSE architecture** with a central hub that routes requests between participants. This page explains *why* the system is designed the way it is.
+Gambi uses an **HTTP + SSE architecture** with a central hub that routes requests between participants. This page explains *why* the system is designed the way it is.
 
 ## System Diagram
 
 ```
 ┌──────────────────────────────────────────────┐
-│              GAMBIARRA HUB (HTTP)             │
+│              GAMBI HUB (HTTP)             │
 │                                              │
 │  Rooms ─── Participants ─── Health Checks    │
 │    │             │                │           │
@@ -88,10 +88,10 @@ Client                     Hub                     Participant
 
 ### Why HTTP + SSE (not WebSocket)?
 
-Gambiarra originally used WebSocket but migrated to HTTP + SSE. The reasons:
+Gambi originally used WebSocket but migrated to HTTP + SSE. The reasons:
 
 1. **SDK simplicity** — the SDK uses standard `@ai-sdk/openai-compatible` and `@ai-sdk/open-responses` providers. These expect HTTP endpoints, not WebSocket. HTTP means the SDK is a thin wrapper, not a custom protocol implementation.
-2. **Standard API** — the hub exposes an OpenAI-compatible API. Any tool that works with OpenAI works with Gambiarra by changing the base URL. This wouldn't be possible with WebSocket.
+2. **Standard API** — the hub exposes an OpenAI-compatible API. Any tool that works with OpenAI works with Gambi by changing the base URL. This wouldn't be possible with WebSocket.
 3. **Debugging** — HTTP requests are inspectable with curl, browser devtools, or any HTTP client. WebSocket traffic is opaque.
 4. **SSE for events only** — real-time monitoring (participant joins, request activity) uses SSE. This is one-way (hub → client), which is all that's needed. The TUI consumes this stream.
 
@@ -111,7 +111,7 @@ The hub stores everything in memory. Participants, rooms, and routing state are 
 
 ### Why No Authentication?
 
-Gambiarra is designed for trusted local networks. Adding auth to every endpoint would slow down the getting-started experience for the primary use case (team in the same room/network). The trade-off:
+Gambi is designed for trusted local networks. Adding auth to every endpoint would slow down the getting-started experience for the primary use case (team in the same room/network). The trade-off:
 
 - **Local network** — no auth needed. Room codes provide enough isolation.
 - **Public deployment (Railway/tunnel)** — room passwords provide basic protection. Full auth (API keys, OAuth) is planned for the managed mode.

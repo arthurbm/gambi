@@ -1,0 +1,114 @@
+---
+title: Migrate from Gambiarra
+description: Move from gambiarra to gambi with the shortest possible path for installs, imports, config, and service names.
+---
+
+# Migrate from Gambiarra
+
+The project is now called **Gambi**.
+
+This is a hard rename of the public surfaces:
+
+- `gambiarra` -> `gambi`
+- `gambiarra-sdk` -> `gambi-sdk`
+- `createGambiarra()` -> `createGambi()`
+- `~/.gambiarra` -> `~/.gambi`
+- `gambiarra-hub` / `_gambiarra` -> `gambi-hub` / `_gambi`
+
+`Gambi` is the official abbreviation of `gambiarra`. If you want the naming background, read [Why Gambi?](/explanation/why-gambi/).
+
+## Fastest migration
+
+### Linux / macOS
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/migrate-from-gambiarra.sh | bash
+```
+
+### Windows
+
+```powershell
+irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/migrate-from-gambiarra.ps1 | iex
+```
+
+## Manual migration
+
+### CLI installed via npm
+
+```bash
+npm uninstall -g gambiarra
+npm install -g gambi
+```
+
+### CLI installed via bun
+
+```bash
+bun remove -g gambiarra
+bun add -g gambi
+```
+
+### Standalone binary on Linux / macOS
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.sh | bash
+```
+
+### Standalone binary on Windows
+
+```powershell
+irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.ps1 | iex
+irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.ps1 | iex
+```
+
+## SDK migration
+
+Replace imports and provider names:
+
+```typescript
+import { createGambi } from "gambi-sdk";
+
+const gambi = createGambi({
+  roomCode: "ABC123",
+});
+```
+
+What changed:
+
+- `gambiarra-sdk` -> `gambi-sdk`
+- `createGambiarra` -> `createGambi`
+- `Gambiarra*` types -> `Gambi*` types
+- response metadata key `gambiarra` -> `gambi`
+
+## Local config migration
+
+The CLI and TUI now use:
+
+```text
+~/.gambi/config.json
+```
+
+If you already have:
+
+```text
+~/.gambiarra/config.json
+```
+
+the migration script copies it into the new location when possible.
+
+## Service and network names
+
+If you run Gambi as a service or rely on discovery, update these names too:
+
+- `gambiarra-hub.service` -> `gambi-hub.service`
+- `_gambiarra._tcp.local` -> `_gambi._tcp.local`
+- `gambiarra-hub-{port}` -> `gambi-hub-{port}`
+
+## Verify the migration
+
+```bash
+gambi --version
+gambi --help
+```
+
+If you use the SDK, also update your app imports and run your normal build or typecheck.

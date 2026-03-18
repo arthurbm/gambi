@@ -1,11 +1,11 @@
 ---
 title: Challenges & Dynamics
-description: Ideas for group activities using Gambiarra — build projects, compete, and experiment with shared LLMs.
+description: Ideas for group activities using Gambi — build projects, compete, and experiment with shared LLMs.
 ---
 
 # Challenges & Dynamics
 
-Gambiarra shines when multiple people connect their LLMs to the same room. This page collects ideas for group dynamics — whether you're running a meetup, a classroom activity, or just experimenting with friends.
+Gambi shines when multiple people connect their LLMs to the same room. This page collects ideas for group dynamics — whether you're running a meetup, a classroom activity, or just experimenting with friends.
 
 ## Getting Started
 
@@ -13,12 +13,12 @@ Every dynamic starts the same way: one person hosts the hub, everyone else joins
 
 ```bash
 # Host
-gambiarra serve --port 3000
-gambiarra create --name "My Room"
+gambi serve --port 3000
+gambi create --name "My Room"
 # → Room code: ABC123
 
 # Participants
-gambiarra join --code ABC123 --model llama3
+gambi join --code ABC123 --model llama3
 ```
 
 Once everyone is in, the room exposes a single API that routes to all connected LLMs. See the [API Reference](/reference/api/) for details, or grab the `llms.txt` and paste it into an AI coding tool to start building.
@@ -39,7 +39,7 @@ Run it 10 times and see what comes back. Good way to feel the diversity of model
 
 ### Build Something with AI Tools
 
-Grab the `llms.txt`, paste it into Lovable / Claude Code / Cursor, and ask it to build an app that uses the Gambiarra API as its LLM backend. Some ideas:
+Grab the `llms.txt`, paste it into Lovable / Claude Code / Cursor, and ask it to build an app that uses the Gambi API as its LLM backend. Some ideas:
 
 - **Chat interface** that lets you pick which model to talk to
 - **Model arena** — same prompt to two models side by side, vote on the best

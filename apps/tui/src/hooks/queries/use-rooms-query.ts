@@ -5,7 +5,7 @@ import {
   ParticipantInfo,
   RoomInfoPublic,
   type RuntimeConfig,
-} from "@gambiarra/core/types";
+} from "@gambi/core/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { useAppStore } from "../../store/app-store";

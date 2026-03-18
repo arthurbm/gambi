@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { createGambiarra } from "./provider.ts";
+import { createGambi } from "./provider.ts";
 
 describe("SDK provider", () => {
   test("defaults to OpenResponses", () => {
-    const provider = createGambiarra({ roomCode: "ABC123" });
+    const provider = createGambi({ roomCode: "ABC123" });
 
     expect(provider.defaultProtocol).toBe("openResponses");
     expect(provider.openResponses.any()).toBeDefined();
@@ -12,7 +12,7 @@ describe("SDK provider", () => {
   });
 
   test("supports explicit legacy chat/completions mode", () => {
-    const provider = createGambiarra({
+    const provider = createGambi({
       roomCode: "ABC123",
       defaultProtocol: "chatCompletions",
     });

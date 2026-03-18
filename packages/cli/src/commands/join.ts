@@ -7,14 +7,14 @@ import {
   spinner,
   text,
 } from "@clack/prompts";
-import type { EndpointProbeResult } from "@gambiarra/core/endpoint";
-import { probeEndpoint } from "@gambiarra/core/endpoint";
+import type { EndpointProbeResult } from "@gambi/core/endpoint";
+import { probeEndpoint } from "@gambi/core/endpoint";
 import type {
   ParticipantAuthHeaders,
   ParticipantCapabilities,
   RuntimeConfig,
-} from "@gambiarra/core/types";
-import { HEALTH_CHECK_INTERVAL } from "@gambiarra/core/types";
+} from "@gambi/core/types";
+import { HEALTH_CHECK_INTERVAL } from "@gambi/core/types";
 import { nanoid } from "nanoid";
 import { Command, Option } from "../utils/option.ts";
 import {
@@ -412,7 +412,7 @@ async function collectInteractiveInputs(
   stdout: NodeJS.WritableStream,
   stderr: NodeJS.WritableStream
 ): Promise<JoinInputs | null> {
-  intro("gambiarra join");
+  intro("gambi join");
 
   let { authHeaders, code, localEndpoint, model, nickname, password, noSpecs } =
     defaults;
@@ -518,26 +518,26 @@ export class JoinCommand extends Command {
   static override usage = Command.Usage({
     description: "Join a room and expose your LLM endpoint",
     examples: [
-      ["Join a room (interactive)", "gambiarra join"],
+      ["Join a room (interactive)", "gambi join"],
       [
         "Join with Ollama",
-        "gambiarra join --code ABC123 --model llama3 --endpoint http://localhost:11434",
+        "gambi join --code ABC123 --model llama3 --endpoint http://localhost:11434",
       ],
       [
         "Join with LM Studio",
-        "gambiarra join --code ABC123 --model gpt-4 --endpoint http://localhost:1234",
+        "gambi join --code ABC123 --model gpt-4 --endpoint http://localhost:1234",
       ],
       [
         "Join with custom nickname",
-        "gambiarra join --code ABC123 --model llama3 --endpoint http://localhost:11434 --nickname 'My GPU'",
+        "gambi join --code ABC123 --model llama3 --endpoint http://localhost:11434 --nickname 'My GPU'",
       ],
       [
         "Join a remote hub with an explicit published endpoint",
-        "gambiarra join --code ABC123 --hub http://192.168.1.10:3000 --model llama3 --network-endpoint http://192.168.1.25:11434",
+        "gambi join --code ABC123 --hub http://192.168.1.10:3000 --model llama3 --network-endpoint http://192.168.1.25:11434",
       ],
       [
         "Join password-protected room",
-        "gambiarra join --code ABC123 --model llama3 --password secret123",
+        "gambi join --code ABC123 --model llama3 --password secret123",
       ],
     ],
   });

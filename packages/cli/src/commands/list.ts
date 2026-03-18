@@ -29,8 +29,8 @@ export class ListCommand extends Command {
   static override usage = Command.Usage({
     description: "List available rooms on a hub",
     examples: [
-      ["List rooms (interactive)", "gambiarra list"],
-      ["List on custom hub", "gambiarra list --hub http://192.168.1.10:3000"],
+      ["List rooms (interactive)", "gambi list"],
+      ["List on custom hub", "gambi list --hub http://192.168.1.10:3000"],
     ],
   });
 
@@ -47,7 +47,7 @@ export class ListCommand extends Command {
     let json = this.json;
 
     if (!hasExplicitFlags() && isInteractive()) {
-      intro("gambiarra list");
+      intro("gambi list");
 
       const hubResult = await text({
         message: "Hub URL:",

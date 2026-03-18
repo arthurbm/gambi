@@ -1,12 +1,12 @@
 #!/bin/bash
 set -e
 
-# Gambiarra CLI Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/install.sh | bash
+# Gambi CLI Installer
+# Usage: curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.sh | bash
 
-REPO="arthurbm/gambiarra"
-INSTALL_DIR="${GAMBIARRA_INSTALL_DIR:-$HOME/.local/bin}"
-BINARY_NAME="gambiarra"
+REPO="arthurbm/gambi"
+INSTALL_DIR="${GAMBI_INSTALL_DIR:-$HOME/.local/bin}"
+BINARY_NAME="gambi"
 
 # Colors
 RED='\033[0;31m'
@@ -45,7 +45,7 @@ detect_platform() {
   esac
 
   if [ "$os" = "darwin" ] && [ "$arch" = "x64" ]; then
-    error "macOS Intel (x64) binaries are not available. Install via npm or bun instead:\n  npm install -g gambiarra\n  bun add -g gambiarra"
+    error "macOS Intel (x64) binaries are not available. Install via npm or bun instead:\n  npm install -g gambi\n  bun add -g gambi"
   fi
 
   echo "${os}-${arch}"
@@ -74,7 +74,7 @@ install() {
   info "Latest version: ${version}"
 
   # Build download URL
-  binary_name="gambiarra-${platform}"
+  binary_name="gambi-${platform}"
   if [ "${platform}" = "windows-x64" ]; then
     binary_name="${binary_name}.exe"
   fi
@@ -105,7 +105,7 @@ install() {
     sudo mv "$temp_file" "${INSTALL_DIR}/${BINARY_NAME}"
   fi
 
-  info "Installed gambiarra to ${INSTALL_DIR}/${BINARY_NAME}"
+  info "Installed gambi to ${INSTALL_DIR}/${BINARY_NAME}"
 
   # Check if install dir is in PATH
   case ":$PATH:" in
@@ -120,9 +120,9 @@ install() {
   esac
 
   # Verify installation
-  if command -v gambiarra &> /dev/null; then
+  if command -v gambi &> /dev/null; then
     info "Installation successful!"
-    gambiarra --version
+    gambi --version
   fi
 }
 
