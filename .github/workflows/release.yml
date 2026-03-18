@@ -163,7 +163,7 @@ jobs:
           git add .
           git commit -m "release: v${{ needs.version.outputs.version }}"
           git tag v${{ needs.version.outputs.version }}
-          git push origin HEAD --tags
+          git push origin HEAD:main --tags
 
   github-release:
     needs: [version, build-cli, publish]
