@@ -1,6 +1,6 @@
 {
   "name": "gambi",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "CLI for Gambi - Share local LLMs across your network",
   "keywords": [
     "llm",
@@ -23,35 +23,28 @@
   "homepage": "https://github.com/arthurbm/gambi",
   "bugs": "https://github.com/arthurbm/gambi/issues",
   "type": "module",
-  "bin": {
-    "gambi": "./src/cli.ts"
+  "engines": {
+    "bun": ">=1.3.5"
   },
-  "exports": {
-    "./serve": "./src/commands/serve.ts",
-    "./create": "./src/commands/create.ts",
-    "./join": "./src/commands/join.ts",
-    "./list": "./src/commands/list.ts",
-    "./monitor": "./src/commands/monitor.ts"
+  "bin": {
+    "gambi": "./dist/npm/gambi.js"
   },
   "files": [
-    "src",
+    "dist/npm",
     "README.md"
   ],
   "scripts": {
     "dev": "bun run src/cli.ts",
     "build": "bun run build.ts",
-    "check-types": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@clack/prompts": "^1.1.0",
-    "@gambi/core": "workspace:*",
-    "clipanion": "^4.0.0-rc.4",
-    "nanoid": "^5.1.5"
+    "check-types": "tsc --noEmit",
+    "prepublishOnly": "bun run build"
   },
   "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
+    "@clack/prompts": "^1.1.0",
+    "@gambi/core": "workspace:*",
+    "@types/bun": "latest",
+    "clipanion": "^4.0.0-rc.4",
+    "nanoid": "^5.1.5",
     "typescript": "^5"
   },
   "publishConfig": {

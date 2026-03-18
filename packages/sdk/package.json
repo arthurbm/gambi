@@ -1,6 +1,6 @@
 {
   "name": "gambi-sdk",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Share local LLMs across your network, effortlessly",
   "keywords": [
     "llm",
