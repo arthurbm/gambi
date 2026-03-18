@@ -1,0 +1,135 @@
+#!/usr/bin/env node
+
+const childProcess = require("node:child_process");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const PLATFORM_MAP = {
+  darwin: "darwin",
+  linux: "linux",
+  win32: "windows",
+};
+
+const ARCH_MAP = {
+  arm64: "arm64",
+  x64: "x64",
+};
+
+function run(target) {
+  const result = childProcess.spawnSync(target, process.argv.slice(2), {
+    stdio: "inherit",
+    windowsHide: false,
+  });
+
+  if (result.error) {
+    console.error(result.error.message);
+    process.exit(1);
+  }
+
+  const code = typeof result.status === "number" ? result.status : 1;
+  process.exit(code);
+}
+
+function getCandidates() {
+  const platform = PLATFORM_MAP[process.platform];
+  const arch = ARCH_MAP[process.arch];
+
+  if (!platform || !arch) {
+    return [];
+  }
+
+  return [`gambi-${platform}-${arch}`];
+}
+
+function getBinaryName() {
+  return process.platform === "win32" ? "gambi.exe" : "gambi";
+}
+
+function tryPath(candidate) {
+  return fs.existsSync(candidate) ? candidate : undefined;
+}
+
+function resolveViaRequire(packageName) {
+  try {
+    const packageJsonPath = require.resolve(`${packageName}/package.json`);
+    const packageDir = path.dirname(packageJsonPath);
+    return tryPath(path.join(packageDir, "bin", getBinaryName()));
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveViaNodeModules(startDir, packageNames) {
+  let current = startDir;
+
+  for (;;) {
+    const modulesDir = path.join(current, "node_modules");
+    for (const packageName of packageNames) {
+      const resolved = tryPath(
+        path.join(modulesDir, packageName, "bin", getBinaryName())
+      );
+      if (resolved) {
+        return resolved;
+      }
+    }
+
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return undefined;
+    }
+    current = parent;
+  }
+}
+
+function resolveViaSiblingPackages(scriptDir, packageNames) {
+  const npmDistDir = path.resolve(scriptDir, "..", "..");
+
+  for (const packageName of packageNames) {
+    const resolved = tryPath(
+      path.join(npmDistDir, packageName, "bin", getBinaryName())
+    );
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  return undefined;
+}
+
+const overridePath = process.env.GAMBI_BIN_PATH;
+if (overridePath) {
+  run(overridePath);
+}
+
+const scriptPath = fs.realpathSync(__filename);
+const scriptDir = path.dirname(scriptPath);
+const cachedBinary = path.join(
+  scriptDir,
+  process.platform === "win32" ? ".gambi.exe" : ".gambi"
+);
+if (fs.existsSync(cachedBinary)) {
+  run(cachedBinary);
+}
+
+const packageNames = getCandidates();
+if (packageNames.length === 0) {
+  console.error(
+    `Gambi does not ship a packaged binary for ${process.platform}/${process.arch} yet.`,
+  );
+  process.exit(1);
+}
+
+const resolved =
+  packageNames.map(resolveViaRequire).find(Boolean) ||
+  resolveViaSiblingPackages(scriptDir, packageNames) ||
+  resolveViaNodeModules(scriptDir, packageNames);
+
+if (!resolved) {
+  console.error(
+    "Gambi could not find a compatible platform binary. Expected one of: " +
+      packageNames.map((name) => `"${name}"`).join(" or "),
+  );
+  process.exit(1);
+}
+
+run(resolved);

@@ -1,6 +1,7 @@
 {
   "name": "gambi",
   "version": "0.2.3",
+  "private": true,
   "description": "CLI for Gambi - Share local LLMs across your network",
   "keywords": [
     "llm",
@@ -23,21 +24,10 @@
   "homepage": "https://github.com/arthurbm/gambi",
   "bugs": "https://github.com/arthurbm/gambi/issues",
   "type": "module",
-  "engines": {
-    "bun": ">=1.3.5"
-  },
-  "bin": {
-    "gambi": "./dist/npm/gambi.js"
-  },
-  "files": [
-    "dist/npm",
-    "README.md"
-  ],
   "scripts": {
     "dev": "bun run src/cli.ts",
     "build": "bun run build.ts",
-    "check-types": "tsc --noEmit",
-    "prepublishOnly": "bun run build"
+    "check-types": "tsc --noEmit"
   },
   "devDependencies": {
     "@clack/prompts": "^1.1.0",
@@ -46,8 +36,5 @@
     "clipanion": "^4.0.0-rc.4",
     "nanoid": "^5.1.5",
     "typescript": "^5"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }

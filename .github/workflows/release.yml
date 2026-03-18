@@ -11,24 +11,16 @@ on:
           - patch
           - minor
           - major
-      package:
-        description: "Package to release"
-        required: true
-        type: choice
-        default: "all"
-        options:
-          - all
-          - sdk
-          - cli
 
 permissions:
   contents: write
   packages: write
 
 jobs:
-  publish:
+  version:
     runs-on: ubuntu-latest
     outputs:
+      ref: ${{ steps.ref.outputs.ref }}
       version: ${{ steps.version.outputs.version }}
 
     steps:
@@ -37,47 +29,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Install dependencies
-        run: bun install
+      - name: Capture release ref
+        id: ref
+        run: echo "ref=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Calculate new version
         id: version
         run: |
-          CURRENT=$(node <<'NODE'
-          const fs = require('node:fs');
+          VERSION=$(node <<'NODE'
+          const fs = require("node:fs");
 
-          const packageInput = process.env.RELEASE_PACKAGE || 'all';
-          const filesByPackage = {
-            all: [
-              'apps/docs/package.json',
-              'packages/cli/package.json',
-              'packages/config/package.json',
-              'packages/core/package.json',
-              'packages/sdk/package.json',
-            ],
-            cli: ['packages/cli/package.json'],
-            sdk: ['packages/sdk/package.json'],
-          };
+          const files = [
+            "apps/docs/package.json",
+            "packages/cli/package.json",
+            "packages/config/package.json",
+            "packages/core/package.json",
+            "packages/sdk/package.json",
+          ];
 
           function compareSemver(left, right) {
-            const leftParts = left.split('.').map(Number);
-            const rightParts = right.split('.').map(Number);
+            const leftParts = left.split(".").map(Number);
+            const rightParts = right.split(".").map(Number);
 
             for (let index = 0; index < Math.max(leftParts.length, rightParts.length); index++) {
               const leftPart = leftParts[index] ?? 0;
@@ -91,59 +63,45 @@ jobs:
             return 0;
           }
 
-          const versions = filesByPackage[packageInput].map((file) => {
-            const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
+          function bumpVersion(version, bump) {
+            const [major, minor, patch] = version.split(".").map(Number);
+
+            if (bump === "major") {
+              return `${major + 1}.0.0`;
+            }
+
+            if (bump === "minor") {
+              return `${major}.${minor + 1}.0`;
+            }
+
+            return `${major}.${minor}.${patch + 1}`;
+          }
+
+          const versions = files.map((file) => {
+            const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
             return pkg.version;
           });
 
           versions.sort(compareSemver);
-          process.stdout.write(versions.at(-1));
+          process.stdout.write(bumpVersion(versions.at(-1), process.env.RELEASE_BUMP));
           NODE
           )
-          NEW=$(bunx semver -i ${{ inputs.bump }} $CURRENT)
-          echo "current=$CURRENT" >> $GITHUB_OUTPUT
-          echo "version=$NEW" >> $GITHUB_OUTPUT
-          echo "Bumping version: $CURRENT -> $NEW"
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing version: $VERSION"
         env:
-          RELEASE_PACKAGE: ${{ inputs.package }}
+          RELEASE_BUMP: ${{ inputs.bump }}
 
-      - name: Update versions and publish
-        run: bun run scripts/publish.ts ${{ steps.version.outputs.version }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          PACKAGE: ${{ inputs.package }}
-
-      - name: Commit and tag
-        run: |
-          git add .
-          git commit -m "release: v${{ steps.version.outputs.version }}"
-          git tag v${{ steps.version.outputs.version }}
-          git push origin HEAD --tags
-
-  build-binaries:
-    needs: publish
-    if: inputs.package == 'all' || inputs.package == 'cli'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: bun-linux-x64
-            artifact: gambi-linux-x64
-          - os: macos-latest
-            target: bun-darwin-arm64
-            artifact: gambi-darwin-arm64
-          - os: windows-latest
-            target: bun-windows-x64
-            artifact: gambi-windows-x64.exe
-
-    runs-on: ${{ matrix.os }}
+  build-cli:
+    needs: version
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: v${{ needs.publish.outputs.version }}
+          fetch-depth: 0
+          ref: ${{ needs.version.outputs.ref }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -153,42 +111,82 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Build binary
-        run: |
-          VERSION=$(node -p "require('./packages/cli/package.json').version")
-          DEFINE=$(node -e "process.stdout.write('process.env.GAMBI_CLI_VERSION=' + JSON.stringify(process.argv[1]))" "$VERSION")
-          cd packages/cli
-          bun build ./src/cli.ts --compile --target=${{ matrix.target }} --define "$DEFINE" --outfile=../../${{ matrix.artifact }}
+      - name: Build CLI distribution
+        run: GAMBI_RELEASE_VERSION=${{ needs.version.outputs.version }} bun run --cwd packages/cli build
 
-      - name: Upload artifact
+      - name: Upload CLI distribution
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
+          name: gambi-cli-dist
+          path: packages/cli/dist
 
-  github-release:
-    needs: [publish, build-binaries]
-    if: inputs.package == 'all' || inputs.package == 'cli'
+  publish:
+    needs: [version, build-cli]
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download all artifacts
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.version.outputs.ref }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Download CLI distribution
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          name: gambi-cli-dist
+          path: packages/cli/dist
 
-      - name: List artifacts
-        run: find artifacts -type f
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Publish packages
+        run: bun run scripts/publish.ts ${{ needs.version.outputs.version }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Commit and tag
+        run: |
+          git add .
+          git commit -m "release: v${{ needs.version.outputs.version }}"
+          git tag v${{ needs.version.outputs.version }}
+          git push origin HEAD --tags
+
+  github-release:
+    needs: [version, build-cli, publish]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download CLI distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: gambi-cli-dist
+          path: packages/cli/dist
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ needs.publish.outputs.version }}
-          name: v${{ needs.publish.outputs.version }}
+          tag_name: v${{ needs.version.outputs.version }}
+          name: v${{ needs.version.outputs.version }}
           files: |
-            artifacts/gambi-linux-x64/gambi-linux-x64
-            artifacts/gambi-darwin-arm64/gambi-darwin-arm64
-            artifacts/gambi-windows-x64.exe/gambi-windows-x64.exe
+            packages/cli/dist/releases/gambi-linux-x64
+            packages/cli/dist/releases/gambi-linux-arm64
+            packages/cli/dist/releases/gambi-darwin-arm64
+            packages/cli/dist/releases/gambi-darwin-x64
+            packages/cli/dist/releases/gambi-windows-x64.exe
           generate_release_notes: true
           draft: false
           prerelease: false

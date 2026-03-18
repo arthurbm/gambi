@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 import { readFileSync } from "node:fs";
-import { Builtins, Cli } from "./utils/option.ts";
 import { CreateCommand } from "./commands/create.ts";
 import { JoinCommand } from "./commands/join.ts";
 import { ListCommand } from "./commands/list.ts";
 import { MonitorCommand } from "./commands/monitor.ts";
 import { ServeCommand } from "./commands/serve.ts";
+import { Builtins, Cli } from "./utils/option.ts";
 
 function resolveCliVersion() {
   if (process.env.GAMBI_CLI_VERSION) {
