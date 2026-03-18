@@ -1,11 +1,11 @@
-# Gambiarra CLI Installer for Windows
-# Usage: irm https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/install.ps1 | iex
+# Gambi CLI Installer for Windows
+# Usage: irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.ps1 | iex
 
 $ErrorActionPreference = "Stop"
 
-$Repo = "arthurbm/gambiarra"
-$BinaryName = "gambiarra.exe"
-$InstallDir = Join-Path $env:LOCALAPPDATA "gambiarra"
+$Repo = "arthurbm/gambi"
+$BinaryName = "gambi.exe"
+$InstallDir = Join-Path $env:LOCALAPPDATA "gambi"
 
 function Get-LatestVersion {
     $response = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest"
@@ -16,15 +16,15 @@ function Get-LatestVersion {
     return $version
 }
 
-function Install-Gambiarra {
+function Install-Gambi {
     Write-Host ""
-    Write-Host "  Gambiarra CLI Installer" -ForegroundColor Cyan
+    Write-Host "  Gambi CLI Installer" -ForegroundColor Cyan
     Write-Host ""
 
     $version = Get-LatestVersion
     Write-Host "[INFO] Latest version: $version" -ForegroundColor Green
 
-    $artifact = "gambiarra-windows-x64.exe"
+    $artifact = "gambi-windows-x64.exe"
     $downloadUrl = "https://github.com/$Repo/releases/download/v$version/$artifact"
     Write-Host "[INFO] Downloading from: $downloadUrl" -ForegroundColor Green
 
@@ -53,7 +53,7 @@ function Install-Gambiarra {
     }
 
     # Verify
-    Write-Host "[INFO] Installation complete! Run 'gambiarra --version' to verify." -ForegroundColor Green
+    Write-Host "[INFO] Installation complete! Run 'gambi --version' to verify." -ForegroundColor Green
 }
 
-Install-Gambiarra
+Install-Gambi

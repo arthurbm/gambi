@@ -1,1 +1,1 @@
-# `@gambiarra/cli`
+# `gambi`

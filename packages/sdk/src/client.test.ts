@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { createHub, type Hub } from "@gambiarra/core/hub";
-import { Room } from "@gambiarra/core/room";
+import { createHub, type Hub } from "@gambi/core/hub";
+import { Room } from "@gambi/core/room";
 import { ClientError, createClient } from "./client.ts";
 
 function getRandomPort(): number {

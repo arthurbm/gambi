@@ -1,10 +1,10 @@
-# Plano: Landing Page & Documentação Gambiarra
+# Plano: Landing Page & Documentação Gambi
 
 ## Gerenciamento com BEADS
 
 ### Epic Principal
 ```bash
-bd create --title="Landing Page & Docs Gambiarra" --type=epic --priority=1
+bd create --title="Landing Page & Docs Gambi" --type=epic --priority=1
 ```
 
 ### Issues Estruturadas (criar após aprovação)
@@ -64,7 +64,7 @@ bd dep add <responsive-id> <screenshots-id>
 
 ## Visão Geral
 
-Criar uma landing page elaborada e documentação completa para o Gambiarra, inspirado no opencode.ai mas com identidade visual própria que reflete o conceito de "gambiarra" - algo improvisado, criativo, e surpreendentemente funcional.
+Criar uma landing page elaborada e documentação completa para o Gambi, inspirado no opencode.ai mas com identidade visual própria que reflete o conceito de "gambi" - algo improvisado, criativo, e surpreendentemente funcional.
 
 ---
 
@@ -72,7 +72,7 @@ Criar uma landing page elaborada e documentação completa para o Gambiarra, ins
 
 ### Conceito: "Improvised Excellence"
 
-O nome **Gambiarra** (gíria brasileira para solução improvisada/hack criativo) inspira uma estética que é:
+O nome **Gambi** (gíria brasileira para solução improvisada/hack criativo) inspira uma estética que é:
 
 - **Industrial/Raw**: Bordas expostas, grades visíveis, estrutura aparente
 - **Playful**: Cores vibrantes de destaque, elementos inesperados
@@ -85,7 +85,7 @@ O nome **Gambiarra** (gíria brasileira para solução improvisada/hack criativo
 /* Light mode - tons quentes, papel envelhecido */
 --color-bg: hsl(40, 30%, 97%);           /* Papel creme */
 --color-text: hsl(20, 10%, 25%);          /* Marrom escuro */
---color-accent: hsl(25, 95%, 55%);        /* Laranja "gambiarra" */
+--color-accent: hsl(25, 95%, 55%);        /* Laranja "gambi" */
 --color-accent-alt: hsl(160, 70%, 40%);   /* Verde terminal */
 --color-border: hsl(30, 15%, 75%);        /* Borda sutil */
 
@@ -204,9 +204,9 @@ import CheckIcon from "../assets/lander/check.svg";
 // ... imports
 
 const commands = {
-  curl: 'curl -fsSL https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/install.sh | bash',
-  npm: 'npm install -g gambiarra',
-  bun: 'bun add -g gambiarra',
+  curl: 'curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.sh | bash',
+  npm: 'npm install -g gambi',
+  bun: 'bun add -g gambi',
 };
 ---
 
@@ -236,7 +236,7 @@ const commands = {
 export default defineConfig({
   integrations: [
     starlight({
-      title: "Gambiarra",
+      title: "Gambi",
       customCss: ["./src/styles/custom.css"],
       logo: {
         light: "./src/assets/logo-light.svg",

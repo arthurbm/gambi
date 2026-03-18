@@ -1,4 +1,4 @@
-import { RoomInfoPublic as RoomInfoSchema } from "@gambiarra/core/types";
+import { RoomInfoPublic as RoomInfoSchema } from "@gambi/core/types";
 import { useKeyboard } from "@opentui/react";
 import { useCallback, useEffect, useState } from "react";
 import { z } from "zod";
@@ -163,7 +163,7 @@ export function RoomSelector({
         paddingLeft={1}
         paddingRight={1}
       >
-        <ascii-font font="tiny" text="GAMBIARRA" />
+        <ascii-font font="tiny" text="GAMBI" />
         <text fg={colors.muted}>Hub: {hubUrl}</text>
       </box>
 

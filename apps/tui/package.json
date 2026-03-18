@@ -16,7 +16,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@gambiarra/core": "workspace:*",
+    "@gambi/core": "workspace:*",
     "@hookform/resolvers": "^5.2.2",
     "@opentui/core": "^0.1.67",
     "@opentui/react": "^0.1.67",

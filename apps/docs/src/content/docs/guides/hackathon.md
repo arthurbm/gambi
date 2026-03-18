@@ -1,11 +1,11 @@
 ---
 title: Hackathon Setup
-description: Get Gambiarra running in minutes for your hackathon team
+description: Get Gambi running in minutes for your hackathon team
 ---
 
 # Hackathon Setup
 
-Running an AI hackathon? Gambiarra lets your team share LLM resources without everyone needing beefy hardware. Here's how to get started in under 5 minutes.
+Running an AI hackathon? Gambi lets your team share LLM resources without everyone needing beefy hardware. Here's how to get started in under 5 minutes.
 
 ## The Scenario
 
@@ -14,7 +14,7 @@ Your hackathon team has:
 - **Bob**: MacBook Pro, no GPU
 - **Carol**: Linux desktop with decent CPU, running Mistral via LM Studio
 
-With Gambiarra, Bob can use Alice's llama3 or Carol's Mistral from his MacBook - no setup required on his end.
+With Gambi, Bob can use Alice's llama3 or Carol's Mistral from his MacBook - no setup required on his end.
 
 ## Quick Setup (5 Minutes)
 
@@ -24,7 +24,7 @@ Choose one machine to run the hub. This can be any machine on the network - it d
 
 ```bash
 # On the hub machine (e.g., Bob's MacBook)
-gambiarra serve --port 3000 --mdns
+gambi serve --port 3000 --mdns
 ```
 
 The `--mdns` flag enables auto-discovery, so teammates don't need to know the IP address.
@@ -32,7 +32,7 @@ The `--mdns` flag enables auto-discovery, so teammates don't need to know the IP
 ### Step 2: Create a Room
 
 ```bash
-gambiarra create --name "Hackathon"
+gambi create --name "Hackathon"
 # Output: Room created! Code: XK7P2M
 ```
 
@@ -44,29 +44,29 @@ Each person with an LLM endpoint joins the room:
 
 ```bash
 # Alice (Ollama)
-gambiarra join --code XK7P2M \
+gambi join --code XK7P2M \
   --endpoint http://localhost:11434 \
   --model llama3 \
   --nickname alice
 
 # Carol (LM Studio)
-gambiarra join --code XK7P2M \
+gambi join --code XK7P2M \
   --endpoint http://localhost:1234 \
   --model mistral \
   --nickname carol
 ```
 
-If the hub is running on a different machine, Gambiarra will automatically rewrite `localhost` endpoints to a LAN-reachable URL before publishing them to the hub. If your setup needs a custom published URL, pass `--network-endpoint`.
+If the hub is running on a different machine, Gambi will automatically rewrite `localhost` endpoints to a LAN-reachable URL before publishing them to the hub. If your setup needs a custom published URL, pass `--network-endpoint`.
 
 ### Step 4: Use from Your App
 
 Now everyone can use the shared LLMs:
 
 ```typescript
-import { createGambiarra } from "gambiarra-sdk";
+import { createGambi } from "gambi-sdk";
 import { generateText } from "ai";
 
-const gambiarra = createGambiarra({
+const gambi = createGambi({
   roomCode: "XK7P2M",
   // Hub auto-discovered via mDNS, or specify:
   // hubUrl: "http://192.168.1.100:3000"
@@ -74,7 +74,7 @@ const gambiarra = createGambiarra({
 
 // Use any available model
 const result = await generateText({
-  model: gambiarra.any(),
+  model: gambi.any(),
   prompt: "Generate a hackathon project idea",
 });
 ```
@@ -82,7 +82,7 @@ const result = await generateText({
 To use Chat Completions instead of the default Responses API:
 
 ```typescript
-const gambiarra = createGambiarra({
+const gambi = createGambi({
   roomCode: "XK7P2M",
   defaultProtocol: "chatCompletions",
 });
@@ -105,7 +105,7 @@ See the [API Reference](/reference/api/) for all endpoints.
 Give meaningful nicknames so you know who's who:
 
 ```bash
-gambiarra join --code XK7P2M --nickname "alice-4090" --model llama3
+gambi join --code XK7P2M --nickname "alice-4090" --model llama3
 ```
 
 ### Target Specific Models
@@ -115,13 +115,13 @@ If you need a specific model for a task:
 ```typescript
 // For code generation, use the faster model
 const code = await generateText({
-  model: gambiarra.model("llama3"),
+  model: gambi.model("llama3"),
   prompt: "Write a function to...",
 });
 
 // For creative tasks, use the other model
 const story = await generateText({
-  model: gambiarra.model("mistral"),
+  model: gambi.model("mistral"),
   prompt: "Write a story about...",
 });
 ```
@@ -137,10 +137,10 @@ bun run dev XK7P2M
 
 ### Handle Disconnections
 
-Laptops close, WiFi drops. Gambiarra handles this gracefully:
+Laptops close, WiFi drops. Gambi handles this gracefully:
 - Participants auto-reconnect when they come back
 - Requests automatically route to available participants
-- Use `gambiarra.any()` for resilience
+- Use `gambi.any()` for resilience
 
 ### Share the Hub Load
 
@@ -153,7 +153,7 @@ The hub is lightweight, but if one machine is struggling:
 
 ### "No participants online"
 
-1. Check if participants joined: `gambiarra list`
+1. Check if participants joined: `gambi list`
 2. Verify the room code is correct
 3. Make sure LLM endpoints are running (`curl http://localhost:11434/v1/models`)
 
@@ -162,7 +162,7 @@ The hub is lightweight, but if one machine is struggling:
 Some networks block mDNS. Fall back to explicit IP:
 
 ```typescript
-const gambiarra = createGambiarra({
+const gambi = createGambi({
   roomCode: "XK7P2M",
   hubUrl: "http://192.168.1.100:3000", // Hub machine's IP
 });
@@ -170,7 +170,7 @@ const gambiarra = createGambiarra({
 
 ### Slow Responses
 
-- LLMs are the bottleneck, not Gambiarra
+- LLMs are the bottleneck, not Gambi
 - Consider which model to use for which task
 - The person with the GPU should handle compute-heavy requests
 
@@ -178,22 +178,22 @@ const gambiarra = createGambiarra({
 
 ```typescript
 // lib/ai.ts
-import { createGambiarra } from "gambiarra-sdk";
+import { createGambi } from "gambi-sdk";
 
-export const gambiarra = createGambiarra({
-  roomCode: process.env.GAMBIARRA_ROOM!,
-  hubUrl: process.env.GAMBIARRA_HUB,
+export const gambi = createGambi({
+  roomCode: process.env.GAMBI_ROOM!,
+  hubUrl: process.env.GAMBI_HUB,
 });
 ```
 
 Use it anywhere in your app:
 
 ```typescript
-import { gambiarra } from "./lib/ai";
+import { gambi } from "./lib/ai";
 import { generateText } from "ai";
 
 const { text } = await generateText({
-  model: gambiarra.any(),
+  model: gambi.any(),
   prompt: "Generate a hackathon project idea",
 });
 ```

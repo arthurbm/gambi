@@ -1,4 +1,4 @@
-import { ParticipantInfo as ParticipantInfoSchema } from "@gambiarra/core/types";
+import { ParticipantInfo as ParticipantInfoSchema } from "@gambi/core/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { nanoid } from "nanoid";
 import { useCallback, useEffect, useRef, useState } from "react";

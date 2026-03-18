@@ -7,10 +7,10 @@ export interface UserConfig {
   llmEndpoint?: string;
 }
 
-const CONFIG_PATH = join(homedir(), ".gambiarra", "config.json");
+const CONFIG_PATH = join(homedir(), ".gambi", "config.json");
 
 /**
- * Load user config from ~/.gambiarra/config.json
+ * Load user config from ~/.gambi/config.json
  */
 export function loadConfig(): UserConfig {
   try {
@@ -25,7 +25,7 @@ export function loadConfig(): UserConfig {
 }
 
 /**
- * Save user config to ~/.gambiarra/config.json
+ * Save user config to ~/.gambi/config.json
  */
 export function saveConfig(config: UserConfig): void {
   try {

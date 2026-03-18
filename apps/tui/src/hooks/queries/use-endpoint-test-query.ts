@@ -1,8 +1,8 @@
-import { probeEndpoint } from "@gambiarra/core/endpoint";
+import { probeEndpoint } from "@gambi/core/endpoint";
 import type {
   ParticipantAuthHeaders,
   ParticipantInfo,
-} from "@gambiarra/core/types";
+} from "@gambi/core/types";
 import { useQuery } from "@tanstack/react-query";
 
 interface EndpointTestResult {

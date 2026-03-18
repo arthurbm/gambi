@@ -1,5 +1,5 @@
 // Re-export Participant namespace from core (DRY - zero duplication)
-import { Participant } from "@gambiarra/core/participant";
+import { Participant } from "@gambi/core/participant";
 
 /**
  * Participant management namespace

@@ -12,7 +12,7 @@
 
 **Share local LLMs across your network, effortlessly.**
 
-[![npm version](https://img.shields.io/npm/v/gambiarra-sdk)](https://www.npmjs.com/package/gambiarra-sdk)
+[![npm version](https://img.shields.io/npm/v/gambi-sdk)](https://www.npmjs.com/package/gambi-sdk)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Bun](https://img.shields.io/badge/Bun-1.3.5-black?logo=bun&logoColor=white)](https://bun.sh)
 [![Turborepo](https://img.shields.io/badge/Turborepo-2.x-ef4444?logo=turborepo&logoColor=white)](https://turbo.build/repo)
@@ -24,7 +24,7 @@
 
 ## Table of Contents
 
-- [What is Gambiarra?](#-what-is-gambiarra)
+- [What is Gambi?](#-what-is-gambi)
 - [Installation](#-installation)
   - [CLI](#cli)
   - [SDK](#sdk)
@@ -41,11 +41,37 @@
 
 ---
 
-## What is Gambiarra?
+## What is Gambi?
 
-**Gambiarra** is a local-first LLM sharing system that allows multiple users on a network to pool their LLM resources together. Think of it as a "LLM Club" where everyone shares their Ollama, LM Studio, LocalAI, or any endpoint that speaks OpenResponses or OpenAI-compatible chat/completions.
+**Gambi** is a local-first LLM sharing system that allows multiple users on a network to pool their LLM resources together. Think of it as a "LLM Club" where everyone shares their Ollama, LM Studio, LocalAI, or any endpoint that speaks OpenResponses or OpenAI-compatible chat/completions.
 
-### Why Gambiarra?
+`Gambi` is the official short form of **gambiarra**. In English, the shorter name is easier to say, type, and remember. In Brazilian Portuguese, we mean **gambiarra** in the good sense: creative improvisation under constraints, an ingenious workaround made with care rather than a sloppy hack.
+
+If you're migrating from the previous public names, see the migration guide at `https://gambi.sh/guides/migrate-from-gambiarra/`.
+
+### Why the Name Changed?
+
+- **Better in English**: shorter for CLI commands, imports, and package names
+- **Still Brazilian at heart**: keeps the original cultural meaning instead of replacing it with a generic tech brand
+- **Closer to the product**: fast, local-first, practical, community-driven
+
+### Migration from Gambiarra
+
+```bash
+# npm
+npm uninstall -g gambiarra && npm install -g gambi
+
+# bun
+bun remove -g gambiarra && bun add -g gambi
+```
+
+```typescript
+import { createGambi } from "gambi-sdk";
+
+const gambi = createGambi({ roomCode: "ABC123" });
+```
+
+### Why Gambi?
 
 - **Local-First**: Your data stays on your network
 - **Resource Sharing**: Pool LLM endpoints across your team
@@ -75,51 +101,51 @@ The CLI allows you to start hubs, create rooms, and join as a participant.
 **Linux / macOS (recommended - standalone binary):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.sh | bash
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.ps1 | iex
 ```
 
 **Via npm (any platform):**
 
 ```bash
-npm install -g gambiarra
+npm install -g gambi
 ```
 
 **Via bun (any platform):**
 
 ```bash
-bun add -g gambiarra
+bun add -g gambi
 ```
 
 **Verify installation:**
 
 ```bash
-gambiarra --version
+gambi --version
 ```
 
 **Uninstall:**
 
 ```bash
 # Linux / macOS (standalone binary)
-curl -fsSL https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.sh | bash
 ```
 
 ```powershell
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/uninstall.ps1 | iex
+irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.ps1 | iex
 ```
 
 ```bash
 # If installed via npm
-npm uninstall -g gambiarra
+npm uninstall -g gambi
 
 # If installed via bun
-bun remove -g gambiarra
+bun remove -g gambi
 ```
 
 ### SDK
@@ -129,23 +155,23 @@ The SDK provides Vercel AI SDK integration for using shared LLMs in your applica
 **Via npm:**
 
 ```bash
-npm install gambiarra-sdk
+npm install gambi-sdk
 ```
 
 **Via bun:**
 
 ```bash
-bun add gambiarra-sdk
+bun add gambi-sdk
 ```
 
 **Uninstall:**
 
 ```bash
 # If installed via npm
-npm uninstall gambiarra-sdk
+npm uninstall gambi-sdk
 
 # If installed via bun
-bun remove gambiarra-sdk
+bun remove gambi-sdk
 ```
 
 ---
@@ -155,22 +181,22 @@ bun remove gambiarra-sdk
 ### 1. Start the Hub Server
 
 ```bash
-gambiarra serve
-# Or with flags: gambiarra serve --port 3000 --mdns
+gambi serve
+# Or with flags: gambi serve --port 3000 --mdns
 ```
 
 ### 2. Create a Room
 
 ```bash
-gambiarra create
-# Or with flags: gambiarra create --name "My Room" --config ./room-defaults.json
+gambi create
+# Or with flags: gambi create --name "My Room" --config ./room-defaults.json
 ```
 
 ### 3. Join with Your LLM
 
 ```bash
-gambiarra join
-# Or with flags: gambiarra join --code ABC123 --model llama3 --config ./participant-config.json
+gambi join
+# Or with flags: gambi join --code ABC123 --model llama3 --config ./participant-config.json
 ```
 
 All commands support **interactive mode** — run without flags and you'll be guided through each option step by step. Flags still work for scripting and automation.
@@ -188,17 +214,17 @@ Example config JSON:
 ### 4. Use the SDK
 
 ```typescript
-import { createGambiarra } from "gambiarra-sdk";
+import { createGambi } from "gambi-sdk";
 import { generateText } from "ai";
 
-const gambiarra = createGambiarra({
+const gambi = createGambi({
   roomCode: "ABC123",
   hubUrl: "http://localhost:3000",
 });
 
 const result = await generateText({
-  model: gambiarra.any(),
-  prompt: "Hello, Gambiarra!",
+  model: gambi.any(),
+  prompt: "Hello, Gambi!",
 });
 
 console.log(result.text);
@@ -212,16 +238,16 @@ console.log(result.text);
 
 ```bash
 # All commands support interactive mode — just run the command:
-gambiarra serve
-gambiarra create
-gambiarra join
-gambiarra list
+gambi serve
+gambi create
+gambi join
+gambi list
 
 # Or use flags for scripting:
-gambiarra serve --mdns
-gambiarra create --name "My Room" --config ./room-defaults.json
-gambiarra join --code ABC123 --model llama3 --config ./participant-config.json
-gambiarra list --json
+gambi serve --mdns
+gambi create --name "My Room" --config ./room-defaults.json
+gambi join --code ABC123 --model llama3 --config ./participant-config.json
+gambi list --json
 ```
 
 Room defaults are merged at request time with precedence `room defaults -> participant defaults -> runtime request`. Public room/participant listings expose only a safe summary such as `hasInstructions`, not the raw instructions text.
@@ -243,7 +269,7 @@ Example room defaults:
 Create a room with defaults:
 
 ```bash
-gambiarra create --name "Portuguese Room" --config ./room-defaults.json
+gambi create --name "Portuguese Room" --config ./room-defaults.json
 ```
 
 Example participant defaults:
@@ -258,7 +284,7 @@ Example participant defaults:
 Join with participant defaults:
 
 ```bash
-gambiarra join --code ABC123 --model llama3 --config ./participant-config.json
+gambi join --code ABC123 --model llama3 --config ./participant-config.json
 ```
 
 Merge behavior:
@@ -275,31 +301,31 @@ Public API behavior:
 ### SDK Integration
 
 ```typescript
-import { createGambiarra } from "gambiarra-sdk";
+import { createGambi } from "gambi-sdk";
 import { generateText } from "ai";
 
-const gambiarra = createGambiarra({ roomCode: "ABC123" });
+const gambi = createGambi({ roomCode: "ABC123" });
 
 // Use any available participant
 const result = await generateText({
-  model: gambiarra.any(),
+  model: gambi.any(),
   prompt: "Explain quantum computing",
 });
 
 // Target specific participant
 const result2 = await generateText({
-  model: gambiarra.participant("joao"),
+  model: gambi.participant("joao"),
   prompt: "Write a haiku about TypeScript",
 });
 
 // Route by model type
 const result3 = await generateText({
-  model: gambiarra.model("llama3"),
+  model: gambi.model("llama3"),
   prompt: "What is the meaning of life?",
 });
 
 // Use Chat Completions instead of the default Responses API
-const legacy = createGambiarra({
+const legacy = createGambi({
   roomCode: "ABC123",
   defaultProtocol: "chatCompletions",
 });
@@ -329,43 +355,43 @@ bun run dev ABC123
 
 ```bash
 # Interactive — prompts for port, host, mDNS:
-gambiarra serve
+gambi serve
 
 # Or with flags:
-gambiarra serve --port 3000 --mdns
+gambi serve --port 3000 --mdns
 ```
 
 #### Create a Room
 
 ```bash
 # Interactive — prompts for name and password:
-gambiarra create
+gambi create
 
 # Or with flags:
-gambiarra create --name "My Room"
-gambiarra create --name "My Room" --config ./room-defaults.json
+gambi create --name "My Room"
+gambi create --name "My Room" --config ./room-defaults.json
 ```
 
 #### List Rooms
 
 ```bash
 # Interactive — prompts for hub URL and output format:
-gambiarra list
+gambi list
 
 # Or with flags:
-gambiarra list --json
+gambi list --json
 ```
 
 #### Join a Room
 
 ```bash
 # Interactive — select provider, model, set nickname:
-gambiarra join
+gambi join
 
 # Or with flags:
-gambiarra join --code ABC123 --model llama3
-gambiarra join --code ABC123 --model mistral --endpoint http://localhost:1234
-gambiarra join --code ABC123 --model llama3 --config ./participant-config.json
+gambi join --code ABC123 --model llama3
+gambi join --code ABC123 --model mistral --endpoint http://localhost:1234
+gambi join --code ABC123 --model llama3 --config ./participant-config.json
 ```
 
 ### SDK Examples
@@ -373,13 +399,13 @@ gambiarra join --code ABC123 --model llama3 --config ./participant-config.json
 #### Basic Chat
 
 ```typescript
-import { createGambiarra } from "gambiarra-sdk";
+import { createGambi } from "gambi-sdk";
 import { generateText } from "ai";
 
-const gambiarra = createGambiarra({ roomCode: "ABC123" });
+const gambi = createGambi({ roomCode: "ABC123" });
 
 const result = await generateText({
-  model: gambiarra.any(),
+  model: gambi.any(),
   prompt: "What is TypeScript?",
 });
 
@@ -389,13 +415,13 @@ console.log(result.text);
 #### Streaming
 
 ```typescript
-import { createGambiarra } from "gambiarra-sdk";
+import { createGambi } from "gambi-sdk";
 import { streamText } from "ai";
 
-const gambiarra = createGambiarra({ roomCode: "ABC123" });
+const gambi = createGambi({ roomCode: "ABC123" });
 
 const stream = await streamText({
-  model: gambiarra.model("llama3"),
+  model: gambi.model("llama3"),
   prompt: "Write a story about a robot",
 });
 
@@ -407,13 +433,13 @@ for await (const chunk of stream.textStream) {
 #### With Custom Config
 
 ```typescript
-const gambiarra = createGambiarra({
+const gambi = createGambi({
   roomCode: "ABC123",
   hubUrl: "http://192.168.1.100:3000",
 });
 
 const result = await generateText({
-  model: gambiarra.any(),
+  model: gambi.any(),
   prompt: "Explain recursion",
   temperature: 0.7,
   maxTokens: 500,
@@ -438,11 +464,11 @@ The TUI provides real-time monitoring of:
 
 ## Architecture
 
-Gambiarra uses a **HTTP + SSE architecture** for simplicity and compatibility:
+Gambi uses a **HTTP + SSE architecture** for simplicity and compatibility:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    GAMBIARRA HUB (HTTP)                     │
+│                    GAMBI HUB (HTTP)                     │
 │                                                             │
 │  Endpoints:                                                 │
 │  • POST   /rooms                    (Create room)          │
@@ -477,14 +503,14 @@ Internally, the hub uses a protocol adapter registry. `OpenResponses` is the def
 
 | Pattern | Example | Description |
 |---------|---------|-------------|
-| **Participant ID** | `gambiarra.participant("joao")` | Route to specific participant |
-| **Model Name** | `gambiarra.model("llama3")` | Route to first participant with model |
-| **Any** | `gambiarra.any()` | Route to random online participant |
+| **Participant ID** | `gambi.participant("joao")` | Route to specific participant |
+| **Model Name** | `gambi.model("llama3")` | Route to first participant with model |
+| **Any** | `gambi.any()` | Route to random online participant |
 
 ### Project Structure
 
 ```
-gambiarra/
+gambi/
 ├── packages/
 │   ├── core/              # Core library (Hub, Room, Protocol)
 │   ├── cli/               # Command-line interface
@@ -499,9 +525,9 @@ gambiarra/
 
 | Package | Description | Version |
 |---------|-------------|---------|
-| `gambiarra` | CLI for managing hubs and participants | 0.1.0 |
-| `gambiarra-sdk` | Vercel AI SDK provider | 0.1.0 |
-| `@gambiarra/core` | Hub server, room management, SSE, mDNS (internal) | 0.0.1 |
+| `gambi` | CLI for managing hubs and participants | 0.1.0 |
+| `gambi-sdk` | Vercel AI SDK provider | 0.1.0 |
+| `@gambi/core` | Hub server, room management, SSE, mDNS (internal) | 0.0.1 |
 
 For detailed architecture, see [docs/architecture.md](./docs/architecture.md).
 
@@ -513,8 +539,8 @@ For detailed architecture, see [docs/architecture.md](./docs/architecture.md).
 
 ```bash
 # Clone the repository
-git clone https://github.com/arthurbm/gambiarra.git
-cd gambiarra
+git clone https://github.com/arthurbm/gambi.git
+cd gambi
 
 # Install dependencies
 bun install
@@ -599,7 +625,7 @@ The workflow will:
 
 ## Supported Providers
 
-Gambiarra works with endpoints that expose **OpenResponses** or **OpenAI-compatible chat/completions**:
+Gambi works with endpoints that expose **OpenResponses** or **OpenAI-compatible chat/completions**:
 
 | Provider | Default Endpoint | Notes |
 |----------|------------------|-------|
@@ -614,7 +640,7 @@ Gambiarra works with endpoints that expose **OpenResponses** or **OpenAI-compati
 
 ## Security Considerations
 
-- **Local Network Only**: Gambiarra is designed for trusted local networks
+- **Local Network Only**: Gambi is designed for trusted local networks
 - **No Authentication**: Currently no built-in auth (use network isolation)
 - **HTTP Only**: Uses plain HTTP (consider reverse proxy for HTTPS)
 - **Participant Trust**: All participants can access shared models
@@ -685,6 +711,6 @@ Built with:
 
 **Made with love for the local LLM community**
 
-[Report Bug](https://github.com/arthurbm/gambiarra/issues) | [Request Feature](https://github.com/arthurbm/gambiarra/issues)
+[Report Bug](https://github.com/arthurbm/gambi/issues) | [Request Feature](https://github.com/arthurbm/gambi/issues)
 
 </div>

@@ -1,6 +1,6 @@
 ---
 title: Common Issues
-description: Troubleshooting common problems with Gambiarra
+description: Troubleshooting common problems with Gambi
 ---
 
 # Common Issues
@@ -35,7 +35,7 @@ description: Troubleshooting common problems with Gambiarra
 
 1. **Hub not running** - Start the hub first:
    ```bash
-   gambiarra serve --port 3000
+   gambi serve --port 3000
    ```
 
 2. **Wrong port** - Ensure you're using the same port everywhere.
@@ -46,21 +46,21 @@ description: Troubleshooting common problems with Gambiarra
    ```
 
 4. **Participant published `localhost` to a remote hub** - `localhost` only works on the participant machine itself.
-   - Let Gambiarra auto-rewrite it in interactive mode
+   - Let Gambi auto-rewrite it in interactive mode
    - Or pass `--network-endpoint http://<participant-lan-ip>:11434`
    - Use `--no-network-rewrite` only if you intentionally want to opt out
 
 ## mDNS Discovery Not Working
 
 **Symptoms:**
-- `gambiarra list` doesn't find any hubs
+- `gambi list` doesn't find any hubs
 - "No hubs found on network"
 
 **Causes & Solutions:**
 
 1. **mDNS not enabled** - Start the hub with `--mdns` flag:
    ```bash
-   gambiarra serve --mdns
+   gambi serve --mdns
    ```
 
 2. **Different network segments** - mDNS only works on the same local network segment. VPNs and different subnets won't work.
@@ -77,7 +77,7 @@ description: Troubleshooting common problems with Gambiarra
 
 **Causes & Solutions:**
 
-Gambiarra's hub includes CORS headers by default. If you're still seeing errors:
+Gambi's hub includes CORS headers by default. If you're still seeing errors:
 
 1. **Custom proxy interfering** - If using a reverse proxy (nginx, Caddy), ensure it passes CORS headers.
 
@@ -87,11 +87,11 @@ Gambiarra's hub includes CORS headers by default. If you're still seeing errors:
 
 **Symptoms:**
 - Request goes to a different participant than expected
-- `gambiarra.model("llama3")` routes to wrong endpoint
+- `gambi.model("llama3")` routes to wrong endpoint
 
 **Causes & Solutions:**
 
-1. **Multiple participants with same model** - When using `gambiarra.model()`, it routes to the first online participant with that model. Use `gambiarra.participant()` for specific targeting.
+1. **Multiple participants with same model** - When using `gambi.model()`, it routes to the first online participant with that model. Use `gambi.participant()` for specific targeting.
 
 2. **Participant went offline** - The routing falls back to available participants.
 
@@ -105,7 +105,7 @@ Gambiarra's hub includes CORS headers by default. If you're still seeing errors:
 
 1. **Wrong hubUrl** - Ensure the URL is correct:
    ```typescript
-   const gambiarra = createGambiarra({
+   const gambi = createGambi({
      roomCode: "ABC123",
      hubUrl: "http://192.168.1.100:3000", // Include protocol and port
    });
@@ -123,7 +123,7 @@ Gambiarra's hub includes CORS headers by default. If you're still seeing errors:
 
 1. **Network latency** - Check ping times between machines.
 
-2. **LLM endpoint slow** - The bottleneck is usually the LLM itself, not Gambiarra.
+2. **LLM endpoint slow** - The bottleneck is usually the LLM itself, not Gambi.
 
 3. **Too many concurrent requests** - Consider adding more participants to distribute load.
 
@@ -131,7 +131,7 @@ Gambiarra's hub includes CORS headers by default. If you're still seeing errors:
 
 1. **Check logs** - Run the hub with verbose output:
    ```bash
-   DEBUG=* gambiarra serve
+   DEBUG=* gambi serve
    ```
 
 2. **Test endpoint directly** - Verify the LLM endpoint works:
@@ -141,7 +141,7 @@ Gambiarra's hub includes CORS headers by default. If you're still seeing errors:
      -d '{"model": "llama3", "input": "Hi"}'
    ```
 
-3. **Open an issue** - If the problem persists, [open an issue on GitHub](https://github.com/arthurbm/gambiarra/issues) with:
+3. **Open an issue** - If the problem persists, [open an issue on GitHub](https://github.com/arthurbm/gambi/issues) with:
    - Error message
    - Steps to reproduce
    - Environment (OS, Node version, LLM provider)

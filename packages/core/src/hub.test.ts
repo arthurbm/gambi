@@ -75,7 +75,7 @@ const ModelsResponseSchema = z.object({
       id: z.string(),
       object: z.string(),
       owned_by: z.string(),
-      gambiarra: z.object({
+      gambi: z.object({
         nickname: z.string(),
         model: z.string(),
         endpoint: z.string(),
@@ -796,7 +796,7 @@ describe("Hub", () => {
       expect(firstModel?.id).toBe("participant-1");
       expect(firstModel?.object).toBe("model");
       expect(firstModel?.owned_by).toBe("test-user");
-      expect(firstModel?.gambiarra).toEqual({
+      expect(firstModel?.gambi).toEqual({
         nickname: "test-user",
         model: "llama3",
         endpoint: "http://localhost:11434",

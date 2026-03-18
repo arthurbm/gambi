@@ -1,11 +1,11 @@
 // Main SDK entry point - orchestrates all exports
 
 // HTTP client for remote hubs
-export { ClientError, createClient, type GambiarraClient } from "./client.ts";
+export { ClientError, createClient, type GambiClient } from "./client.ts";
 // Hub types (re-exported from core)
 export type {
   ChatCompletionRequest,
-  GambiarraModel,
+  GambiModel,
   Hub,
   HubOptions,
   ModelsListResponse,
@@ -19,11 +19,11 @@ export type * from "./protocol-adapters.ts";
 export * from "./protocol-adapters.ts";
 // Existing AI SDK provider
 export {
-  createGambiarra,
-  type GambiarraOptions,
-  type GambiarraProtocol,
-  type GambiarraProtocolNamespace,
-  type GambiarraProvider,
+  createGambi,
+  type GambiOptions,
+  type GambiProtocol,
+  type GambiProtocolNamespace,
+  type GambiProvider,
 } from "./provider.ts";
 // Core namespaces
 export { rooms } from "./rooms.ts";

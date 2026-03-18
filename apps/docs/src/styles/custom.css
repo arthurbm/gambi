@@ -1,5 +1,5 @@
 /* ==========================================================================
-   GAMBIARRA Design System
+   GAMBI Design System
    Aesthetic: "Improvised Excellence" - Industrial/Raw + Playful
    ========================================================================== */
 
@@ -9,16 +9,16 @@
 
 :root {
   /* Light mode - warm paper tones */
-  --gambiarra-bg: hsl(40, 30%, 97%);
-  --gambiarra-bg-alt: hsl(35, 25%, 94%);
-  --gambiarra-text: hsl(20, 10%, 25%);
-  --gambiarra-text-muted: hsl(20, 8%, 45%);
-  --gambiarra-text-dimmed: hsl(20, 5%, 60%);
-  --gambiarra-accent: hsl(25, 95%, 55%);
-  --gambiarra-accent-hover: hsl(25, 95%, 45%);
-  --gambiarra-accent-alt: hsl(160, 70%, 35%);
-  --gambiarra-border: hsl(30, 15%, 80%);
-  --gambiarra-border-strong: hsl(30, 15%, 65%);
+  --gambi-bg: hsl(40, 30%, 97%);
+  --gambi-bg-alt: hsl(35, 25%, 94%);
+  --gambi-text: hsl(20, 10%, 25%);
+  --gambi-text-muted: hsl(20, 8%, 45%);
+  --gambi-text-dimmed: hsl(20, 5%, 60%);
+  --gambi-accent: hsl(25, 95%, 55%);
+  --gambi-accent-hover: hsl(25, 95%, 45%);
+  --gambi-accent-alt: hsl(160, 70%, 35%);
+  --gambi-border: hsl(30, 15%, 80%);
+  --gambi-border-strong: hsl(30, 15%, 65%);
 
   /* Typography */
   --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
@@ -44,43 +44,43 @@
   --shadow-lg: 0 4px 16px hsla(20, 10%, 20%, 0.12);
 
   /* Override Starlight variables */
-  --sl-color-bg: var(--gambiarra-bg);
-  --sl-color-bg-nav: var(--gambiarra-bg-alt);
-  --sl-color-bg-sidebar: var(--gambiarra-bg-alt);
-  --sl-color-text: var(--gambiarra-text);
-  --sl-color-text-accent: var(--gambiarra-accent);
-  --sl-color-accent: var(--gambiarra-accent);
-  --sl-color-accent-high: var(--gambiarra-accent-hover);
-  --sl-color-gray-5: var(--gambiarra-border);
-  --sl-color-hairline-shade: var(--gambiarra-border);
+  --sl-color-bg: var(--gambi-bg);
+  --sl-color-bg-nav: var(--gambi-bg-alt);
+  --sl-color-bg-sidebar: var(--gambi-bg-alt);
+  --sl-color-text: var(--gambi-text);
+  --sl-color-text-accent: var(--gambi-accent);
+  --sl-color-accent: var(--gambi-accent);
+  --sl-color-accent-high: var(--gambi-accent-hover);
+  --sl-color-gray-5: var(--gambi-border);
+  --sl-color-hairline-shade: var(--gambi-border);
 }
 
 /* Dark mode - vintage terminal */
 :root[data-theme="dark"] {
-  --gambiarra-bg: hsl(200, 15%, 8%);
-  --gambiarra-bg-alt: hsl(200, 12%, 11%);
-  --gambiarra-text: hsl(45, 20%, 80%);
-  --gambiarra-text-muted: hsl(45, 15%, 60%);
-  --gambiarra-text-dimmed: hsl(45, 10%, 45%);
-  --gambiarra-accent: hsl(25, 95%, 60%);
-  --gambiarra-accent-hover: hsl(25, 95%, 70%);
-  --gambiarra-accent-alt: hsl(120, 60%, 50%);
-  --gambiarra-border: hsl(200, 10%, 20%);
-  --gambiarra-border-strong: hsl(200, 10%, 30%);
+  --gambi-bg: hsl(200, 15%, 8%);
+  --gambi-bg-alt: hsl(200, 12%, 11%);
+  --gambi-text: hsl(45, 20%, 80%);
+  --gambi-text-muted: hsl(45, 15%, 60%);
+  --gambi-text-dimmed: hsl(45, 10%, 45%);
+  --gambi-accent: hsl(25, 95%, 60%);
+  --gambi-accent-hover: hsl(25, 95%, 70%);
+  --gambi-accent-alt: hsl(120, 60%, 50%);
+  --gambi-border: hsl(200, 10%, 20%);
+  --gambi-border-strong: hsl(200, 10%, 30%);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --gambiarra-bg: hsl(200, 15%, 8%);
-    --gambiarra-bg-alt: hsl(200, 12%, 11%);
-    --gambiarra-text: hsl(45, 20%, 80%);
-    --gambiarra-text-muted: hsl(45, 15%, 60%);
-    --gambiarra-text-dimmed: hsl(45, 10%, 45%);
-    --gambiarra-accent: hsl(25, 95%, 60%);
-    --gambiarra-accent-hover: hsl(25, 95%, 70%);
-    --gambiarra-accent-alt: hsl(120, 60%, 50%);
-    --gambiarra-border: hsl(200, 10%, 20%);
-    --gambiarra-border-strong: hsl(200, 10%, 30%);
+    --gambi-bg: hsl(200, 15%, 8%);
+    --gambi-bg-alt: hsl(200, 12%, 11%);
+    --gambi-text: hsl(45, 20%, 80%);
+    --gambi-text-muted: hsl(45, 15%, 60%);
+    --gambi-text-dimmed: hsl(45, 10%, 45%);
+    --gambi-accent: hsl(25, 95%, 60%);
+    --gambi-accent-hover: hsl(25, 95%, 70%);
+    --gambi-accent-alt: hsl(120, 60%, 50%);
+    --gambi-border: hsl(200, 10%, 20%);
+    --gambi-border-strong: hsl(200, 10%, 30%);
   }
 }
 
@@ -92,8 +92,8 @@ body {
   font-family: var(--font-sans);
   font-size: 15px;
   line-height: 1.6;
-  color: var(--gambiarra-text);
-  background-color: var(--gambiarra-bg);
+  color: var(--gambi-text);
+  background-color: var(--gambi-bg);
 }
 
 /* Code and monospace */
@@ -114,7 +114,7 @@ h4,
 h5,
 h6 {
   font-weight: 600;
-  color: var(--gambiarra-text);
+  color: var(--gambi-text);
   letter-spacing: -0.02em;
 }
 
@@ -132,14 +132,14 @@ h3 {
 
 /* Links */
 a {
-  color: var(--gambiarra-text);
-  text-decoration-color: var(--gambiarra-accent);
+  color: var(--gambi-text);
+  text-decoration-color: var(--gambi-accent);
   text-underline-offset: 3px;
   transition: color 0.15s ease;
 }
 
 a:hover {
-  color: var(--gambiarra-accent);
+  color: var(--gambi-accent);
 }
 
 /* --------------------------------------------------------------------------
@@ -148,8 +148,8 @@ a:hover {
 
 /* Header */
 header.header {
-  background: var(--gambiarra-bg-alt) !important;
-  border-bottom: 2px solid var(--gambiarra-border) !important;
+  background: var(--gambi-bg-alt) !important;
+  border-bottom: 2px solid var(--gambi-border) !important;
 }
 
 /* Site title */
@@ -161,13 +161,13 @@ header.header {
 
 /* Sidebar */
 .sidebar-pane {
-  background: var(--gambiarra-bg-alt);
-  border-inline-end: 2px solid var(--gambiarra-border) !important;
+  background: var(--gambi-bg-alt);
+  border-inline-end: 2px solid var(--gambi-border) !important;
 }
 
 nav.sidebar summary span {
   font-weight: 500;
-  color: var(--gambiarra-text) !important;
+  color: var(--gambi-text) !important;
 }
 
 .top-level li a {
@@ -184,14 +184,14 @@ nav.sidebar summary span {
 
 a[aria-current="page"] {
   background: hsla(25, 95%, 55%, 0.12) !important;
-  border-left: 3px solid var(--gambiarra-accent) !important;
+  border-left: 3px solid var(--gambi-accent) !important;
   font-weight: 600 !important;
 }
 
 /* Search button */
 button[data-open-modal] {
-  background: var(--gambiarra-bg) !important;
-  border: 2px solid var(--gambiarra-border) !important;
+  background: var(--gambi-bg) !important;
+  border: 2px solid var(--gambi-border) !important;
   border-radius: var(--radius-md);
   font-family: var(--font-mono);
 }
@@ -203,8 +203,8 @@ button[data-open-modal] {
 }
 
 .expressive-code figure {
-  background: var(--gambiarra-bg-alt) !important;
-  border: 2px solid var(--gambiarra-border) !important;
+  background: var(--gambi-bg-alt) !important;
+  border: 2px solid var(--gambi-border) !important;
   border-radius: var(--radius-md);
 }
 
@@ -225,17 +225,17 @@ button[data-open-modal] {
 
 /* Callouts/Asides */
 .starlight-aside {
-  border: 2px solid var(--gambiarra-border);
+  border: 2px solid var(--gambi-border);
   border-radius: var(--radius-md);
-  background: var(--gambiarra-bg-alt);
+  background: var(--gambi-bg-alt);
 }
 
 .starlight-aside--note {
-  border-color: var(--gambiarra-accent-alt);
+  border-color: var(--gambi-accent-alt);
 }
 
 .starlight-aside--tip {
-  border-color: var(--gambiarra-accent);
+  border-color: var(--gambi-accent);
 }
 
 /* --------------------------------------------------------------------------
@@ -266,11 +266,11 @@ button[data-open-modal] {
    -------------------------------------------------------------------------- */
 
 .text-accent {
-  color: var(--gambiarra-accent);
+  color: var(--gambi-accent);
 }
 
 .text-muted {
-  color: var(--gambiarra-text-muted);
+  color: var(--gambi-text-muted);
 }
 
 .font-mono {

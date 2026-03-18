@@ -3,7 +3,7 @@ import { confirm, text } from "@clack/prompts";
 import {
   RuntimeConfig,
   type RuntimeConfig as RuntimeConfigValue,
-} from "@gambiarra/core/types";
+} from "@gambi/core/types";
 import { handleCancel } from "./prompt.ts";
 
 function parseOptionalNumber(

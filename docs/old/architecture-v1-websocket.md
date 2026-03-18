@@ -1,4 +1,4 @@
-# Gambiarra Club - Nova Arquitetura
+# Gambi Club - Nova Arquitetura
 
 ## Visão Geral
 
@@ -35,7 +35,7 @@ Sistema que permite pessoas em uma rede local criarem "salas" onde participantes
 
 ```
                     ┌─────────────────────────────────────────┐
-                    │           GAMBIARRA HUB                 │
+                    │           GAMBI HUB                 │
                     │      (Bun + WebSocket Pub/Sub)          │
                     │                                          │
                     │  Salas: room:abc123, room:xyz789...     │
@@ -51,7 +51,7 @@ Sistema que permite pessoas em uma rede local criarem "salas" onde participantes
 
 **Fluxo:**
 1. Host cria sala via CLI → recebe código (ex: `ABC123`)
-2. Participantes rodam `gambiarra join ABC123` → expõem Ollama local
+2. Participantes rodam `gambi join ABC123` → expõem Ollama local
 3. Host usa SDK para consumir LLMs dos participantes
 4. Hub faz relay de requests/responses via WebSocket pub/sub
 
@@ -62,7 +62,7 @@ Sistema que permite pessoas em uma rede local criarem "salas" onde participantes
 Projeto já iniciado com Better T Stack:
 
 ```
-gambiarra/
+gambi/
 ├── apps/
 │   ├── docs/                    # Starlight (PT-BR + EN) - HOME do projeto
 │   │   ├── src/content/docs/
@@ -86,14 +86,14 @@ gambiarra/
 │   │       ├── hub.ts           # Hub WebSocket (Bun.serve)
 │   │       └── types.ts         # Tipos compartilhados
 │   │
-│   ├── cli/                     # CLI gambiarra (inclui hub)
+│   ├── cli/                     # CLI gambi (inclui hub)
 │   │   └── src/
 │   │       ├── index.ts         # Entry point
 │   │       ├── commands/
-│   │       │   ├── serve.ts     # gambiarra serve [--tui]
-│   │       │   ├── create.ts    # gambiarra create
-│   │       │   ├── join.ts      # gambiarra join <code>
-│   │       │   └── list.ts      # gambiarra list
+│   │       │   ├── serve.ts     # gambi serve [--tui]
+│   │       │   ├── create.ts    # gambi create
+│   │       │   ├── join.ts      # gambi join <code>
+│   │       │   └── list.ts      # gambi list
 │   │       ├── ollama.ts        # Cliente Ollama local
 │   │       └── logo.ts          # ASCII art logo
 │   │
@@ -119,9 +119,9 @@ gambiarra/
 ### Modelo "Spawn + Attach"
 
 ```
-gambiarra serve           → Inicia hub (headless, AI-friendly)
-gambiarra serve --tui     → Inicia hub + spawna TUI automaticamente
-gambiarra tui             → Conecta TUI a um hub existente
+gambi serve           → Inicia hub (headless, AI-friendly)
+gambi serve --tui     → Inicia hub + spawna TUI automaticamente
+gambi tui             → Conecta TUI a um hub existente
 ```
 
 ### Por que separar?
@@ -277,28 +277,28 @@ interface Room {
 ## SDK - Uso com AI SDK
 
 ```typescript
-import { createGambiarra } from "@gambiarra/sdk";
+import { createGambi } from "@gambi/sdk";
 import { streamText } from "ai";
 
 // Conectar a uma sala
-const gambiarra = await createGambiarra({
+const gambi = await createGambi({
   hubUrl: "ws://localhost:3000",
   roomCode: "ABC123"
 });
 
 // Listar participantes disponíveis
-const participants = gambiarra.participants;
+const participants = gambi.participants;
 // → [{ id: "joao-rtx4090", model: "llama3.2:3b", ... }]
 
 // Usar modelo de um participante específico
 const result = await streamText({
-  model: gambiarra.model("joao-rtx4090"),
+  model: gambi.model("joao-rtx4090"),
   prompt: "Explique computação quântica"
 });
 
 // Ou usar qualquer participante com o modelo especificado
 const result2 = await streamText({
-  model: gambiarra.model("llama3.2:3b"), // primeiro disponível
+  model: gambi.model("llama3.2:3b"), // primeiro disponível
   prompt: "Escreva um poema"
 });
 
@@ -314,14 +314,14 @@ for await (const chunk of result.textStream) {
 
 ```bash
 # Iniciar hub (servidor)
-gambiarra serve [--port 3000]
+gambi serve [--port 3000]
 
 # Criar sala (requer hub rodando)
-gambiarra create "Minha Sala" [--hub ws://localhost:3000]
+gambi create "Minha Sala" [--hub ws://localhost:3000]
 # → Sala criada! Código: ABC123
 
 # Entrar em uma sala (expõe Ollama local)
-gambiarra join ABC123 \
+gambi join ABC123 \
   --nickname "João" \
   --model "llama3.2:3b" \
   --ollama-url "http://localhost:11434" \
@@ -330,7 +330,7 @@ gambiarra join ABC123 \
   --num-ctx 4096
 
 # Listar salas/participantes
-gambiarra list [--hub ws://localhost:3000]
+gambi list [--hub ws://localhost:3000]
 ```
 
 ---
@@ -377,18 +377,18 @@ A home da docs deve servir como landing page do projeto:
 1. ~~Setup monorepo Bun + Turbo~~ ✓
 2. ~~Biome + Ultracite~~ ✓
 3. ~~Starlight docs~~ ✓
-4. `@gambiarra/core` - tipos, schemas Zod, hub WebSocket
+4. `@gambi/core` - tipos, schemas Zod, hub WebSocket
 5. Logo ASCII colorida
 
 ### Fase 2: CLI
-6. `@gambiarra/cli` - comandos serve, create, join, list
+6. `@gambi/cli` - comandos serve, create, join, list
 7. Integração com Ollama local (streaming)
 8. Detecção automática de specs da máquina
 9. Flag `--tui` para spawn automático
 
 ### Fase 3: SDK
 10. OpenAPI spec (`packages/sdk/openapi.json`)
-11. `@gambiarra/sdk` - cliente WebSocket
+11. `@gambi/sdk` - cliente WebSocket
 12. Provider wrapper para AI SDK (@ai-sdk/ollama)
 13. Geração de código via OpenAPI (para futuras SDKs)
 
@@ -411,8 +411,8 @@ A home da docs deve servir como landing page do projeto:
 
 | Método | Uso | Comando |
 |--------|-----|---------|
-| npm (SDK) | Desenvolvedores usando SDK | `bun add @gambiarra/sdk` |
-| npm (CLI) | Instalação global da CLI | `bun add -g @gambiarra/cli` |
+| npm (SDK) | Desenvolvedores usando SDK | `bun add @gambi/sdk` |
+| npm (CLI) | Instalação global da CLI | `bun add -g @gambi/cli` |
 | Binário standalone | Usuários finais sem Bun | Download do GitHub Releases |
 
 ### Publicação no npm (`bun publish`)
@@ -434,14 +434,14 @@ O `bun publish` automaticamente:
 
 ```bash
 # Build para a plataforma atual
-bun build --compile --minify ./packages/cli/src/index.ts --outfile gambiarra
+bun build --compile --minify ./packages/cli/src/index.ts --outfile gambi
 
 # Cross-compile para todas as plataformas
-bun build --compile --target=bun-linux-x64 ./packages/cli/src/index.ts --outfile dist/gambiarra-linux-x64
-bun build --compile --target=bun-linux-arm64 ./packages/cli/src/index.ts --outfile dist/gambiarra-linux-arm64
-bun build --compile --target=bun-darwin-x64 ./packages/cli/src/index.ts --outfile dist/gambiarra-darwin-x64
-bun build --compile --target=bun-darwin-arm64 ./packages/cli/src/index.ts --outfile dist/gambiarra-darwin-arm64
-bun build --compile --target=bun-windows-x64 ./packages/cli/src/index.ts --outfile dist/gambiarra-windows-x64.exe
+bun build --compile --target=bun-linux-x64 ./packages/cli/src/index.ts --outfile dist/gambi-linux-x64
+bun build --compile --target=bun-linux-arm64 ./packages/cli/src/index.ts --outfile dist/gambi-linux-arm64
+bun build --compile --target=bun-darwin-x64 ./packages/cli/src/index.ts --outfile dist/gambi-darwin-x64
+bun build --compile --target=bun-darwin-arm64 ./packages/cli/src/index.ts --outfile dist/gambi-darwin-arm64
+bun build --compile --target=bun-windows-x64 ./packages/cli/src/index.ts --outfile dist/gambi-windows-x64.exe
 ```
 
 ### Build Script (`scripts/build.ts`)
@@ -460,7 +460,7 @@ for (const target of targets) {
     entrypoints: ["./packages/cli/src/index.ts"],
     compile: {
       target,
-      outfile: `./dist/gambiarra-${target.replace("bun-", "")}`,
+      outfile: `./dist/gambi-${target.replace("bun-", "")}`,
     },
     minify: true,
     sourcemap: "linked",
@@ -496,11 +496,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-      - run: bun build --compile --target=${{ matrix.target }} --minify ./packages/cli/src/index.ts --outfile gambiarra
+      - run: bun build --compile --target=${{ matrix.target }} --minify ./packages/cli/src/index.ts --outfile gambi
       - uses: actions/upload-artifact@v4
         with:
-          name: gambiarra-${{ matrix.target }}
-          path: gambiarra*
+          name: gambi-${{ matrix.target }}
+          path: gambi*
 ```
 
 ---
@@ -516,21 +516,21 @@ apps/tui/         → Aplicação standalone, não publicada separadamente
 
 ### CLI (`packages/cli`)
 
-- **É um package npm**: Publicado como `@gambiarra/cli` ou `gambiarra`
-- **Exporta binário**: `"bin": { "gambiarra": "./dist/index.js" }`
+- **É um package npm**: Publicado como `@gambi/cli` ou `gambi`
+- **Exporta binário**: `"bin": { "gambi": "./dist/index.js" }`
 - **Contém toda a lógica**: Hub WebSocket, comandos, integração Ollama
 - **Pode ser compilado**: `bun build --compile` gera executável standalone
-- **Instalável globalmente**: `bun add -g @gambiarra/cli`
+- **Instalável globalmente**: `bun add -g @gambi/cli`
 
 ```json
 // packages/cli/package.json
 {
-  "name": "@gambiarra/cli",
+  "name": "@gambi/cli",
   "bin": {
-    "gambiarra": "./dist/index.js"
+    "gambi": "./dist/index.js"
   },
   "dependencies": {
-    "@gambiarra/core": "workspace:*"
+    "@gambi/core": "workspace:*"
   }
 }
 ```
@@ -540,7 +540,7 @@ apps/tui/         → Aplicação standalone, não publicada separadamente
 - **É uma aplicação**: Não publicada no npm separadamente
 - **Usa @opentui/react**: Interface de terminal rica
 - **Conecta ao Hub**: Via WebSocket (mesmo protocolo dos clientes)
-- **Iniciada pela CLI**: `gambiarra serve --tui` spawna a TUI
+- **Iniciada pela CLI**: `gambi serve --tui` spawna a TUI
 
 ```json
 // apps/tui/package.json
@@ -548,7 +548,7 @@ apps/tui/         → Aplicação standalone, não publicada separadamente
   "name": "tui",
   "private": true,  // NÃO publicada
   "dependencies": {
-    "@gambiarra/core": "workspace:*",
+    "@gambi/core": "workspace:*",
     "@opentui/react": "^0.1.67"
   }
 }
@@ -588,7 +588,7 @@ await Bun.build({
     "./apps/tui/src/index.tsx"  // Incluir TUI
   ],
   compile: {
-    outfile: "./dist/gambiarra",
+    outfile: "./dist/gambi",
   },
   minify: true,
 });
@@ -615,7 +615,7 @@ if (options.tui) {
 
 - **Namespace Pattern**: `Room.create()`, `Participant.register()`
 - **Schemas Zod com .meta()**: Documentação integrada
-- **Monorepo com exports granulares**: `@gambiarra/sdk/client`
+- **Monorepo com exports granulares**: `@gambi/sdk/client`
 - **Event Bus para comunicação interna**
 - **Turbo para build orchestration**
 - **TUI separada da CLI (spawn + attach)**

@@ -1,4 +1,4 @@
-import { ParticipantInfo as ParticipantInfoSchema } from "@gambiarra/core/types";
+import { ParticipantInfo as ParticipantInfoSchema } from "@gambi/core/types";
 import { z } from "zod";
 
 // Re-export types from core
@@ -10,7 +10,7 @@ export type {
   ParticipantStatus,
   RoomInfoPublic as RoomInfo,
   RuntimeConfig,
-} from "@gambiarra/core/types";
+} from "@gambi/core/types";
 
 // TUI-specific types
 

@@ -1,9 +1,11 @@
 ---
 title: API Reference
-description: Complete HTTP API reference for the Gambiarra hub. OpenAI-compatible endpoints for chat completions and responses.
+description: Complete HTTP API reference for the Gambi hub. OpenAI-compatible endpoints for chat completions and responses.
 ---
 
-The Gambiarra hub exposes an OpenAI-compatible HTTP API. Any tool or library that works with the OpenAI API can work with Gambiarra by changing the base URL.
+The Gambi hub exposes an OpenAI-compatible HTTP API. Any tool or library that works with the OpenAI API can work with Gambi by changing the base URL.
+
+The project was previously published as `gambiarra`. The current public metadata key in `/v1/models` is `gambi`.
 
 ## Base URL
 
@@ -17,7 +19,7 @@ Example: `http://192.168.1.100:3000/rooms/ABC123/v1/`
 
 ## Authentication
 
-No authentication is required. Gambiarra is designed for trusted local networks. CORS is enabled for all origins.
+No authentication is required. Gambi is designed for trusted local networks. CORS is enabled for all origins.
 
 ## Model Routing
 
@@ -130,7 +132,7 @@ curl http://localhost:3000/rooms/ABC123/v1/models
       "object": "model",
       "created": 1234567890,
       "owned_by": "alice",
-      "gambiarra": {
+      "gambi": {
         "nickname": "alice",
         "model": "llama3",
         "endpoint": "http://192.168.1.10:11434",

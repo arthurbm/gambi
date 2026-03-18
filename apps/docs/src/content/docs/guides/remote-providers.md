@@ -1,6 +1,6 @@
 ---
 title: Remote Providers
-description: Use cloud LLM providers (OpenRouter, Together AI, Groq, etc.) as participants in a Gambiarra room.
+description: Use cloud LLM providers (OpenRouter, Together AI, Groq, etc.) as participants in a Gambi room.
 ---
 
 You don't need a local GPU to participate. Any OpenAI-compatible cloud API can be used as your LLM endpoint — OpenRouter, Together AI, Groq, Fireworks, or even the OpenAI API itself.
@@ -23,7 +23,7 @@ For automation, prefer `--header-env` so secrets don't end up in shell history.
 ```bash
 export OPENROUTER_AUTH="Bearer sk-or-..."
 
-gambiarra join --code ABC123 \
+gambi join --code ABC123 \
   --endpoint https://openrouter.ai/api \
   --model meta-llama/llama-3.1-8b-instruct:free \
   --nickname my-openrouter \
@@ -33,7 +33,7 @@ gambiarra join --code ABC123 \
 You can also send extra provider-specific headers:
 
 ```bash
-gambiarra join --code ABC123 \
+gambi join --code ABC123 \
   --endpoint https://openrouter.ai/api \
   --model meta-llama/llama-3.1-8b-instruct:free \
   --nickname my-openrouter \
@@ -41,7 +41,7 @@ gambiarra join --code ABC123 \
   --header "HTTP-Referer=https://my-app.example"
 ```
 
-If you prefer interactive mode, `gambiarra join` now prompts for auth headers after you choose the endpoint. Header values are collected via hidden prompts.
+If you prefer interactive mode, `gambi join` now prompts for auth headers after you choose the endpoint. Header values are collected via hidden prompts.
 
 ## Join With TUI
 
@@ -59,7 +59,7 @@ export OPENAI_AUTH="Bearer sk-..."
    - Header name: `Authorization`
    - Env var: `OPENAI_AUTH`
 
-The TUI resolves the environment variable locally before probing models and joining the room. The raw secret is never persisted to Gambiarra config files.
+The TUI resolves the environment variable locally before probing models and joining the room. The raw secret is never persisted to Gambi config files.
 
 ## Join Through The API Or SDK
 
@@ -92,7 +92,7 @@ Choose a model you're comfortable paying for, or use free-tier models for experi
 
 ## Security Notes
 
-- Gambiarra sends `authHeaders` from the joining client to the hub, then stores them in memory for as long as that participant is registered.
+- Gambi sends `authHeaders` from the joining client to the hub, then stores them in memory for as long as that participant is registered.
 - In trusted local networks, that's usually enough.
 - If your hub is reachable outside your LAN, put it behind HTTPS or a reverse proxy before sending provider credentials through it.
 

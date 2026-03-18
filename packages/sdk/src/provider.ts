@@ -1,18 +1,18 @@
 import { createOpenResponses } from "@ai-sdk/open-responses";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
-import type { ParticipantInfo } from "@gambiarra/core/types";
+import type { ParticipantInfo } from "@gambi/core/types";
 
-export type GambiarraProtocol = "openResponses" | "chatCompletions";
-const DEFAULT_PROTOCOL: GambiarraProtocol = "openResponses";
+export type GambiProtocol = "openResponses" | "chatCompletions";
+const DEFAULT_PROTOCOL: GambiProtocol = "openResponses";
 
-export interface GambiarraOptions {
+export interface GambiOptions {
   hubUrl?: string;
   roomCode: string;
-  defaultProtocol?: GambiarraProtocol;
+  defaultProtocol?: GambiProtocol;
 }
 
-export interface GambiarraModel {
+export interface GambiModel {
   id: string;
   nickname: string;
   model: string;
@@ -31,7 +31,7 @@ interface ModelsResponse {
     object: string;
     created: number;
     owned_by: string;
-    gambiarra?: {
+    gambi?: {
       nickname: string;
       model: string;
       endpoint: string;
@@ -40,31 +40,31 @@ interface ModelsResponse {
   }>;
 }
 
-export interface GambiarraProtocolNamespace {
+export interface GambiProtocolNamespace {
   participant: (id: string) => LanguageModelV3;
   model: (name: string) => LanguageModelV3;
   any: () => LanguageModelV3;
 }
 
-export interface GambiarraProvider extends GambiarraProtocolNamespace {
-  chatCompletions: GambiarraProtocolNamespace;
-  defaultProtocol: GambiarraProtocol;
-  listModels: () => Promise<GambiarraModel[]>;
+export interface GambiProvider extends GambiProtocolNamespace {
+  chatCompletions: GambiProtocolNamespace;
+  defaultProtocol: GambiProtocol;
+  listModels: () => Promise<GambiModel[]>;
   listParticipants: () => Promise<ParticipantInfo[]>;
-  openResponses: GambiarraProtocolNamespace;
+  openResponses: GambiProtocolNamespace;
   baseURL: string;
 }
 
-type ProtocolNamespaceFactory = (baseURL: string) => GambiarraProtocolNamespace;
+type ProtocolNamespaceFactory = (baseURL: string) => GambiProtocolNamespace;
 
 const protocolNamespaceFactories: Record<
-  GambiarraProtocol,
+  GambiProtocol,
   ProtocolNamespaceFactory
 > = {
   openResponses(baseURL) {
     const provider = createOpenResponses({
       url: `${baseURL}/responses`,
-      name: "gambiarra",
+      name: "gambi",
     });
 
     return {
@@ -76,7 +76,7 @@ const protocolNamespaceFactories: Record<
   chatCompletions(baseURL) {
     const provider = createOpenAICompatible({
       baseURL,
-      name: "gambiarra",
+      name: "gambi",
     });
 
     return {
@@ -88,18 +88,18 @@ const protocolNamespaceFactories: Record<
 };
 
 function createNamespace(
-  protocol: GambiarraProtocol,
+  protocol: GambiProtocol,
   baseURL: string
-): GambiarraProtocolNamespace {
+): GambiProtocolNamespace {
   return protocolNamespaceFactories[protocol](baseURL);
 }
 
 /**
- * Create a Gambiarra provider for use with AI SDK.
+ * Create a Gambi provider for use with AI SDK.
  *
  * Defaults to OpenResponses and keeps chat/completions available explicitly.
  */
-export function createGambiarra(options: GambiarraOptions): GambiarraProvider {
+export function createGambi(options: GambiOptions): GambiProvider {
   const hubUrl = options.hubUrl ?? "http://localhost:3000";
   const baseURL = `${hubUrl}/rooms/${options.roomCode}/v1`;
   const defaultProtocol = options.defaultProtocol ?? DEFAULT_PROTOCOL;
@@ -128,7 +128,7 @@ export function createGambiarra(options: GambiarraOptions): GambiarraProvider {
       return data.participants;
     },
 
-    async listModels(): Promise<GambiarraModel[]> {
+    async listModels(): Promise<GambiModel[]> {
       const response = await fetch(`${baseURL}/models`);
       if (!response.ok) {
         throw new Error(`Failed to fetch models: ${response.statusText}`);
@@ -136,10 +136,10 @@ export function createGambiarra(options: GambiarraOptions): GambiarraProvider {
       const data = (await response.json()) as ModelsResponse;
       return data.data.map((model) => ({
         id: model.id,
-        nickname: model.gambiarra?.nickname ?? model.owned_by,
-        model: model.gambiarra?.model ?? model.id,
-        endpoint: model.gambiarra?.endpoint ?? "",
-        capabilities: model.gambiarra?.capabilities ?? {
+        nickname: model.gambi?.nickname ?? model.owned_by,
+        model: model.gambi?.model ?? model.id,
+        endpoint: model.gambi?.endpoint ?? "",
+        capabilities: model.gambi?.capabilities ?? {
           openResponses: "unknown",
           chatCompletions: "unknown",
         },
@@ -150,4 +150,4 @@ export function createGambiarra(options: GambiarraOptions): GambiarraProvider {
   };
 }
 
-export type { ParticipantInfo } from "@gambiarra/core/types";
+export type { ParticipantInfo } from "@gambi/core/types";

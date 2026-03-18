@@ -1,11 +1,11 @@
 # AGENTS.md - Guia Operacional para Agentes de Código
 
-Escopo: este arquivo orienta agentes que iniciam trabalho no repositório `gambiarra`.
+Escopo: este arquivo orienta agentes que iniciam trabalho no repositório `gambi`.
 Status de validação: conteúdo conferido no código em 2026-02-13.
 
 ## 1) Objetivo do projeto
 
-Gambiarra é um sistema local-first para compartilhar endpoints LLM (OpenAI-compatible) em rede local por meio de um hub HTTP central.
+Gambi é um sistema local-first para compartilhar endpoints LLM (OpenAI-compatible) em rede local por meio de um hub HTTP central.
 
 Capacidades principais:
 - Criar salas e registrar participantes.
@@ -27,7 +27,7 @@ Regra obrigatória:
 
 Workspaces:
 - `packages/core`: hub HTTP, sala/participante, SSE, mDNS e schemas/tipos.
-- `packages/cli`: binário `gambiarra` e subcomandos de operação.
+- `packages/cli`: binário `gambi` e subcomandos de operação.
 - `packages/sdk`: provider para AI SDK e cliente HTTP.
 - `apps/tui`: interface terminal (OpenTUI + React) para operação/monitoramento.
 - `apps/docs`: documentação (Astro Starlight).
@@ -66,7 +66,7 @@ Health e disponibilidade:
 - Fonte: `packages/core/src/types.ts`.
 
 Comportamento do CLI:
-- `gambiarra` sem argumentos em TTY abre TUI.
+- `gambi` sem argumentos em TTY abre TUI.
 - Subcomandos registrados hoje: `serve`, `create`, `join`, `list`, `monitor`.
 - Todos os comandos suportam modo interativo: quando rodados sem flags obrigatorias em TTY, promptam o usuario via `@clack/prompts`.
 - Flags continuam funcionando normalmente para scripting e automacao.

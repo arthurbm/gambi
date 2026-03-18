@@ -1,7 +1,7 @@
 {
-  "name": "gambiarra",
+  "name": "gambi",
   "version": "0.2.3",
-  "description": "CLI for Gambiarra - Share local LLMs across your network",
+  "description": "CLI for Gambi - Share local LLMs across your network",
   "keywords": [
     "llm",
     "openresponses",
@@ -17,14 +17,14 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/arthurbm/gambiarra.git",
+    "url": "https://github.com/arthurbm/gambi.git",
     "directory": "packages/cli"
   },
-  "homepage": "https://github.com/arthurbm/gambiarra",
-  "bugs": "https://github.com/arthurbm/gambiarra/issues",
+  "homepage": "https://github.com/arthurbm/gambi",
+  "bugs": "https://github.com/arthurbm/gambi/issues",
   "type": "module",
   "bin": {
-    "gambiarra": "./src/cli.ts"
+    "gambi": "./src/cli.ts"
   },
   "exports": {
     "./serve": "./src/commands/serve.ts",
@@ -44,7 +44,7 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.1.0",
-    "@gambiarra/core": "workspace:*",
+    "@gambi/core": "workspace:*",
     "clipanion": "^4.0.0-rc.4",
     "nanoid": "^5.1.5"
   },

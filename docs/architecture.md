@@ -1,14 +1,16 @@
-# Gambiarra - Architecture
+# Gambi - Architecture
 
-This document describes the current architecture of Gambiarra, a system for sharing local LLMs across a network.
+This document describes the current architecture of Gambi, a system for sharing local LLMs across a network.
+
+`Gambi` is the official short form of **gambiarra**. The shorter name works better in English for CLI/package ergonomics, while preserving the PT-BR meaning of creative, resourceful improvisation under constraints.
 
 ## Overview
 
-Gambiarra enables multiple users on a local network to share their LLM endpoints (Ollama, LM Studio, LocalAI, vLLM, or any endpoint that exposes OpenResponses or chat/completions) through a central hub. The system is designed to work seamlessly with the Vercel AI SDK.
+Gambi enables multiple users on a local network to share their LLM endpoints (Ollama, LM Studio, LocalAI, vLLM, or any endpoint that exposes OpenResponses or chat/completions) through a central hub. The system is designed to work seamlessly with the Vercel AI SDK.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           GAMBIARRA HUB (HTTP)                              │
+│                           GAMBI HUB (HTTP)                              │
 │                                                                             │
 │  HTTP Endpoints:                                                            │
 │  ┌────────────────────────────────────────────────────────────────────┐    │
@@ -48,7 +50,7 @@ Gambiarra enables multiple users on a local network to share their LLM endpoints
 
 ## Design Philosophy
 
-Gambiarra follows the principle of **feature parity across all endpoints**. Each entry point exposes the same core capabilities through an interface optimized for its target use case:
+Gambi follows the principle of **feature parity across all endpoints**. Each entry point exposes the same core capabilities through an interface optimized for its target use case:
 
 | Endpoint | Target Audience | Use Case |
 |----------|-----------------|----------|
@@ -58,7 +60,7 @@ Gambiarra follows the principle of **feature parity across all endpoints**. Each
 
 ### Architecture Pattern
 
-Internally, Gambiarra follows a **Ports and Adapters** style. The public edge is `OpenResponses-first`, but the hub core does not hardcode that as its only internal shape.
+Internally, Gambi follows a **Ports and Adapters** style. The public edge is `OpenResponses-first`, but the hub core does not hardcode that as its only internal shape.
 
 - The hub defines protocol adapter ports for request creation and stored-response lifecycle operations.
 - `openResponses` and `chatCompletions` are the first concrete adapters registered today.
@@ -71,28 +73,29 @@ This is intentionally close to the “generic interface + interpreter” style y
 
 | Command | Result |
 |---------|--------|
-| `gambiarra` | Opens **TUI** - Interactive interface with all features |
-| `gambiarra serve` | CLI - Starts hub server (scripting) |
-| `gambiarra create` | CLI - Creates room (scripting) |
-| `gambiarra join` | CLI - Joins as participant (scripting) |
-| `gambiarra list` | CLI - Lists rooms (scripting) |
+| `gambi` | Shows CLI help |
+| `gambi monitor` | Opens **TUI** - Interactive monitoring interface |
+| `gambi serve` | CLI - Starts hub server (scripting) |
+| `gambi create` | CLI - Creates room (scripting) |
+| `gambi join` | CLI - Joins as participant (scripting) |
+| `gambi list` | CLI - Lists rooms (scripting) |
 
-**Important:** Running `gambiarra` without a subcommand opens the TUI. Subcommands are designed for scripting and automation.
+**Important:** The standalone CLI currently shows help when you run `gambi` with no subcommand. Use `gambi monitor` for the TUI.
 
 ### Feature Parity Matrix
 
 | Feature | SDK | CLI | TUI |
 |---------|-----|-----|-----|
-| Create room | POST /rooms | `gambiarra create` | Create dialog |
-| List rooms | GET /rooms | `gambiarra list` | Room selector |
-| Join room | POST /rooms/:code/join | `gambiarra join` | Join dialog |
+| Create room | POST /rooms | `gambi create` | Create dialog |
+| List rooms | GET /rooms | `gambi list` | Room selector |
+| Join room | POST /rooms/:code/join | `gambi join` | Join dialog |
 | Leave room | DELETE /rooms/:code/leave/:id | Auto on exit | Leave action |
 | Health check | POST /rooms/:code/health | Auto (background) | Auto (background) |
 | Responses create | POST /rooms/:code/v1/responses | Via SDK | N/A (monitoring only) |
 | Responses lifecycle | `/rooms/:code/v1/responses/:id*` | HTTP/API clients | N/A (monitoring only) |
 | Chat completion (legacy) | POST /rooms/:code/v1/chat/completions | Via SDK or explicit legacy mode | N/A (monitoring only) |
 | Real-time events | SSE subscription | - | Built-in |
-| Serve hub | - | `gambiarra serve` | Embedded server |
+| Serve hub | - | `gambi serve` | Embedded server |
 
 ### Runtime Defaults
 
@@ -114,7 +117,7 @@ Example:
 
 The project is a Bun + Turbo monorepo with the following packages:
 
-### `@gambiarra/core`
+### `@gambi/core`
 
 Core library containing the hub server and shared utilities.
 
@@ -126,7 +129,7 @@ Core library containing the hub server and shared utilities.
 - `mdns.ts` - mDNS (Bonjour/Zeroconf) service discovery
 - `types.ts` - Zod schemas and TypeScript types
 
-### `@gambiarra/cli`
+### `gambi`
 
 Command-line interface for managing hubs and participants.
 
@@ -136,42 +139,42 @@ Command-line interface for managing hubs and participants.
 - `list` - List available rooms
 - `join` - Join a room with your LLM endpoint and optional runtime defaults
 
-### `gambiarra-sdk`
+### `gambi-sdk`
 
 SDK for integrating with the Vercel AI SDK.
 
 **Installation:**
 ```bash
-npm install gambiarra-sdk
+npm install gambi-sdk
 ```
 
-Available on npm: https://www.npmjs.com/package/gambiarra-sdk
+Available on npm: https://www.npmjs.com/package/gambi-sdk
 
 ```typescript
-import { createGambiarra } from "gambiarra-sdk";
+import { createGambi } from "gambi-sdk";
 import { generateText } from "ai";
 
-const gambiarra = createGambiarra({ roomCode: "ABC123" });
+const gambi = createGambi({ roomCode: "ABC123" });
 
 // Use any available participant
 const result = await generateText({
-  model: gambiarra.any(),
+  model: gambi.any(),
   prompt: "Hello!",
 });
 
 // Use a specific participant by ID
 const result2 = await generateText({
-  model: gambiarra.participant("participant-id"),
+  model: gambi.participant("participant-id"),
   prompt: "Hello!",
 });
 
 // Use a specific model type (routes to first participant with that model)
 const result3 = await generateText({
-  model: gambiarra.model("llama3"),
+  model: gambi.model("llama3"),
   prompt: "Hello!",
 });
 
-const legacy = createGambiarra({
+const legacy = createGambi({
   roomCode: "ABC123",
   defaultProtocol: "chatCompletions",
 });
@@ -234,9 +237,9 @@ The SDK supports three ways to select a participant:
 
 | Pattern | Example | Description |
 |---------|---------|-------------|
-| Participant ID | `gambiarra.participant("abc123")` | Routes to specific participant |
-| Model name | `gambiarra.model("llama3")` | Routes to first online participant with that model |
-| Any | `gambiarra.any()` or `model: "*"` | Routes to random online participant |
+| Participant ID | `gambi.participant("abc123")` | Routes to specific participant |
+| Model name | `gambi.model("llama3")` | Routes to first online participant with that model |
+| Any | `gambi.any()` or `model: "*"` | Routes to random online participant |
 
 ## Health Checking
 
@@ -249,12 +252,12 @@ The SDK supports three ways to select a participant:
 When started with `--mdns`, the hub publishes itself via Bonjour/Zeroconf:
 
 ```bash
-gambiarra serve --mdns
+gambi serve --mdns
 ```
 
 This allows clients on the local network to discover the hub automatically without knowing its IP address.
 
-Service format: `gambiarra-hub-{port}._gambiarra._tcp.local`
+Service format: `gambi-hub-{port}._gambi._tcp.local`
 
 ## Supported Providers
 

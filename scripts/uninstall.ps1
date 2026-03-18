@@ -1,30 +1,30 @@
-# Gambiarra CLI Uninstaller for Windows
-# Usage: irm https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/uninstall.ps1 | iex
+# Gambi CLI Uninstaller for Windows
+# Usage: irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.ps1 | iex
 
 $ErrorActionPreference = "Stop"
 
-$BinaryName = "gambiarra.exe"
-$InstallDir = Join-Path $env:LOCALAPPDATA "gambiarra"
+$BinaryName = "gambi.exe"
+$InstallDir = Join-Path $env:LOCALAPPDATA "gambi"
 
-function Uninstall-Gambiarra {
+function Uninstall-Gambi {
     Write-Host ""
-    Write-Host "  Gambiarra CLI Uninstaller" -ForegroundColor Cyan
+    Write-Host "  Gambi CLI Uninstaller" -ForegroundColor Cyan
     Write-Host ""
 
     $binaryPath = Join-Path $InstallDir $BinaryName
 
     if (-not (Test-Path $binaryPath)) {
         # Check if it's somewhere else in PATH
-        $found = Get-Command "gambiarra" -ErrorAction SilentlyContinue
+        $found = Get-Command "gambi" -ErrorAction SilentlyContinue
         if ($found) {
             $binaryPath = $found.Source
         } else {
-            Write-Host "[ERROR] gambiarra not found. Nothing to uninstall." -ForegroundColor Red
+            Write-Host "[ERROR] gambi not found. Nothing to uninstall." -ForegroundColor Red
             return
         }
     }
 
-    Write-Host "[INFO] Found gambiarra at: $binaryPath" -ForegroundColor Green
+    Write-Host "[INFO] Found gambi at: $binaryPath" -ForegroundColor Green
 
     # Remove binary
     Remove-Item $binaryPath -Force
@@ -44,7 +44,7 @@ function Uninstall-Gambiarra {
         Write-Host "[INFO] Removed $InstallDir from user PATH." -ForegroundColor Green
     }
 
-    Write-Host "[INFO] gambiarra has been uninstalled successfully." -ForegroundColor Green
+    Write-Host "[INFO] gambi has been uninstalled successfully." -ForegroundColor Green
 }
 
-Uninstall-Gambiarra
+Uninstall-Gambi

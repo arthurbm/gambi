@@ -1,6 +1,6 @@
 # TUI - Terminal User Interface
 
-Interactive terminal interface for Gambiarra using OpenTUI (React reconciler for terminal).
+Interactive terminal interface for Gambi using OpenTUI (React reconciler for terminal).
 
 ## Tech Stack
 
@@ -380,7 +380,7 @@ const getRowKey = (item: T, index: number): string => {
 
 ```bash
 # Da raiz do monorepo (OBRIGATÓRIO)
-cd /path/to/gambiarra
+cd /path/to/gambi
 bun x ultracite check    # Verificar problemas
 bun x ultracite fix      # Corrigir automaticamente
 
@@ -403,5 +403,5 @@ bun run dev
 A TUI conecta em `http://localhost:3000` por padrão. Inicie um hub primeiro:
 
 ```bash
-bun run --filter @gambiarra/cli serve
+bun run --filter @gambi/cli serve
 ```

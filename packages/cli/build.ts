@@ -3,10 +3,10 @@ import { mkdir, rm } from "node:fs/promises";
 import { $ } from "bun";
 
 const TARGETS = [
-  { target: "bun-linux-x64", output: "gambiarra-linux-x64" },
-  { target: "bun-linux-arm64", output: "gambiarra-linux-arm64" },
-  { target: "bun-darwin-arm64", output: "gambiarra-darwin-arm64" },
-  { target: "bun-windows-x64", output: "gambiarra-windows-x64.exe" },
+  { target: "bun-linux-x64", output: "gambi-linux-x64" },
+  { target: "bun-linux-arm64", output: "gambi-linux-arm64" },
+  { target: "bun-darwin-arm64", output: "gambi-darwin-arm64" },
+  { target: "bun-windows-x64", output: "gambi-windows-x64.exe" },
 ] as const;
 
 async function build() {

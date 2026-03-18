@@ -1,11 +1,11 @@
 ---
 title: Quick Start
-description: Get up and running with Gambiarra in minutes.
+description: Get up and running with Gambi in minutes.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-This tutorial walks you through setting up Gambiarra from scratch. By the end, you'll have a hub running with participants sharing LLMs on your network.
+This tutorial walks you through setting up Gambi from scratch. By the end, you'll have a hub running with participants sharing LLMs on your network.
 
 ## What You'll Need
 
@@ -22,7 +22,7 @@ The CLI allows you to start hubs, create rooms, and join as a participant. Pre-b
 <Tabs>
   <TabItem label="Linux / macOS" icon="linux">
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/install.sh | bash
+    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.sh | bash
     ```
     The script auto-detects your OS and architecture, downloads the correct binary, and installs it to `/usr/local/bin`.
 
@@ -30,17 +30,17 @@ The CLI allows you to start hubs, create rooms, and join as a participant. Pre-b
   </TabItem>
   <TabItem label="Windows" icon="laptop">
     ```powershell
-    irm https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/install.ps1 | iex
+    irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.ps1 | iex
     ```
-    The script downloads the binary to `%LOCALAPPDATA%\gambiarra\` and adds it to your user PATH.
+    The script downloads the binary to `%LOCALAPPDATA%\gambi\` and adds it to your user PATH.
   </TabItem>
   <TabItem label="npm / bun" icon="seti:npm">
     ```bash
     # Via npm
-    npm install -g gambiarra
+    npm install -g gambi
 
     # Via bun
-    bun add -g gambiarra
+    bun add -g gambi
     ```
     Works on any platform with Node.js or Bun installed, including macOS Intel.
   </TabItem>
@@ -49,7 +49,7 @@ The CLI allows you to start hubs, create rooms, and join as a participant. Pre-b
 Verify the installation:
 
 ```bash
-gambiarra --version
+gambi --version
 ```
 
 ### Uninstallation
@@ -57,21 +57,21 @@ gambiarra --version
 <Tabs>
   <TabItem label="Linux / macOS" icon="linux">
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/uninstall.sh | bash
+    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.sh | bash
     ```
   </TabItem>
   <TabItem label="Windows" icon="laptop">
     ```powershell
-    irm https://raw.githubusercontent.com/arthurbm/gambiarra/main/scripts/uninstall.ps1 | iex
+    irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.ps1 | iex
     ```
   </TabItem>
   <TabItem label="npm / bun" icon="seti:npm">
     ```bash
     # If installed via npm
-    npm uninstall -g gambiarra
+    npm uninstall -g gambi
 
     # If installed via bun
-    bun remove -g gambiarra
+    bun remove -g gambi
     ```
   </TabItem>
 </Tabs>
@@ -81,9 +81,9 @@ gambiarra --version
 The SDK provides [Vercel AI SDK](https://sdk.vercel.ai/) integration for using shared LLMs in your TypeScript/JavaScript applications. It defaults to the Responses API and also supports Chat Completions.
 
 ```bash
-npm install gambiarra-sdk
+npm install gambi-sdk
 # or
-bun add gambiarra-sdk
+bun add gambi-sdk
 ```
 
 ## Basic Usage
@@ -96,10 +96,10 @@ Pick a machine on the network to be the hub. It doesn't need a GPU — the hub o
 
 ```bash
 # Interactive — prompts for port, host, mDNS:
-gambiarra serve
+gambi serve
 
 # Or with flags:
-gambiarra serve --port 3000 --mdns
+gambi serve --port 3000 --mdns
 ```
 
 The `--mdns` flag enables auto-discovery so other machines on the network can find the hub automatically.
@@ -108,10 +108,10 @@ The `--mdns` flag enables auto-discovery so other machines on the network can fi
 
 ```bash
 # Interactive — prompts for room name and password:
-gambiarra create
+gambi create
 
 # Or with flags:
-gambiarra create --name "My Room"
+gambi create --name "My Room"
 # Output: Room created! Code: ABC123
 ```
 
@@ -120,7 +120,7 @@ Share this code with everyone who wants to join — via chat, projector, sticky 
 You can also create a password-protected room:
 
 ```bash
-gambiarra create --name "Private Room" --password secret123
+gambi create --name "Private Room" --password secret123
 ```
 
 ### 3. Join with Your LLM
@@ -129,10 +129,10 @@ Each person with an LLM endpoint joins the room:
 
 ```bash
 # Interactive — select provider, model, set nickname:
-gambiarra join
+gambi join
 
 # Or with flags:
-gambiarra join --code ABC123 --model llama3
+gambi join --code ABC123 --model llama3
 ```
 
 In interactive mode, you'll select your LLM provider from a list (Ollama, LM Studio, vLLM, or custom URL), then pick from detected models. You can also set a nickname and room password.
@@ -141,13 +141,13 @@ With flags, the default endpoint is `http://localhost:11434` (Ollama). For other
 
 ```bash
 # LM Studio
-gambiarra join --code ABC123 --model mistral --endpoint http://localhost:1234
+gambi join --code ABC123 --model mistral --endpoint http://localhost:1234
 
 # vLLM
-gambiarra join --code ABC123 --model llama3 --endpoint http://localhost:8000
+gambi join --code ABC123 --model llama3 --endpoint http://localhost:8000
 ```
 
-The CLI will probe your local endpoint, detect available models and protocol capabilities, and register you in the room. If you join a remote hub from another machine while using `localhost`, Gambiarra automatically tries to publish a LAN-reachable URL instead. Use `--network-endpoint` only when you need to override that published URL manually.
+The CLI will probe your local endpoint, detect available models and protocol capabilities, and register you in the room. If you join a remote hub from another machine while using `localhost`, Gambi automatically tries to publish a LAN-reachable URL instead. Use `--network-endpoint` only when you need to override that published URL manually.
 
 It also shares your machine specs (CPU, RAM, GPU) automatically — use `--no-specs` if you prefer not to share.
 
@@ -158,18 +158,18 @@ Once joined, your LLM is available to everyone in the room.
 Now anyone can use the shared LLMs from their code:
 
 ```typescript
-import { createGambiarra } from "gambiarra-sdk";
+import { createGambi } from "gambi-sdk";
 import { generateText } from "ai";
 
-const gambiarra = createGambiarra({
+const gambi = createGambi({
   roomCode: "ABC123",
   hubUrl: "http://localhost:3000",
 });
 
 // Send to any available participant
 const result = await generateText({
-  model: gambiarra.any(),
-  prompt: "Hello, Gambiarra!",
+  model: gambi.any(),
+  prompt: "Hello, Gambi!",
 });
 
 console.log(result.text);
@@ -180,13 +180,13 @@ You can also target specific models or participants:
 ```typescript
 // Use a specific model
 const result = await generateText({
-  model: gambiarra.model("llama3"),
+  model: gambi.model("llama3"),
   prompt: "Explain quantum computing",
 });
 
 // Use a specific participant
 const result = await generateText({
-  model: gambiarra.participant("joao"),
+  model: gambi.participant("joao"),
   prompt: "Write a haiku",
 });
 ```
@@ -194,7 +194,7 @@ const result = await generateText({
 To use Chat Completions instead of the default Responses API:
 
 ```typescript
-const gambiarra = createGambiarra({
+const gambi = createGambi({
   roomCode: "ABC123",
   hubUrl: "http://localhost:3000",
   defaultProtocol: "chatCompletions",
