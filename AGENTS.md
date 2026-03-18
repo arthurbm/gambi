@@ -252,3 +252,35 @@ Biome's linter will catch most issues automatically. Focus your attention on:
 ---
 
 Most formatting and common issues are automatically fixed by Biome. Run `bun x ultracite fix` before committing to ensure compliance.
+
+## Cursor Cloud specific instructions
+
+### Runtime
+
+Bun is the primary runtime for the entire monorepo. The VM snapshot installs Bun v1.3.5 at `~/.bun/bin/bun`. If `bun` is not on `PATH`, run `export BUN_INSTALL="$HOME/.bun" && export PATH="$BUN_INSTALL/bin:$PATH"`.
+
+### Services overview
+
+| Service | Start command | Default port | Notes |
+|---------|--------------|--------------|-------|
+| Hub (core) | `bun run dev` (from root) | 3000 | In-memory state, no DB needed |
+| TUI | `bun run dev:tui` | N/A | Terminal UI, connects to hub |
+| Docs (Astro) | `bun run dev:docs` | 4321 | Static documentation site |
+
+No Docker, databases, or external services are required. All state is in-memory.
+
+### Commands reference
+
+All standard commands are documented in section 5 of this file. Key quick references:
+
+- **Install deps**: `bun install`
+- **Type check**: `bun run check-types`
+- **Lint**: `bun x ultracite check` / `bun x ultracite fix`
+- **Tests**: `bun test packages/core/src`, `bun test packages/sdk/src`, `bun run --cwd apps/tui test`
+- **Build**: `bun run build`
+
+### Known caveats
+
+- There is 1 pre-existing test failure in `packages/core/src/endpoint-capabilities.test.ts` (`probeEndpoint > does not detect protected endpoints without auth headers`). This is not an environment issue.
+- `bun x ultracite check` reports pre-existing formatting issues in `packages/cli/src`. These are not blockers.
+- Core and SDK tests spin up hub instances on random ports. They should not conflict, but avoid running multiple test suites simultaneously if you encounter port issues.
