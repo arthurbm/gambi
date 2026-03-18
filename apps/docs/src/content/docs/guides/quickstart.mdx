@@ -147,7 +147,9 @@ gambiarra join --code ABC123 --model mistral --endpoint http://localhost:1234
 gambiarra join --code ABC123 --model llama3 --endpoint http://localhost:8000
 ```
 
-The CLI will probe your endpoint, detect available models and protocol capabilities, and register you in the room. It also shares your machine specs (CPU, RAM, GPU) automatically — use `--no-specs` if you prefer not to share.
+The CLI will probe your local endpoint, detect available models and protocol capabilities, and register you in the room. If you join a remote hub from another machine while using `localhost`, Gambiarra automatically tries to publish a LAN-reachable URL instead. Use `--network-endpoint` only when you need to override that published URL manually.
+
+It also shares your machine specs (CPU, RAM, GPU) automatically — use `--no-specs` if you prefer not to share.
 
 Once joined, your LLM is available to everyone in the room.
 

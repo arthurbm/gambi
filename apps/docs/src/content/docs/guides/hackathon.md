@@ -56,6 +56,8 @@ gambiarra join --code XK7P2M \
   --nickname carol
 ```
 
+If the hub is running on a different machine, Gambiarra will automatically rewrite `localhost` endpoints to a LAN-reachable URL before publishing them to the hub. If your setup needs a custom published URL, pass `--network-endpoint`.
+
 ### Step 4: Use from Your App
 
 Now everyone can use the shared LLMs:

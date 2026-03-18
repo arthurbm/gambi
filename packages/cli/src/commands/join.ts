@@ -15,8 +15,15 @@ import type {
   RuntimeConfig,
 } from "@gambiarra/core/types";
 import { HEALTH_CHECK_INTERVAL } from "@gambiarra/core/types";
-import { Command, Option } from "../utils/option.ts";
 import { nanoid } from "nanoid";
+import { Command, Option } from "../utils/option.ts";
+import {
+  isLoopbackLikeHost,
+  isRemoteHubUrl,
+  listNetworkCandidates,
+  rankNetworkCandidatesForHub,
+  replaceEndpointHost,
+} from "../utils/network-endpoint.ts";
 import { handleCancel, isInteractive, LLM_PROVIDERS } from "../utils/prompt.ts";
 import {
   hasRuntimeConfig,
@@ -39,16 +46,40 @@ interface JoinResponse {
   roomId: string;
 }
 
-interface JoinInputs {
+interface JoinDraftInputs {
   authHeaders: ParticipantAuthHeaders;
   code: string;
-  model: string;
-  endpoint: string;
-  nickname: string | undefined;
-  password: string | undefined;
-  noSpecs: boolean;
-  capabilities: ParticipantCapabilities;
   config: RuntimeConfig;
+  localEndpoint: string;
+  model: string;
+  networkEndpoint: string | undefined;
+  nickname: string | undefined;
+  noNetworkRewrite: boolean;
+  noSpecs: boolean;
+  password: string | undefined;
+}
+
+interface JoinInputs {
+  authHeaders: ParticipantAuthHeaders;
+  capabilities: ParticipantCapabilities;
+  code: string;
+  config: RuntimeConfig;
+  localEndpoint: string;
+  model: string;
+  nickname: string | undefined;
+  noSpecs: boolean;
+  password: string | undefined;
+  publishedEndpoint: string;
+}
+
+interface ResolvePublishedEndpointParams {
+  hubUrl: string;
+  interactive: boolean;
+  localEndpoint: string;
+  networkEndpoint: string | undefined;
+  noNetworkRewrite: boolean;
+  stderr: NodeJS.WritableStream;
+  stdout: NodeJS.WritableStream;
 }
 
 function parseHeaderAssignment(input: string): { name: string; value: string } {
@@ -95,6 +126,39 @@ function resolveAuthHeaders(
   return authHeaders;
 }
 
+function getEndpointHost(endpoint: string): string {
+  return new URL(endpoint).hostname;
+}
+
+function getRankedPublishedEndpoints(
+  hubUrl: string,
+  localEndpoint: string
+): string[] {
+  const rankedCandidates = rankNetworkCandidatesForHub(
+    hubUrl,
+    listNetworkCandidates()
+  );
+  const publishedEndpoints = rankedCandidates.map((candidate) =>
+    replaceEndpointHost(localEndpoint, candidate.address)
+  );
+
+  return [...new Set(publishedEndpoints)];
+}
+
+function writeRemoteLoopbackExplanation(
+  stdout: NodeJS.WritableStream,
+  hubUrl: string,
+  localEndpoint: string
+): void {
+  stdout.write("\n");
+  stdout.write("Remote hub detected with a loopback endpoint.\n");
+  stdout.write(`  Hub URL: ${hubUrl}\n`);
+  stdout.write(`  Local endpoint: ${localEndpoint}\n`);
+  stdout.write(
+    "  localhost only works on your own machine, so the hub needs a network-reachable URL.\n\n"
+  );
+}
+
 async function promptAuthHeaders(): Promise<ParticipantAuthHeaders> {
   const shouldAddHeaders = await confirm({
     message: "Does this endpoint require auth headers?",
@@ -137,9 +201,9 @@ async function promptEndpoint(currentEndpoint: string): Promise<string> {
   }
 
   const providerOptions = [
-    ...LLM_PROVIDERS.map((p) => ({
-      value: `http://localhost:${p.port}`,
-      label: `${p.name} (localhost:${p.port})`,
+    ...LLM_PROVIDERS.map((provider) => ({
+      value: `http://localhost:${provider.port}`,
+      label: `${provider.name} (localhost:${provider.port})`,
     })),
     { value: "custom", label: "Custom URL" },
   ];
@@ -154,7 +218,7 @@ async function promptEndpoint(currentEndpoint: string): Promise<string> {
     const urlResult = await text({
       message: "Endpoint URL:",
       placeholder: "http://localhost:11434",
-      validate: (v) => (v ? undefined : "Endpoint URL is required"),
+      validate: (value) => (value ? undefined : "Endpoint URL is required"),
     });
     handleCancel(urlResult);
     return urlResult as string;
@@ -186,11 +250,149 @@ async function promptModels(
 
   const modelResult = await select({
     message: "Select model:",
-    options: probe.models.map((m) => ({ value: m, label: m })),
+    options: probe.models.map((model) => ({ value: model, label: model })),
   });
   handleCancel(modelResult);
 
   return { model: modelResult as string, probe };
+}
+
+async function promptManualPublishedEndpoint(
+  localEndpoint: string
+): Promise<string> {
+  const manualEndpointResult = await text({
+    message: "Published network endpoint:",
+    placeholder: replaceEndpointHost(localEndpoint, "192.168.1.50"),
+    validate: (value) => {
+      if (!value?.trim()) {
+        return "Published endpoint is required";
+      }
+
+      try {
+        new URL(value);
+        return undefined;
+      } catch {
+        return "Enter a valid URL";
+      }
+    },
+  });
+  handleCancel(manualEndpointResult);
+  return (manualEndpointResult as string).trim();
+}
+
+async function resolvePublishedEndpoint(
+  params: ResolvePublishedEndpointParams
+): Promise<string | null> {
+  const {
+    hubUrl,
+    interactive,
+    localEndpoint,
+    networkEndpoint,
+    noNetworkRewrite,
+    stderr,
+    stdout,
+  } = params;
+
+  try {
+    new URL(localEndpoint);
+  } catch {
+    stderr.write(`Invalid endpoint URL: ${localEndpoint}\n`);
+    return null;
+  }
+
+  if (networkEndpoint) {
+    try {
+      const normalizedNetworkEndpoint = new URL(networkEndpoint).toString();
+      stdout.write(
+        `Using manually published network endpoint: ${normalizedNetworkEndpoint}\n`
+      );
+      return normalizedNetworkEndpoint;
+    } catch {
+      stderr.write(`Invalid --network-endpoint URL: ${networkEndpoint}\n`);
+      return null;
+    }
+  }
+
+  if (noNetworkRewrite || !isRemoteHubUrl(hubUrl)) {
+    return localEndpoint;
+  }
+
+  if (!isLoopbackLikeHost(getEndpointHost(localEndpoint))) {
+    return localEndpoint;
+  }
+
+  const rankedPublishedEndpoints = getRankedPublishedEndpoints(
+    hubUrl,
+    localEndpoint
+  );
+
+  if (!interactive) {
+    if (rankedPublishedEndpoints.length === 1) {
+      const publishedEndpoint = rankedPublishedEndpoints[0];
+      if (!publishedEndpoint) {
+        return null;
+      }
+      stdout.write(
+        `Remote hub detected. Publishing ${publishedEndpoint} instead of ${localEndpoint}.\n`
+      );
+      return publishedEndpoint;
+    }
+
+    if (rankedPublishedEndpoints.length === 0) {
+      stderr.write(
+        "Remote hub detected, but no LAN IP could be inferred for your local endpoint.\n"
+      );
+      stderr.write(
+        "Pass --network-endpoint with the URL that the hub can reach, or use --no-network-rewrite to opt out.\n"
+      );
+      return null;
+    }
+
+    stderr.write(
+      "Remote hub detected and multiple LAN endpoints are possible for your machine:\n"
+    );
+    for (const candidate of rankedPublishedEndpoints) {
+      stderr.write(`  - ${candidate}\n`);
+    }
+    stderr.write(
+      "Pass --network-endpoint to choose one explicitly, or use interactive mode to select it.\n"
+    );
+    return null;
+  }
+
+  writeRemoteLoopbackExplanation(stdout, hubUrl, localEndpoint);
+
+  const options = rankedPublishedEndpoints.map((publishedEndpoint, index) => ({
+    value: publishedEndpoint,
+    label:
+      index === 0
+        ? `Use ${publishedEndpoint} (Recommended)`
+        : `Use ${publishedEndpoint}`,
+  }));
+
+  options.push(
+    { value: "__manual__", label: "Enter network endpoint manually" },
+    { value: "__keep__", label: `Keep ${localEndpoint}` }
+  );
+
+  const selectedEndpoint = await select({
+    message: "How should this endpoint be published to the hub?",
+    options,
+  });
+  handleCancel(selectedEndpoint);
+
+  if (selectedEndpoint === "__manual__") {
+    return await promptManualPublishedEndpoint(localEndpoint);
+  }
+
+  if (selectedEndpoint === "__keep__") {
+    stdout.write(
+      "Keeping the current endpoint. A remote hub may reject this loopback URL.\n"
+    );
+    return localEndpoint;
+  }
+
+  return selectedEndpoint as string;
 }
 
 async function collectInteractiveInputs(
@@ -198,35 +400,39 @@ async function collectInteractiveInputs(
     authHeaders: ParticipantAuthHeaders;
     code: string | undefined;
     config: RuntimeConfig;
+    hubUrl: string;
+    localEndpoint: string;
     model: string | undefined;
-    endpoint: string;
+    networkEndpoint: string | undefined;
     nickname: string | undefined;
-    password: string | undefined;
+    noNetworkRewrite: boolean;
     noSpecs: boolean;
+    password: string | undefined;
   },
+  stdout: NodeJS.WritableStream,
   stderr: NodeJS.WritableStream
 ): Promise<JoinInputs | null> {
   intro("gambiarra join");
 
-  let { authHeaders, code, model, endpoint, nickname, password, noSpecs } =
+  let { authHeaders, code, localEndpoint, model, nickname, password, noSpecs } =
     defaults;
 
   if (!code) {
     const codeResult = await text({
       message: "Room code:",
-      validate: (v) => (v ? undefined : "Room code is required"),
+      validate: (value) => (value ? undefined : "Room code is required"),
     });
     handleCancel(codeResult);
     code = codeResult as string;
   }
 
-  endpoint = await promptEndpoint(endpoint);
+  localEndpoint = await promptEndpoint(localEndpoint);
   authHeaders = await promptAuthHeaders();
 
   let capabilities: ParticipantCapabilities | undefined;
 
   if (!model) {
-    const result = await promptModels(endpoint, authHeaders, stderr);
+    const result = await promptModels(localEndpoint, authHeaders, stderr);
     if (!result) {
       return null;
     }
@@ -240,9 +446,9 @@ async function collectInteractiveInputs(
       placeholder: `${model}@${nanoid().slice(0, 6)}`,
     });
     handleCancel(nicknameResult);
-    const nick = nicknameResult as string;
-    if (nick) {
-      nickname = nick;
+    const resolvedNickname = (nicknameResult as string).trim();
+    if (resolvedNickname) {
+      nickname = resolvedNickname;
     }
   }
 
@@ -251,9 +457,9 @@ async function collectInteractiveInputs(
       message: "Room password (leave empty if none):",
     });
     handleCancel(passwordResult);
-    const pwd = passwordResult as string;
-    if (pwd) {
-      password = pwd;
+    const resolvedPassword = (passwordResult as string).trim();
+    if (resolvedPassword) {
+      password = resolvedPassword;
     }
   }
 
@@ -267,8 +473,21 @@ async function collectInteractiveInputs(
   }
 
   if (!capabilities) {
-    const probe = await probeEndpoint(endpoint, { authHeaders });
+    const probe = await probeEndpoint(localEndpoint, { authHeaders });
     capabilities = probe.capabilities;
+  }
+
+  const publishedEndpoint = await resolvePublishedEndpoint({
+    hubUrl: defaults.hubUrl,
+    interactive: true,
+    localEndpoint,
+    networkEndpoint: defaults.networkEndpoint,
+    noNetworkRewrite: defaults.noNetworkRewrite,
+    stderr,
+    stdout,
+  });
+  if (!publishedEndpoint) {
+    return null;
   }
 
   let config: RuntimeConfig;
@@ -281,14 +500,15 @@ async function collectInteractiveInputs(
 
   return {
     authHeaders,
-    config,
-    code,
-    model,
-    endpoint,
-    nickname,
-    password,
-    noSpecs,
     capabilities,
+    code,
+    config,
+    localEndpoint,
+    model,
+    nickname,
+    noSpecs,
+    password,
+    publishedEndpoint,
   };
 }
 
@@ -312,6 +532,10 @@ export class JoinCommand extends Command {
         "gambiarra join --code ABC123 --model llama3 --endpoint http://localhost:11434 --nickname 'My GPU'",
       ],
       [
+        "Join a remote hub with an explicit published endpoint",
+        "gambiarra join --code ABC123 --hub http://192.168.1.10:3000 --model llama3 --network-endpoint http://192.168.1.25:11434",
+      ],
+      [
         "Join password-protected room",
         "gambiarra join --code ABC123 --model llama3 --password secret123",
       ],
@@ -329,7 +553,12 @@ export class JoinCommand extends Command {
   });
 
   endpoint = Option.String("--endpoint,-e", "http://localhost:11434", {
-    description: "LLM endpoint URL (OpenResponses or chat/completions capable)",
+    description: "Local LLM endpoint URL used for probing and inference",
+  });
+
+  networkEndpoint = Option.String("--network-endpoint", {
+    description: "Network-reachable URL to publish to the hub",
+    required: false,
   });
 
   nickname = Option.String("--nickname,-n", {
@@ -362,6 +591,11 @@ export class JoinCommand extends Command {
     description: "Don't share machine specs (CPU, RAM, GPU)",
   });
 
+  noNetworkRewrite = Option.Boolean("--no-network-rewrite", false, {
+    description:
+      "Disable automatic localhost-to-LAN endpoint rewrite for remote hubs",
+  });
+
   private async loadConfig(): Promise<RuntimeConfig | null> {
     if (!this.configPath) {
       return {};
@@ -375,10 +609,7 @@ export class JoinCommand extends Command {
     }
   }
 
-  private async resolveInputs(): Promise<Omit<
-    JoinInputs,
-    "capabilities"
-  > | null> {
+  private async resolveInputs(): Promise<JoinDraftInputs | null> {
     if (this.code && this.model) {
       let authHeaders: ParticipantAuthHeaders;
       try {
@@ -397,13 +628,16 @@ export class JoinCommand extends Command {
         authHeaders,
         code: this.code,
         config,
+        localEndpoint: this.endpoint,
         model: this.model,
-        endpoint: this.endpoint,
+        networkEndpoint: this.networkEndpoint,
         nickname: this.nickname,
-        password: this.password,
+        noNetworkRewrite: this.noNetworkRewrite,
         noSpecs: this.noSpecs,
+        password: this.password,
       };
     }
+
     if (!this.code) {
       this.context.stderr.write(
         "Error: --code is required (or run in a terminal for interactive mode)\n"
@@ -425,12 +659,27 @@ export class JoinCommand extends Command {
       if (!resolved) {
         return null;
       }
+
+      const publishedEndpoint = await resolvePublishedEndpoint({
+        hubUrl: this.hub,
+        interactive: false,
+        localEndpoint: resolved.localEndpoint,
+        networkEndpoint: resolved.networkEndpoint,
+        noNetworkRewrite: resolved.noNetworkRewrite,
+        stderr: this.context.stderr,
+        stdout: this.context.stdout,
+      });
+      if (!publishedEndpoint) {
+        return null;
+      }
+
       return {
         ...resolved,
         capabilities: {
           openResponses: "unknown",
           chatCompletions: "unknown",
         },
+        publishedEndpoint,
       };
     }
 
@@ -441,60 +690,56 @@ export class JoinCommand extends Command {
 
     return collectInteractiveInputs(
       {
-        code: this.code,
-        model: this.model,
         authHeaders: {},
+        code: this.code,
         config,
-        endpoint: this.endpoint,
+        hubUrl: this.hub,
+        localEndpoint: this.endpoint,
+        model: this.model,
+        networkEndpoint: this.networkEndpoint,
         nickname: this.nickname,
-        password: this.password,
+        noNetworkRewrite: this.noNetworkRewrite,
         noSpecs: this.noSpecs,
+        password: this.password,
       },
+      this.context.stdout,
       this.context.stderr
     );
   }
 
   private async executeInteractiveJoin(inputs: JoinInputs): Promise<number> {
-    const {
-      authHeaders,
-      config,
-      code,
-      model,
-      endpoint,
-      nickname,
-      password,
-      noSpecs,
-      capabilities,
-    } = inputs;
-
-    const specs = noSpecs ? { cpu: "Hidden", ram: 0 } : await detectSpecs();
+    const specs = inputs.noSpecs
+      ? { cpu: "Hidden", ram: 0 }
+      : await detectSpecs();
     const participantId = nanoid();
-    const finalNickname = nickname ?? `${model}@${participantId.slice(0, 6)}`;
+    const finalNickname =
+      inputs.nickname ?? `${inputs.model}@${participantId.slice(0, 6)}`;
 
     return this.registerAndListen({
-      code,
-      config,
-      model,
-      endpoint,
-      authHeaders,
-      password,
-      participantId,
+      authHeaders: inputs.authHeaders,
+      capabilities: inputs.capabilities,
+      code: inputs.code,
+      config: inputs.config,
       finalNickname,
-      specs,
-      capabilities,
       interactive: true,
+      localEndpoint: inputs.localEndpoint,
+      model: inputs.model,
+      participantId,
+      password: inputs.password,
+      publishedEndpoint: inputs.publishedEndpoint,
+      specs,
     });
   }
 
   private async executeNonInteractiveJoin(inputs: JoinInputs): Promise<number> {
     const [probe, specs] = await Promise.all([
-      probeEndpoint(inputs.endpoint, { authHeaders: inputs.authHeaders }),
+      probeEndpoint(inputs.localEndpoint, { authHeaders: inputs.authHeaders }),
       inputs.noSpecs
         ? Promise.resolve({ cpu: "Hidden" as const, ram: 0 })
         : detectSpecs(),
     ]);
 
-    if (!this.validateProbe(probe, inputs.endpoint, inputs.model)) {
+    if (!this.validateProbe(probe, inputs.localEndpoint, inputs.model)) {
       return 1;
     }
 
@@ -507,17 +752,18 @@ export class JoinCommand extends Command {
       inputs.nickname ?? `${inputs.model}@${participantId.slice(0, 6)}`;
 
     return this.registerAndListen({
+      authHeaders: inputs.authHeaders,
+      capabilities: probe.capabilities,
       code: inputs.code,
       config: inputs.config,
-      model: inputs.model,
-      endpoint: inputs.endpoint,
-      authHeaders: inputs.authHeaders,
-      password: inputs.password,
-      participantId,
       finalNickname,
-      specs,
-      capabilities: probe.capabilities,
       interactive: false,
+      localEndpoint: inputs.localEndpoint,
+      model: inputs.model,
+      participantId,
+      password: inputs.password,
+      publishedEndpoint: inputs.publishedEndpoint,
+      specs,
     });
   }
 
@@ -558,30 +804,32 @@ export class JoinCommand extends Command {
   }
 
   private async registerAndListen(opts: {
+    authHeaders: ParticipantAuthHeaders;
+    capabilities: ParticipantCapabilities;
     code: string;
     config: RuntimeConfig;
-    model: string;
-    endpoint: string;
-    authHeaders: ParticipantAuthHeaders;
-    password: string | undefined;
-    participantId: string;
     finalNickname: string;
-    specs: { cpu: string; ram: number; gpu?: string };
-    capabilities: ParticipantCapabilities;
     interactive: boolean;
+    localEndpoint: string;
+    model: string;
+    participantId: string;
+    password: string | undefined;
+    publishedEndpoint: string;
+    specs: { cpu: string; ram: number; gpu?: string };
   }): Promise<number> {
     const {
+      authHeaders,
+      capabilities,
       code,
       config,
-      model,
-      endpoint,
-      authHeaders,
-      password,
-      participantId,
       finalNickname,
-      specs,
-      capabilities,
       interactive,
+      localEndpoint,
+      model,
+      participantId,
+      password,
+      publishedEndpoint,
+      specs,
     } = opts;
 
     try {
@@ -589,7 +837,7 @@ export class JoinCommand extends Command {
         id: participantId,
         nickname: finalNickname,
         model,
-        endpoint,
+        endpoint: publishedEndpoint,
         specs,
         config,
         capabilities,
@@ -626,7 +874,8 @@ export class JoinCommand extends Command {
         `  Participant ID: ${data.participant.id}`,
         `  Nickname: ${data.participant.nickname}`,
         `  Model: ${data.participant.model}`,
-        `  Endpoint: ${data.participant.endpoint}`,
+        `  Local endpoint: ${localEndpoint}`,
+        `  Published endpoint: ${data.participant.endpoint}`,
         "",
         "Your endpoint is now available through the hub.",
         "Press Ctrl+C to leave the room.",
@@ -637,13 +886,12 @@ export class JoinCommand extends Command {
       } else {
         this.context.stdout.write(`${successMsg}\n\n`);
       }
-    } catch (err) {
+    } catch (error) {
       this.context.stderr.write(`Failed to connect to hub at ${this.hub}\n`);
-      this.context.stderr.write(`${err}\n`);
+      this.context.stderr.write(`${error}\n`);
       return 1;
     }
 
-    // Start health check loop
     const healthInterval = setInterval(async () => {
       try {
         const response = await fetch(`${this.hub}/rooms/${code}/health`, {
@@ -664,7 +912,6 @@ export class JoinCommand extends Command {
       }
     }, HEALTH_CHECK_INTERVAL);
 
-    // Handle graceful shutdown
     const cleanup = async () => {
       this.context.stdout.write("\nLeaving room...\n");
       clearInterval(healthInterval);
@@ -684,7 +931,6 @@ export class JoinCommand extends Command {
     process.on("SIGINT", cleanup);
     process.on("SIGTERM", cleanup);
 
-    // Keep the process running
     await new Promise(() => undefined);
     return 0;
   }
