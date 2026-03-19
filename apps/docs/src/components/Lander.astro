@@ -64,24 +64,23 @@ const useCases = [
   <section class="hero">
     <div class="hero-content">
       <pre class="ascii-logo" aria-hidden="true">{`
- ██████╗  █████╗ ███╗   ███╗██████╗ ██╗ █████╗ ██████╗ ██████╗  █████╗
-██╔════╝ ██╔══██╗████╗ ████║██╔══██╗██║██╔══██╗██╔══██╗██╔══██╗██╔══██╗
-██║  ███╗███████║██╔████╔██║██████╔╝██║███████║██████╔╝██████╔╝███████║
-██║   ██║██╔══██║██║╚██╔╝██║██╔══██╗██║██╔══██║██╔══██╗██╔══██╗██╔══██║
-╚██████╔╝██║  ██║██║ ╚═╝ ██║██████╔╝██║██║  ██║██║  ██║██║  ██║██║  ██║
- ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝╚═════╝ ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
-                          LLM CLUB`}</pre>
-      <h1 class="sr-only">Gambi - LLM Club</h1>
+ ██████╗  █████╗ ███╗   ███╗██████╗ ██╗
+██╔════╝ ██╔══██╗████╗ ████║██╔══██╗██║
+██║  ███╗███████║██╔████╔██║██████╔╝██║
+██║   ██║██╔══██║██║╚██╔╝██║██╔══██╗██║
+╚██████╔╝██║  ██║██║ ╚═╝ ██║██████╔╝██║
+ ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝╚═════╝ ╚═╝`}</pre>
+      <h1 class="sr-only">Gambi</h1>
       <p class="tagline">Share local LLMs across your network, effortlessly.</p>
       <p class="tagline-note">
-        <strong>Gambi</strong> is short for <em>gambiarra</em>: a Brazilian Portuguese idea of creative improvisation under constraints.
+        Pool Ollama, LM Studio, vLLM, or any OpenAI-compatible endpoint with your team. One hub, one room code, zero cloud dependencies.
       </p>
       <div class="cta-buttons">
         <a href="/guides/quickstart/" class="btn btn-primary">Get Started</a>
-        <a href="/guides/migrate-from-gambiarra/" class="btn btn-secondary">Migration Guide</a>
-        <a href="/explanation/why-gambi/" class="btn btn-secondary">Why Gambi?</a>
+        <a href="/reference/api/" class="btn btn-secondary">API Reference</a>
+        <a href="/reference/sdk/" class="btn btn-secondary">SDK Reference</a>
         <a href="https://github.com/arthurbm/gambi" class="btn btn-secondary" target="_blank" rel="noopener">
-          View on GitHub
+          GitHub
         </a>
       </div>
     </div>
@@ -229,19 +228,17 @@ const gambi = createGambi({
   hubUrl: "http://localhost:3000",
 });
 
-// Use any available participant
-const result = await generateText({
+// Route to any available participant
+const { text } = await generateText({
   model: gambi.any(),
   prompt: "Hello, Gambi!",
 });
 
-// Explicit chat completions mode is still available
-const legacy = createGambi({
-  roomCode: "ABC123",
-  defaultProtocol: "chatCompletions",
-});
-
-console.log(result.text);`}</code></pre>
+// Or target a specific model
+const { text: code } = await generateText({
+  model: gambi.model("llama3"),
+  prompt: "Write a fibonacci function",
+});`}</code></pre>
     </div>
   </section>
 
@@ -251,6 +248,10 @@ console.log(result.text);`}</code></pre>
       <a href="https://github.com/arthurbm/gambi" target="_blank" rel="noopener">GitHub</a>
       <span class="separator">|</span>
       <a href="/guides/quickstart/">Docs</a>
+      <span class="separator">|</span>
+      <a href="/explanation/why-gambi/">Why Gambi?</a>
+      <span class="separator">|</span>
+      <a href="/guides/migrate-from-gambiarra/">Migration Guide</a>
     </div>
     <div class="footer-copy">
       <span>Made with gambi for the local LLM community</span>
