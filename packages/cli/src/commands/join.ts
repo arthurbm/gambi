@@ -16,7 +16,6 @@ import type {
 } from "@gambi/core/types";
 import { HEALTH_CHECK_INTERVAL } from "@gambi/core/types";
 import { nanoid } from "nanoid";
-import { Command, Option } from "../utils/option.ts";
 import {
   isLoopbackLikeHost,
   isRemoteHubUrl,
@@ -24,6 +23,7 @@ import {
   rankNetworkCandidatesForHub,
   replaceEndpointHost,
 } from "../utils/network-endpoint.ts";
+import { Command, Option } from "../utils/option.ts";
 import { handleCancel, isInteractive, LLM_PROVIDERS } from "../utils/prompt.ts";
 import {
   hasRuntimeConfig,

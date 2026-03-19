@@ -27,9 +27,7 @@ describe("network endpoint helpers", () => {
       { address: "192.168.2.30", interfaceName: "en2" },
     ]);
 
-    expect(ranked).toEqual([
-      { address: "192.168.1.25", interfaceName: "en0" },
-    ]);
+    expect(ranked).toEqual([{ address: "192.168.1.25", interfaceName: "en0" }]);
   });
 
   test("replaces only the endpoint host", () => {
