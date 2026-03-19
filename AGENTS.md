@@ -252,3 +252,13 @@ Biome's linter will catch most issues automatically. Focus your attention on:
 ---
 
 Most formatting and common issues are automatically fixed by Biome. Run `bun x ultracite fix` before committing to ensure compliance.
+
+## Cursor Cloud specific instructions
+
+If `bun` is not on `PATH`, run `export BUN_INSTALL="$HOME/.bun" && export PATH="$BUN_INSTALL/bin:$PATH"`.
+
+No Docker, databases, or external services are required — all state is in-memory. See section 5 for all commands.
+
+Known pre-existing issues (not environment-related):
+- 1 failing test in `packages/core/src/endpoint-capabilities.test.ts` (`probeEndpoint > does not detect protected endpoints without auth headers`).
+- `bun x ultracite check` reports formatting issues in `packages/cli/src`.
