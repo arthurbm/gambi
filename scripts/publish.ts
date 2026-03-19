@@ -26,6 +26,10 @@ function getCliManifestPath() {
   return resolve("packages/cli/dist/manifest.json");
 }
 
+function resolveCliDistributionPath(pathname: string) {
+  return resolve("packages/cli", pathname);
+}
+
 async function readCliManifest() {
   const file = Bun.file(getCliManifestPath());
   if (!(await file.exists())) {
@@ -93,10 +97,10 @@ await $`cd packages/sdk && npm publish --access public --tag ${NPM_TAG}`;
 
 for (const binaryPackage of cliManifest.binaryPackages) {
   console.log(`\n--- ${binaryPackage.packageName} ---`);
-  await $`cd ${binaryPackage.packageDir} && npm publish --access public --tag ${NPM_TAG}`;
+  await $`cd ${resolveCliDistributionPath(binaryPackage.packageDir)} && npm publish --access public --tag ${NPM_TAG}`;
 }
 
 console.log("\n--- gambi ---");
-await $`cd ${cliManifest.wrapperPackageDir} && npm publish --access public --tag ${NPM_TAG}`;
+await $`cd ${resolveCliDistributionPath(cliManifest.wrapperPackageDir)} && npm publish --access public --tag ${NPM_TAG}`;
 
 console.log(`\n=== Published v${VERSION} successfully ===\n`);
