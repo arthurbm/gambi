@@ -634,7 +634,9 @@ describe("Hub", () => {
 
       expect(res.status).toBe(400);
       const errorData = ErrorResponseSchema.parse(data);
-      expect(errorData.error).toContain("only reachable on the participant machine");
+      expect(errorData.error).toContain(
+        "only reachable on the participant machine"
+      );
       expect(errorData.error).toContain("--network-endpoint");
     });
 

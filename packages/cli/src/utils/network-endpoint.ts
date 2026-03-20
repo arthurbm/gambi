@@ -16,7 +16,9 @@ function getIpv4Octets(address: string): number[] | null {
   }
 
   const octets = segments.map((segment) => Number(segment));
-  return octets.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255)
+  return octets.every(
+    (octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255
+  )
     ? octets
     : null;
 }
@@ -129,7 +131,10 @@ export function rankNetworkCandidatesForHub(
   return candidates;
 }
 
-export function replaceEndpointHost(endpoint: string, hostname: string): string {
+export function replaceEndpointHost(
+  endpoint: string,
+  hostname: string
+): string {
   const url = new URL(endpoint);
   url.hostname = hostname;
   return url.toString();

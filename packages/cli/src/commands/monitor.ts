@@ -7,10 +7,7 @@ export class MonitorCommand extends Command {
     description: "Open TUI to monitor rooms in real-time",
     examples: [
       ["Monitor local hub", "gambi monitor"],
-      [
-        "Monitor remote hub",
-        "gambi monitor --hub http://192.168.1.100:3000",
-      ],
+      ["Monitor remote hub", "gambi monitor --hub http://192.168.1.100:3000"],
     ],
   });
 
@@ -20,8 +17,9 @@ export class MonitorCommand extends Command {
 
   async execute(): Promise<number> {
     this.context.stderr.write(
-      "TUI is not bundled in the standalone binary.\nInstall via npm/bun for TUI support: npm install -g gambi\nThen run: gambi monitor\n",
+      "TUI is not bundled in the standalone binary.\nInstall via npm/bun for TUI support: npm install -g gambi\nThen run: gambi monitor\n"
     );
+    await Promise.resolve();
     return 1;
   }
 }
