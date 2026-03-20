@@ -5,7 +5,6 @@
 ██║   ██║██╔══██║██║╚██╔╝██║██╔══██╗██║
 ╚██████╔╝██║  ██║██║ ╚═╝ ██║██████╔╝██║
  ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝╚═════╝ ╚═╝
-                          LLM CLUB
 ```
 
 <div align="center">
@@ -43,7 +42,7 @@
 
 ## What is Gambi?
 
-**Gambi** is a local-first LLM sharing system that allows multiple users on a network to pool their LLM resources together. Think of it as a "LLM Club" where everyone shares their Ollama, LM Studio, LocalAI, or any endpoint that speaks OpenResponses or OpenAI-compatible chat/completions.
+**Gambi** is a local-first LLM sharing system that allows multiple users on a network to pool their LLM resources together. Everyone can share their Ollama, LM Studio, LocalAI, or any endpoint that speaks OpenResponses or OpenAI-compatible chat/completions.
 
 The name **Gambi** nods to Brazilian Portuguese culture: resourceful improvisation under constraints—creative, community-minded problem solving rather than a sloppy shortcut.
 
