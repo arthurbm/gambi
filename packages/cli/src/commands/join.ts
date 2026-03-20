@@ -541,7 +541,8 @@ async function collectInteractiveInputs(
       message: "Room password (leave empty if none):",
     });
     handleCancel(passwordResult);
-    const resolvedPassword = (passwordResult as string).trim();
+    const resolvedPassword =
+      typeof passwordResult === "string" ? passwordResult.trim() : "";
     if (resolvedPassword) {
       password = resolvedPassword;
     }

@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import type { DiscoveredService } from "@gambi/core/mdns";
 import { discoverRoomsOnNetwork } from "./room-discovery.ts";
 
+type FetchLike = Parameters<typeof discoverRoomsOnNetwork>[0]["fetchFn"];
+
 const alphaRoom = {
   id: "room-alpha",
   code: "ABC123",
@@ -33,7 +35,7 @@ function createBrowseServices(services: DiscoveredService[]) {
 describe("room discovery", () => {
   test("aggregates rooms from the configured hub and mDNS hubs", async () => {
     const fetchCalls: string[] = [];
-    const fetchFn: typeof fetch = (input) => {
+    const fetchFn: NonNullable<FetchLike> = (input) => {
       const url = String(input);
       fetchCalls.push(url);
 
@@ -82,7 +84,7 @@ describe("room discovery", () => {
   });
 
   test("prefers the configured hub when the same room appears twice", async () => {
-    const fetchFn: typeof fetch = (input) => {
+    const fetchFn: NonNullable<FetchLike> = (input) => {
       const url = String(input);
 
       if (url === "http://localhost:3000/rooms") {
@@ -126,7 +128,7 @@ describe("room discovery", () => {
 
   test("prefers discovered addresses for mDNS hubs", async () => {
     const fetchCalls: string[] = [];
-    const fetchFn: typeof fetch = (input) => {
+    const fetchFn: NonNullable<FetchLike> = (input) => {
       const url = String(input);
       fetchCalls.push(url);
 

@@ -11,6 +11,11 @@ interface ListRoomsResponse {
   rooms: RoomInfoWithParticipantCount[];
 }
 
+type FetchLike = (
+  input: Parameters<typeof fetch>[0],
+  init?: Parameters<typeof fetch>[1]
+) => ReturnType<typeof fetch>;
+
 export interface DiscoveredRoom extends RoomInfoWithParticipantCount {
   hubName: string;
   hubUrl: string;
@@ -20,7 +25,7 @@ export interface DiscoverRoomsOnNetworkOptions {
   browseServices?: (
     callback: (service: DiscoveredService) => void
   ) => () => void | Promise<void>;
-  fetchFn?: typeof fetch;
+  fetchFn?: FetchLike;
   seedHubUrl: string;
   timeoutMs?: number;
 }
@@ -64,7 +69,7 @@ function getHubCandidateUrls(service: DiscoveredService): string[] {
 
 async function fetchRoomsFromHub(
   hubUrl: string,
-  fetchFn: typeof fetch
+  fetchFn: FetchLike
 ): Promise<RoomInfoWithParticipantCount[] | null> {
   try {
     const response = await fetchFn(`${hubUrl}/rooms`);
@@ -81,7 +86,7 @@ async function fetchRoomsFromHub(
 
 async function resolveHubRooms(
   candidates: { label: string; urls: string[] },
-  fetchFn: typeof fetch
+  fetchFn: FetchLike
 ): Promise<DiscoveredRoom[]> {
   for (const hubUrl of candidates.urls) {
     const rooms = await fetchRoomsFromHub(hubUrl, fetchFn);
