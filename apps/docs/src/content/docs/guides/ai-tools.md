@@ -3,7 +3,21 @@ title: Using Gambi with AI Tools
 description: Use Gambi as an OpenAI-compatible LLM backend in Lovable, v0, Cursor, Claude Code, or any AI tool and SDK.
 ---
 
-Gambi exposes an **OpenAI-compatible API**. Any tool, library, or AI agent that supports a custom OpenAI base URL can use Gambi as its LLM backend — no code changes, no special SDK required.
+## What is Gambi?
+
+Gambi is a **local-first system for sharing LLM endpoints across a network**. It works like this: people on the same network each run their own LLM (via Ollama, LM Studio, vLLM, or any OpenAI-compatible API), then join a shared **room** through a lightweight **hub** server. The hub doesn't run any models itself — it just routes requests to the participants who do.
+
+The result: a single OpenAI-compatible API endpoint that gives you access to every model shared in the room. You can send a request to a random participant, target a specific model, or pick a specific person's machine.
+
+**Gambi is not an LLM provider.** It doesn't host models, doesn't require a GPU on the hub, and doesn't touch the cloud (unless a participant chooses to connect a cloud provider like OpenRouter). It's a **proxy and router** that turns a group of individual LLM endpoints into one unified API.
+
+This makes it useful for:
+- **Hackathons and workshops** — pool LLM resources across a team so everyone can use everyone's models
+- **Home labs** — access your GPU machine's LLM from any device on the network
+- **Prototyping** — point any AI tool at the Gambi API and start building, powered by real local models
+- **Group experiments** — compare models side-by-side, benchmark, or build apps that use multiple models
+
+Since the hub exposes a standard **OpenAI-compatible API**, any tool that works with OpenAI works with Gambi — just change the base URL.
 
 ## Connection Details
 
