@@ -21,6 +21,8 @@ export default defineConfig({
           promote: [
             "guides/quickstart*",
             "reference/api*",
+            "reference/sdk*",
+            "guides/ai-tools*",
             "guides/challenges*",
             "guides/remote-providers*",
           ],
@@ -50,6 +52,7 @@ export default defineConfig({
             },
             { label: "Challenges & Dynamics", slug: "guides/challenges" },
             { label: "Hackathon Setup", slug: "guides/hackathon" },
+            { label: "Using with AI Tools", slug: "guides/ai-tools" },
             { label: "Remote Providers", slug: "guides/remote-providers" },
             { label: "Home Lab Setup", slug: "guides/homelab" },
           ],
