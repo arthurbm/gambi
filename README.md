@@ -218,12 +218,16 @@ Example config JSON:
 ### 4. Use the SDK
 
 ```typescript
-import { createGambi } from "gambi-sdk";
+import { createGambi, resolveGambiTarget } from "gambi-sdk";
 import { generateText } from "ai";
 
+const target = await resolveGambiTarget({
+  roomCode: "ABC123", // optional if only one room is visible on your LAN
+});
+
 const gambi = createGambi({
-  roomCode: "ABC123",
-  hubUrl: "http://localhost:3000",
+  roomCode: target.roomCode,
+  hubUrl: target.hubUrl,
 });
 
 const result = await generateText({
@@ -233,6 +237,8 @@ const result = await generateText({
 
 console.log(result.text);
 ```
+
+For scripts or hosted environments where discovery is not needed, you can still pass `hubUrl` and `roomCode` directly.
 
 ---
 

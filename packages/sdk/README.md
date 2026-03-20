@@ -119,6 +119,25 @@ const legacyResult = await generateText({
 });
 ```
 
+### Local Network Discovery
+
+For local Node.js or Bun applications, you can resolve a room first and keep the provider/client creation explicit:
+
+```typescript
+import { createGambi, resolveGambiTarget } from "gambi-sdk";
+
+const target = await resolveGambiTarget({
+  roomCode: "ABC123",
+});
+
+const gambi = createGambi({
+  hubUrl: target.hubUrl,
+  roomCode: target.roomCode,
+});
+```
+
+The SDK also exposes `discoverHubs()` and `discoverRooms()` if you want to build your own room picker UI.
+
 ## API Reference
 
 ### `rooms`
