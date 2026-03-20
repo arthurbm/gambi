@@ -72,11 +72,27 @@ The workflow runs in four stages:
 2. `build-cli`
    Builds the CLI distribution once and uploads `packages/cli/dist` as a workflow artifact.
 3. `publish`
-   Downloads the prebuilt CLI distribution, updates repository package versions, publishes npm packages, commits the version bump, tags the release, and pushes.
+   Downloads the prebuilt CLI distribution, updates repository package versions, publishes npm packages, explicitly verifies npm metadata (`version` and selected dist-tag) for each published package, emits a structured release report, commits the version bump, tags the release, and pushes.
 4. `github-release`
-   Uploads the same prebuilt CLI binaries to the GitHub Release.
+   Verifies expected release assets from the build manifest, uploads the same prebuilt CLI binaries to the GitHub Release, and explicitly verifies uploaded asset names and byte sizes against the build manifest.
 
 This matters because the release is pinned to one commit and the CLI is built **once** and reused for both npm publishing and GitHub release assets. That avoids divergent artifacts.
+
+## Release Observability and Verification
+
+The release pipeline now emits structured state to make debugging easier:
+
+- `build-cli` prints and summarizes (`$GITHUB_STEP_SUMMARY`) the manifest content:
+  - wrapper package directory
+  - binary package list
+  - release asset list, byte sizes, and SHA-256 digests
+- `publish` writes `packages/cli/dist/release-report.json` with:
+  - published package list
+  - npm metadata verification results per package
+  - CLI artifact metadata used by the release
+- `github-release` verifies that uploaded release assets match expected manifest entries (name + size), then appends a table to job summary.
+
+These checks reduce manual log-hunting and make post-failure analysis significantly faster.
 
 ## Publish Order
 
@@ -159,4 +175,3 @@ These are intentionally out of scope for the current architecture:
 - musl/baseline variants and CPU capability fallbacks
 - automated install smoke tests across platforms
 - extra distribution channels like Homebrew or AUR
-- richer release observability and post-publish verification

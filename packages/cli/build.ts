@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { createHash } from "node:crypto";
 import { chmod, copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { $ } from "bun";
@@ -21,8 +22,16 @@ interface BuildManifest {
     packageName: string;
     platform: PlatformTarget["platform"];
     releaseAssetPath: string;
+    sha256: string;
+    sizeBytes: number;
   }>;
   releaseAssetPaths: string[];
+  releaseAssets: Array<{
+    assetName: string;
+    releaseAssetPath: string;
+    sha256: string;
+    sizeBytes: number;
+  }>;
   version: string;
   wrapperPackageDir: string;
 }
@@ -112,6 +121,11 @@ async function writeJson(pathname: string, value: unknown) {
   await writeFile(pathname, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+async function hashFileSha256(pathname: string) {
+  const content = await Bun.file(pathname).arrayBuffer();
+  return createHash("sha256").update(Buffer.from(content)).digest("hex");
+}
+
 async function copyIfExists(source: string, target: string) {
   if (!(await Bun.file(source).exists())) {
     return;
@@ -135,6 +149,7 @@ async function build() {
 
   const binaryPackages: BuildManifest["binaryPackages"] = [];
   const releaseAssetPaths: string[] = [];
+  const releaseAssets: BuildManifest["releaseAssets"] = [];
 
   for (const target of TARGETS) {
     const releaseAssetPath = join(DIST_RELEASES_DIR, target.assetName);
@@ -151,6 +166,10 @@ async function build() {
       await chmod(releaseAssetPath, 0o755);
       await chmod(packageBinaryPath, 0o755);
     }
+
+    const releaseAssetFile = Bun.file(releaseAssetPath);
+    const sha256 = await hashFileSha256(releaseAssetPath);
+    const sizeBytes = releaseAssetFile.size;
 
     await copyIfExists(LICENSE_PATH, join(packageDir, "LICENSE"));
     await writeJson(join(packageDir, "package.json"), {
@@ -174,10 +193,19 @@ async function build() {
       releaseAssetPath: toPosixPath(relative(process.cwd(), releaseAssetPath)),
       assetName: target.assetName,
       platform: target.platform,
+      sha256,
+      sizeBytes,
     });
-    releaseAssetPaths.push(
-      toPosixPath(relative(process.cwd(), releaseAssetPath))
+    const relativeReleaseAssetPath = toPosixPath(
+      relative(process.cwd(), releaseAssetPath)
     );
+    releaseAssetPaths.push(relativeReleaseAssetPath);
+    releaseAssets.push({
+      assetName: target.assetName,
+      releaseAssetPath: relativeReleaseAssetPath,
+      sha256,
+      sizeBytes,
+    });
     console.log(`✓ Built ${target.assetName}`);
   }
 
@@ -224,6 +252,7 @@ async function build() {
     ),
     binaryPackages,
     releaseAssetPaths,
+    releaseAssets,
   };
   await writeJson(join(DIST_DIR, "manifest.json"), manifest);
 

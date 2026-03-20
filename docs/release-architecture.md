@@ -151,6 +151,13 @@ This matters because otherwise CI could:
 
 The artifact-based flow prevents that.
 
+With the current release workflow, this reuse is also observable:
+
+- the build manifest includes release asset metadata (size and SHA-256)
+- CI publishes a human-readable summary table in `$GITHUB_STEP_SUMMARY`
+- publish step emits `packages/cli/dist/release-report.json` with npm verification results
+- GitHub Release upload is validated against manifest asset names and byte sizes
+
 ## Why the Release Is Pinned to One Commit
 
 The release workflow captures one source commit up front and every later checkout uses that exact ref.
@@ -215,3 +222,7 @@ If you remember only four ideas, remember these:
 2. `gambi` is the public wrapper package
 3. `gambi-<platform>-<arch>` packages contain the real compiled binaries
 4. CI builds once and reuses the same artifacts for npm and GitHub Releases
+
+For day-2 operations, there is now an equally important fifth idea:
+
+5. CI performs explicit post-publish verification (npm metadata + GitHub Release assets), not only best-effort publishing

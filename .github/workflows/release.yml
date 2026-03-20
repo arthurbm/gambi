@@ -114,6 +114,59 @@ jobs:
       - name: Build CLI distribution
         run: GAMBI_RELEASE_VERSION=${{ needs.version.outputs.version }} bun run --cwd packages/cli build
 
+      - name: Summarize build outputs
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const manifest = JSON.parse(
+            fs.readFileSync("packages/cli/dist/manifest.json", "utf8")
+          );
+
+          console.log("CLI distribution manifest:");
+          console.log(`  version: ${manifest.version}`);
+          console.log(`  wrapper: ${manifest.wrapperPackageDir}`);
+          console.log("  binary packages:");
+          for (const pkg of manifest.binaryPackages) {
+            console.log(
+              `    - ${pkg.packageName} (${pkg.assetName}) ${pkg.sizeBytes} bytes sha256:${(pkg.sha256 || "").slice(0, 12)}...`
+            );
+          }
+          console.log("  release assets:");
+          for (const asset of manifest.releaseAssets || []) {
+            console.log(
+              `    - ${asset.assetName} (${asset.releaseAssetPath}) ${asset.sizeBytes} bytes sha256:${(asset.sha256 || "").slice(0, 12)}...`
+            );
+          }
+
+          const lines = [
+            "## CLI build output",
+            "",
+            `Version: \`${manifest.version}\``,
+            "",
+            "### Binary packages",
+            "",
+            "| Package | Asset | Size (bytes) | SHA256 |",
+            "|---|---|---:|---|",
+            ...manifest.binaryPackages.map(
+              (pkg) =>
+                `| \`${pkg.packageName}\` | \`${pkg.assetName}\` | ${pkg.sizeBytes} | \`${pkg.sha256}\` |`
+            ),
+            "",
+            "### Release assets",
+            "",
+            "| Asset | Path | Size (bytes) | SHA256 |",
+            "|---|---|---:|---|",
+            ...(manifest.releaseAssets || []).map(
+              (asset) =>
+                `| \`${asset.assetName}\` | \`${asset.releaseAssetPath}\` | ${asset.sizeBytes} | \`${asset.sha256}\` |`
+            ),
+          ];
+          fs.appendFileSync(
+            process.env.GITHUB_STEP_SUMMARY,
+            `${lines.join("\n")}\n`
+          );
+          NODE
+
       - name: Upload CLI distribution
         uses: actions/upload-artifact@v4
         with:
@@ -158,6 +211,37 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: Summarize publish verification
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const reportPath = "packages/cli/dist/release-report.json";
+          const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+          const lines = [
+            "## npm publish verification",
+            "",
+            `Version: \`${report.version}\``,
+            `Tag: \`${report.npmTag}\``,
+            "",
+            "| Package | Published Version | Dist-tag Version | Verified |",
+            "|---|---|---|---|",
+            ...report.npmVerification.map(
+              (result) =>
+                `| \`${result.packageName}\` | \`${result.publishedVersion}\` | \`${result.distTagVersion}\` | ${result.verified ? "✅" : "❌"} |`
+            ),
+          ];
+          fs.appendFileSync(
+            process.env.GITHUB_STEP_SUMMARY,
+            `${lines.join("\n")}\n`
+          );
+          NODE
+
+      - name: Upload release report
+        uses: actions/upload-artifact@v4
+        with:
+          name: gambi-release-report
+          path: packages/cli/dist/release-report.json
+
       - name: Commit and tag
         run: |
           git add .
@@ -176,6 +260,26 @@ jobs:
           name: gambi-cli-dist
           path: packages/cli/dist
 
+      - name: Verify release assets before upload
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const manifest = JSON.parse(
+            fs.readFileSync("packages/cli/dist/manifest.json", "utf8")
+          );
+          const expectedAssets = manifest.releaseAssets || [];
+
+          for (const asset of expectedAssets) {
+            if (!fs.existsSync(asset.releaseAssetPath)) {
+              throw new Error(`Missing release asset: ${asset.releaseAssetPath}`);
+            }
+          }
+
+          console.log(
+            `Verified ${expectedAssets.length} release assets exist before GitHub upload.`
+          );
+          NODE
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -192,3 +296,79 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify GitHub Release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const { execSync } = require("node:child_process");
+
+          const version = process.env.RELEASE_VERSION;
+          const tag = `v${version}`;
+          const manifest = JSON.parse(
+            fs.readFileSync("packages/cli/dist/manifest.json", "utf8")
+          );
+          const expectedAssets = manifest.releaseAssets || [];
+
+          const release = JSON.parse(
+            execSync(`gh release view ${tag} --json assets`, {
+              encoding: "utf8",
+              stdio: ["ignore", "pipe", "pipe"],
+            })
+          );
+
+          const actualAssets = release.assets || [];
+          const missing = [];
+          const mismatchedSizes = [];
+
+          for (const expected of expectedAssets) {
+            const actual = actualAssets.find(
+              (asset) => asset.name === expected.assetName
+            );
+            if (!actual) {
+              missing.push(expected.assetName);
+              continue;
+            }
+            if (Number(actual.size) !== Number(expected.sizeBytes)) {
+              mismatchedSizes.push({
+                asset: expected.assetName,
+                expected: expected.sizeBytes,
+                actual: Number(actual.size),
+              });
+            }
+          }
+
+          if (missing.length > 0 || mismatchedSizes.length > 0) {
+            throw new Error(
+              `GitHub Release asset verification failed. missing=${JSON.stringify(
+                missing
+              )} sizeMismatch=${JSON.stringify(mismatchedSizes)}`
+            );
+          }
+
+          const lines = [
+            "## GitHub Release asset verification",
+            "",
+            `Tag: \`${tag}\``,
+            "",
+            "| Asset | Expected Size (bytes) | Uploaded Size (bytes) |",
+            "|---|---:|---:|",
+            ...expectedAssets.map((expected) => {
+              const actual = actualAssets.find(
+                (asset) => asset.name === expected.assetName
+              );
+              return `| \`${expected.assetName}\` | ${expected.sizeBytes} | ${actual?.size ?? "n/a"} |`;
+            }),
+          ];
+          fs.appendFileSync(
+            process.env.GITHUB_STEP_SUMMARY,
+            `${lines.join("\n")}\n`
+          );
+
+          console.log(
+            `Verified ${expectedAssets.length} GitHub Release assets for ${tag}.`
+          );
+          NODE
