@@ -1,11 +1,10 @@
 ```
- ██████╗  █████╗ ███╗   ███╗██████╗ ██╗ █████╗ ██████╗ ██████╗  █████╗
-██╔════╝ ██╔══██╗████╗ ████║██╔══██╗██║██╔══██╗██╔══██╗██╔══██╗██╔══██╗
-██║  ███╗███████║██╔████╔██║██████╔╝██║███████║██████╔╝██████╔╝███████║
-██║   ██║██╔══██║██║╚██╔╝██║██╔══██╗██║██╔══██║██╔══██╗██╔══██╗██╔══██║
-╚██████╔╝██║  ██║██║ ╚═╝ ██║██████╔╝██║██║  ██║██║  ██║██║  ██║██║  ██║
- ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝╚═════╝ ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
-                          LLM CLUB
+ ██████╗  █████╗ ███╗   ███╗██████╗ ██╗
+██╔════╝ ██╔══██╗████╗ ████║██╔══██╗██║
+██║  ███╗███████║██╔████╔██║██████╔╝██║
+██║   ██║██╔══██║██║╚██╔╝██║██╔══██╗██║
+╚██████╔╝██║  ██║██║ ╚═╝ ██║██████╔╝██║
+ ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝╚═════╝ ╚═╝
 ```
 
 <div align="center">
@@ -43,19 +42,15 @@
 
 ## What is Gambi?
 
-**Gambi** is a local-first LLM sharing system that allows multiple users on a network to pool their LLM resources together. Think of it as a "LLM Club" where everyone shares their Ollama, LM Studio, LocalAI, or any endpoint that speaks OpenResponses or OpenAI-compatible chat/completions.
+**Gambi** is a local-first LLM sharing system that allows multiple users on a network to pool their LLM resources together. Everyone can share their Ollama, LM Studio, LocalAI, or any endpoint that speaks OpenResponses or OpenAI-compatible chat/completions.
 
-`Gambi` is the official short form of **gambiarra**. In English, the shorter name is easier to say, type, and remember. In Brazilian Portuguese, we mean **gambiarra** in the good sense: creative improvisation under constraints, an ingenious workaround made with care rather than a sloppy hack.
+The public name **Gambi** is the short form of **gambiarra**. In Brazilian Portuguese, **gambiarra** here means the good kind: creative improvisation under constraints—resourceful, community-minded problem solving, not a sloppy hack. The shorter spelling is easier to say, type, and wire into CLI commands and package names in English, without losing that meaning.
 
-If you're migrating from the previous public names, see the migration guide at `https://gambi.sh/guides/migrate-from-gambiarra/`.
+If you installed the project under its previous CLI package name, see the [migration guide](https://gambi.sh/guides/migrate-from-gambiarra/).
 
-### Why the Name Changed?
+### Upgrading from a legacy global install
 
-- **Better in English**: shorter for CLI commands, imports, and package names
-- **Still Brazilian at heart**: keeps the original cultural meaning instead of replacing it with a generic tech brand
-- **Closer to the product**: fast, local-first, practical, community-driven
-
-### Migration from Gambiarra
+If you still have the old global CLI package installed, remove it and install **Gambi**:
 
 ```bash
 # npm
