@@ -44,7 +44,7 @@
 
 **Gambi** is a local-first LLM sharing system that allows multiple users on a network to pool their LLM resources together. Everyone can share their Ollama, LM Studio, LocalAI, or any endpoint that speaks OpenResponses or OpenAI-compatible chat/completions.
 
-The name **Gambi** nods to Brazilian Portuguese culture: resourceful improvisation under constraints—creative, community-minded problem solving rather than a sloppy shortcut.
+The public name **Gambi** is the short form of **gambiarra**. In Brazilian Portuguese, **gambiarra** here means the good kind: creative improvisation under constraints—resourceful, community-minded problem solving, not a sloppy hack. The shorter spelling is easier to say, type, and wire into CLI commands and package names in English, without losing that meaning.
 
 If you installed the project under its previous CLI package name, see the [migration guide](https://gambi.sh/guides/migrate-from-gambiarra/).
 
