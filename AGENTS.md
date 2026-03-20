@@ -28,7 +28,7 @@ Regra obrigatória:
 Workspaces:
 - `packages/core`: hub HTTP, sala/participante, SSE, mDNS e schemas/tipos.
 - `packages/cli`: workspace fonte do CLI `gambi`; a distribuição publicada é gerada em `packages/cli/dist`.
-- `packages/sdk`: provider para AI SDK e cliente HTTP.
+- `packages/sdk`: provider para AI SDK, cliente HTTP e discovery opcional de hubs/salas para apps locais Node/Bun.
 - `apps/tui`: interface terminal (OpenTUI + React) para operação/monitoramento.
 - `apps/docs`: documentação (Astro Starlight).
 - `packages/config`: configs TypeScript compartilhadas.
@@ -105,6 +105,10 @@ bun run --cwd packages/cli check-types
 bun run --cwd packages/sdk build
 bun run --cwd packages/sdk check-types
 
+# Discovery do SDK
+# `discoverHubs()`, `discoverRooms()` e `resolveGambiTarget()` vivem na SDK.
+# `createGambi()` e `createClient()` continuam explicitos; nao adicionar discovery implicito nessas factories sem pedido explicito.
+
 # TUI
 bun run --cwd apps/tui dev
 bun run --cwd apps/tui test
@@ -130,6 +134,7 @@ Passo 3: validar por area tocada
 - Mudou `packages/core`: rodar testes de core e `check-types` de core.
 - Mudou `packages/cli`: validar `--help`, comando afetado, `check-types` do CLI e o build de distribuição.
 - Mudou `packages/sdk`: rodar testes de sdk e `check-types` de sdk.
+- Mudou discovery do SDK: revisar `apps/docs/src/content/docs/reference/sdk.md`, `apps/docs/src/content/docs/guides/ai-tools.md`, `README.md` e `docs/architecture.md`.
 - Mudou `apps/tui`: rodar `bun run --cwd apps/tui test`.
 - Mudou contratos HTTP/tipos publicos: revisar `README.md` e `docs/architecture.md`.
 

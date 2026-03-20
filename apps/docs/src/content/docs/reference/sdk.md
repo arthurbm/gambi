@@ -13,6 +13,73 @@ npm install gambi-sdk
 bun add gambi-sdk
 ```
 
+## Local Network Discovery
+
+For local Node.js or Bun applications, the SDK can discover hubs and rooms announced over mDNS/Bonjour.
+
+These helpers are optional. `createGambi()` and `createClient()` stay explicit and keep working with `hubUrl` and `roomCode` directly.
+
+```typescript
+import { createClient, createGambi, resolveGambiTarget } from "gambi-sdk";
+
+const target = await resolveGambiTarget({
+  roomCode: "ABC123", // optional if exactly one room is available
+  timeoutMs: 1500,
+});
+
+const gambi = createGambi({
+  hubUrl: target.hubUrl,
+  roomCode: target.roomCode,
+});
+
+const client = createClient({ hubUrl: target.hubUrl });
+```
+
+### `discoverHubs(options?)`
+
+Discover reachable hubs from the configured `hubUrl` seed plus mDNS services on the local network.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `hubUrl` | `string` | `http://localhost:3000` | Seed hub to probe before mDNS results |
+| `timeoutMs` | `number` | `1500` | How long to listen for mDNS announcements |
+
+Returns `Promise<DiscoveredHub[]>`.
+
+### `discoverRooms(options?)`
+
+Discover rooms by listing `/rooms` on each reachable hub found by `discoverHubs()`.
+
+The options are the same as `discoverHubs(options?)`.
+
+Returns `Promise<DiscoveredRoom[]>`.
+
+### `resolveGambiTarget(options?)`
+
+Resolve one room to a concrete `{ hubUrl, roomCode }` target you can pass into `createGambi()` or `createClient()`.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `roomCode` | `string` | — | Resolve a specific room code across discovered hubs |
+| `roomName` | `string` | — | Resolve a specific room name across discovered hubs |
+| `hubUrl` | `string` | `http://localhost:3000` | Seed hub to probe before mDNS results |
+| `timeoutMs` | `number` | `1500` | How long to listen for mDNS announcements |
+
+Behavior:
+
+- if exactly one room matches, it returns a `ResolvedGambiTarget`
+- if no rooms are found, it throws `DiscoveryError`
+- if multiple rooms match, it throws `DiscoveryError` with `code = "AMBIGUOUS_ROOM_MATCH"`
+
+### `DiscoveryError`
+
+Typed error thrown by `resolveGambiTarget()`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `code` | `"NO_HUBS_FOUND" \| "NO_ROOMS_FOUND" \| "ROOM_NOT_FOUND" \| "AMBIGUOUS_ROOM_MATCH"` | Discovery failure category |
+| `matches` | `DiscoveredRoom[]` | Matching rooms when resolution is ambiguous |
+
 ## `createGambi(options)`
 
 Creates a Gambi provider instance.

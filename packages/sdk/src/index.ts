@@ -2,6 +2,18 @@
 
 // HTTP client for remote hubs
 export { ClientError, createClient, type GambiClient } from "./client.ts";
+// Optional discovery helpers for local-network apps
+export {
+  type DiscoveredHub,
+  type DiscoveredRoom,
+  DiscoveryError,
+  type DiscoveryOptions,
+  discoverHubs,
+  discoverRooms,
+  type ResolvedGambiTarget,
+  type ResolveGambiTargetOptions,
+  resolveGambiTarget,
+} from "./discovery.ts";
 // Hub types (re-exported from core)
 export type {
   ChatCompletionRequest,

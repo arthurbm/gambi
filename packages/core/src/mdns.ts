@@ -96,7 +96,7 @@ export interface DiscoveredService {
 export function browse(
   callback: (service: DiscoveredService) => void
 ): () => void {
-  const bonjour = getInstance();
+  const bonjour = new Bonjour();
 
   const browser: Browser = bonjour.find({ type: "gambi" }, (service) => {
     callback({
@@ -113,7 +113,10 @@ export function browse(
     });
   });
 
-  return () => browser.stop();
+  return () => {
+    browser.stop();
+    bonjour.destroy();
+  };
 }
 
 export const mDNS = {

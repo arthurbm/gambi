@@ -54,7 +54,7 @@ export {
   ParticipantInfoInternal as ParticipantInfoInternalSchema,
   ParticipantRegistration as ParticipantRegistrationSchema,
   ParticipantStatus as ParticipantStatusSchema,
-  RoomInfo as RoomInfoSchema,
+  RoomInfoInternal as RoomInfoSchema,
   RoomInfoPublic as RoomInfoPublicSchema,
   RuntimeConfig as RuntimeConfigSchema,
   RuntimeConfigPublic as RuntimeConfigPublicSchema,

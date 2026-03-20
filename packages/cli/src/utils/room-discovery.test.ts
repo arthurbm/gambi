@@ -39,8 +39,20 @@ describe("room discovery", () => {
       const url = String(input);
       fetchCalls.push(url);
 
+      if (url === "http://localhost:3000/health") {
+        return Promise.resolve(
+          Response.json({ status: "ok", timestamp: Date.now() })
+        );
+      }
+
       if (url === "http://localhost:3000/rooms") {
         return Promise.resolve(Response.json({ rooms: [alphaRoom] }));
+      }
+
+      if (url === "http://192.168.1.40:3100/health") {
+        return Promise.resolve(
+          Response.json({ status: "ok", timestamp: Date.now() })
+        );
       }
 
       if (url === "http://192.168.1.40:3100/rooms") {
@@ -66,6 +78,8 @@ describe("room discovery", () => {
     });
 
     expect(fetchCalls).toEqual([
+      "http://localhost:3000/health",
+      "http://192.168.1.40:3100/health",
       "http://localhost:3000/rooms",
       "http://192.168.1.40:3100/rooms",
     ]);
@@ -73,11 +87,13 @@ describe("room discovery", () => {
       {
         ...alphaRoom,
         hubName: "Configured hub",
+        hubSource: "configured",
         hubUrl: "http://localhost:3000",
       },
       {
         ...betaRoom,
         hubName: "gambi-hub-3100",
+        hubSource: "mdns",
         hubUrl: "http://192.168.1.40:3100",
       },
     ]);
@@ -87,8 +103,20 @@ describe("room discovery", () => {
     const fetchFn: NonNullable<FetchLike> = (input) => {
       const url = String(input);
 
+      if (url === "http://localhost:3000/health") {
+        return Promise.resolve(
+          Response.json({ status: "ok", timestamp: Date.now() })
+        );
+      }
+
       if (url === "http://localhost:3000/rooms") {
         return Promise.resolve(Response.json({ rooms: [alphaRoom] }));
+      }
+
+      if (url === "http://192.168.1.50:3000/health") {
+        return Promise.resolve(
+          Response.json({ status: "ok", timestamp: Date.now() })
+        );
       }
 
       if (url === "http://192.168.1.50:3000/rooms") {
@@ -121,6 +149,7 @@ describe("room discovery", () => {
       {
         ...alphaRoom,
         hubName: "Configured hub",
+        hubSource: "configured",
         hubUrl: "http://localhost:3000",
       },
     ]);
@@ -132,8 +161,20 @@ describe("room discovery", () => {
       const url = String(input);
       fetchCalls.push(url);
 
+      if (url === "http://localhost:3000/health") {
+        return Promise.resolve(
+          Response.json({ status: "ok", timestamp: Date.now() })
+        );
+      }
+
       if (url === "http://localhost:3000/rooms") {
         return Promise.resolve(Response.json({ rooms: [] }));
+      }
+
+      if (url === "http://192.168.1.60:3200/health") {
+        return Promise.resolve(
+          Response.json({ status: "ok", timestamp: Date.now() })
+        );
       }
 
       if (url === "http://192.168.1.60:3200/rooms") {
@@ -159,6 +200,8 @@ describe("room discovery", () => {
     });
 
     expect(fetchCalls).toEqual([
+      "http://localhost:3000/health",
+      "http://192.168.1.60:3200/health",
       "http://localhost:3000/rooms",
       "http://192.168.1.60:3200/rooms",
     ]);
@@ -166,6 +209,7 @@ describe("room discovery", () => {
       {
         ...betaRoom,
         hubName: "gambi-hub-3200",
+        hubSource: "mdns",
         hubUrl: "http://192.168.1.60:3200",
       },
     ]);
