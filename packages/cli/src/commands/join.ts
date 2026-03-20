@@ -26,6 +26,10 @@ import {
 import { Command, Option } from "../utils/option.ts";
 import { handleCancel, isInteractive, LLM_PROVIDERS } from "../utils/prompt.ts";
 import {
+  type DiscoveredRoom,
+  discoverRoomsOnNetwork,
+} from "../utils/room-discovery.ts";
+import {
   hasRuntimeConfig,
   loadRuntimeConfigFile,
   promptRuntimeConfig,
@@ -50,6 +54,7 @@ interface JoinDraftInputs {
   authHeaders: ParticipantAuthHeaders;
   code: string;
   config: RuntimeConfig;
+  hubUrl: string;
   localEndpoint: string;
   model: string;
   networkEndpoint: string | undefined;
@@ -64,6 +69,7 @@ interface JoinInputs {
   capabilities: ParticipantCapabilities;
   code: string;
   config: RuntimeConfig;
+  hubUrl: string;
   localEndpoint: string;
   model: string;
   nickname: string | undefined;
@@ -257,6 +263,79 @@ async function promptModels(
   return { model: modelResult as string, probe };
 }
 
+function formatParticipantCount(count: number): string {
+  return `${count} participant${count === 1 ? "" : "s"}`;
+}
+
+function formatDiscoveredRoomOption(room: DiscoveredRoom): string {
+  return `${room.code} - ${room.name} - ${formatParticipantCount(room.participantCount)} - ${room.hubName}`;
+}
+
+async function promptManualRoomCode(seedHubUrl: string): Promise<{
+  code: string;
+  hubUrl: string;
+}> {
+  const codeResult = await text({
+    message: "Room code:",
+    validate: (value) => (value ? undefined : "Room code is required"),
+  });
+  handleCancel(codeResult);
+
+  return {
+    code: codeResult as string,
+    hubUrl: seedHubUrl,
+  };
+}
+
+async function promptRoomSelection(
+  seedHubUrl: string,
+  stdout: NodeJS.WritableStream
+): Promise<{ code: string; hubUrl: string }> {
+  const s = spinner();
+  s.start("Detecting available rooms...");
+
+  const rooms = await discoverRoomsOnNetwork({ seedHubUrl });
+  if (rooms.length === 0) {
+    s.stop("No rooms discovered automatically");
+    stdout.write(
+      "No rooms were found on the configured hub or local network.\n"
+    );
+    return promptManualRoomCode(seedHubUrl);
+  }
+
+  s.stop(`Found ${rooms.length} room(s)`);
+
+  const roomResult = await select({
+    message: "Select room:",
+    options: [
+      ...rooms.map((room) => ({
+        value: room.id,
+        label: formatDiscoveredRoomOption(room),
+      })),
+      { value: "__manual__", label: "Enter a room code manually" },
+    ],
+  });
+  handleCancel(roomResult);
+
+  if (roomResult === "__manual__") {
+    return promptManualRoomCode(seedHubUrl);
+  }
+
+  const selectedRoom = rooms.find((room) => room.id === roomResult);
+  if (!selectedRoom) {
+    return promptManualRoomCode(seedHubUrl);
+  }
+
+  stdout.write(
+    `Using discovered room ${selectedRoom.code} on hub ${selectedRoom.hubUrl}\n`
+  );
+
+  return {
+    code: selectedRoom.code,
+    hubUrl: selectedRoom.hubUrl,
+  };
+}
+
 async function promptManualPublishedEndpoint(
   localEndpoint: string
 ): Promise<string> {
@@ -414,16 +493,21 @@ async function collectInteractiveInputs(
 ): Promise<JoinInputs | null> {
   intro("gambi join");
 
-  let { authHeaders, code, localEndpoint, model, nickname, password, noSpecs } =
-    defaults;
+  let {
+    authHeaders,
+    code,
+    hubUrl,
+    localEndpoint,
+    model,
+    nickname,
+    password,
+    noSpecs,
+  } = defaults;
 
   if (!code) {
-    const codeResult = await text({
-      message: "Room code:",
-      validate: (value) => (value ? undefined : "Room code is required"),
-    });
-    handleCancel(codeResult);
-    code = codeResult as string;
+    const roomSelection = await promptRoomSelection(hubUrl, stdout);
+    code = roomSelection.code;
+    hubUrl = roomSelection.hubUrl;
   }
 
   localEndpoint = await promptEndpoint(localEndpoint);
@@ -478,7 +562,7 @@ async function collectInteractiveInputs(
   }
 
   const publishedEndpoint = await resolvePublishedEndpoint({
-    hubUrl: defaults.hubUrl,
+    hubUrl,
     interactive: true,
     localEndpoint,
     networkEndpoint: defaults.networkEndpoint,
@@ -503,6 +587,7 @@ async function collectInteractiveInputs(
     capabilities,
     code,
     config,
+    hubUrl,
     localEndpoint,
     model,
     nickname,
@@ -628,6 +713,7 @@ export class JoinCommand extends Command {
         authHeaders,
         code: this.code,
         config,
+        hubUrl: this.hub,
         localEndpoint: this.endpoint,
         model: this.model,
         networkEndpoint: this.networkEndpoint,
@@ -661,7 +747,7 @@ export class JoinCommand extends Command {
       }
 
       const publishedEndpoint = await resolvePublishedEndpoint({
-        hubUrl: this.hub,
+        hubUrl: resolved.hubUrl,
         interactive: false,
         localEndpoint: resolved.localEndpoint,
         networkEndpoint: resolved.networkEndpoint,
@@ -721,6 +807,7 @@ export class JoinCommand extends Command {
       code: inputs.code,
       config: inputs.config,
       finalNickname,
+      hubUrl: inputs.hubUrl,
       interactive: true,
       localEndpoint: inputs.localEndpoint,
       model: inputs.model,
@@ -757,6 +844,7 @@ export class JoinCommand extends Command {
       code: inputs.code,
       config: inputs.config,
       finalNickname,
+      hubUrl: inputs.hubUrl,
       interactive: false,
       localEndpoint: inputs.localEndpoint,
       model: inputs.model,
@@ -809,6 +897,7 @@ export class JoinCommand extends Command {
     code: string;
     config: RuntimeConfig;
     finalNickname: string;
+    hubUrl: string;
     interactive: boolean;
     localEndpoint: string;
     model: string;
@@ -823,6 +912,7 @@ export class JoinCommand extends Command {
       code,
       config,
       finalNickname,
+      hubUrl,
       interactive,
       localEndpoint,
       model,
@@ -855,7 +945,7 @@ export class JoinCommand extends Command {
         body.password = password;
       }
 
-      const response = await fetch(`${this.hub}/rooms/${code}/join`, {
+      const response = await fetch(`${hubUrl}/rooms/${code}/join`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -871,6 +961,7 @@ export class JoinCommand extends Command {
 
       const successMsg = [
         `Joined room ${code}!`,
+        `  Hub: ${hubUrl}`,
         `  Participant ID: ${data.participant.id}`,
         `  Nickname: ${data.participant.nickname}`,
         `  Model: ${data.participant.model}`,
@@ -887,14 +978,14 @@ export class JoinCommand extends Command {
         this.context.stdout.write(`${successMsg}\n\n`);
       }
     } catch (error) {
-      this.context.stderr.write(`Failed to connect to hub at ${this.hub}\n`);
+      this.context.stderr.write(`Failed to connect to hub at ${hubUrl}\n`);
       this.context.stderr.write(`${error}\n`);
       return 1;
     }
 
     const healthInterval = setInterval(async () => {
       try {
-        const response = await fetch(`${this.hub}/rooms/${code}/health`, {
+        const response = await fetch(`${hubUrl}/rooms/${code}/health`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: participantId }),
@@ -917,7 +1008,7 @@ export class JoinCommand extends Command {
       clearInterval(healthInterval);
 
       try {
-        await fetch(`${this.hub}/rooms/${code}/leave/${participantId}`, {
+        await fetch(`${hubUrl}/rooms/${code}/leave/${participantId}`, {
           method: "DELETE",
         });
         this.context.stdout.write("Left room successfully.\n");

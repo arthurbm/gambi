@@ -9,6 +9,7 @@
     "./room": "./src/room.ts",
     "./participant": "./src/participant.ts",
     "./endpoint": "./src/endpoint-capabilities.ts",
+    "./mdns": "./src/mdns.ts",
     "./hub": "./src/hub.ts",
     "./logo": "./src/logo.ts"
   },

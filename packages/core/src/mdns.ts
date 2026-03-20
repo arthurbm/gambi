@@ -83,6 +83,8 @@ export function destroy(): void {
 }
 
 export interface DiscoveredService {
+  addresses: string[];
+  host: string;
   name: string;
   port: number;
   txt: Record<string, string>;
@@ -98,6 +100,13 @@ export function browse(
 
   const browser: Browser = bonjour.find({ type: "gambi" }, (service) => {
     callback({
+      addresses:
+        (
+          service as Service & {
+            addresses?: string[];
+          }
+        ).addresses ?? [],
+      host: service.host,
       name: service.name,
       port: service.port,
       txt: (service.txt ?? {}) as Record<string, string>,
