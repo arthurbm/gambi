@@ -16,6 +16,7 @@ This makes it useful for:
 - **Home labs** — access your GPU machine's LLM from any device on the network
 - **Prototyping** — point any AI tool at the Gambi API and start building, powered by real local models
 - **Group experiments** — compare models side-by-side, benchmark, or build apps that use multiple models
+- **Games and dynamics** — build interactive experiences on top of shared LLMs: model arenas where people vote on the best response, "guess the model" challenges, trivia bots, translation relays, or any creative dynamic where the fun comes from having a room full of different models to play with (see [Challenges & Dynamics](/guides/challenges/) for ideas)
 
 Since the hub exposes a standard **OpenAI-compatible API**, any tool that works with OpenAI works with Gambi — just change the base URL.
 
