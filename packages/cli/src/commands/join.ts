@@ -277,12 +277,14 @@ async function promptManualRoomCode(seedHubUrl: string): Promise<{
 }> {
   const codeResult = await text({
     message: "Room code:",
-    validate: (value) => (value ? undefined : "Room code is required"),
+    validate: (value) => (value?.trim() ? undefined : "Room code is required"),
   });
   handleCancel(codeResult);
 
+  const trimmedCode = (codeResult as string).trim();
+
   return {
-    code: codeResult as string,
+    code: trimmedCode,
     hubUrl: seedHubUrl,
   };
 }
@@ -294,7 +296,17 @@ async function promptRoomSelection(
   const s = spinner();
   s.start("Detecting available rooms...");
 
-  const rooms = await discoverRoomsOnNetwork({ seedHubUrl });
+  let rooms: DiscoveredRoom[] = [];
+  try {
+    rooms = await discoverRoomsOnNetwork({ seedHubUrl });
+  } catch {
+    s.stop("Failed to discover rooms automatically");
+    stdout.write(
+      "An error occurred while discovering rooms. You can enter a room code manually instead.\n"
+    );
+    return promptManualRoomCode(seedHubUrl);
+  }
+
   if (rooms.length === 0) {
     s.stop("No rooms discovered automatically");
     stdout.write(

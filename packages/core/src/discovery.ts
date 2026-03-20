@@ -162,6 +162,42 @@ async function fetchRoomsFromHub(
   }
 }
 
+async function discoverRoomsFromHubs(
+  hubs: DiscoveredHub[],
+  fetchFn: FetchLike
+): Promise<DiscoveredRoom[]> {
+  const rooms = new Map<string, DiscoveredRoom>();
+
+  for (const hub of hubs) {
+    const discoveredRooms = await fetchRoomsFromHub(hub.hubUrl, fetchFn);
+    if (!discoveredRooms) {
+      continue;
+    }
+
+    for (const room of discoveredRooms) {
+      if (rooms.has(room.id)) {
+        continue;
+      }
+
+      rooms.set(room.id, {
+        ...room,
+        hubName: hub.name,
+        hubSource: hub.source,
+        hubUrl: hub.hubUrl,
+      });
+    }
+  }
+
+  return [...rooms.values()].sort((left, right) => {
+    const participantCountDiff = right.participantCount - left.participantCount;
+    if (participantCountDiff !== 0) {
+      return participantCountDiff;
+    }
+
+    return left.name.localeCompare(right.name);
+  });
+}
+
 async function resolveHub(
   candidate: Omit<DiscoveredHub, "hubUrl">,
   urls: string[],
@@ -260,42 +296,23 @@ export async function discoverRooms(
 ): Promise<DiscoveredRoom[]> {
   const fetchFn = options.fetchFn ?? fetch;
   const hubs = await discoverHubs(options);
-  const rooms = new Map<string, DiscoveredRoom>();
-
-  for (const hub of hubs) {
-    const discoveredRooms = await fetchRoomsFromHub(hub.hubUrl, fetchFn);
-    if (!discoveredRooms) {
-      continue;
-    }
-
-    for (const room of discoveredRooms) {
-      if (rooms.has(room.id)) {
-        continue;
-      }
-
-      rooms.set(room.id, {
-        ...room,
-        hubName: hub.name,
-        hubSource: hub.source,
-        hubUrl: hub.hubUrl,
-      });
-    }
-  }
-
-  return [...rooms.values()].sort((left, right) => {
-    const participantCountDiff = right.participantCount - left.participantCount;
-    if (participantCountDiff !== 0) {
-      return participantCountDiff;
-    }
-
-    return left.name.localeCompare(right.name);
-  });
+  return discoverRoomsFromHubs(hubs, fetchFn);
 }
 
 export async function resolveGambiTarget(
   options: ResolveGambiTargetOptions = {}
 ): Promise<ResolvedGambiTarget> {
-  const rooms = await discoverRooms(options);
+  const fetchFn = options.fetchFn ?? fetch;
+  const hubs = await discoverHubs(options);
+
+  if (hubs.length === 0) {
+    throw new DiscoveryError(
+      "NO_HUBS_FOUND",
+      "No hubs were found on the configured hub or local network."
+    );
+  }
+
+  const rooms = await discoverRoomsFromHubs(hubs, fetchFn);
 
   if (rooms.length === 0) {
     throw new DiscoveryError(
@@ -347,7 +364,6 @@ export async function resolveGambiTarget(
     );
   }
 
-  const hubs = await discoverHubs(options);
   const hub = hubs.find((candidate) => candidate.hubUrl === room.hubUrl);
   if (!hub) {
     throw new DiscoveryError(

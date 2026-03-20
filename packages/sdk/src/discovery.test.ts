@@ -3,12 +3,12 @@ import type { DiscoveredService } from "@gambi/core/mdns";
 import {
   createGambi,
   type DiscoveryError,
+  type DiscoveryOptions,
   discoverHubs,
-  type discoverRooms,
   resolveGambiTarget,
 } from "./index.ts";
 
-type FetchLike = NonNullable<Parameters<typeof discoverRooms>[0]["fetchFn"]>;
+type FetchLike = NonNullable<DiscoveryOptions["fetchFn"]>;
 
 const alphaRoom = {
   id: "room-alpha",
@@ -96,8 +96,10 @@ describe("SDK discovery", () => {
   });
 
   test("resolves a discovered target and feeds createGambi", async () => {
+    const fetchCalls: string[] = [];
     const fetchFn: FetchLike = (input) => {
       const url = String(input);
+      fetchCalls.push(url);
 
       if (url === "http://localhost:3000/health") {
         return Promise.resolve(
@@ -141,6 +143,12 @@ describe("SDK discovery", () => {
     expect(target.hubUrl).toBe("http://192.168.1.40:3100");
     expect(target.roomCode).toBe("XYZ999");
     expect(target.room.name).toBe("Beta");
+    expect(fetchCalls).toEqual([
+      "http://localhost:3000/health",
+      "http://192.168.1.40:3100/health",
+      "http://localhost:3000/rooms",
+      "http://192.168.1.40:3100/rooms",
+    ]);
 
     const provider = createGambi(target);
     expect(provider.baseURL).toBe("http://192.168.1.40:3100/rooms/XYZ999/v1");
@@ -176,6 +184,29 @@ describe("SDK discovery", () => {
         expect.objectContaining({ code: "ABC123" }),
         expect.objectContaining({ code: "XYZ999" }),
       ],
+    });
+  });
+
+  test("throws a typed error when no hubs are reachable", async () => {
+    const fetchFn: FetchLike = (input) => {
+      const url = String(input);
+
+      if (url === "http://localhost:3000/health") {
+        return Promise.resolve(new Response("offline", { status: 503 }));
+      }
+
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+
+    await expect(
+      resolveGambiTarget({
+        browseServices: createBrowseServices([]),
+        fetchFn,
+        hubUrl: "http://localhost:3000",
+        timeoutMs: 0,
+      })
+    ).rejects.toMatchObject<Partial<DiscoveryError>>({
+      code: "NO_HUBS_FOUND",
     });
   });
 });
