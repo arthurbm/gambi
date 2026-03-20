@@ -126,3 +126,173 @@ const result = await generateText({
 ```
 
 See the [Vercel AI SDK docs](https://sdk.vercel.ai/docs) for all available options.
+
+## Querying the Room
+
+### `gambi.listModels()`
+
+Returns all models available in the room.
+
+```typescript
+const models = await gambi.listModels();
+// [{ id, nickname, model, endpoint, capabilities }]
+```
+
+Each entry is a `GambiModel`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `string` | Participant ID |
+| `nickname` | `string` | Display name |
+| `model` | `string` | Model name (e.g. `"llama3"`) |
+| `endpoint` | `string` | Participant endpoint URL |
+| `capabilities` | `object` | `{ openResponses, chatCompletions }` — `"supported"`, `"not-supported"`, or `"unknown"` |
+
+### `gambi.listParticipants()`
+
+Returns all participants in the room with their full info (status, specs, config).
+
+```typescript
+const participants = await gambi.listParticipants();
+for (const p of participants) {
+  console.log(p.nickname, p.model, p.status);
+}
+```
+
+### `gambi.baseURL`
+
+The computed base URL for the room's OpenAI-compatible API. Useful when you need to pass the URL to another tool or library.
+
+```typescript
+console.log(gambi.baseURL);
+// "http://localhost:3000/rooms/ABC123/v1"
+```
+
+## HTTP Client — `createClient(options)`
+
+The SDK also exports an HTTP client for managing rooms and participants programmatically. This is separate from the AI SDK provider — use it when you need to create rooms, join participants, or manage lifecycle from code.
+
+```typescript
+import { createClient } from "gambi-sdk";
+
+const client = createClient({
+  hubUrl: "http://localhost:3000", // default
+});
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `hubUrl` | `string` | `http://localhost:3000` | Hub URL |
+
+### `client.create(name, passwordOrOptions?)`
+
+Create a new room. Returns `{ room, hostId }`.
+
+```typescript
+const { room, hostId } = await client.create("My Room");
+console.log(room.code); // "ABC123"
+
+// With password
+const { room } = await client.create("Private Room", "secret123");
+
+// With password and runtime defaults
+const { room } = await client.create("Room", {
+  password: "secret",
+  defaults: { temperature: 0.7 },
+});
+```
+
+### `client.list()`
+
+List all rooms. Returns `RoomInfoPublic[]`.
+
+```typescript
+const rooms = await client.list();
+for (const room of rooms) {
+  console.log(room.code, room.name);
+}
+```
+
+### `client.join(code, participant)`
+
+Join a room as a participant.
+
+```typescript
+const { participant, roomId } = await client.join("ABC123", {
+  id: "my-bot",
+  nickname: "Bot",
+  model: "llama3",
+  endpoint: "http://localhost:11434",
+  password: "secret123", // if room is protected
+});
+```
+
+Full participant options:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | `string` | yes | Unique participant ID |
+| `nickname` | `string` | yes | Display name |
+| `model` | `string` | yes | Model name |
+| `endpoint` | `string` | yes | LLM endpoint URL |
+| `password` | `string` | no | Room password |
+| `specs` | `object` | no | Machine specs (CPU, RAM, GPU) |
+| `config` | `RuntimeConfig` | no | Runtime config overrides |
+| `capabilities` | `object` | no | Protocol capabilities |
+| `authHeaders` | `object` | no | Auth headers for the endpoint (kept in memory only) |
+
+### `client.leave(code, participantId)`
+
+Remove a participant from a room.
+
+```typescript
+await client.leave("ABC123", "my-bot");
+```
+
+### `client.getParticipants(code)`
+
+List all participants in a room. Returns `ParticipantInfo[]`.
+
+```typescript
+const participants = await client.getParticipants("ABC123");
+```
+
+### `client.healthCheck(code, participantId)`
+
+Send a health check heartbeat. Participants must send this every 10 seconds to stay online (30 seconds timeout = offline).
+
+```typescript
+// Keep alive loop
+setInterval(() => {
+  client.healthCheck("ABC123", "my-bot");
+}, 10_000);
+```
+
+### `ClientError`
+
+All client methods throw `ClientError` on failure. It includes the HTTP status and response body.
+
+```typescript
+import { ClientError } from "gambi-sdk";
+
+try {
+  await client.join("INVALID", { /* ... */ });
+} catch (err) {
+  if (err instanceof ClientError) {
+    console.error(err.status);   // 404
+    console.error(err.response); // { error: "Room not found" }
+  }
+}
+```
+
+## Key Types
+
+| Type | Import | Description |
+|------|--------|-------------|
+| `GambiProvider` | `gambi-sdk` | Return type of `createGambi()` |
+| `GambiClient` | `gambi-sdk` | Return type of `createClient()` |
+| `GambiModel` | `gambi-sdk` | Model info from `listModels()` |
+| `ParticipantInfo` | `gambi-sdk` | Full participant info |
+| `RoomInfoPublic` | `gambi-sdk` | Room info from `client.list()` |
+| `RuntimeConfig` | `gambi-sdk` | Generation config (temperature, maxTokens, etc.) |
+| `ClientError` | `gambi-sdk` | Error class for client failures |
