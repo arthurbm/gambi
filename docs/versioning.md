@@ -65,7 +65,7 @@ The source of truth for releasing is:
 
 ### Authentication
 
-The workflow uses **npm Trusted Publishing (OIDC)** instead of stored npm tokens. Each published package is configured on npmjs.com to trust the GitHub repository and the `release.yml` workflow. The `--provenance` flag on `npm publish` triggers the OIDC token exchange and produces supply chain attestation.
+The workflow uses **npm Trusted Publishing (OIDC)** instead of stored npm tokens. Each published package is configured on npmjs.com to trust the GitHub repository and the `release.yml` workflow. The `publish` job grants `id-token: write`, `actions/setup-node` points npm at the registry, and the npm CLI performs the OIDC exchange during `npm publish`. Provenance is generated automatically by npm when trusted publishing succeeds for a public package from a public repository.
 
 ### Release Stages
 

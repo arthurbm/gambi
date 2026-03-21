@@ -215,10 +215,10 @@ How it works:
 
 1. Each published package is configured on npmjs.com to trust the `arthurbm/gambi` repository and the `release.yml` workflow.
 2. The `publish` job in the workflow has `id-token: write` permission, which allows GitHub Actions to generate a short-lived OIDC token.
-3. When `npm publish --provenance` runs, npm exchanges the OIDC token with the registry to authenticate the publish.
+3. `actions/setup-node` points npm at `https://registry.npmjs.org`, and the npm CLI performs the OIDC exchange during `npm publish`.
 4. No secrets, automation tokens, or OTP codes are involved.
 
-The `--provenance` flag also enables **supply chain attestation**: each published package gets a verifiable link back to the exact source commit and GitHub Actions run that produced it. This appears as a "Provenance" badge on npmjs.com.
+When trusted publishing succeeds for a public package from a public repository, npm also generates **supply chain attestation** automatically. This appears as a "Provenance" badge on npmjs.com.
 
 When adding a new published package to the repo:
 
