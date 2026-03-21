@@ -209,9 +209,10 @@ Fluxo oficial:
 - Nao fazer bump manual de versao em PRs normais; deixe isso para o workflow de release.
 
 Autenticacao npm:
-- O publish usa **npm Trusted Publishing (OIDC)** — nao usa `NPM_TOKEN` nem tokens de automacao.
-- Cada pacote publicado deve ter um Trusted Publisher configurado no npmjs.com apontando para `arthurbm/gambi` e workflow `release.yml`.
-- Ao adicionar um novo pacote npm ao repo, configurar o Trusted Publisher no npmjs.com antes de fazer o primeiro release.
+- O publish usa um **granular access token** armazenado como secret `NPM_TOKEN` no repositorio GitHub.
+- O workflow passa `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` para o step de publish.
+- Cada pacote no npmjs.com deve permitir granular access tokens (com 2FA bypass) nas configuracoes de publishing access.
+- Ao adicionar um novo pacote npm ao repo, configurar as permissoes de publishing access no npmjs.com e garantir que o token `NPM_TOKEN` tenha acesso ao novo pacote.
 
 Validacao recomendada quando tocar distribuicao/release:
 ```bash

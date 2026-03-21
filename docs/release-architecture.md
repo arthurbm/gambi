@@ -151,6 +151,13 @@ This matters because otherwise CI could:
 
 The artifact-based flow prevents that.
 
+With the current release workflow, this reuse is also observable:
+
+- the build manifest includes release asset metadata (size and SHA-256)
+- CI publishes a human-readable summary table in `$GITHUB_STEP_SUMMARY`
+- publish step emits `packages/cli/dist/release-report.json` with npm verification results
+- GitHub Release upload is validated against manifest asset names and byte sizes
+
 ## Why the Release Is Pinned to One Commit
 
 The release workflow captures one source commit up front and every later checkout uses that exact ref.
@@ -207,24 +214,22 @@ Another intentional difference:
 
 That keeps the versioning model honest and avoids tags that imply package versions which were never actually published.
 
-## Authentication: Trusted Publishing (OIDC)
+## Authentication
 
-The release workflow does not use stored npm tokens. Instead, it uses **npm Trusted Publishing**, which is based on OpenID Connect (OIDC) identity federation.
+The release workflow authenticates to npm using a **granular access token** stored as the `NPM_TOKEN` repository secret.
 
 How it works:
 
-1. Each published package is configured on npmjs.com to trust the `arthurbm/gambi` repository and the `release.yml` workflow.
-2. The `publish` job in the workflow has `id-token: write` permission, which allows GitHub Actions to generate a short-lived OIDC token.
-3. `actions/setup-node` points npm at `https://registry.npmjs.org`, and the npm CLI performs the OIDC exchange during `npm publish`.
-4. No secrets, automation tokens, or OTP codes are involved.
-
-When trusted publishing succeeds for a public package from a public repository, npm also generates **supply chain attestation** automatically. This appears as a "Provenance" badge on npmjs.com.
+1. The `publish` job passes `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` to the publish step.
+2. `actions/setup-node` with `registry-url` creates an `.npmrc` that references this token.
+3. Each npm package on npmjs.com must allow granular access tokens (with 2FA bypass) in its publishing access settings.
+4. The `publish` job also has `id-token: write` permission, which enables `--provenance` signing if added in the future.
 
 When adding a new published package to the repo:
 
 1. Create the package on npmjs.com (or use the "pending package" flow).
-2. Go to the package's settings and add a Trusted Publisher pointing to `arthurbm/gambi` with workflow `release.yml`.
-3. Only then will the release workflow be able to publish it.
+2. In the package's settings, set publishing access to allow granular access tokens with 2FA bypass.
+3. Ensure the `NPM_TOKEN` secret has publish permissions for the new package.
 
 ## In Short
 
@@ -234,3 +239,7 @@ If you remember only four ideas, remember these:
 2. `gambi` is the public wrapper package
 3. `gambi-<platform>-<arch>` packages contain the real compiled binaries
 4. CI builds once and reuses the same artifacts for npm and GitHub Releases
+
+For day-2 operations, there is now an equally important fifth idea:
+
+5. CI performs explicit post-publish verification (npm metadata + GitHub Release assets), not only best-effort publishing
