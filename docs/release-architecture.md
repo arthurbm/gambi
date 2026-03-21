@@ -207,24 +207,22 @@ Another intentional difference:
 
 That keeps the versioning model honest and avoids tags that imply package versions which were never actually published.
 
-## Authentication: Trusted Publishing (OIDC)
+## Authentication
 
-The release workflow does not use stored npm tokens. Instead, it uses **npm Trusted Publishing**, which is based on OpenID Connect (OIDC) identity federation.
+The release workflow authenticates to npm using a **granular access token** stored as the `NPM_TOKEN` repository secret.
 
 How it works:
 
-1. Each published package is configured on npmjs.com to trust the `arthurbm/gambi` repository and the `release.yml` workflow.
-2. The `publish` job in the workflow has `id-token: write` permission, which allows GitHub Actions to generate a short-lived OIDC token.
-3. `actions/setup-node` points npm at `https://registry.npmjs.org`, and the npm CLI performs the OIDC exchange during `npm publish`.
-4. No secrets, automation tokens, or OTP codes are involved.
-
-When trusted publishing succeeds for a public package from a public repository, npm also generates **supply chain attestation** automatically. This appears as a "Provenance" badge on npmjs.com.
+1. The `publish` job passes `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` to the publish step.
+2. `actions/setup-node` with `registry-url` creates an `.npmrc` that references this token.
+3. Each npm package on npmjs.com must allow granular access tokens (with 2FA bypass) in its publishing access settings.
+4. The `publish` job also has `id-token: write` permission, which enables `--provenance` signing if added in the future.
 
 When adding a new published package to the repo:
 
 1. Create the package on npmjs.com (or use the "pending package" flow).
-2. Go to the package's settings and add a Trusted Publisher pointing to `arthurbm/gambi` with workflow `release.yml`.
-3. Only then will the release workflow be able to publish it.
+2. In the package's settings, set publishing access to allow granular access tokens with 2FA bypass.
+3. Ensure the `NPM_TOKEN` secret has publish permissions for the new package.
 
 ## In Short
 

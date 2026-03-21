@@ -65,7 +65,7 @@ The source of truth for releasing is:
 
 ### Authentication
 
-The workflow uses **npm Trusted Publishing (OIDC)** instead of stored npm tokens. Each published package is configured on npmjs.com to trust the GitHub repository and the `release.yml` workflow. The `publish` job grants `id-token: write`, `actions/setup-node` points npm at the registry, and the npm CLI performs the OIDC exchange during `npm publish`. Provenance is generated automatically by npm when trusted publishing succeeds for a public package from a public repository.
+The workflow authenticates to npm using a **granular access token** stored as the `NPM_TOKEN` repository secret. The `publish` job passes it as `NODE_AUTH_TOKEN`, and `actions/setup-node` with `registry-url` wires it into `.npmrc`. Each npm package must allow granular access tokens (with 2FA bypass) in its publishing access settings.
 
 ### Release Stages
 
@@ -164,4 +164,5 @@ These are intentionally out of scope for the current architecture:
 - automated install smoke tests across platforms
 - extra distribution channels like Homebrew or AUR
 - richer release observability and post-publish verification
-- automating trusted publisher configuration for new packages
+- migrating to npm Trusted Publishing (OIDC) to eliminate stored tokens
+- `--provenance` flag for supply chain attestation
