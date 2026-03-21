@@ -157,6 +157,8 @@ jobs:
 
       - name: Publish packages
         run: bun run scripts/publish.ts ${{ needs.version.outputs.version }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Commit and tag
         run: |
