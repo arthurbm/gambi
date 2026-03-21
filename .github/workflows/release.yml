@@ -114,7 +114,7 @@ jobs:
         run: GAMBI_RELEASE_VERSION=${{ needs.version.outputs.version }} bun run --cwd packages/cli build
 
       - name: Upload CLI distribution
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gambi-cli-dist
           path: packages/cli/dist
@@ -148,7 +148,7 @@ jobs:
         run: sed -i '/_authToken/d' "$HOME/.npmrc"
 
       - name: Download CLI distribution
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: gambi-cli-dist
           path: packages/cli/dist
@@ -174,7 +174,7 @@ jobs:
 
     steps:
       - name: Download CLI distribution
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: gambi-cli-dist
           path: packages/cli/dist
