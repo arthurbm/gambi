@@ -14,7 +14,6 @@ on:
 
 permissions:
   contents: write
-  packages: write
 
 jobs:
   version:
@@ -123,6 +122,9 @@ jobs:
   publish:
     needs: [version, build-cli]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
 
     steps:
       - name: Checkout
@@ -155,8 +157,6 @@ jobs:
 
       - name: Publish packages
         run: bun run scripts/publish.ts ${{ needs.version.outputs.version }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Commit and tag
         run: |

@@ -208,6 +208,11 @@ Fluxo oficial:
 - O workflow oficial de release publica sempre o conjunto sincronizado de pacotes; nao fazer release parcial de `sdk` ou `cli`.
 - Nao fazer bump manual de versao em PRs normais; deixe isso para o workflow de release.
 
+Autenticacao npm:
+- O publish usa **npm Trusted Publishing (OIDC)** — nao usa `NPM_TOKEN` nem tokens de automacao.
+- Cada pacote publicado deve ter um Trusted Publisher configurado no npmjs.com apontando para `arthurbm/gambi` e workflow `release.yml`.
+- Ao adicionar um novo pacote npm ao repo, configurar o Trusted Publisher no npmjs.com antes de fazer o primeiro release.
+
 Validacao recomendada quando tocar distribuicao/release:
 ```bash
 bun run --cwd packages/cli check-types
