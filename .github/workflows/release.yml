@@ -14,7 +14,6 @@ on:
 
 permissions:
   contents: write
-  packages: write
 
 jobs:
   version:
@@ -168,7 +167,7 @@ jobs:
           NODE
 
       - name: Upload CLI distribution
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gambi-cli-dist
           path: packages/cli/dist
@@ -176,6 +175,9 @@ jobs:
   publish:
     needs: [version, build-cli]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
 
     steps:
       - name: Checkout
@@ -196,7 +198,7 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Download CLI distribution
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: gambi-cli-dist
           path: packages/cli/dist
@@ -248,7 +250,7 @@ jobs:
 
       - name: Upload release report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gambi-release-report
           path: packages/cli/dist/release-report.json
@@ -267,7 +269,7 @@ jobs:
 
     steps:
       - name: Download CLI distribution
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: gambi-cli-dist
           path: packages/cli/dist

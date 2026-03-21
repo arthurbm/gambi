@@ -63,6 +63,10 @@ The source of truth for releasing is:
 - `.github/workflows/release.yml`
 - `scripts/publish.ts`
 
+### Authentication
+
+The workflow authenticates to npm using a **granular access token** stored as the `NPM_TOKEN` repository secret. The `publish` job passes it as `NODE_AUTH_TOKEN`, and `actions/setup-node` with `registry-url` wires it into `.npmrc`. Each npm package must allow granular access tokens (with 2FA bypass) in its publishing access settings.
+
 ### Release Stages
 
 The workflow runs in four stages:
@@ -175,3 +179,5 @@ These are intentionally out of scope for the current architecture:
 - musl/baseline variants and CPU capability fallbacks
 - automated install smoke tests across platforms
 - extra distribution channels like Homebrew or AUR
+- migrating to npm Trusted Publishing (OIDC) to eliminate stored tokens
+- `--provenance` flag for supply chain attestation

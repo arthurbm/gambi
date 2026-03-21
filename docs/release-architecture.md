@@ -214,6 +214,23 @@ Another intentional difference:
 
 That keeps the versioning model honest and avoids tags that imply package versions which were never actually published.
 
+## Authentication
+
+The release workflow authenticates to npm using a **granular access token** stored as the `NPM_TOKEN` repository secret.
+
+How it works:
+
+1. The `publish` job passes `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` to the publish step.
+2. `actions/setup-node` with `registry-url` creates an `.npmrc` that references this token.
+3. Each npm package on npmjs.com must allow granular access tokens (with 2FA bypass) in its publishing access settings.
+4. The `publish` job also has `id-token: write` permission, which enables `--provenance` signing if added in the future.
+
+When adding a new published package to the repo:
+
+1. Create the package on npmjs.com (or use the "pending package" flow).
+2. In the package's settings, set publishing access to allow granular access tokens with 2FA bypass.
+3. Ensure the `NPM_TOKEN` secret has publish permissions for the new package.
+
 ## In Short
 
 If you remember only four ideas, remember these:

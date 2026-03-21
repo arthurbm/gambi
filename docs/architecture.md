@@ -185,6 +185,14 @@ const result4 = await generateText({
 });
 ```
 
+For local Node.js/Bun applications, the SDK also exposes optional discovery helpers:
+
+- `discoverHubs()` - find reachable hubs from a configured seed plus mDNS
+- `discoverRooms()` - aggregate rooms across reachable hubs
+- `resolveGambiTarget()` - resolve one room to `{ hubUrl, roomCode }`
+
+These helpers are additive. `createGambi()` and `createClient()` remain explicit and do not perform implicit async discovery.
+
 ### `tui`
 
 Terminal UI for monitoring rooms and participants in real-time (uses SSE).
@@ -258,6 +266,8 @@ gambi serve --mdns
 This allows clients on the local network to discover the hub automatically without knowing its IP address.
 
 Service format: `gambi-hub-{port}._gambi._tcp.local`
+
+The SDK builds on top of the same mechanism for local apps through `discoverHubs()`, `discoverRooms()`, and `resolveGambiTarget()`. This keeps the provider/client APIs explicit while still enabling zero-config room selection in TypeScript applications.
 
 ## Supported Providers
 
