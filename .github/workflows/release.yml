@@ -142,6 +142,10 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Remove auth token for OIDC publishing
+        run: sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG"
 
       - name: Download CLI distribution
         uses: actions/download-artifact@v8
