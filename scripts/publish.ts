@@ -9,14 +9,14 @@ interface CliDistributionManifest {
     packageDir: string;
     packageName: string;
     releaseAssetPath: string;
-    sha256: string;
-    sizeBytes: number;
+    sha256?: string;
+    sizeBytes?: number;
   }>;
   releaseAssets?: Array<{
     assetName: string;
     releaseAssetPath: string;
-    sha256: string;
-    sizeBytes: number;
+    sha256?: string;
+    sizeBytes?: number;
   }>;
   releaseAssetPaths?: string[];
   version: string;
@@ -165,8 +165,10 @@ console.log(`  version: ${cliManifest.version}`);
 console.log(`  wrapper: ${cliManifest.wrapperPackageDir}`);
 console.log("  binary packages:");
 for (const pkg of cliManifest.binaryPackages) {
+  const size = pkg.sizeBytes ?? "unknown";
+  const hash = pkg.sha256 ? `sha256:${pkg.sha256.slice(0, 12)}...` : "no hash";
   console.log(
-    `    - ${pkg.packageName} (${pkg.assetName}, ${pkg.sizeBytes} bytes, sha256:${pkg.sha256.slice(0, 12)}...)`
+    `    - ${pkg.packageName} (${pkg.assetName}, ${size} bytes, ${hash})`
   );
 }
 
@@ -190,41 +192,56 @@ for (const asset of releaseAssets) {
 console.log("\nPublishing to npm...");
 
 const npmVerificationResults: NpmVerificationResult[] = [];
+const releaseReportPath = resolve("packages/cli/dist/release-report.json");
 
-console.log("\n--- gambi-sdk ---");
-await $`cd packages/sdk && npm publish --access public --tag ${NPM_TAG}`;
-npmVerificationResults.push(await verifyNpmPackage("gambi-sdk", NPM_TAG));
-console.log("  ✓ verified npm metadata");
-
-for (const binaryPackage of cliManifest.binaryPackages) {
-  console.log(`\n--- ${binaryPackage.packageName} ---`);
-  await $`cd ${resolveCliDistributionPath(binaryPackage.packageDir)} && npm publish --access public --tag ${NPM_TAG}`;
-  npmVerificationResults.push(
-    await verifyNpmPackage(binaryPackage.packageName, NPM_TAG)
+async function writeReleaseReport(status: string, error?: string) {
+  const releaseReport: Record<string, unknown> = {
+    generatedAt: new Date().toISOString(),
+    npmTag: NPM_TAG,
+    version: VERSION,
+    status,
+    cliDistribution: {
+      wrapperPackageDir: cliManifest.wrapperPackageDir,
+      binaryPackages: cliManifest.binaryPackages,
+      releaseAssets,
+    },
+    npmVerification: npmVerificationResults,
+  };
+  if (error) {
+    releaseReport.error = error;
+  }
+  await Bun.write(
+    releaseReportPath,
+    `${JSON.stringify(releaseReport, null, 2)}\n`
   );
-  console.log("  ✓ verified npm metadata");
+  console.log(`\nWrote release report (${status}) to ${releaseReportPath}`);
 }
 
-console.log("\n--- gambi ---");
-await $`cd ${resolveCliDistributionPath(cliManifest.wrapperPackageDir)} && npm publish --access public --tag ${NPM_TAG}`;
-npmVerificationResults.push(await verifyNpmPackage("gambi", NPM_TAG));
-console.log("  ✓ verified npm metadata");
+try {
+  console.log("\n--- gambi-sdk ---");
+  await $`cd packages/sdk && npm publish --access public --tag ${NPM_TAG}`;
+  npmVerificationResults.push(await verifyNpmPackage("gambi-sdk", NPM_TAG));
+  console.log("  ✓ verified npm metadata");
 
-const releaseReport = {
-  generatedAt: new Date().toISOString(),
-  npmTag: NPM_TAG,
-  version: VERSION,
-  cliDistribution: {
-    wrapperPackageDir: cliManifest.wrapperPackageDir,
-    binaryPackages: cliManifest.binaryPackages,
-    releaseAssets,
-  },
-  npmVerification: npmVerificationResults,
-};
-await Bun.write(
-  resolve("packages/cli/dist/release-report.json"),
-  `${JSON.stringify(releaseReport, null, 2)}\n`
-);
-console.log("\nWrote release report to packages/cli/dist/release-report.json");
+  for (const binaryPackage of cliManifest.binaryPackages) {
+    console.log(`\n--- ${binaryPackage.packageName} ---`);
+    await $`cd ${resolveCliDistributionPath(binaryPackage.packageDir)} && npm publish --access public --tag ${NPM_TAG}`;
+    npmVerificationResults.push(
+      await verifyNpmPackage(binaryPackage.packageName, NPM_TAG)
+    );
+    console.log("  ✓ verified npm metadata");
+  }
 
-console.log(`\n=== Published v${VERSION} successfully ===\n`);
+  console.log("\n--- gambi ---");
+  await $`cd ${resolveCliDistributionPath(cliManifest.wrapperPackageDir)} && npm publish --access public --tag ${NPM_TAG}`;
+  npmVerificationResults.push(await verifyNpmPackage("gambi", NPM_TAG));
+  console.log("  ✓ verified npm metadata");
+
+  await writeReleaseReport("success");
+  console.log(`\n=== Published v${VERSION} successfully ===\n`);
+} catch (error) {
+  const publishError = error as Error;
+  console.error(`\nPublish failed: ${publishError.message}`);
+  await writeReleaseReport("failed", publishError.message);
+  throw publishError;
+}

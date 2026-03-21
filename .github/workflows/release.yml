@@ -149,7 +149,7 @@ jobs:
             "|---|---|---:|---|",
             ...manifest.binaryPackages.map(
               (pkg) =>
-                `| \`${pkg.packageName}\` | \`${pkg.assetName}\` | ${pkg.sizeBytes} | \`${pkg.sha256}\` |`
+                `| \`${pkg.packageName}\` | \`${pkg.assetName}\` | ${pkg.sizeBytes ?? "n/a"} | \`${pkg.sha256 || "n/a"}\` |`
             ),
             "",
             "### Release assets",
@@ -158,7 +158,7 @@ jobs:
             "|---|---|---:|---|",
             ...(manifest.releaseAssets || []).map(
               (asset) =>
-                `| \`${asset.assetName}\` | \`${asset.releaseAssetPath}\` | ${asset.sizeBytes} | \`${asset.sha256}\` |`
+                `| \`${asset.assetName}\` | \`${asset.releaseAssetPath}\` | ${asset.sizeBytes ?? "n/a"} | \`${asset.sha256 || "n/a"}\` |`
             ),
           ];
           fs.appendFileSync(
@@ -212,24 +212,34 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Summarize publish verification
+        if: always()
         run: |
           node <<'NODE'
           const fs = require("node:fs");
           const reportPath = "packages/cli/dist/release-report.json";
+          if (!fs.existsSync(reportPath)) {
+            console.log("No release report found — skipping summary.");
+            process.exit(0);
+          }
           const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+          const verification = report.npmVerification || [];
           const lines = [
             "## npm publish verification",
             "",
             `Version: \`${report.version}\``,
             `Tag: \`${report.npmTag}\``,
+            `Status: \`${report.status || "unknown"}\``,
             "",
             "| Package | Published Version | Dist-tag Version | Verified |",
             "|---|---|---|---|",
-            ...report.npmVerification.map(
+            ...verification.map(
               (result) =>
                 `| \`${result.packageName}\` | \`${result.publishedVersion}\` | \`${result.distTagVersion}\` | ${result.verified ? "✅" : "❌"} |`
             ),
           ];
+          if (report.error) {
+            lines.push("", `**Error:** ${report.error}`);
+          }
           fs.appendFileSync(
             process.env.GITHUB_STEP_SUMMARY,
             `${lines.join("\n")}\n`
@@ -237,10 +247,12 @@ jobs:
           NODE
 
       - name: Upload release report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: gambi-release-report
           path: packages/cli/dist/release-report.json
+          if-no-files-found: warn
 
       - name: Commit and tag
         run: |
@@ -264,14 +276,27 @@ jobs:
         run: |
           node <<'NODE'
           const fs = require("node:fs");
+          const path = require("node:path");
           const manifest = JSON.parse(
             fs.readFileSync("packages/cli/dist/manifest.json", "utf8")
           );
           const expectedAssets = manifest.releaseAssets || [];
 
           for (const asset of expectedAssets) {
-            if (!fs.existsSync(asset.releaseAssetPath)) {
-              throw new Error(`Missing release asset: ${asset.releaseAssetPath}`);
+            const releaseAssetPath = asset.releaseAssetPath;
+            const resolvedPath = path.isAbsolute(releaseAssetPath)
+              ? releaseAssetPath
+              : path.join("packages", "cli", releaseAssetPath);
+            if (!fs.existsSync(resolvedPath)) {
+              throw new Error(`Missing release asset: ${resolvedPath}`);
+            }
+            if (asset.sizeBytes) {
+              const stat = fs.statSync(resolvedPath);
+              if (stat.size !== asset.sizeBytes) {
+                throw new Error(
+                  `Size mismatch for ${resolvedPath}: expected ${asset.sizeBytes}, got ${stat.size}`
+                );
+              }
             }
           }
 
