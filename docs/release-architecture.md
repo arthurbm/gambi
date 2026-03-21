@@ -207,6 +207,25 @@ Another intentional difference:
 
 That keeps the versioning model honest and avoids tags that imply package versions which were never actually published.
 
+## Authentication: Trusted Publishing (OIDC)
+
+The release workflow does not use stored npm tokens. Instead, it uses **npm Trusted Publishing**, which is based on OpenID Connect (OIDC) identity federation.
+
+How it works:
+
+1. Each published package is configured on npmjs.com to trust the `arthurbm/gambi` repository and the `release.yml` workflow.
+2. The `publish` job in the workflow has `id-token: write` permission, which allows GitHub Actions to generate a short-lived OIDC token.
+3. When `npm publish --provenance` runs, npm exchanges the OIDC token with the registry to authenticate the publish.
+4. No secrets, automation tokens, or OTP codes are involved.
+
+The `--provenance` flag also enables **supply chain attestation**: each published package gets a verifiable link back to the exact source commit and GitHub Actions run that produced it. This appears as a "Provenance" badge on npmjs.com.
+
+When adding a new published package to the repo:
+
+1. Create the package on npmjs.com (or use the "pending package" flow).
+2. Go to the package's settings and add a Trusted Publisher pointing to `arthurbm/gambi` with workflow `release.yml`.
+3. Only then will the release workflow be able to publish it.
+
 ## In Short
 
 If you remember only four ideas, remember these:

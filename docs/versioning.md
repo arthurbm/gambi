@@ -63,6 +63,10 @@ The source of truth for releasing is:
 - `.github/workflows/release.yml`
 - `scripts/publish.ts`
 
+### Authentication
+
+The workflow uses **npm Trusted Publishing (OIDC)** instead of stored npm tokens. Each published package is configured on npmjs.com to trust the GitHub repository and the `release.yml` workflow. The `--provenance` flag on `npm publish` triggers the OIDC token exchange and produces supply chain attestation.
+
 ### Release Stages
 
 The workflow runs in four stages:
@@ -160,3 +164,4 @@ These are intentionally out of scope for the current architecture:
 - automated install smoke tests across platforms
 - extra distribution channels like Homebrew or AUR
 - richer release observability and post-publish verification
+- automating trusted publisher configuration for new packages
