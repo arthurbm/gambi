@@ -142,6 +142,7 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "24"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Download CLI distribution
         uses: actions/download-artifact@v8
@@ -156,6 +157,8 @@ jobs:
 
       - name: Publish packages
         run: bun run scripts/publish.ts ${{ needs.version.outputs.version }}
+        env:
+          NPM_CONFIG_PROVENANCE: false
 
       - name: Commit and tag
         run: |

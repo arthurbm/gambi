@@ -93,14 +93,14 @@ const cliManifest = await ensureCliDistribution();
 console.log("\nPublishing to npm...");
 
 console.log("\n--- gambi-sdk ---");
-await $`cd packages/sdk && npm publish --access public --provenance --tag ${NPM_TAG}`;
+await $`cd packages/sdk && npm publish --access public --tag ${NPM_TAG}`;
 
 for (const binaryPackage of cliManifest.binaryPackages) {
   console.log(`\n--- ${binaryPackage.packageName} ---`);
-  await $`cd ${resolveCliDistributionPath(binaryPackage.packageDir)} && npm publish --access public --provenance --tag ${NPM_TAG}`;
+  await $`cd ${resolveCliDistributionPath(binaryPackage.packageDir)} && npm publish --access public --tag ${NPM_TAG}`;
 }
 
 console.log("\n--- gambi ---");
-await $`cd ${resolveCliDistributionPath(cliManifest.wrapperPackageDir)} && npm publish --access public --provenance --tag ${NPM_TAG}`;
+await $`cd ${resolveCliDistributionPath(cliManifest.wrapperPackageDir)} && npm publish --access public --tag ${NPM_TAG}`;
 
 console.log(`\n=== Published v${VERSION} successfully ===\n`);
