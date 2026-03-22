@@ -173,6 +173,21 @@ npm uninstall gambi-sdk
 bun remove gambi-sdk
 ```
 
+### TUI
+
+Interactive terminal dashboard for monitoring and managing rooms in real-time. Requires [Bun](https://bun.sh).
+
+```bash
+bun add -g gambi-tui
+```
+
+**Usage:**
+
+```bash
+gambi-tui                                    # Connect to localhost:3000
+gambi-tui --hub http://192.168.1.100:3000    # Connect to remote hub
+```
+
 ---
 
 ## Quick Start
@@ -522,7 +537,7 @@ gambi/
 │   └── sdk/               # Vercel AI SDK integration
 ├── apps/
 │   ├── docs/              # Documentation site (Astro Starlight)
-│   └── tui/               # Terminal UI for monitoring
+│   └── tui/               # Terminal UI (published as gambi-tui)
 └── docs/                  # Architecture documentation
 ```
 
@@ -532,6 +547,7 @@ gambi/
 |---------|-------------|---------|
 | `gambi` | CLI for managing hubs and participants | 0.1.0 |
 | `gambi-sdk` | Vercel AI SDK provider | 0.1.0 |
+| `gambi-tui` | Interactive terminal dashboard | 0.3.1 |
 | `@gambi/core` | Hub server, room management, SSE, mDNS (internal) | 0.0.1 |
 
 For detailed architecture, see [docs/architecture.md](./docs/architecture.md).

@@ -40,6 +40,7 @@ jobs:
 
           const files = [
             "apps/docs/package.json",
+            "apps/tui/package.json",
             "packages/cli/package.json",
             "packages/config/package.json",
             "packages/core/package.json",

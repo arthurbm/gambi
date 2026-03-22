@@ -157,6 +157,7 @@ await $`bun install`;
 
 console.log("\nBuilding publishable artifacts...");
 await $`bun run --cwd packages/sdk build`;
+await $`bun run --cwd apps/tui build`;
 
 const cliManifest = await ensureCliDistribution();
 
@@ -221,6 +222,11 @@ try {
   console.log("\n--- gambi-sdk ---");
   await $`cd packages/sdk && npm publish --access public --tag ${NPM_TAG}`;
   npmVerificationResults.push(await verifyNpmPackage("gambi-sdk", NPM_TAG));
+  console.log("  ✓ verified npm metadata");
+
+  console.log("\n--- gambi-tui ---");
+  await $`cd apps/tui && npm publish --access public --tag ${NPM_TAG}`;
+  npmVerificationResults.push(await verifyNpmPackage("gambi-tui", NPM_TAG));
   console.log("  ✓ verified npm metadata");
 
   for (const binaryPackage of cliManifest.binaryPackages) {
