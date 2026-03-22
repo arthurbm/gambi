@@ -263,19 +263,23 @@ export async function discoverHubs(
   const hubUrl = options.hubUrl ?? DEFAULT_HUB_URL;
   const timeoutMs = options.timeoutMs ?? 1500;
   const services: DiscoveredService[] = [];
-  let stopBrowsing: (() => void | Promise<void>) | undefined;
+  let stopBrowsing: () => void | Promise<void> = () => undefined;
+  let didStartBrowsing = false;
 
   try {
     stopBrowsing =
       (await browseServices((service) => {
         services.push(service);
-      })) ?? (() => undefined);
+      })) ?? stopBrowsing;
+    didStartBrowsing = true;
   } catch {
-    stopBrowsing = () => undefined;
+    // Ignore mDNS browse errors; discovery will proceed with configured hub only.
   }
 
   try {
-    await wait(timeoutMs);
+    if (didStartBrowsing) {
+      await wait(timeoutMs);
+    }
   } finally {
     try {
       await stopBrowsing();
