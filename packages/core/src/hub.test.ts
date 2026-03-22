@@ -451,6 +451,7 @@ describe("Hub", () => {
   beforeEach(() => {
     Room.clear();
   });
+
   async function createRoom(
     name: string,
     defaults?: {
@@ -497,6 +498,20 @@ describe("Hub", () => {
     });
     return { res, data: await res.json() };
   }
+
+  describe("mDNS", () => {
+    test("starts and stops with mDNS enabled", () => {
+      const mdnsHub = createHub({
+        port: getRandomPort(),
+        hostname: "127.0.0.1",
+        mdns: true,
+      });
+
+      expect(mdnsHub.mdnsName).toBeDefined();
+
+      mdnsHub.close();
+    });
+  });
 
   describe("GET /health", () => {
     test("returns health status", async () => {
