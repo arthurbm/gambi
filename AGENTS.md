@@ -29,7 +29,7 @@ Workspaces:
 - `packages/core`: hub HTTP, sala/participante, SSE, mDNS e schemas/tipos.
 - `packages/cli`: workspace fonte do CLI `gambi`; a distribuição publicada é gerada em `packages/cli/dist`.
 - `packages/sdk`: provider para AI SDK, cliente HTTP e discovery opcional de hubs/salas para apps locais Node/Bun.
-- `apps/tui`: interface terminal (OpenTUI + React) para operação/monitoramento.
+- `apps/tui`: interface terminal (OpenTUI + React) para operação/monitoramento. Publicado como `gambi-tui` no npm.
 - `apps/docs`: documentação (Astro Starlight).
 - `packages/config`: configs TypeScript compartilhadas.
 
@@ -66,8 +66,8 @@ Health e disponibilidade:
 - Fonte: `packages/core/src/types.ts`.
 
 Comportamento do CLI:
-- `gambi` sem argumentos em TTY abre TUI.
-- Subcomandos registrados hoje: `serve`, `create`, `join`, `list`, `monitor`.
+- `gambi` sem argumentos exibe help com referencia ao `gambi-tui`.
+- Subcomandos registrados hoje: `serve`, `create`, `join`, `list`.
 - Todos os comandos suportam modo interativo: quando rodados sem flags obrigatorias em TTY, promptam o usuario via `@clack/prompts`.
 - Flags continuam funcionando normalmente para scripting e automacao.
 - No modo interativo do `join`, o usuario seleciona provedor LLM (Ollama, LM Studio, vLLM ou custom) e modelo de uma lista.
@@ -111,6 +111,7 @@ bun run --cwd packages/sdk check-types
 
 # TUI
 bun run --cwd apps/tui dev
+bun run --cwd apps/tui build
 bun run --cwd apps/tui test
 
 # Docs
@@ -182,7 +183,6 @@ Obrigatorio:
 
 ## 10) Inconsistencias conhecidas (documentar, nao ignorar)
 
-- `README.md` descreve comando `monitor`, mas o CLI atual nao registra esse subcomando.
 - `README.md` referencia `.claude/CLAUDE.md`, mas o arquivo de padroes existente esta na raiz como `CLAUDE.md`.
 - Alguns READMEs de workspace estao placeholders e nao refletem comportamento real.
 
@@ -204,8 +204,8 @@ Arquitetura atual do CLI:
 Fluxo oficial:
 - Fonte de verdade do release: `.github/workflows/release.yml` e `scripts/publish.ts`.
 - O workflow captura um commit de origem, calcula uma versao sincronizada, builda o CLI uma vez, reutiliza esse artifact no publish npm e depois publica os mesmos binarios no GitHub Release.
-- Ordem obrigatoria de publish do CLI: primeiro os pacotes binarios, depois o wrapper `gambi`.
-- O workflow oficial de release publica sempre o conjunto sincronizado de pacotes; nao fazer release parcial de `sdk` ou `cli`.
+- Ordem obrigatoria de publish: `gambi-sdk` → `gambi-tui` → pacotes binarios do CLI → wrapper `gambi`.
+- O workflow oficial de release publica sempre o conjunto sincronizado de pacotes; nao fazer release parcial de `sdk`, `tui` ou `cli`.
 - Nao fazer bump manual de versao em PRs normais; deixe isso para o workflow de release.
 
 Autenticacao npm:

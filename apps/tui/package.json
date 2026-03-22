@@ -1,26 +1,58 @@
 {
-  "name": "tui",
-  "private": true,
+  "name": "gambi-tui",
+  "version": "0.3.1",
+  "description": "Interactive terminal dashboard for Gambi - monitor and manage shared LLMs on your local network",
+  "keywords": [
+    "llm",
+    "tui",
+    "terminal",
+    "dashboard",
+    "ollama",
+    "ai",
+    "local-ai",
+    "local-llm",
+    "lm-studio",
+    "opentui"
+  ],
+  "author": "Arthur BM",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arthurbm/gambi.git",
+    "directory": "apps/tui"
+  },
+  "homepage": "https://github.com/arthurbm/gambi",
+  "bugs": "https://github.com/arthurbm/gambi/issues",
   "type": "module",
-  "main": "src/index.tsx",
-  "module": "src/index.tsx",
-  "types": "src/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/index.d.ts",
-      "import": "./src/index.tsx"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     }
   },
+  "bin": {
+    "gambi-tui": "./bin/gambi-tui.js"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md"
+  ],
   "scripts": {
     "dev": "bun run --watch src/index.tsx",
+    "build": "bun run build.ts",
+    "prepublishOnly": "bun run build",
+    "check-types": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
-    "@gambi/core": "workspace:*",
     "@hookform/resolvers": "^5.2.2",
     "@opentui/core": "^0.1.67",
     "@opentui/react": "^0.1.67",
     "@tanstack/react-query": "^5.90.20",
+    "bonjour-service": "^1.3.0",
     "nanoid": "^5.1.6",
     "react": "^19.2.3",
     "react-hook-form": "^7.71.1",
@@ -28,10 +60,11 @@
     "zustand": "^5.0.10"
   },
   "devDependencies": {
+    "@gambi/core": "workspace:*",
     "@types/bun": "latest",
     "@types/react": "^19.2.7"
   },
-  "peerDependencies": {
-    "typescript": "^5"
+  "publishConfig": {
+    "access": "public"
   }
 }

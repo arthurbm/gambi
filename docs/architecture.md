@@ -74,13 +74,13 @@ This is intentionally close to the “generic interface + interpreter” style y
 | Command | Result |
 |---------|--------|
 | `gambi` | Shows CLI help |
-| `gambi monitor` | Opens **TUI** - Interactive monitoring interface |
+| `gambi-tui` | Opens **TUI** - Interactive monitoring and management interface |
 | `gambi serve` | CLI - Starts hub server (scripting) |
 | `gambi create` | CLI - Creates room (scripting) |
 | `gambi join` | CLI - Joins as participant (scripting) |
 | `gambi list` | CLI - Lists rooms (scripting) |
 
-**Important:** The standalone CLI currently shows help when you run `gambi` with no subcommand. Use `gambi monitor` for the TUI.
+**Important:** The standalone CLI shows help when you run `gambi` with no subcommand. The TUI is a separate package: `bun add -g gambi-tui`.
 
 ### Feature Parity Matrix
 
@@ -193,9 +193,12 @@ For local Node.js/Bun applications, the SDK also exposes optional discovery help
 
 These helpers are additive. `createGambi()` and `createClient()` remain explicit and do not perform implicit async discovery.
 
-### `tui`
+### `gambi-tui`
 
-Terminal UI for monitoring rooms and participants in real-time (uses SSE).
+Terminal UI for monitoring rooms and participants in real-time (uses SSE). Published as a separate npm package.
+
+**Installation:** `bun add -g gambi-tui`
+**Usage:** `gambi-tui --hub http://localhost:3000`
 
 ## Communication Flow
 

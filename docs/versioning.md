@@ -16,6 +16,7 @@ gambi-darwin-arm64    0.2.4
 gambi-darwin-x64      0.2.4
 gambi-windows-x64     0.2.4
 gambi-sdk             0.2.4
+gambi-tui             0.2.4
 @gambi/core           0.2.4
 ```
 
@@ -32,6 +33,7 @@ We keep this model because it makes compatibility obvious and keeps release tool
 | `gambi-darwin-x64` | Yes | macOS Intel CLI binary |
 | `gambi-windows-x64` | Yes | Windows x64 CLI binary |
 | `gambi-sdk` | Yes | SDK package for app integrations |
+| `gambi-tui` | Yes | Interactive terminal dashboard |
 | `@gambi/core` | No | Internal core library |
 | `@gambi/config` | No | Internal shared config |
 | `packages/cli` workspace | No | Source workspace used to build the wrapper and binary packages |
@@ -133,6 +135,7 @@ gh run watch
 The release workflow always publishes the synchronized package set:
 
 - `gambi-sdk`
+- `gambi-tui`
 - all CLI binary packages
 - wrapper `gambi`
 - GitHub Release assets built from the same CLI artifact

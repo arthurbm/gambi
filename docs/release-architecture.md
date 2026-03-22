@@ -136,8 +136,10 @@ If `gambi` were published first, users could install a wrapper that points to bi
 
 That is why the correct publish order is:
 
-1. all platform packages
-2. wrapper `gambi`
+1. `gambi-sdk`
+2. `gambi-tui`
+3. all platform binary packages
+4. wrapper `gambi`
 
 ## Why We Reuse Build Artifacts in CI
 
@@ -194,7 +196,7 @@ What we copied conceptually:
 - wrapper + binary package split
 - `optionalDependencies`
 - launcher script that resolves the right binary
-- publish order: binaries first, wrapper last
+- publish order: sdk → tui → binaries → wrapper
 - build once, reuse artifacts in CI
 
 What we intentionally did **not** copy yet:
