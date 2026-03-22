@@ -1,11 +1,40 @@
-import Bonjour, { type Browser, type Service } from "bonjour-service";
+import * as BonjourService from "bonjour-service";
+import type {
+  Bonjour as BonjourInstance,
+  Browser,
+  Service,
+} from "bonjour-service";
 
-let instance: Bonjour | null = null;
+type BonjourConstructor = new () => BonjourInstance;
+
+let instance: BonjourInstance | null = null;
 const publishedServices: Map<string, Service> = new Map();
 
-function getInstance(): Bonjour {
+function resolveBonjourConstructor(): BonjourConstructor {
+  const constructorCandidate =
+    BonjourService.Bonjour ??
+    (typeof BonjourService.default === "function"
+      ? BonjourService.default
+      : undefined) ??
+    (typeof BonjourService === "function" ? BonjourService : undefined);
+
+  if (typeof constructorCandidate !== "function") {
+    throw new TypeError(
+      "bonjour-service did not expose a usable Bonjour constructor"
+    );
+  }
+
+  return constructorCandidate as BonjourConstructor;
+}
+
+function createBonjourInstance(): BonjourInstance {
+  const Bonjour = resolveBonjourConstructor();
+  return new Bonjour();
+}
+
+function getInstance(): BonjourInstance {
   if (!instance) {
-    instance = new Bonjour();
+    instance = createBonjourInstance();
   }
   return instance;
 }
@@ -96,7 +125,7 @@ export interface DiscoveredService {
 export function browse(
   callback: (service: DiscoveredService) => void
 ): () => void {
-  const bonjour = new Bonjour();
+  const bonjour = createBonjourInstance();
 
   const browser: Browser = bonjour.find({ type: "gambi" }, (service) => {
     callback({
