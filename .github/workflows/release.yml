@@ -269,6 +269,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.version.outputs.ref }}
+
       - name: Download CLI distribution
         uses: actions/download-artifact@v8
         with:
