@@ -39,6 +39,67 @@ function createBrowseServices(services: DiscoveredService[]) {
 }
 
 describe("SDK discovery", () => {
+  test("does not wait for the mDNS timeout when browsing throws", async () => {
+    const startedAt = performance.now();
+
+    const hubs = await discoverHubs({
+      browseServices: () => {
+        throw new Error("mDNS unavailable");
+      },
+      fetchFn: (input) => {
+        const url = String(input);
+
+        if (url === "http://localhost:3000/health") {
+          return Promise.resolve(
+            Response.json({ status: "ok", timestamp: Date.now() })
+          );
+        }
+
+        throw new Error(`Unexpected URL: ${url}`);
+      },
+      hubUrl: "http://localhost:3000",
+      timeoutMs: 500,
+    });
+
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(hubs).toHaveLength(1);
+    expect(elapsedMs).toBeLessThan(250);
+  });
+
+  test("keeps the configured hub when mDNS browsing throws", async () => {
+    const hubs = await discoverHubs({
+      browseServices: () => {
+        throw new Error("mDNS unavailable");
+      },
+      fetchFn: (input) => {
+        const url = String(input);
+
+        if (url === "http://localhost:3000/health") {
+          return Promise.resolve(
+            Response.json({ status: "ok", timestamp: Date.now() })
+          );
+        }
+
+        throw new Error(`Unexpected URL: ${url}`);
+      },
+      hubUrl: "http://localhost:3000",
+      timeoutMs: 0,
+    });
+
+    expect(hubs).toEqual([
+      {
+        addresses: [],
+        host: "localhost",
+        hubUrl: "http://localhost:3000",
+        name: "Configured hub",
+        port: 3000,
+        source: "configured",
+        txt: {},
+      },
+    ]);
+  });
+
   test("discovers configured and mDNS hubs", async () => {
     const fetchFn: FetchLike = (input) => {
       const url = String(input);
