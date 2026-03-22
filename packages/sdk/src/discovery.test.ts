@@ -39,6 +39,39 @@ function createBrowseServices(services: DiscoveredService[]) {
 }
 
 describe("SDK discovery", () => {
+  test("keeps the configured hub when mDNS browsing throws", async () => {
+    const hubs = await discoverHubs({
+      browseServices: () => {
+        throw new Error("mDNS unavailable");
+      },
+      fetchFn: (input) => {
+        const url = String(input);
+
+        if (url === "http://localhost:3000/health") {
+          return Promise.resolve(
+            Response.json({ status: "ok", timestamp: Date.now() })
+          );
+        }
+
+        throw new Error(`Unexpected URL: ${url}`);
+      },
+      hubUrl: "http://localhost:3000",
+      timeoutMs: 0,
+    });
+
+    expect(hubs).toEqual([
+      {
+        addresses: [],
+        host: "localhost",
+        hubUrl: "http://localhost:3000",
+        name: "Configured hub",
+        port: 3000,
+        source: "configured",
+        txt: {},
+      },
+    ]);
+  });
+
   test("discovers configured and mDNS hubs", async () => {
     const fetchFn: FetchLike = (input) => {
       const url = String(input);

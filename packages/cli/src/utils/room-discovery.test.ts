@@ -33,6 +33,42 @@ function createBrowseServices(services: DiscoveredService[]) {
 }
 
 describe("room discovery", () => {
+  test("falls back to the configured hub when mDNS browsing fails", async () => {
+    const fetchFn: NonNullable<FetchLike> = (input) => {
+      const url = String(input);
+
+      if (url === "http://localhost:3000/health") {
+        return Promise.resolve(
+          Response.json({ status: "ok", timestamp: Date.now() })
+        );
+      }
+
+      if (url === "http://localhost:3000/rooms") {
+        return Promise.resolve(Response.json({ rooms: [alphaRoom] }));
+      }
+
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+
+    const rooms = await discoverRoomsOnNetwork({
+      browseServices: () => {
+        throw new Error("mDNS unavailable");
+      },
+      fetchFn,
+      seedHubUrl: "http://localhost:3000",
+      timeoutMs: 0,
+    });
+
+    expect(rooms).toEqual([
+      {
+        ...alphaRoom,
+        hubName: "Configured hub",
+        hubSource: "configured",
+        hubUrl: "http://localhost:3000",
+      },
+    ]);
+  });
+
   test("aggregates rooms from the configured hub and mDNS hubs", async () => {
     const fetchCalls: string[] = [];
     const fetchFn: NonNullable<FetchLike> = (input) => {

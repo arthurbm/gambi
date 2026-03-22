@@ -263,15 +263,25 @@ export async function discoverHubs(
   const hubUrl = options.hubUrl ?? DEFAULT_HUB_URL;
   const timeoutMs = options.timeoutMs ?? 1500;
   const services: DiscoveredService[] = [];
-  const stopBrowsing =
-    (await browseServices((service) => {
-      services.push(service);
-    })) ?? (() => undefined);
+  let stopBrowsing: (() => void | Promise<void>) | undefined;
+
+  try {
+    stopBrowsing =
+      (await browseServices((service) => {
+        services.push(service);
+      })) ?? (() => undefined);
+  } catch {
+    stopBrowsing = () => undefined;
+  }
 
   try {
     await wait(timeoutMs);
   } finally {
-    await stopBrowsing();
+    try {
+      await stopBrowsing();
+    } catch {
+      // mDNS cleanup must not prevent configured-hub discovery.
+    }
   }
 
   const hubCandidates = [
