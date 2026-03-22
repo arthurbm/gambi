@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { rm } from "node:fs/promises";
-import { $, build } from "bun";
+import { build } from "bun";
 
 // 1. Clean dist/
 await rm("./dist", { recursive: true, force: true });
