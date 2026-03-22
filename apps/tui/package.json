@@ -1,6 +1,6 @@
 {
   "name": "gambi-tui",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Interactive terminal dashboard for Gambi - monitor and manage shared LLMs on your local network",
   "keywords": [
     "llm",
