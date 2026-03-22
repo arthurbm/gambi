@@ -82,8 +82,8 @@ async function verifyNpmPackage(
   packageName: string,
   tag: string
 ): Promise<NpmVerificationResult> {
-  const retryAttempts = 5;
-  const retryDelayMs = 3000;
+  const retryAttempts = 10;
+  const retryDelayMs = 5000;
   let lastError: Error | undefined;
 
   for (let attempt = 1; attempt <= retryAttempts; attempt++) {
