@@ -1,11 +1,14 @@
-import Bonjour, { type Browser, type Service } from "bonjour-service";
+import * as BonjourModule from "bonjour-service";
+import type { Browser, Service } from "bonjour-service";
 
-let instance: Bonjour | null = null;
+const BonjourConstructor = BonjourModule.Bonjour ?? BonjourModule.default;
+
+let instance: InstanceType<typeof BonjourConstructor> | null = null;
 const publishedServices: Map<string, Service> = new Map();
 
-function getInstance(): Bonjour {
+function getInstance(): InstanceType<typeof BonjourConstructor> {
   if (!instance) {
-    instance = new Bonjour();
+    instance = new BonjourConstructor();
   }
   return instance;
 }
@@ -96,7 +99,7 @@ export interface DiscoveredService {
 export function browse(
   callback: (service: DiscoveredService) => void
 ): () => void {
-  const bonjour = new Bonjour();
+  const bonjour = new BonjourConstructor();
 
   const browser: Browser = bonjour.find({ type: "gambi" }, (service) => {
     callback({
