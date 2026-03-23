@@ -125,7 +125,7 @@ For local Node.js or Bun applications, you can resolve a room first and keep the
 
 ```typescript
 import { createGambi, resolveGambiTarget } from "gambi-sdk";
-// or import only discovery (smaller import, no AI SDK peer dep needed):
+// or import only discovery (smaller import, no AI SDK needed at runtime):
 // import { resolveGambiTarget } from "gambi-sdk/discovery";
 
 const target = await resolveGambiTarget({
