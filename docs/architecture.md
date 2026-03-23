@@ -79,6 +79,7 @@ This is intentionally close to the “generic interface + interpreter” style y
 | `gambi create` | CLI - Creates room (scripting) |
 | `gambi join` | CLI - Joins as participant (scripting) |
 | `gambi list` | CLI - Lists rooms (scripting) |
+| `gambi update` | CLI - Updates the current install (bun, npm, or standalone) |
 
 **Important:** The standalone CLI shows help when you run `gambi` with no subcommand. The TUI is a separate package: `bun add -g gambi-tui`.
 
@@ -89,6 +90,7 @@ This is intentionally close to the “generic interface + interpreter” style y
 | Create room | POST /rooms | `gambi create` | Create dialog |
 | List rooms | GET /rooms | `gambi list` | Room selector |
 | Join room | POST /rooms/:code/join | `gambi join` | Join dialog |
+| Update installed CLI | - | `gambi update` | N/A |
 | Leave room | DELETE /rooms/:code/leave/:id | Auto on exit | Leave action |
 | Health check | POST /rooms/:code/health | Auto (background) | Auto (background) |
 | Responses create | POST /rooms/:code/v1/responses | Via SDK | N/A (monitoring only) |

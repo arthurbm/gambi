@@ -67,9 +67,10 @@ Health e disponibilidade:
 
 Comportamento do CLI:
 - `gambi` sem argumentos exibe help com referencia ao `gambi-tui`.
-- Subcomandos registrados hoje: `serve`, `create`, `join`, `list`.
+- Subcomandos registrados hoje: `serve`, `create`, `join`, `list`, `update`.
 - Todos os comandos suportam modo interativo: quando rodados sem flags obrigatorias em TTY, promptam o usuario via `@clack/prompts`.
 - Flags continuam funcionando normalmente para scripting e automacao.
+- `gambi update` atualiza instalacoes via `bun`, `npm` ou binario standalone do instalador oficial.
 - No modo interativo do `join`, o usuario seleciona provedor LLM (Ollama, LM Studio, vLLM ou custom) e modelo de uma lista.
 
 ## 5) Setup e comandos oficiais

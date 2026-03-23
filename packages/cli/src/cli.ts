@@ -4,6 +4,7 @@ import { CreateCommand } from "./commands/create.ts";
 import { JoinCommand } from "./commands/join.ts";
 import { ListCommand } from "./commands/list.ts";
 import { ServeCommand } from "./commands/serve.ts";
+import { UpdateCommand } from "./commands/update.ts";
 import { Builtins, Cli } from "./utils/option.ts";
 
 function resolveCliVersion() {
@@ -32,6 +33,7 @@ cli.register(ServeCommand);
 cli.register(CreateCommand);
 cli.register(JoinCommand);
 cli.register(ListCommand);
+cli.register(UpdateCommand);
 cli.register(Builtins.HelpCommand);
 cli.register(Builtins.VersionCommand);
 
