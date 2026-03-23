@@ -21,6 +21,7 @@ These helpers are optional. `createGambi()` and `createClient()` stay explicit a
 
 ```typescript
 import { createClient, createGambi, resolveGambiTarget } from "gambi-sdk";
+// or import only discovery: import { resolveGambiTarget } from "gambi-sdk/discovery";
 
 const target = await resolveGambiTarget({
   roomCode: "ABC123", // optional if exactly one room is available

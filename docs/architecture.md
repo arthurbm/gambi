@@ -193,6 +193,8 @@ For local Node.js/Bun applications, the SDK also exposes optional discovery help
 - `discoverRooms()` - aggregate rooms across reachable hubs
 - `resolveGambiTarget()` - resolve one room to `{ hubUrl, roomCode }`
 
+These helpers are available from the root export (`gambi-sdk`) or from the dedicated subpath `gambi-sdk/discovery` for a smaller import surface.
+
 These helpers are additive. `createGambi()` and `createClient()` remain explicit and do not perform implicit async discovery.
 
 ### `gambi-tui`
