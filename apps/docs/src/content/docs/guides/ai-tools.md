@@ -156,6 +156,7 @@ For local Node.js or Bun applications, you can also discover the hub and room fi
 
 ```typescript
 import { createGambi, resolveGambiTarget } from "gambi-sdk";
+// or: import { resolveGambiTarget } from "gambi-sdk/discovery";
 
 const target = await resolveGambiTarget({
   roomCode: "ABC123", // optional if only one room is visible

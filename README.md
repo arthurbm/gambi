@@ -237,6 +237,7 @@ Example config JSON:
 
 ```typescript
 import { createGambi, resolveGambiTarget } from "gambi-sdk";
+// Discovery also available as: import { resolveGambiTarget } from "gambi-sdk/discovery"
 import { generateText } from "ai";
 
 const target = await resolveGambiTarget({

@@ -125,6 +125,8 @@ For local Node.js or Bun applications, you can resolve a room first and keep the
 
 ```typescript
 import { createGambi, resolveGambiTarget } from "gambi-sdk";
+// or import only discovery (smaller import, no AI SDK peer dep needed):
+// import { resolveGambiTarget } from "gambi-sdk/discovery";
 
 const target = await resolveGambiTarget({
   roomCode: "ABC123",
@@ -136,7 +138,7 @@ const gambi = createGambi({
 });
 ```
 
-The SDK also exposes `discoverHubs()` and `discoverRooms()` if you want to build your own room picker UI.
+The SDK also exposes `discoverHubs()` and `discoverRooms()` if you want to build your own room picker UI. All discovery functions are available from the root export or from `gambi-sdk/discovery`.
 
 ## API Reference
 
