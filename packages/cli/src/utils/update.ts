@@ -20,6 +20,10 @@ const MANUAL_UPDATE_COMMANDS = [
 ] as const;
 const WHITESPACE_PATTERN = /\s+/;
 
+/** Resolves execPath and Bun single-file argv entries like `/$bunfs/root/gambi-linux-x64`. */
+const NPM_GAMBI_PLATFORM_PACKAGE_RE =
+  /(?:^|[\\/])gambi-(linux|darwin|windows)-(x64|arm64)(?:[\\/]|\.exe(?:$|[\\/])|$)/;
+
 function normalizePath(pathname: string) {
   return pathname.replaceAll("\\", "/").toLowerCase();
 }
@@ -45,6 +49,14 @@ function detectPackageManagerFromUserAgent(userAgent?: string | null) {
   return normalizePackageManager(candidate);
 }
 
+function pathLooksLikeNpmGambiPlatformLayout(pathname: string): boolean {
+  const n = normalizePath(pathname);
+  if (n.includes("/$bunfs/root/gambi-")) {
+    return true;
+  }
+  return NPM_GAMBI_PLATFORM_PACKAGE_RE.test(n);
+}
+
 function detectPackageManagerFromPaths(paths: string[]) {
   const normalizedPaths = paths.map(normalizePath);
 
@@ -60,7 +72,8 @@ function detectPackageManagerFromPaths(paths: string[]) {
     normalizedPaths.some(
       (pathname) =>
         pathname.includes(`/node_modules/${PACKAGE_NAME}/`) ||
-        pathname.includes(`/node_modules/${PACKAGE_NAME}-`)
+        pathname.includes(`/node_modules/${PACKAGE_NAME}-`) ||
+        pathLooksLikeNpmGambiPlatformLayout(pathname)
     )
   ) {
     return "npm" satisfies SupportedPackageManager;

@@ -54,6 +54,20 @@ describe("update helpers", () => {
     });
   });
 
+  test("detects npm when execPath resolves to the platform package outside node_modules (symlinked global layout)", () => {
+    expect(
+      resolveUpdatePlan({
+        execPath: "/workspace/packages/cli/dist/npm/gambi-linux-x64/bin/gambi",
+        argv: ["bun", "/$bunfs/root/gambi-linux-x64", "update", "--dry-run"],
+        userAgent: null,
+      })
+    ).toEqual({
+      manager: "npm",
+      args: ["install", "-g", "gambi@latest"],
+      command: "npm install -g gambi@latest",
+    });
+  });
+
   test("returns null when the install source is unknown", () => {
     expect(
       resolveUpdatePlan({
