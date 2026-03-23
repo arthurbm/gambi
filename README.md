@@ -127,11 +127,13 @@ bun add -g gambi
 gambi --version
 ```
 
-**Update to the latest package version:**
+**Update to the latest installed version:**
 
 ```bash
 gambi update
 ```
+
+`gambi update` supports Bun/npm global installs and the official standalone installer paths.
 
 **Uninstall:**
 
@@ -425,7 +427,7 @@ gambi join --code ABC123 --model llama3 --config ./participant-config.json
 #### Update the CLI Package
 
 ```bash
-# Detect the installed package manager and update to the latest release:
+# Detect the installed install method and update to the latest release:
 gambi update
 
 # Preview the exact command without executing it:
