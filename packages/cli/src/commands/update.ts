@@ -19,12 +19,7 @@ function formatManualCommands() {
     .join("\n");
 }
 
-function runPackageManagerUpdate(
-  manager: "bun" | "npm",
-  args: string[],
-  stderr: NodeJS.WritableStream,
-  stdout: NodeJS.WritableStream
-) {
+function runPackageManagerUpdate(manager: "bun" | "npm", args: string[]) {
   const result = spawnSync(manager, args, {
     stdio: "inherit",
     windowsHide: false,
@@ -35,16 +30,10 @@ function runPackageManagerUpdate(
       result.error instanceof Error
         ? result.error.message
         : String(result.error);
-    stderr.write(`Failed to run update: ${message}\n`);
-    return 1;
+    throw new Error(message);
   }
 
-  const code = typeof result.status === "number" ? result.status : 1;
-  if (code === 0) {
-    stdout.write("Gambi update finished.\n");
-  }
-
-  return code;
+  return typeof result.status === "number" ? result.status : 1;
 }
 
 export class UpdateCommand extends Command {
@@ -166,11 +155,16 @@ export class UpdateCommand extends Command {
       return this.runStandaloneUpdate(plan);
     }
 
-    return runPackageManagerUpdate(
-      plan.manager,
-      plan.args,
-      this.context.stderr,
-      this.context.stdout
-    );
+    try {
+      const code = runPackageManagerUpdate(plan.manager, plan.args);
+      if (code === 0) {
+        this.context.stdout.write("Gambi update finished.\n");
+      }
+      return code;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.context.stderr.write(`Failed to run update: ${message}\n`);
+      return 1;
+    }
   }
 }

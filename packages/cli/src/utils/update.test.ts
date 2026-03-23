@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -197,6 +198,66 @@ describe("standalone update execution", () => {
       expect(result).toEqual({ kind: "updated" });
       expect(await readFile(binaryPath, "utf8")).toBe("new-binary");
     } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("cleans up temporary files when the Windows updater process fails to spawn", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "gambi-update-win-test-"));
+    const binaryPath = join(tempDir, "gambi.exe");
+    const fixedNow = 1_717_171_717_171;
+    const originalDateNow = Date.now;
+
+    await writeFile(binaryPath, "old-binary");
+
+    try {
+      Date.now = () => fixedNow;
+
+      const plan = resolveUpdatePlan({
+        execPath: binaryPath,
+        platform: "win32",
+        arch: "x64",
+        releaseBaseUrl: "https://example.com/releases/latest/download",
+      });
+
+      expect(plan).not.toBeNull();
+      expect(plan?.kind).toBe("standalone");
+      if (!plan || plan.kind !== "standalone") {
+        throw new Error("Expected standalone update plan");
+      }
+
+      const tempBinaryPath = join(tempDir, `.gambi.exe.tmp-${process.pid}`);
+      const updaterScriptPath = join(
+        tmpdir(),
+        `gambi-update-${process.pid}-${fixedNow}.ps1`
+      );
+
+      const failingSpawn = (() => {
+        const child = new EventEmitter() as EventEmitter & { unref(): void };
+        child.unref = () => undefined;
+        queueMicrotask(() => {
+          child.emit("error", new Error("powershell missing"));
+        });
+        return child;
+      }) as unknown as NonNullable<
+        Parameters<typeof executeStandaloneUpdate>[1]
+      >["spawnImpl"];
+
+      await expect(
+        executeStandaloneUpdate(plan, {
+          fetchImpl: async (_input, _init) =>
+            new Response("windows-binary", {
+              headers: { "content-type": "application/octet-stream" },
+            }),
+          spawnImpl: failingSpawn,
+        })
+      ).rejects.toThrow("powershell missing");
+
+      await expect(Bun.file(tempBinaryPath).exists()).resolves.toBe(false);
+      await expect(Bun.file(updaterScriptPath).exists()).resolves.toBe(false);
+      expect(await readFile(binaryPath, "utf8")).toBe("old-binary");
+    } finally {
+      Date.now = originalDateNow;
       await rm(tempDir, { recursive: true, force: true });
     }
   });

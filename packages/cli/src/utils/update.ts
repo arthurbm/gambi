@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import type { EventEmitter } from "node:events";
 import { chmod, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -33,6 +34,29 @@ export type UpdatePlan = PackageManagerUpdatePlan | StandaloneUpdatePlan;
 
 export interface StandaloneUpdateResult {
   kind: "scheduled" | "updated";
+}
+
+interface SpawnedProcess extends EventEmitter {
+  unref(): void;
+}
+
+type FetchLike = (
+  input: string | URL | Request,
+  init?: RequestInit
+) => Promise<Response>;
+type SpawnLike = (
+  command: string,
+  args: string[],
+  options: {
+    detached: true;
+    stdio: "ignore";
+    windowsHide: true;
+  }
+) => SpawnedProcess;
+
+interface StandaloneUpdateRuntime {
+  fetchImpl?: FetchLike;
+  spawnImpl?: SpawnLike;
 }
 
 interface DetectInstallSourceOptions {
@@ -184,6 +208,22 @@ function detectPackageManagerFromPaths(paths: string[]) {
   return null;
 }
 
+function buildPackageManagerPlan(
+  manager: SupportedPackageManager
+): PackageManagerUpdatePlan {
+  const args =
+    manager === "bun"
+      ? ["add", "-g", `${PACKAGE_NAME}@latest`]
+      : ["install", "-g", `${PACKAGE_NAME}@latest`];
+
+  return {
+    kind: "package-manager",
+    manager,
+    args,
+    command: [manager, ...args].join(" "),
+  };
+}
+
 export function detectPackageManager(options: DetectInstallSourceOptions = {}) {
   const explicitManager = normalizePackageManager(options.manager);
   if (explicitManager) {
@@ -233,34 +273,14 @@ function detectStandaloneBinaryPath(options: DetectInstallSourceOptions) {
 export function resolveUpdatePlan(options: DetectInstallSourceOptions = {}) {
   const explicitManager = normalizePackageManager(options.manager);
   if (explicitManager) {
-    const args =
-      explicitManager === "bun"
-        ? ["add", "-g", `${PACKAGE_NAME}@latest`]
-        : ["install", "-g", `${PACKAGE_NAME}@latest`];
-
-    return {
-      kind: "package-manager",
-      manager: explicitManager,
-      args,
-      command: [explicitManager, ...args].join(" "),
-    } satisfies PackageManagerUpdatePlan;
+    return buildPackageManagerPlan(explicitManager);
   }
 
   const execPathManager = detectPackageManagerFromPaths([
     options.execPath ?? process.execPath,
   ]);
   if (execPathManager) {
-    const args =
-      execPathManager === "bun"
-        ? ["add", "-g", `${PACKAGE_NAME}@latest`]
-        : ["install", "-g", `${PACKAGE_NAME}@latest`];
-
-    return {
-      kind: "package-manager",
-      manager: execPathManager,
-      args,
-      command: [execPathManager, ...args].join(" "),
-    } satisfies PackageManagerUpdatePlan;
+    return buildPackageManagerPlan(execPathManager);
   }
 
   const standaloneTarget = detectStandaloneBinaryPath(options);
@@ -285,17 +305,7 @@ export function resolveUpdatePlan(options: DetectInstallSourceOptions = {}) {
     options.argv ?? process.argv
   );
   if (argvManager) {
-    const args =
-      argvManager === "bun"
-        ? ["add", "-g", `${PACKAGE_NAME}@latest`]
-        : ["install", "-g", `${PACKAGE_NAME}@latest`];
-
-    return {
-      kind: "package-manager",
-      manager: argvManager,
-      args,
-      command: [argvManager, ...args].join(" "),
-    } satisfies PackageManagerUpdatePlan;
+    return buildPackageManagerPlan(argvManager);
   }
 
   const userAgentManager = detectPackageManagerFromUserAgent(
@@ -305,17 +315,7 @@ export function resolveUpdatePlan(options: DetectInstallSourceOptions = {}) {
     return null;
   }
 
-  const args =
-    userAgentManager === "bun"
-      ? ["add", "-g", `${PACKAGE_NAME}@latest`]
-      : ["install", "-g", `${PACKAGE_NAME}@latest`];
-
-  return {
-    kind: "package-manager",
-    manager: userAgentManager,
-    args,
-    command: [userAgentManager, ...args].join(" "),
-  } satisfies PackageManagerUpdatePlan;
+  return buildPackageManagerPlan(userAgentManager);
 }
 
 function createTemporaryBinaryPath(binaryPath: string) {
@@ -326,7 +326,7 @@ function createTemporaryBinaryPath(binaryPath: string) {
 
 async function downloadStandaloneBinary(
   plan: StandaloneUpdatePlan,
-  fetchImpl: typeof fetch
+  fetchImpl: FetchLike
 ) {
   const response = await fetchImpl(plan.downloadUrl, {
     headers: {
@@ -370,9 +370,45 @@ function createWindowsUpdaterScript() {
   ].join("\n");
 }
 
+async function cleanupWindowsStandaloneUpdateArtifacts(
+  temporaryBinaryPath: string,
+  updaterScriptPath: string
+) {
+  await Promise.all([
+    rm(temporaryBinaryPath, { force: true }),
+    rm(updaterScriptPath, { force: true }),
+  ]);
+}
+
+function waitForSpawnedProcess(childProcess: EventEmitter) {
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+
+    const resolveOnce = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve();
+    };
+
+    const rejectOnce = (error: unknown) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(error);
+    };
+
+    childProcess.once("spawn", resolveOnce);
+    childProcess.once("error", rejectOnce);
+  });
+}
+
 async function scheduleWindowsStandaloneUpdate(
   plan: StandaloneUpdatePlan,
-  temporaryBinaryPath: string
+  temporaryBinaryPath: string,
+  spawnImpl: SpawnLike
 ) {
   const updaterScriptPath = join(
     tmpdir(),
@@ -381,41 +417,53 @@ async function scheduleWindowsStandaloneUpdate(
 
   await writeFile(updaterScriptPath, createWindowsUpdaterScript());
 
-  const updaterProcess = spawn(
-    "powershell.exe",
-    [
-      "-NoProfile",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-File",
-      updaterScriptPath,
-      "-ParentPid",
-      String(process.pid),
-      "-SourcePath",
-      temporaryBinaryPath,
-      "-DestinationPath",
-      plan.binaryPath,
-    ],
-    {
-      detached: true,
-      stdio: "ignore",
-      windowsHide: true,
-    }
-  );
+  try {
+    const updaterProcess = spawnImpl(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        updaterScriptPath,
+        "-ParentPid",
+        String(process.pid),
+        "-SourcePath",
+        temporaryBinaryPath,
+        "-DestinationPath",
+        plan.binaryPath,
+      ],
+      {
+        detached: true,
+        stdio: "ignore",
+        windowsHide: true,
+      }
+    );
 
-  updaterProcess.unref();
+    await waitForSpawnedProcess(updaterProcess);
+    updaterProcess.unref();
+  } catch (error) {
+    await cleanupWindowsStandaloneUpdateArtifacts(
+      temporaryBinaryPath,
+      updaterScriptPath
+    );
+    throw error;
+  }
 }
 
 export async function executeStandaloneUpdate(
   plan: StandaloneUpdatePlan,
-  fetchImpl: typeof fetch = fetch
+  runtime: StandaloneUpdateRuntime = {}
 ): Promise<StandaloneUpdateResult> {
+  const fetchImpl = runtime.fetchImpl ?? fetch;
+  const spawnImpl = runtime.spawnImpl ?? spawn;
+
   await stat(dirname(plan.binaryPath));
 
   const temporaryBinaryPath = await downloadStandaloneBinary(plan, fetchImpl);
 
   if (plan.platform === "win32") {
-    await scheduleWindowsStandaloneUpdate(plan, temporaryBinaryPath);
+    await scheduleWindowsStandaloneUpdate(plan, temporaryBinaryPath, spawnImpl);
     return { kind: "scheduled" };
   }
 

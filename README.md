@@ -427,7 +427,7 @@ gambi join --code ABC123 --model llama3 --config ./participant-config.json
 #### Update the CLI Package
 
 ```bash
-# Detect the installed install method and update to the latest release:
+# Detect the installation method and update to the latest release:
 gambi update
 
 # Preview the exact command without executing it:
