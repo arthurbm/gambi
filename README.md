@@ -91,7 +91,7 @@ const gambi = createGambi({ roomCode: "ABC123" });
 
 ### CLI
 
-The CLI allows you to start hubs, create rooms, and join as a participant.
+The CLI allows you to start hubs, create rooms, join as a participant, and update the installed package.
 
 **Linux / macOS (recommended - standalone binary):**
 
@@ -125,6 +125,12 @@ bun add -g gambi
 
 ```bash
 gambi --version
+```
+
+**Update to the latest package version:**
+
+```bash
+gambi update
 ```
 
 **Uninstall:**
@@ -262,12 +268,14 @@ gambi serve
 gambi create
 gambi join
 gambi list
+gambi update
 
 # Or use flags for scripting:
 gambi serve --mdns
 gambi create --name "My Room" --config ./room-defaults.json
 gambi join --code ABC123 --model llama3 --config ./participant-config.json
 gambi list --json
+gambi update --dry-run
 ```
 
 Room defaults are merged at request time with precedence `room defaults -> participant defaults -> runtime request`. Public room/participant listings expose only a safe summary such as `hasInstructions`, not the raw instructions text.
@@ -412,6 +420,16 @@ gambi join
 gambi join --code ABC123 --model llama3
 gambi join --code ABC123 --model mistral --endpoint http://localhost:1234
 gambi join --code ABC123 --model llama3 --config ./participant-config.json
+```
+
+#### Update the CLI Package
+
+```bash
+# Detect the installed package manager and update to the latest release:
+gambi update
+
+# Preview the exact command without executing it:
+gambi update --dry-run
 ```
 
 ### SDK Examples
