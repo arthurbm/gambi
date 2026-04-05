@@ -3,7 +3,7 @@ import {
   type ParticipantAuthHeaders,
   type ParticipantCapabilities,
   ParticipantInfo,
-  RoomInfoPublic,
+  RoomSummary,
   type RuntimeConfig,
 } from "@gambi/core/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -14,16 +14,10 @@ import { useAppStore } from "../../store/app-store";
 // Schemas
 // ============================================================================
 
-const ListRoomsResponse = z.object({
-  rooms: z.array(
-    RoomInfoPublic.extend({
-      participantCount: z.number().optional(),
-    })
-  ),
-});
+const ListRoomsResponse = z.array(RoomSummary);
 
 const CreateRoomResponse = z.object({
-  room: RoomInfoPublic,
+  room: RoomSummary,
   hostId: z.string(),
 });
 
@@ -36,9 +30,7 @@ const SuccessResponse = z.object({
   success: z.literal(true),
 });
 
-const ParticipantsResponse = z.object({
-  participants: z.array(ParticipantInfo),
-});
+const ParticipantsResponse = z.array(ParticipantInfo);
 
 // ============================================================================
 // Types
@@ -98,13 +90,17 @@ async function fetchAndParse<T>(
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
     const errorMessage =
-      (errorBody as { error?: string }).error ||
+      (errorBody as { error?: { message?: string } }).error?.message ||
       `HTTP ${response.status}: ${response.statusText}`;
     throw new Error(errorMessage);
   }
 
-  const data: unknown = await response.json();
-  return schema.parse(data);
+  const envelope: unknown = await response.json();
+  const rawData =
+    envelope && typeof envelope === "object" && "data" in envelope
+      ? (envelope as { data: unknown }).data
+      : envelope;
+  return schema.parse(rawData);
 }
 
 // ============================================================================
@@ -116,7 +112,7 @@ export function useRoomsList() {
 
   return useQuery({
     queryKey: roomKeys.list(),
-    queryFn: () => fetchAndParse(`${hubUrl}/rooms`, ListRoomsResponse),
+    queryFn: () => fetchAndParse(`${hubUrl}/v1/rooms`, ListRoomsResponse),
   });
 }
 
@@ -127,7 +123,7 @@ export function useParticipants(roomCode: string) {
     queryKey: roomKeys.participants(roomCode),
     queryFn: () =>
       fetchAndParse(
-        `${hubUrl}/rooms/${roomCode}/participants`,
+        `${hubUrl}/v1/rooms/${roomCode}/participants`,
         ParticipantsResponse
       ),
     enabled: Boolean(roomCode),
@@ -144,7 +140,7 @@ export function useCreateRoom() {
 
   return useMutation({
     mutationFn: (data: CreateRoomData) =>
-      fetchAndParse(`${hubUrl}/rooms`, CreateRoomResponse, {
+      fetchAndParse(`${hubUrl}/v1/rooms`, CreateRoomResponse, {
         method: "POST",
         body: JSON.stringify(data),
       }),
@@ -159,10 +155,14 @@ export function useJoinRoom() {
 
   return useMutation({
     mutationFn: ({ code, data }: { code: string; data: JoinParticipantData }) =>
-      fetchAndParse(`${hubUrl}/rooms/${code}/join`, JoinRoomResponse, {
-        method: "POST",
-        body: JSON.stringify(data),
-      }),
+      fetchAndParse(
+        `${hubUrl}/v1/rooms/${code}/participants/${data.id}`,
+        JoinRoomResponse,
+        {
+          method: "PUT",
+          body: JSON.stringify(data),
+        }
+      ),
   });
 }
 
@@ -179,7 +179,7 @@ export function useLeaveRoom() {
       participantId: string;
     }) =>
       fetchAndParse(
-        `${hubUrl}/rooms/${code}/leave/${participantId}`,
+        `${hubUrl}/v1/rooms/${code}/participants/${participantId}`,
         SuccessResponse,
         { method: "DELETE" }
       ),
@@ -200,9 +200,12 @@ export function useHealthCheck() {
       code: string;
       participantId: string;
     }) =>
-      fetchAndParse(`${hubUrl}/rooms/${code}/health`, SuccessResponse, {
-        method: "POST",
-        body: JSON.stringify({ id: participantId }),
-      }),
+      fetchAndParse(
+        `${hubUrl}/v1/rooms/${code}/participants/${participantId}/heartbeat`,
+        SuccessResponse,
+        {
+          method: "POST",
+        }
+      ),
   });
 }

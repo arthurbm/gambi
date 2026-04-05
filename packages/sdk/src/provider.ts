@@ -21,7 +21,7 @@ export interface GambiModel {
 }
 
 interface ParticipantsResponse {
-  participants: ParticipantInfo[];
+  data: ParticipantInfo[];
 }
 
 interface ModelsResponse {
@@ -118,14 +118,12 @@ export function createGambi(options: GambiOptions): GambiProvider {
     defaultProtocol,
 
     async listParticipants(): Promise<ParticipantInfo[]> {
-      const response = await fetch(
-        `${hubUrl}/rooms/${options.roomCode}/participants`
-      );
+      const response = await fetch(`${hubUrl}/v1/rooms/${options.roomCode}/participants`);
       if (!response.ok) {
         throw new Error(`Failed to fetch participants: ${response.statusText}`);
       }
       const data = (await response.json()) as ParticipantsResponse;
-      return data.participants;
+      return data.data;
     },
 
     async listModels(): Promise<GambiModel[]> {

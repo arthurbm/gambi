@@ -100,7 +100,7 @@ export function useSSE(options: UseSSEOptions): UseSSEReturn {
     abortControllerRef.current = controller;
 
     try {
-      const url = `${hubUrl}/rooms/${roomCode}/events`;
+      const url = `${hubUrl}/v1/rooms/${roomCode}/events`;
       const response = await fetchSSEResponse(url, controller.signal);
 
       setConnected(true);
@@ -164,7 +164,14 @@ export function tryParseEvent(
     return undefined;
   }
   try {
-    return { event: eventType, data: JSON.parse(eventData) };
+    const parsed = JSON.parse(eventData) as {
+      type?: string;
+      data?: unknown;
+    };
+    return {
+      event: parsed.type ?? eventType,
+      data: parsed.data ?? parsed,
+    };
   } catch {
     return undefined;
   }

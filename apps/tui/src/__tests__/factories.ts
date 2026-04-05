@@ -32,6 +32,7 @@ export function createParticipant(
     endpoint: "http://localhost:11434",
     status: "online",
     joinedAt: now,
+    updatedAt: now,
     lastSeen: now,
     specs: {},
     config: { hasInstructions: false },

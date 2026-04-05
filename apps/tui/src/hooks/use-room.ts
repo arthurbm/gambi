@@ -44,12 +44,16 @@ export function useRoom(options: UseRoomOptions): UseRoomReturn {
   // Fetch initial participants
   const fetchParticipants = useCallback(async () => {
     try {
-      const response = await fetch(`${hubUrl}/rooms/${roomCode}/participants`);
+      const response = await fetch(
+        `${hubUrl}/v1/rooms/${roomCode}/participants`
+      );
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
-      const data = await response.json();
-      const parsed = z.array(ParticipantInfoSchema).safeParse(data);
+      const envelope = (await response.json()) as { data?: unknown };
+      const parsed = z
+        .array(ParticipantInfoSchema)
+        .safeParse(envelope.data ?? envelope);
       if (!parsed.success) {
         console.error("Invalid participants data:", parsed.error);
         return;
@@ -254,13 +258,13 @@ export function useRoom(options: UseRoomOptions): UseRoomReturn {
     (event: string, data: unknown) => {
       const handlers: Record<string, (d: unknown) => void> = {
         connected: handleConnected,
-        "room:created": handleRoomCreated,
-        "participant:joined": handleParticipantJoined,
-        "participant:left": handleParticipantLeft,
-        "participant:offline": handleParticipantOffline,
-        "llm:request": handleLlmRequest,
-        "llm:complete": handleLlmComplete,
-        "llm:error": handleLlmError,
+      "room.created": handleRoomCreated,
+      "participant.joined": handleParticipantJoined,
+      "participant.left": handleParticipantLeft,
+      "participant.offline": handleParticipantOffline,
+      "llm.request": handleLlmRequest,
+      "llm.complete": handleLlmComplete,
+      "llm.error": handleLlmError,
       };
       handlers[event]?.(data);
     },

@@ -7,6 +7,7 @@ import {
   type ParticipantInfoInternal,
   type RoomInfo,
   type RoomInfoPublic,
+  type RoomSummary,
   type RuntimeConfig,
 } from "./types.ts";
 
@@ -29,6 +30,14 @@ function toPublic(room: RoomInfo): RoomInfoPublic {
   return {
     ...publicRoom,
     defaults: defaults ? Participant.toPublicConfig(defaults) : undefined,
+    passwordProtected: !!passwordHash,
+  };
+}
+
+function toSummary(room: RoomState): RoomSummary {
+  return {
+    ...toPublic(room.info),
+    participantCount: room.participants.size,
   };
 }
 
@@ -89,10 +98,7 @@ function list(): RoomInfoPublic[] {
 function listWithParticipantCount(): (RoomInfoPublic & {
   participantCount: number;
 })[] {
-  return Array.from(rooms.values()).map((r) => ({
-    ...toPublic(r.info),
-    participantCount: r.participants.size,
-  }));
+  return Array.from(rooms.values()).map((room) => toSummary(room));
 }
 
 function remove(id: string): boolean {
@@ -121,6 +127,46 @@ function addParticipant(
     authHeaders,
   });
   return true;
+}
+
+function upsertParticipant(
+  roomId: string,
+  participant: ParticipantInfoInternal,
+  authHeaders: ParticipantAuthHeaders = {}
+): { created: boolean; participant: ParticipantInfoInternal } | null {
+  const room = rooms.get(roomId);
+  if (!room) {
+    return null;
+  }
+
+  const existing = room.participants.get(participant.id)?.info;
+  const now = Date.now();
+  const nextParticipant: ParticipantInfoInternal = existing
+    ? {
+        ...existing,
+        ...participant,
+        joinedAt: existing.joinedAt,
+        lastSeen: now,
+        updatedAt: now,
+        status: "online",
+      }
+    : {
+        ...participant,
+        joinedAt: participant.joinedAt || now,
+        lastSeen: now,
+        updatedAt: now,
+        status: "online",
+      };
+
+  room.participants.set(nextParticipant.id, {
+    info: nextParticipant,
+    authHeaders,
+  });
+
+  return {
+    created: !existing,
+    participant: nextParticipant,
+  };
 }
 
 function removeParticipant(roomId: string, participantId: string): boolean {
@@ -177,6 +223,7 @@ function updateLastSeen(roomId: string, participantId: string): boolean {
   }
 
   participant.lastSeen = Date.now();
+  participant.updatedAt = participant.lastSeen;
   participant.status = "online";
   return true;
 }
@@ -268,8 +315,10 @@ export const Room = {
   getByCode,
   list,
   listWithParticipantCount,
+  toSummary,
   remove,
   addParticipant,
+  upsertParticipant,
   removeParticipant,
   getParticipants,
   getParticipant,

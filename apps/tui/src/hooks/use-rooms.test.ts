@@ -75,6 +75,7 @@ describe("handleParticipantJoinedEvent", () => {
       status: "online",
       joinedAt: Date.now(),
       lastSeen: Date.now(),
+      updatedAt: Date.now(),
       specs: {},
       config: {},
     };
@@ -94,6 +95,7 @@ describe("handleParticipantJoinedEvent", () => {
       status: "online",
       joinedAt: Date.now(),
       lastSeen: Date.now(),
+      updatedAt: Date.now(),
       specs: {},
       config: {},
     };

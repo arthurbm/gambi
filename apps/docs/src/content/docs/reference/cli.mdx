@@ -1,15 +1,27 @@
 ---
 title: CLI Reference
-description: Complete reference for Gambi CLI commands.
+description: Reference for the Gambi operational CLI.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-The Gambi CLI provides commands for managing hubs, rooms, and participants.
+The Gambi CLI is the operational surface for hubs, rooms, participants, and room events.
 
-All commands support **interactive mode** — run without flags in a terminal and you'll be guided through each option step by step. Flags still work for scripting and automation.
+The CLI is resource-oriented:
 
-If you're coming from the old package and binary names, read [Migrate from Gambiarra](/guides/migrate-from-gambiarra/).
+```bash
+gambi hub serve
+gambi room create
+gambi room list
+gambi room get
+gambi participant join
+gambi participant leave
+gambi participant heartbeat
+gambi events watch
+gambi self update
+```
+
+`gambi-tui` remains the separate human-first monitoring interface.
 
 ## Installation
 
@@ -31,254 +43,420 @@ If you're coming from the old package and binary names, read [Migrate from Gambi
     bun add -g gambi
     ```
 
-    The published `gambi` package is a wrapper that installs only the matching platform binary for your machine.
+    The published `gambi` package is a wrapper that installs the matching platform binary for the current machine.
   </TabItem>
 </Tabs>
 
-### Uninstallation
+The recommended path is the standalone installer via `curl` or PowerShell. npm and bun remain supported.
 
-<Tabs>
-  <TabItem label="Linux / macOS" icon="linux">
-    ```bash
-    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.sh | bash
-    ```
-  </TabItem>
-  <TabItem label="Windows" icon="laptop">
-    ```powershell
-    irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.ps1 | iex
-    ```
-  </TabItem>
-  <TabItem label="npm / bun" icon="seti:npm">
-    ```bash
-    npm uninstall -g gambi
-    # or
-    bun remove -g gambi
-    ```
-  </TabItem>
-</Tabs>
+Verify:
 
-## Interactive Mode
-
-When you run any command without its required flags in a terminal (TTY), the CLI enters interactive mode and prompts you for each option:
-
+```bash
+gambi --version
 ```
-┌  gambi join
+
+## Global behavior
+
+### Output modes
+
+Every operational command supports:
+
+| Mode | Meaning | Typical use |
+| --- | --- | --- |
+| `text` | compact human-readable output | local terminal usage |
+| `json` | one structured JSON object | scripts and API-style automation |
+| `ndjson` | one JSON object per line | streaming agents, logs, pipelines |
+
+Defaults:
+
+| Context | Default |
+| --- | --- |
+| TTY + one-shot command | `text` |
+| piped stdout + one-shot command | `json` |
+| piped stdout + streaming command | `ndjson` |
+
+### Interactive control
+
+The CLI does not assume interactive usage by default for every command.
+
+Interactive mode is still available when it helps humans fill in missing values:
+
+```text
+┌  gambi participant join
 │
 ◇  Room code:
 │  ABC123
 │
-◆  LLM Provider:
-│  ● Ollama (localhost:11434)
-│  ○ LM Studio (localhost:1234)
-│  ○ vLLM (localhost:8000)
-│  ○ Custom URL
+◇  Participant ID:
+│  worker-1
 │
-◇  Select model:
-│  llama3.2
+◆  Model:
+│  ● llama3
+│  ○ qwen2.5
+│  ○ mistral
 │
-└  Joined room ABC123!
+◇  Nickname (optional):
+│  llama3@worker
+│
+└  Registered participant worker-1.
 ```
 
-Interactive mode is disabled when piping input (`echo "x" | gambi create`), so scripts work as before.
+| Control | Behavior |
+| --- | --- |
+| `--interactive` | allow prompts for missing required values |
+| `--no-interactive` | disable all prompts |
+| `GAMBI_NO_INTERACTIVE=1` | disable prompts through the environment |
 
-## Commands
+Commands that never auto-prompt:
 
-### `serve`
+| Command | Auto-prompts? |
+| --- | --- |
+| `gambi hub serve` | no |
+| `gambi room list` | no |
+| `gambi room get` | no |
+| `gambi participant heartbeat` | no |
+| `gambi events watch` | no |
 
-Start a hub server.
+### Named environments
 
-```bash
-# Interactive — prompts for port, host, mDNS:
-gambi serve
+The CLI reads XDG config from:
 
-# With flags:
-gambi serve [options]
+```text
+~/.config/gambi/config.json
 ```
 
-**Options:**
+Use `--env <name>` or `GAMBI_ENV` to select an environment profile.
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--port`, `-p` | Port to listen on | `3000` |
-| `--host`, `-h` | Host to bind to | `0.0.0.0` |
-| `--mdns`, `-m` | Enable mDNS auto-discovery | `false` |
-| `--quiet`, `-q` | Suppress logo output | `false` |
+Example:
 
-**Example:**
-
-```bash
-gambi serve --port 3000 --mdns
+```json
+{
+  "defaultEnv": "local",
+  "envs": {
+    "local": {
+      "hubUrl": "http://localhost:3000",
+      "endpoint": "http://localhost:11434"
+    },
+    "staging": {
+      "hubUrl": "http://192.168.1.10:3000",
+      "networkEndpoint": "http://192.168.1.25:11434",
+      "serve": {
+        "host": "0.0.0.0",
+        "port": 3000,
+        "mdns": true
+      }
+    }
+  }
+}
 ```
 
-### `create`
+### Exit codes
 
-Create a new room on a hub.
+Operational commands use deterministic exit codes:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | success |
+| `1` | internal or unexpected failure |
+| `2` | invalid usage or validation error |
+| `3` | connectivity or dependency failure |
+| `4` | remote rejection or conflict |
+
+## Command reference
+
+## `gambi hub serve`
+
+Start the Gambi hub.
 
 ```bash
-# Interactive — prompts for name and password:
-gambi create
-
-# With flags:
-gambi create --name "Room Name" [options]
+gambi hub serve [options]
 ```
 
-**Options:**
+Options:
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--name`, `-n` | Room name | Required (prompted in interactive mode) |
-| `--password`, `-p` | Password to protect the room | None |
-| `--hub`, `-H` | Hub URL | `http://localhost:3000` |
+| Option | Description |
+| --- | --- |
+| `--host` | host to bind to |
+| `--port` | port to bind to |
+| `--mdns` | enable mDNS discovery |
+| `--dry-run` | print the resolved startup plan and exit |
+| global flags | includes `--format`, `--env`, `--quiet`, `--verbose` |
 
-**Examples:**
+Examples:
 
 ```bash
-# Create a room interactively
-gambi create
-
-# Create with flags
-gambi create --name "My Room"
-
-# Create on a custom hub
-gambi create --name "My Room" --hub http://192.168.1.10:3000
-
-# Create a password-protected room
-gambi create --name "My Room" --password secret123
+gambi hub serve
+gambi hub serve --mdns
+gambi hub serve --dry-run --format json
 ```
 
-### `join`
+Machine-readable NDJSON events:
 
-Join a room and expose your LLM endpoint.
+| Event | Meaning |
+| --- | --- |
+| `started` | hub startup completed |
+| `mdns_registered` | mDNS registration succeeded |
+| `signal_received` | a shutdown signal was received |
+| `stopped` | shutdown completed |
+
+## `gambi room create`
+
+Create a room through the management API.
 
 ```bash
-# Interactive — select provider, model, set nickname:
-gambi join
-
-# With flags:
-gambi join --code <room-code> --model <model> [options]
+gambi room create --name <name> [options]
 ```
 
-**Options:**
+Options:
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--code`, `-c` | Room code to join | Required (prompted in interactive mode) |
-| `--model`, `-m` | Model to expose | Required (prompted in interactive mode) |
-| `--endpoint`, `-e` | Local LLM endpoint URL used for probing and inference | `http://localhost:11434` |
-| `--network-endpoint` | Network-reachable URL to publish to the hub | Auto-detected when needed |
-| `--nickname`, `-n` | Display name | Auto-generated |
-| `--header` | Auth header in the format `Header=Value` | None |
-| `--header-env` | Auth header in the format `Header=ENV_VAR` | None |
-| `--password`, `-p` | Room password (if protected) | None |
-| `--hub`, `-H` | Hub URL | `http://localhost:3000` |
-| `--no-specs` | Don't share machine specs | `false` |
-| `--no-network-rewrite` | Disable automatic localhost-to-LAN rewrite for remote hubs | `false` |
+| Option | Description |
+| --- | --- |
+| `--name` | room name |
+| `--password` | optional room password |
+| `--config &lt;path|-&gt;` | runtime config JSON file or stdin |
+| `--hub` | hub URL |
+| `--dry-run` | validate and preview the request |
 
-The CLI automatically probes your local endpoint to detect available models and protocol capabilities (Responses API vs Chat Completions).
+Notes:
 
-When the hub is remote and your local endpoint is loopback-only (for example `http://localhost:11434`), Gambi tries to publish a LAN-reachable URL automatically. In interactive mode, the CLI explains the rewrite and lets you confirm or override it. Use `--network-endpoint` when you want to publish a specific URL yourself.
+- `--config -` reads runtime config JSON from stdin.
+- In interactive mode, the CLI can prompt for `--name` and `--password`.
 
-In interactive mode, you'll select your LLM provider from a list (Ollama, LM Studio, vLLM, or custom URL), optionally add auth headers, and then choose from the detected models.
-
-**Examples:**
+Examples:
 
 ```bash
-# Join interactively — guided through all options
-gambi join
+gambi room create --name Demo
+gambi room create --name Demo --config ./room-defaults.json
+cat defaults.json | gambi room create --name Demo --config -
+gambi room create --name Demo --dry-run --format json
+```
 
-# Join with Ollama
-gambi join --code ABC123 --model llama3
+## `gambi room list`
 
-# Join with LM Studio
-gambi join --code ABC123 \
-  --model mistral \
+List room summaries from the management API.
+
+```bash
+gambi room list [options]
+```
+
+Options:
+
+| Option | Description |
+| --- | --- |
+| `--hub` | hub URL |
+| `--sort participant-count|created-at|name` | sort strategy |
+| `--reverse` | reverse the chosen sort order |
+
+Examples:
+
+```bash
+gambi room list
+gambi room list --format json
+gambi room list --hub http://192.168.1.10:3000
+```
+
+Default sort:
+
+1. participant count descending
+2. created date descending
+
+## `gambi room get`
+
+Fetch one room summary by code.
+
+```bash
+gambi room get --code <room-code> [options]
+```
+
+Options:
+
+| Option | Description |
+| --- | --- |
+| `--code` | room code |
+| `--hub` | hub URL |
+
+Examples:
+
+```bash
+gambi room get --code ABC123
+gambi room get --code ABC123 --format json
+```
+
+## `gambi participant join`
+
+Register a participant and keep heartbeats alive.
+
+```bash
+gambi participant join --room <room> --participant-id <id> --model <model> [options]
+```
+
+Options:
+
+| Option | Description |
+| --- | --- |
+| `--room` | room code |
+| `--participant-id` | stable participant identifier |
+| `--nickname` | display name |
+| `--model` | model to expose |
+| `--endpoint` | local endpoint used for probing and inference |
+| `--network-endpoint` | explicit network-reachable URL to publish |
+| `--header` | auth header in `Header=Value` format |
+| `--header-env` | auth header in `Header=ENV_VAR` format |
+| `--password` | room password |
+| `--config &lt;path|-&gt;` | runtime config JSON file or stdin |
+| `--no-specs` | skip machine specs collection |
+| `--hub` | hub URL |
+| `--dry-run` | validate and preview the registration |
+
+Notes:
+
+- `--participant-id` is required for non-interactive retry-safe automation.
+- `--config -` reads participant runtime config JSON from stdin.
+- The CLI probes the endpoint before registration to validate the model and detect capabilities.
+- When the hub is remote and the endpoint is loopback-only, Gambi tries to publish a LAN-reachable URL automatically unless `--network-endpoint` is provided.
+
+Examples:
+
+```bash
+gambi participant join \
+  --room ABC123 \
+  --participant-id worker-1 \
+  --model llama3
+
+gambi participant join \
+  --room ABC123 \
+  --participant-id worker-1 \
+  --model llama3 \
   --endpoint http://localhost:1234
 
-# Join a remote hub and publish an explicit LAN URL
-gambi join --code ABC123 \
+gambi participant join \
+  --room ABC123 \
+  --participant-id worker-1 \
+  --model llama3 \
+  --dry-run \
+  --format json
+
+gambi participant join \
+  --room ABC123 \
+  --participant-id worker-1 \
+  --model llama3 \
   --hub http://192.168.1.10:3000 \
-  --model llama3 \
-  --endpoint http://localhost:11434 \
   --network-endpoint http://192.168.1.25:11434
-
-# Join with custom nickname
-gambi join --code ABC123 \
-  --model llama3 \
-  --nickname "alice-4090"
-
-# Join a remote provider securely
-export OPENROUTER_AUTH="Bearer sk-or-..."
-gambi join --code ABC123 \
-  --model meta-llama/llama-3.1-8b-instruct:free \
-  --endpoint https://openrouter.ai/api \
-  --header-env Authorization=OPENROUTER_AUTH
-
-# Join a password-protected room
-gambi join --code ABC123 \
-  --model llama3 \
-  --password secret123
 ```
 
-### `list`
+NDJSON lifecycle events:
 
-List available rooms on a hub.
+| Event | Meaning |
+| --- | --- |
+| `prepared` | endpoint probing and payload assembly completed |
+| `registered` | participant registration succeeded |
+| `heartbeat_ok` | heartbeat loop is healthy |
+| `heartbeat_failed` | one heartbeat attempt failed |
+| `leaving` | shutdown started |
+| `left` | participant removal completed |
+| `error` | an operational error occurred |
+
+## `gambi participant leave`
+
+Remove a participant from a room.
 
 ```bash
-# Interactive — prompts for hub URL and output format:
-gambi list
-
-# With flags:
-gambi list [options]
+gambi participant leave --room <room> --participant-id <id> [options]
 ```
 
-**Options:**
+Options:
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--hub`, `-H` | Hub URL | `http://localhost:3000` |
-| `--json`, `-j` | Output as JSON | `false` |
+| Option | Description |
+| --- | --- |
+| `--room` | room code |
+| `--participant-id` | participant identifier |
+| `--hub` | hub URL |
 
-**Example:**
+Example:
 
 ```bash
-gambi list
-# Output:
-# Available rooms:
-#   ABC123  My Room
-#     Participants: 3
-#   XYZ789  Test Room
-#     Participants: 1
-
-gambi list --json
+gambi participant leave --room ABC123 --participant-id worker-1
 ```
 
-### `monitor`
+## `gambi participant heartbeat`
 
-Open the TUI to monitor rooms in real-time.
+Send a single participant heartbeat.
 
 ```bash
-gambi monitor [options]
+gambi participant heartbeat --room <room> --participant-id <id> [options]
 ```
 
-**Options:**
+Options:
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--hub`, `-H` | Hub URL | `http://localhost:3000` |
+| Option | Description |
+| --- | --- |
+| `--room` | room code |
+| `--participant-id` | participant identifier |
+| `--hub` | hub URL |
 
-The monitor shows participants, their status (online/offline), and a live activity log of events (joins, requests, errors) via SSE.
+Example:
 
-**Tip:** The standalone CLI currently shows help when you run `gambi` without arguments. Use `gambi monitor` to open the TUI.
+```bash
+gambi participant heartbeat --room ABC123 --participant-id worker-1
+```
 
-## Supported Providers
+## `gambi events watch`
 
-Gambi works with any endpoint that exposes OpenResponses or OpenAI-compatible `chat/completions`:
+Stream typed room events from the management API.
 
-| Provider | Default Endpoint | Protocols |
-|----------|------------------|-----------|
-| Ollama | `http://localhost:11434` | Responses API, Chat Completions |
-| LM Studio | `http://localhost:1234` | Responses API, Chat Completions |
-| LocalAI | `http://localhost:8080` | Responses API, Chat Completions |
-| vLLM | `http://localhost:8000` | Responses API, Chat Completions |
+```bash
+gambi events watch --room <room> [options]
+```
 
-For cloud providers (OpenRouter, Together AI, Groq, etc.), see the [Remote Providers](/guides/remote-providers/) guide.
+Options:
+
+| Option | Description |
+| --- | --- |
+| `--room` | room code |
+| `--hub` | hub URL |
+
+Examples:
+
+```bash
+gambi events watch --room ABC123
+gambi events watch --room ABC123 --format ndjson
+```
+
+In NDJSON mode, the CLI relays the room event objects directly.
+
+## `gambi self update`
+
+Update the installed CLI.
+
+```bash
+gambi self update [options]
+```
+
+Options:
+
+| Option | Description |
+| --- | --- |
+| `--manager` | preferred package manager, such as `bun` or `npm` |
+| `--yes` | skip confirmation |
+| `--dry-run` | print the resolved update plan and exit |
+
+Examples:
+
+```bash
+gambi self update --dry-run --format json
+gambi self update --yes
+```
+
+## Environment variables
+
+| Variable | Meaning |
+| --- | --- |
+| `NO_COLOR=1` | disable ANSI colors |
+| `GAMBI_FORMAT` | set default output format |
+| `GAMBI_ENV` | select the named environment |
+| `GAMBI_NO_INTERACTIVE=1` | disable interactive prompts |
+
+## See also
+
+- [API Reference](/reference/api/)
+- [SDK Reference](/reference/sdk/)

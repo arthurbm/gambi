@@ -1,338 +1,294 @@
-# Gambi - Architecture
+# Gambi Architecture
 
-This document describes the current architecture of Gambi, a system for sharing local LLMs across a network.
-
-`Gambi` is the official short form of **gambiarra**. The shorter name works better in English for CLI/package ergonomics, while preserving the PT-BR meaning of creative, resourceful improvisation under constraints.
+This document explains the current architecture of Gambi after the agent-first redesign of the operational surface.
 
 ## Overview
 
-Gambi enables multiple users on a local network to share their LLM endpoints (Ollama, LM Studio, LocalAI, vLLM, or any endpoint that exposes OpenResponses or chat/completions) through a central hub. The system is designed to work seamlessly with the Vercel AI SDK.
+Gambi is a local-first hub for sharing OpenAI-compatible LLM endpoints across a trusted network. It has two explicit planes:
+
+- Management plane: Gambi-native operations for rooms, participants, heartbeats, and room events.
+- Inference plane: OpenAI-compatible room-scoped endpoints for responses, chat completions, and model listing.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           GAMBI HUB (HTTP)                              │
-│                                                                             │
-│  HTTP Endpoints:                                                            │
-│  ┌────────────────────────────────────────────────────────────────────┐    │
-│  │ POST   /rooms                    ← Create a room                   │    │
-│  │ GET    /rooms                    ← List all rooms                  │    │
-│  │ POST   /rooms/:code/join         ← Participant registers endpoint  │    │
-│  │ DELETE /rooms/:code/leave/:id    ← Participant leaves              │    │
-│  │ POST   /rooms/:code/health       ← Health check (10s interval)     │    │
-│  │ GET    /rooms/:code/participants ← List participants               │    │
-│  │                                                                    │    │
-│  │ LLM Proxy (Responses-first):                                      │    │
-│  │ POST   /rooms/:code/v1/responses                                 │    │
-│  │ GET    /rooms/:code/v1/responses/:id                             │    │
-│  │ DELETE /rooms/:code/v1/responses/:id                             │    │
-│  │ POST   /rooms/:code/v1/responses/:id/cancel                      │    │
-│  │ GET    /rooms/:code/v1/responses/:id/input_items                 │    │
-│  │ POST   /rooms/:code/v1/chat/completions                          │    │
-│  │ GET    /rooms/:code/v1/models                                    │    │
-│  │                                                                    │    │
-│  │ SSE (for TUI):                                                    │    │
-│  │ GET    /rooms/:code/events                                        │    │
-│  └────────────────────────────────────────────────────────────────────┘    │
-│                                                                             │
-│  Participant Registry (in-memory):                                          │
-│  ┌────────────────────────────────────────────────────────────────────┐    │
-│  │ joao  → { endpoint: "http://192.168.1.50:11434", model, lastSeen } │    │
-│  │ maria → { endpoint: "http://192.168.1.51:1234", model, lastSeen }  │    │
-│  └────────────────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────────────────┘
-           ▲                    ▲                         ▲
-           │ HTTP               │ HTTP                    │ SSE
-           │                    │                         │
-      ┌────┴────┐    ┌─────────┴─────────┐         ┌─────┴─────┐
-      │   SDK   │    │   Participants    │         │    TUI    │
-      └─────────┘    └───────────────────┘         └───────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                           GAMBI HUB                                │
+│                                                                     │
+│  Management plane (`/v1`)                                          │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │ GET    /v1/health                                            │  │
+│  │ GET    /v1/rooms                                             │  │
+│  │ POST   /v1/rooms                                             │  │
+│  │ GET    /v1/rooms/:code                                       │  │
+│  │ GET    /v1/rooms/:code/participants                          │  │
+│  │ PUT    /v1/rooms/:code/participants/:id                      │  │
+│  │ DELETE /v1/rooms/:code/participants/:id                      │  │
+│  │ POST   /v1/rooms/:code/participants/:id/heartbeat            │  │
+│  │ GET    /v1/rooms/:code/events                                │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│  Inference plane (`/rooms/:code/v1/*`)                             │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │ GET    /rooms/:code/v1/models                                 │  │
+│  │ POST   /rooms/:code/v1/responses                              │  │
+│  │ GET    /rooms/:code/v1/responses/:id                          │  │
+│  │ DELETE /rooms/:code/v1/responses/:id                          │  │
+│  │ POST   /rooms/:code/v1/responses/:id/cancel                   │  │
+│  │ GET    /rooms/:code/v1/responses/:id/input_items              │  │
+│  │ POST   /rooms/:code/v1/chat/completions                       │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────┘
+             ▲                      ▲                      ▲
+             │                      │                      │
+             │ management           │ inference            │ live ops
+             │                      │                      │
+      ┌─────────────┐        ┌───────────────┐      ┌─────────────┐
+      │ CLI + SDK   │        │ createGambi() │      │ gambi-tui   │
+      └─────────────┘        └───────────────┘      └─────────────┘
 ```
 
-## Design Philosophy
+## Design goals
 
-Gambi follows the principle of **feature parity across all endpoints**. Each entry point exposes the same core capabilities through an interface optimized for its target use case:
+The redesign intentionally separates the operational and application contracts.
 
-| Endpoint | Target Audience | Use Case |
-|----------|-----------------|----------|
-| **SDK** | Developers | Programmatic integration for JS/TS applications (Vercel AI SDK compatible) |
-| **CLI** | DevOps / Power Users | Scripts, automation, and CI/CD pipelines |
-| **TUI** | Human Operators | Interactive real-time monitoring and management |
+### Management plane goals
 
-### Architecture Pattern
+- predictable machine-readable responses
+- deterministic error envelopes
+- retry-safe participant registration
+- typed event streams
+- stateless operational control
 
-Internally, Gambi follows a **Ports and Adapters** style. The public edge is `OpenResponses-first`, but the hub core does not hardcode that as its only internal shape.
+### Inference plane goals
 
-- The hub defines protocol adapter ports for request creation and stored-response lifecycle operations.
-- `openResponses` and `chatCompletions` are the first concrete adapters registered today.
-- Adapter selection is ordered and explicit: the public `responses` edge tries the `openResponses` adapter first, then falls back to the `chatCompletions` adapter when required.
-- The SDK follows the same pattern through a protocol namespace factory registry, with `openResponses` as the default public protocol.
+- OpenAI-compatible transport
+- compatibility with AI SDK and similar clients
+- room-scoped model routing
 
-This is intentionally close to the “generic interface + interpreter” style you see in systems like Effect: the core talks to capabilities, and concrete protocol behavior lives at the edge.
+## Component roles
 
-### Invocation Pattern
+### `packages/core`
 
-| Command | Result |
-|---------|--------|
-| `gambi` | Shows CLI help |
-| `gambi-tui` | Opens **TUI** - Interactive monitoring and management interface |
-| `gambi serve` | CLI - Starts hub server (scripting) |
-| `gambi create` | CLI - Creates room (scripting) |
-| `gambi join` | CLI - Joins as participant (scripting) |
-| `gambi list` | CLI - Lists rooms (scripting) |
-| `gambi update` | CLI - Updates the current install (bun, npm, or standalone) |
+Source of truth for the hub runtime and HTTP contracts.
 
-**Important:** The standalone CLI shows help when you run `gambi` with no subcommand. The TUI is a separate package: `bun add -g gambi-tui`.
+Key responsibilities:
 
-### Feature Parity Matrix
+- room and participant registry
+- management HTTP handlers
+- inference proxying
+- SSE room events
+- mDNS discovery support
+- shared transport and domain schemas
 
-| Feature | SDK | CLI | TUI |
-|---------|-----|-----|-----|
-| Create room | POST /rooms | `gambi create` | Create dialog |
-| List rooms | GET /rooms | `gambi list` | Room selector |
-| Join room | POST /rooms/:code/join | `gambi join` | Join dialog |
-| Update installed CLI | - | `gambi update` | N/A |
-| Leave room | DELETE /rooms/:code/leave/:id | Auto on exit | Leave action |
-| Health check | POST /rooms/:code/health | Auto (background) | Auto (background) |
-| Responses create | POST /rooms/:code/v1/responses | Via SDK | N/A (monitoring only) |
-| Responses lifecycle | `/rooms/:code/v1/responses/:id*` | HTTP/API clients | N/A (monitoring only) |
-| Chat completion (legacy) | POST /rooms/:code/v1/chat/completions | Via SDK or explicit legacy mode | N/A (monitoring only) |
-| Real-time events | SSE subscription | - | Built-in |
-| Serve hub | - | `gambi serve` | Embedded server |
+Important files:
 
-### Runtime Defaults
+- `packages/core/src/hub.ts`
+- `packages/core/src/room.ts`
+- `packages/core/src/participant.ts`
+- `packages/core/src/sse.ts`
+- `packages/core/src/types.ts`
 
-- Rooms can define runtime defaults when created.
-- Participants can register runtime defaults when they join.
-- The hub merges defaults at proxy time with precedence `room defaults -> participant defaults -> runtime request`.
-- Public room and participant endpoints expose only a redacted summary for sensitive fields such as instructions/system prompts.
+### `packages/cli`
 
-Example:
+Operational CLI for both humans and agents.
 
-- Room sets `instructions = "Answer in Portuguese"` and `temperature = 0.3`
-- Participant joins with `temperature = 0.6`
-- Client sends a request with `temperature = 0.9`
-- Final proxied request uses:
-  - `instructions = "Answer in Portuguese"`
-  - `temperature = 0.9`
+The CLI is resource-oriented:
 
-## Packages
+- `gambi hub serve`
+- `gambi room create|list|get`
+- `gambi participant join|leave|heartbeat`
+- `gambi events watch`
+- `gambi self update`
 
-The project is a Bun + Turbo monorepo with the following packages:
+The CLI is a renderer over the management plane. Human mode uses compact text. Script mode uses JSON or NDJSON.
 
-### `@gambi/core`
+### `packages/sdk`
 
-Core library containing the hub server and shared utilities.
+Split by audience:
 
-**Key files:**
-- `hub.ts` - HTTP server with protocol adapter registry, Responses-first proxy, and legacy chat/completions compatibility
-- `protocol-adapters.ts` - Adapter contracts used by the hub core and SDK exports
-- `room.ts` - Room and participant management
-- `sse.ts` - Server-Sent Events for real-time updates
-- `mdns.ts` - mDNS (Bonjour/Zeroconf) service discovery
-- `types.ts` - Zod schemas and TypeScript types
+- `createGambi()` for inference through the OpenAI-compatible room endpoints
+- `createClient()` for operational control over rooms, participants, and room events
 
-### `gambi`
+The management client maps directly to `/v1` instead of inventing a parallel contract.
 
-Command-line interface for managing hubs and participants.
+### `apps/tui`
 
-**Commands:**
-- `serve` - Start a hub server (with optional `--mdns` flag)
-- `create` - Create a new room, optionally with runtime defaults from JSON
-- `list` - List available rooms
-- `join` - Join a room with your LLM endpoint and optional runtime defaults
+Human-first monitoring interface. It consumes the management plane and room event stream, but remains a separate package from `gambi`.
 
-### `gambi-sdk`
+## Management plane
 
-SDK for integrating with the Vercel AI SDK.
+### Envelope contract
 
-**Installation:**
-```bash
-npm install gambi-sdk
-```
+Every management response is structured:
 
-Available on npm: https://www.npmjs.com/package/gambi-sdk
-
-```typescript
-import { createGambi } from "gambi-sdk";
-import { generateText } from "ai";
-
-const gambi = createGambi({ roomCode: "ABC123" });
-
-// Use any available participant
-const result = await generateText({
-  model: gambi.any(),
-  prompt: "Hello!",
-});
-
-// Use a specific participant by ID
-const result2 = await generateText({
-  model: gambi.participant("participant-id"),
-  prompt: "Hello!",
-});
-
-// Use a specific model type (routes to first participant with that model)
-const result3 = await generateText({
-  model: gambi.model("llama3"),
-  prompt: "Hello!",
-});
-
-const legacy = createGambi({
-  roomCode: "ABC123",
-  defaultProtocol: "chatCompletions",
-});
-
-const result4 = await generateText({
-  model: legacy.any(),
-  prompt: "Legacy chat/completions flow",
-});
-```
-
-For local Node.js/Bun applications, the SDK also exposes optional discovery helpers:
-
-- `discoverHubs()` - find reachable hubs from a configured seed plus mDNS
-- `discoverRooms()` - aggregate rooms across reachable hubs
-- `resolveGambiTarget()` - resolve one room to `{ hubUrl, roomCode }`
-
-These helpers are available from the root export (`gambi-sdk`) or from the dedicated subpath `gambi-sdk/discovery` for a smaller import surface.
-
-These helpers are additive. `createGambi()` and `createClient()` remain explicit and do not perform implicit async discovery.
-
-### `gambi-tui`
-
-Terminal UI for monitoring rooms and participants in real-time (uses SSE). Published as a separate npm package.
-
-**Installation:** `bun add -g gambi-tui`
-**Usage:** `gambi-tui --hub http://localhost:3000`
-
-## Communication Flow
-
-### 1. Participant Registration
-
-```
-Participant                Hub
-    │                       │
-    │  POST /rooms/:code/join
-    │  { id, nickname, model, endpoint, specs, config? }
-    │ ──────────────────────►
-    │                       │
-    │  201 Created          │
-    │  { participant, roomId }
-    │ ◄──────────────────────
-    │                       │
-    │  (every 10 seconds)   │
-    │  POST /rooms/:code/health
-    │  { id }               │
-    │ ──────────────────────►
-    │                       │
-```
-
-### 2. SDK Request Flow
-
-```
-SDK                        Hub                     Participant
- │                          │                           │
- │  POST /rooms/:code/v1/responses                     │
- │  { model: "participant-id", messages, stream }      │
- │ ────────────────────────►│                          │
- │                          │                          │
- │                          │  POST /v1/responses
- │                          │  { model: "llama3", input, stream }
- │                          │ ─────────────────────────►│
- │                          │                          │
- │                          │  SSE Stream / JSON       │
- │                          │ ◄─────────────────────────│
- │                          │                          │
- │  SSE Stream / JSON       │                          │
- │ ◄────────────────────────│                          │
-```
-
-## Model Routing
-
-The SDK supports three ways to select a participant:
-
-| Pattern | Example | Description |
-|---------|---------|-------------|
-| Participant ID | `gambi.participant("abc123")` | Routes to specific participant |
-| Model name | `gambi.model("llama3")` | Routes to first online participant with that model |
-| Any | `gambi.any()` or `model: "*"` | Routes to random online participant |
-
-## Health Checking
-
-- Participants send health checks every **10 seconds** (`HEALTH_CHECK_INTERVAL`)
-- Participants are marked offline after **30 seconds** of no health check (`PARTICIPANT_TIMEOUT = 3 × HEALTH_CHECK_INTERVAL`)
-- The hub broadcasts `participant:offline` events via SSE when a participant times out
-
-## mDNS Discovery
-
-When started with `--mdns`, the hub publishes itself via Bonjour/Zeroconf:
-
-```bash
-gambi serve --mdns
-```
-
-This allows clients on the local network to discover the hub automatically without knowing its IP address.
-
-Service format: `gambi-hub-{port}._gambi._tcp.local`
-
-The SDK builds on top of the same mechanism for local apps through `discoverHubs()`, `discoverRooms()`, and `resolveGambiTarget()`. This keeps the provider/client APIs explicit while still enabling zero-config room selection in TypeScript applications.
-
-## Supported Providers
-
-Any server with OpenResponses or OpenAI-compatible chat/completions:
-
-| Provider | Default Endpoint |
-|----------|-----------------|
-| Ollama | `http://localhost:11434` |
-| LM Studio | `http://localhost:1234` |
-| LocalAI | `http://localhost:8080` |
-| vLLM | `http://localhost:8000` |
-
-## Data Types
-
-### ParticipantInfo
-
-```typescript
+```json
 {
-  id: string;
-  nickname: string;
-  model: string;
-  endpoint: string;  // LLM API base URL
-  config: RuntimeConfigPublic;
-  specs: MachineSpecs;
-  capabilities: {
-    openResponses: "supported" | "unsupported" | "unknown";
-    chatCompletions: "supported" | "unsupported" | "unknown";
-  };
-  status: "online" | "offline" | "busy";
-  joinedAt: number;
-  lastSeen: number;  // Timestamp of last health check
+  "data": {},
+  "meta": {
+    "requestId": "req_123"
+  }
 }
 ```
 
-### RuntimeConfigPublic
+Errors are also structured:
 
-Public room/participant defaults summary:
-
-```typescript
+```json
 {
-  hasInstructions: boolean;
-  temperature?: number;
-  top_p?: number;
-  max_tokens?: number;
-  stop?: string[];
-  frequency_penalty?: number;
-  presence_penalty?: number;
-  seed?: number;
+  "error": {
+    "code": "INVALID_REQUEST",
+    "message": "Participant identifier is required.",
+    "hint": "Pass --participant-id or provide it in the request path."
+  },
+  "meta": {
+    "requestId": "req_456"
+  }
 }
 ```
 
-## Previous Architecture
+`meta.requestId` is part of the public contract and should be preserved by CLI and SDK callers.
 
-The original architecture used WebSocket for all communication. This was replaced with HTTP + SSE for:
+### Room lifecycle
 
-1. **Simpler SDK integration** - Uses `@ai-sdk/open-responses` by default, with explicit legacy `@ai-sdk/openai-compatible` support
-2. **Standard API** - Hub exposes OpenResponses as the primary public protocol and keeps chat/completions for compatibility
-3. **Better debugging** - HTTP requests are easier to inspect and test
-4. **Reduced complexity** - No need to manage WebSocket connections in the SDK
+- Room creation is intentionally non-idempotent.
+- `GET /v1/rooms/:code` exists so clients do not need to list and filter locally.
+- Public room summaries include:
+  - `id`
+  - `code`
+  - `name`
+  - `hostId`
+  - `createdAt`
+  - `participantCount`
+  - `passwordProtected`
+  - `defaults`
 
-The old WebSocket-based plan is preserved in `docs/old/architecture-v1-websocket.md` for reference.
+### Participant lifecycle
+
+Participant registration uses idempotent upsert semantics:
+
+- `PUT /v1/rooms/:code/participants/:id`
+
+Behavior:
+
+- create on first registration
+- return a stable `200` or `201` path for retries
+- update the existing participant when the payload changes
+
+This is the foundation for retry-safe automation and the CLI’s `participant join --participant-id`.
+
+### Heartbeats and liveness
+
+Participants stay online by sending:
+
+- `POST /v1/rooms/:code/participants/:id/heartbeat`
+
+Constants:
+
+- `HEALTH_CHECK_INTERVAL = 10_000`
+- `PARTICIPANT_TIMEOUT = 30_000`
+
+The hub marks inactive participants offline when the timeout window is exceeded.
+
+## Event model
+
+Room events are emitted as SSE with typed JSON payloads.
+
+Each event object contains:
+
+- `type`
+- `timestamp`
+- `roomCode`
+- `data`
+
+Current event types:
+
+- `connected`
+- `room.created`
+- `participant.joined`
+- `participant.updated`
+- `participant.left`
+- `participant.offline`
+- `llm.request`
+- `llm.error`
+
+The CLI converts these directly into NDJSON for `gambi events watch --format ndjson`. The SDK exposes the same shape through `client.events.watchRoom()`.
+
+## Inference plane
+
+The inference plane remains OpenAI-compatible and room-scoped:
+
+- `GET /rooms/:code/v1/models`
+- `POST /rooms/:code/v1/responses`
+- `GET /rooms/:code/v1/responses/:id`
+- `DELETE /rooms/:code/v1/responses/:id`
+- `POST /rooms/:code/v1/responses/:id/cancel`
+- `GET /rooms/:code/v1/responses/:id/input_items`
+- `POST /rooms/:code/v1/chat/completions`
+
+Model routing rules:
+
+- `model = <participant-id>` routes to a specific participant
+- `model = model:<name>` routes to the first online participant matching that model
+- `model = *` or `any` routes to a random online participant
+
+The hub still prefers the Responses API first and keeps chat completions available explicitly.
+
+## Runtime defaults
+
+Rooms and participants can both contribute runtime defaults. At proxy time, the hub merges them in this order:
+
+1. room defaults
+2. participant defaults
+3. request-time overrides
+
+Sensitive config is not exposed raw in public management responses. Public responses expose redacted or summarized values where needed.
+
+## Discovery
+
+Discovery remains useful for local-network applications. The SDK discovery helpers now resolve hubs and rooms against the management plane under `/v1`.
+
+Helpers:
+
+- `discoverHubs()`
+- `discoverRooms()`
+- `resolveGambiTarget()`
+
+These helpers remain explicit. `createGambi()` and `createClient()` do not perform implicit discovery.
+
+## Operational surfaces
+
+### CLI
+
+Optimized for human-readable text and machine-readable JSON/NDJSON.
+
+Important traits:
+
+- flag-first
+- pipe-friendly
+- `--interactive` and `--no-interactive`
+- XDG config support
+- NDJSON on streaming commands when stdout is piped
+
+### SDK management client
+
+Optimized for code-driven operational workflows.
+
+Namespaces:
+
+- `client.rooms.*`
+- `client.participants.*`
+- `client.events.watchRoom()`
+
+### TUI
+
+Optimized for human monitoring. It is not the canonical operational contract.
+
+## Repository map
+
+- `packages/core`: hub runtime and contracts
+- `packages/cli`: operational CLI
+- `packages/sdk`: inference provider and management client
+- `apps/tui`: monitoring interface
+- `apps/docs`: documentation site
+
+## Security model
+
+Gambi is designed for trusted local networks. The hub does not include native authentication. Do not expose it publicly without an external auth and proxy layer.

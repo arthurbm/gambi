@@ -1,5 +1,5 @@
 import { type DiscoveredService, mDNS } from "./mdns.ts";
-import type { RoomInfoPublic } from "./types.ts";
+import type { RoomSummary } from "./types.ts";
 
 const DEFAULT_HUB_NAME = "Configured hub";
 const DEFAULT_HUB_URL = "http://localhost:3000";
@@ -14,17 +14,15 @@ type BrowseServicesLike = (
   callback: (service: DiscoveredService) => void
 ) => (() => void | Promise<void>) | void | Promise<void>;
 
-interface RoomInfoWithParticipantCount extends RoomInfoPublic {
-  participantCount: number;
-}
-
 interface HealthResponse {
-  status: string;
-  timestamp: number;
+  data: {
+    status: string;
+    timestamp: number;
+  };
 }
 
 interface ListRoomsResponse {
-  rooms: RoomInfoWithParticipantCount[];
+  data: RoomSummary[];
 }
 
 export interface DiscoveredHub {
@@ -37,7 +35,7 @@ export interface DiscoveredHub {
   txt: Record<string, string>;
 }
 
-export interface DiscoveredRoom extends RoomInfoWithParticipantCount {
+export interface DiscoveredRoom extends RoomSummary {
   hubName: string;
   hubSource: DiscoveredHub["source"];
   hubUrl: string;
@@ -134,7 +132,7 @@ async function fetchHubHealth(
   fetchFn: FetchLike
 ): Promise<HealthResponse | null> {
   try {
-    const response = await fetchFn(`${hubUrl}/health`);
+    const response = await fetchFn(`${hubUrl}/v1/health`);
     if (!response.ok) {
       return null;
     }
@@ -148,15 +146,15 @@ async function fetchHubHealth(
 async function fetchRoomsFromHub(
   hubUrl: string,
   fetchFn: FetchLike
-): Promise<RoomInfoWithParticipantCount[] | null> {
+): Promise<RoomSummary[] | null> {
   try {
-    const response = await fetchFn(`${hubUrl}/rooms`);
+    const response = await fetchFn(`${hubUrl}/v1/rooms`);
     if (!response.ok) {
       return null;
     }
 
     const data = (await response.json()) as ListRoomsResponse;
-    return Array.isArray(data.rooms) ? data.rooms : [];
+    return Array.isArray(data.data) ? data.data : [];
   } catch {
     return null;
   }

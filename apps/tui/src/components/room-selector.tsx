@@ -1,4 +1,4 @@
-import { RoomInfoPublic as RoomInfoSchema } from "@gambi/core/types";
+import { RoomSummary as RoomInfoSchema } from "@gambi/core/types";
 import { useKeyboard } from "@opentui/react";
 import { useCallback, useEffect, useState } from "react";
 import { z } from "zod";
@@ -33,17 +33,13 @@ export function RoomSelector({
         setLoading(true);
         setError(null);
 
-        const response = await fetch(`${hubUrl}/rooms`);
+        const response = await fetch(`${hubUrl}/v1/rooms`);
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
         }
 
-        const data: unknown = await response.json();
-        const roomsArray =
-          data && typeof data === "object" && "rooms" in data
-            ? (data as { rooms: unknown }).rooms
-            : data;
-        const parsed = z.array(RoomInfoSchema).safeParse(roomsArray);
+        const envelope = (await response.json()) as { data?: unknown };
+        const parsed = z.array(RoomInfoSchema).safeParse(envelope.data ?? envelope);
         if (!parsed.success) {
           throw new Error("Invalid room data");
         }
@@ -53,11 +49,12 @@ export function RoomSelector({
           parsed.data.map(async (room) => {
             try {
               const participantsRes = await fetch(
-                `${hubUrl}/rooms/${room.code}/participants`
+                `${hubUrl}/v1/rooms/${room.code}/participants`
               );
-              const participants = participantsRes.ok
-                ? await participantsRes.json()
-                : [];
+              const participantsEnvelope = participantsRes.ok
+                ? ((await participantsRes.json()) as { data?: unknown })
+                : undefined;
+              const participants = participantsEnvelope?.data ?? [];
               return {
                 ...room,
                 selected: false,

@@ -21,11 +21,16 @@ import {
 import { Room } from "./room.ts";
 import { SSE } from "./sse.ts";
 import {
+  type ApiErrorCode,
+  type ApiMeta,
   HEALTH_CHECK_INTERVAL,
+  type HeartbeatResult,
   type ParticipantAuthHeaders,
   type ParticipantInfo,
   type ParticipantInfoInternal,
+  ParticipantSummary,
   ParticipantRegistration,
+  RoomSummary,
   RuntimeConfig,
 } from "./types.ts";
 
@@ -45,7 +50,7 @@ export interface Hub {
 
 // Top-level regex for route matching
 const ROOM_PATH_REGEX = /^\/rooms\/([^/]+)/;
-const LEAVE_PATH_REGEX = /^\/rooms\/[^/]+\/leave\/[^/]+$/;
+const MANAGEMENT_ROOM_PATH_REGEX = /^\/v1\/rooms\/([^/]+)/;
 const RESPONSES_PATH_REGEX =
   /^\/rooms\/([^/]+)\/v1\/responses\/([^/]+)(?:\/(cancel|input_items))?$/;
 const TRAILING_SLASH_REGEX = /\/$/;
@@ -98,12 +103,48 @@ function error(message: string, status = 400): Response {
   return json({ error: message }, status);
 }
 
+function managementJson(
+  data: unknown,
+  requestId: string,
+  status = 200
+): Response {
+  return json(
+    {
+      data,
+      meta: { requestId } satisfies ApiMeta,
+    },
+    status
+  );
+}
+
+function managementError(
+  requestId: string,
+  code: ApiErrorCode,
+  message: string,
+  hint?: string,
+  status = 400,
+  details?: unknown
+): Response {
+  return json(
+    {
+      error: {
+        code,
+        message,
+        hint,
+        details,
+      },
+      meta: { requestId } satisfies ApiMeta,
+    },
+    status
+  );
+}
+
 function corsHeaders(): Response {
   return new Response(null, {
     status: 204,
     headers: {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
     },
   });
@@ -352,21 +393,33 @@ function applyChatCompletionsDefaults(
 }
 
 // Route handlers
-async function createRoom(req: Request): Promise<Response> {
+async function createRoom(req: Request, requestId: string): Promise<Response> {
   const body = (await req.json()) as {
     defaults?: unknown;
     name?: string;
     password?: string;
   };
   if (!body.name) {
-    return error("Name is required");
+    return managementError(
+      requestId,
+      "INVALID_REQUEST",
+      "Name is required",
+      "Provide a room name via the 'name' field."
+    );
   }
 
   let defaults: RuntimeConfig | undefined;
   if (body.defaults !== undefined) {
     const parsedDefaults = RuntimeConfig.safeParse(body.defaults);
     if (!parsedDefaults.success) {
-      return error(`Invalid room defaults: ${parsedDefaults.error.message}`);
+      return managementError(
+        requestId,
+        "INVALID_REQUEST",
+        "Invalid room defaults.",
+        "Check the runtime config payload and retry.",
+        400,
+        parsedDefaults.error.flatten()
+      );
     }
     defaults = parsedDefaults.data;
   }
@@ -375,43 +428,77 @@ async function createRoom(req: Request): Promise<Response> {
   const room = await Room.create(body.name, hostId, body.password, defaults);
 
   // Strip password hash from public responses to prevent offline brute-force attacks
-  const publicRoom = Room.toPublic(room);
+  const summary = RoomSummary.parse({
+    ...Room.toPublic(room),
+    participantCount: 0,
+  });
 
-  SSE.broadcast("room:created", publicRoom);
+  SSE.broadcast("room.created", summary, room.code);
 
-  return json({ room: publicRoom, hostId }, 201);
+  return managementJson({ room: summary, hostId }, requestId, 201);
 }
 
-function listRooms(): Response {
-  return json({ rooms: Room.listWithParticipantCount() });
+function listRooms(requestId: string): Response {
+  return managementJson(Room.listWithParticipantCount(), requestId);
 }
 
-async function joinRoom(
+function getRoomSummary(code: string, requestId: string): Response {
+  const room = Room.listWithParticipantCount().find(
+    (candidate) => candidate.code === code.toUpperCase()
+  );
+  if (!room) {
+    return managementError(
+      requestId,
+      "ROOM_NOT_FOUND",
+      "Room not found.",
+      "Run 'gambi room list' to inspect available rooms.",
+      404
+    );
+  }
+
+  return managementJson(room, requestId);
+}
+
+async function upsertParticipant(
   req: Request,
   code: string,
-  requesterIp: string | null
+  participantId: string,
+  requesterIp: string | null,
+  requestId: string
 ): Promise<Response> {
   const room = Room.getByCode(code);
   if (!room) {
-    return error("Room not found", 404);
+    return managementError(
+      requestId,
+      "ROOM_NOT_FOUND",
+      "Room not found.",
+      "Run 'gambi room list' to inspect available rooms.",
+      404
+    );
   }
 
   const bodyInput = (await req.json()) as Record<string, unknown>;
-  if (
-    !(
-      bodyInput.id &&
-      bodyInput.nickname &&
-      bodyInput.model &&
-      bodyInput.endpoint
-    )
-  ) {
-    return error("Missing required fields: id, nickname, model, endpoint");
+  bodyInput.id = participantId;
+  if (!(bodyInput.nickname && bodyInput.model && bodyInput.endpoint)) {
+    return managementError(
+      requestId,
+      "INVALID_REQUEST",
+      "Missing required fields.",
+      "Provide nickname, model, and endpoint.",
+      400,
+      { required: ["nickname", "model", "endpoint"] }
+    );
   }
 
   const parsedBody = ParticipantRegistration.safeParse(bodyInput);
   if (!parsedBody.success) {
-    return error(
-      `Invalid participant registration: ${parsedBody.error.message}`
+    return managementError(
+      requestId,
+      "INVALID_REQUEST",
+      "Invalid participant registration.",
+      "Check the participant payload and retry.",
+      400,
+      parsedBody.error.flatten()
     );
   }
 
@@ -421,7 +508,12 @@ async function joinRoom(
     body.endpoint
   );
   if (remoteLoopbackJoinError) {
-    return error(remoteLoopbackJoinError, 400);
+    return managementError(
+      requestId,
+      "LOOPBACK_ENDPOINT_FOR_REMOTE_HUB",
+      remoteLoopbackJoinError,
+      "Publish a network-reachable endpoint, for example via '--network-endpoint'."
+    );
   }
 
   // Validate password if room is protected
@@ -430,7 +522,13 @@ async function joinRoom(
     body.password ?? ""
   );
   if (!isPasswordValid) {
-    return error("Invalid password", 401);
+    return managementError(
+      requestId,
+      "INVALID_PASSWORD",
+      "Invalid password.",
+      "Provide the correct room password and retry.",
+      401
+    );
   }
 
   const now = Date.now();
@@ -445,59 +543,118 @@ async function joinRoom(
     status: "online",
     joinedAt: now,
     lastSeen: now,
+    updatedAt: now,
   };
 
-  Room.addParticipant(room.id, participant, body.authHeaders ?? {});
+  const result = Room.upsertParticipant(room.id, participant, body.authHeaders ?? {});
+  if (!result) {
+    return managementError(
+      requestId,
+      "INTERNAL_ERROR",
+      "Failed to register participant.",
+      "Retry the operation."
+    );
+  }
 
-  const publicParticipant = Participant.toPublicInfo(participant);
+  const publicParticipant = ParticipantSummary.parse(
+    Participant.toPublicInfo(result.participant)
+  );
 
-  SSE.broadcast("participant:joined", publicParticipant, code);
+  SSE.broadcast(
+    result.created ? "participant.joined" : "participant.updated",
+    publicParticipant,
+    code
+  );
 
-  return json({ participant: publicParticipant, roomId: room.id }, 201);
+  return managementJson(
+    { participant: publicParticipant, roomId: room.id },
+    requestId,
+    result.created ? 201 : 200
+  );
 }
 
-function leaveRoom(code: string, participantId: string): Response {
+function leaveRoom(
+  code: string,
+  participantId: string,
+  requestId: string
+): Response {
   const room = Room.getByCode(code);
   if (!room) {
-    return error("Room not found", 404);
+    return managementError(
+      requestId,
+      "ROOM_NOT_FOUND",
+      "Room not found.",
+      "Run 'gambi room list' to inspect available rooms.",
+      404
+    );
   }
 
   const removed = Room.removeParticipant(room.id, participantId);
   if (!removed) {
-    return error("Participant not found", 404);
+    return managementError(
+      requestId,
+      "PARTICIPANT_NOT_FOUND",
+      "Participant not found.",
+      "Check the participant id and retry.",
+      404
+    );
   }
 
-  SSE.broadcast("participant:left", { participantId }, code);
+  SSE.broadcast("participant.left", { participantId }, code);
 
-  return json({ success: true });
+  return managementJson({ success: true }, requestId);
 }
 
-async function healthCheck(req: Request, code: string): Promise<Response> {
+function heartbeatParticipant(
+  code: string,
+  participantId: string,
+  requestId: string
+): Response {
   const room = Room.getByCode(code);
   if (!room) {
-    return error("Room not found", 404);
+    return managementError(
+      requestId,
+      "ROOM_NOT_FOUND",
+      "Room not found.",
+      "Run 'gambi room list' to inspect available rooms.",
+      404
+    );
   }
 
-  const body = (await req.json()) as { id: string };
-  if (!body.id) {
-    return error("Participant ID is required");
-  }
-
-  const updated = Room.updateLastSeen(room.id, body.id);
+  const updated = Room.updateLastSeen(room.id, participantId);
   if (!updated) {
-    return error("Participant not found", 404);
+    return managementError(
+      requestId,
+      "PARTICIPANT_NOT_FOUND",
+      "Participant not found.",
+      "Check the participant id and retry.",
+      404
+    );
   }
 
-  return json({ success: true });
+  const participant = Room.getParticipant(room.id, participantId);
+  const heartbeat: HeartbeatResult = {
+    success: true,
+    status: participant?.status ?? "online",
+    lastSeen: participant?.lastSeen ?? Date.now(),
+  };
+
+  return managementJson(heartbeat, requestId);
 }
 
-function getParticipants(code: string): Response {
+function getParticipants(code: string, requestId: string): Response {
   const room = Room.getByCode(code);
   if (!room) {
-    return error("Room not found", 404);
+    return managementError(
+      requestId,
+      "ROOM_NOT_FOUND",
+      "Room not found.",
+      "Run 'gambi room list' to inspect available rooms.",
+      404
+    );
   }
 
-  return json({ participants: Room.getParticipants(room.id) });
+  return managementJson(Room.getParticipants(room.id), requestId);
 }
 
 function listModels(code: string): Response {
@@ -1571,7 +1728,7 @@ async function proxyResponsesCreate(
   };
 
   SSE.broadcast(
-    "llm:request",
+    "llm.request",
     { participantId: participant.id, model: body.model },
     code
   );
@@ -1604,7 +1761,7 @@ async function proxyResponsesCreate(
     );
   } catch (proxyError) {
     SSE.broadcast(
-      "llm:error",
+      "llm.error",
       {
         participantId: participant.id,
         nickname: participant.nickname,
@@ -1641,7 +1798,7 @@ async function proxyChatCompletions(
   );
 
   SSE.broadcast(
-    "llm:request",
+    "llm.request",
     { participantId: participant.id, model: body.model },
     code
   );
@@ -1654,7 +1811,7 @@ async function proxyChatCompletions(
     });
   } catch (proxyError) {
     SSE.broadcast(
-      "llm:error",
+      "llm.error",
       {
         participantId: participant.id,
         nickname: participant.nickname,
@@ -1748,15 +1905,25 @@ async function proxyStoredResponse(
 function sseEvents(code: string): Response {
   const room = Room.getByCode(code);
   if (!room) {
-    return error("Room not found", 404);
+    return json(
+      {
+        error: {
+          code: "ROOM_NOT_FOUND",
+          message: "Room not found.",
+          hint: "Run 'gambi room list' to inspect available rooms.",
+        },
+        meta: { requestId: crypto.randomUUID() },
+      },
+      404
+    );
   }
 
   const clientId = crypto.randomUUID();
   return SSE.createResponse(clientId, code);
 }
 
-function hubHealth(): Response {
-  return json({ status: "ok", timestamp: Date.now() });
+function hubHealth(requestId: string): Response {
+  return managementJson({ status: "ok", timestamp: Date.now() }, requestId);
 }
 
 function handleResponsesRoute(
@@ -1807,25 +1974,6 @@ function handleRoomRoute(
   code: string,
   requesterIp: string | null
 ): Promise<Response> | Response | null {
-  if (path === `/rooms/${code}/join` && method === "POST") {
-    return joinRoom(req, code, requesterIp);
-  }
-
-  if (LEAVE_PATH_REGEX.test(path) && method === "DELETE") {
-    const participantId = path.split("/").pop();
-    if (participantId) {
-      return leaveRoom(code, participantId);
-    }
-  }
-
-  if (path === `/rooms/${code}/health` && method === "POST") {
-    return healthCheck(req, code);
-  }
-
-  if (path === `/rooms/${code}/participants` && method === "GET") {
-    return getParticipants(code);
-  }
-
   if (path === `/rooms/${code}/v1/models` && method === "GET") {
     return listModels(code);
   }
@@ -1840,6 +1988,49 @@ function handleRoomRoute(
   }
 
   if (path === `/rooms/${code}/events` && method === "GET") {
+    return sseEvents(code);
+  }
+
+  return null;
+}
+
+function handleManagementRoomRoute(
+  req: Request,
+  method: string,
+  path: string,
+  code: string,
+  requesterIp: string | null,
+  requestId: string
+): Promise<Response> | Response | null {
+  if (path === `/v1/rooms/${code}` && method === "GET") {
+    return getRoomSummary(code, requestId);
+  }
+
+  if (path === `/v1/rooms/${code}/participants` && method === "GET") {
+    return getParticipants(code, requestId);
+  }
+
+  const participantMatch = path.match(
+    /^\/v1\/rooms\/([^/]+)\/participants\/([^/]+)(?:\/heartbeat)?$/
+  );
+  if (participantMatch?.[1] === code && participantMatch[2]) {
+    const participantId = participantMatch[2];
+    const isHeartbeat = path.endsWith("/heartbeat");
+
+    if (method === "PUT" && !isHeartbeat) {
+      return upsertParticipant(req, code, participantId, requesterIp, requestId);
+    }
+
+    if (method === "DELETE" && !isHeartbeat) {
+      return leaveRoom(code, participantId, requestId);
+    }
+
+    if (method === "POST" && isHeartbeat) {
+      return heartbeatParticipant(code, participantId, requestId);
+    }
+  }
+
+  if (path === `/v1/rooms/${code}/events` && method === "GET") {
     return sseEvents(code);
   }
 
@@ -1866,7 +2057,7 @@ export function createHub(options: HubOptions = {}): Hub {
     for (const { roomId, participantId } of stale) {
       const room = Room.get(roomId);
       if (room) {
-        SSE.broadcast("participant:offline", { participantId }, room.code);
+        SSE.broadcast("participant.offline", { participantId }, room.code);
       }
     }
   }, HEALTH_CHECK_INTERVAL);
@@ -1878,20 +2069,37 @@ export function createHub(options: HubOptions = {}): Hub {
       const url = new URL(req.url);
       const method = req.method;
       const path = url.pathname;
+      const requestId = crypto.randomUUID();
 
       if (method === "OPTIONS") {
         return corsHeaders();
       }
 
-      if (path === "/health" && method === "GET") {
-        return hubHealth();
+      if (path === "/v1/health" && method === "GET") {
+        return hubHealth(requestId);
       }
 
-      if (path === "/rooms" && method === "POST") {
-        return createRoom(req);
+      if (path === "/v1/rooms" && method === "POST") {
+        return createRoom(req, requestId);
       }
-      if (path === "/rooms" && method === "GET") {
-        return listRooms();
+      if (path === "/v1/rooms" && method === "GET") {
+        return listRooms(requestId);
+      }
+
+      const managementRoomMatch = path.match(MANAGEMENT_ROOM_PATH_REGEX);
+      if (managementRoomMatch?.[1]) {
+        const requesterIp = getRequesterIp(req, server);
+        const result = handleManagementRoomRoute(
+          req,
+          method,
+          path,
+          managementRoomMatch[1],
+          requesterIp,
+          requestId
+        );
+        if (result) {
+          return result;
+        }
       }
 
       const roomMatch = path.match(ROOM_PATH_REGEX);
@@ -1909,7 +2117,13 @@ export function createHub(options: HubOptions = {}): Hub {
         }
       }
 
-      return new Response("Not Found", { status: 404 });
+      return managementError(
+        requestId,
+        "INVALID_REQUEST",
+        "Route not found.",
+        "Check the requested path and HTTP method.",
+        404
+      );
     },
   });
 

@@ -11,6 +11,7 @@ const alphaRoom = {
   hostId: "host-alpha",
   createdAt: 1,
   participantCount: 2,
+  passwordProtected: false,
 };
 
 const betaRoom = {
@@ -20,6 +21,7 @@ const betaRoom = {
   hostId: "host-beta",
   createdAt: 2,
   participantCount: 1,
+  passwordProtected: false,
 };
 
 function createBrowseServices(services: DiscoveredService[]) {
@@ -37,14 +39,14 @@ describe("room discovery", () => {
     const fetchFn: NonNullable<FetchLike> = (input) => {
       const url = String(input);
 
-      if (url === "http://localhost:3000/health") {
+      if (url === "http://localhost:3000/v1/health") {
         return Promise.resolve(
-          Response.json({ status: "ok", timestamp: Date.now() })
+          Response.json({ data: { status: "ok", timestamp: Date.now() } })
         );
       }
 
-      if (url === "http://localhost:3000/rooms") {
-        return Promise.resolve(Response.json({ rooms: [alphaRoom] }));
+      if (url === "http://localhost:3000/v1/rooms") {
+        return Promise.resolve(Response.json({ data: [alphaRoom] }));
       }
 
       throw new Error(`Unexpected URL: ${url}`);
@@ -75,24 +77,24 @@ describe("room discovery", () => {
       const url = String(input);
       fetchCalls.push(url);
 
-      if (url === "http://localhost:3000/health") {
+      if (url === "http://localhost:3000/v1/health") {
         return Promise.resolve(
-          Response.json({ status: "ok", timestamp: Date.now() })
+          Response.json({ data: { status: "ok", timestamp: Date.now() } })
         );
       }
 
-      if (url === "http://localhost:3000/rooms") {
-        return Promise.resolve(Response.json({ rooms: [alphaRoom] }));
+      if (url === "http://localhost:3000/v1/rooms") {
+        return Promise.resolve(Response.json({ data: [alphaRoom] }));
       }
 
-      if (url === "http://192.168.1.40:3100/health") {
+      if (url === "http://192.168.1.40:3100/v1/health") {
         return Promise.resolve(
-          Response.json({ status: "ok", timestamp: Date.now() })
+          Response.json({ data: { status: "ok", timestamp: Date.now() } })
         );
       }
 
-      if (url === "http://192.168.1.40:3100/rooms") {
-        return Promise.resolve(Response.json({ rooms: [betaRoom] }));
+      if (url === "http://192.168.1.40:3100/v1/rooms") {
+        return Promise.resolve(Response.json({ data: [betaRoom] }));
       }
 
       throw new Error(`Unexpected URL: ${url}`);
@@ -114,10 +116,10 @@ describe("room discovery", () => {
     });
 
     expect(fetchCalls).toEqual([
-      "http://localhost:3000/health",
-      "http://192.168.1.40:3100/health",
-      "http://localhost:3000/rooms",
-      "http://192.168.1.40:3100/rooms",
+      "http://localhost:3000/v1/health",
+      "http://192.168.1.40:3100/v1/health",
+      "http://localhost:3000/v1/rooms",
+      "http://192.168.1.40:3100/v1/rooms",
     ]);
     expect(rooms).toEqual([
       {
@@ -139,26 +141,26 @@ describe("room discovery", () => {
     const fetchFn: NonNullable<FetchLike> = (input) => {
       const url = String(input);
 
-      if (url === "http://localhost:3000/health") {
+      if (url === "http://localhost:3000/v1/health") {
         return Promise.resolve(
-          Response.json({ status: "ok", timestamp: Date.now() })
+          Response.json({ data: { status: "ok", timestamp: Date.now() } })
         );
       }
 
-      if (url === "http://localhost:3000/rooms") {
-        return Promise.resolve(Response.json({ rooms: [alphaRoom] }));
+      if (url === "http://localhost:3000/v1/rooms") {
+        return Promise.resolve(Response.json({ data: [alphaRoom] }));
       }
 
-      if (url === "http://192.168.1.50:3000/health") {
+      if (url === "http://192.168.1.50:3000/v1/health") {
         return Promise.resolve(
-          Response.json({ status: "ok", timestamp: Date.now() })
+          Response.json({ data: { status: "ok", timestamp: Date.now() } })
         );
       }
 
-      if (url === "http://192.168.1.50:3000/rooms") {
+      if (url === "http://192.168.1.50:3000/v1/rooms") {
         return Promise.resolve(
           Response.json({
-            rooms: [{ ...alphaRoom, name: "Alpha duplicate" }],
+            data: [{ ...alphaRoom, name: "Alpha duplicate" }],
           })
         );
       }
@@ -197,24 +199,24 @@ describe("room discovery", () => {
       const url = String(input);
       fetchCalls.push(url);
 
-      if (url === "http://localhost:3000/health") {
+      if (url === "http://localhost:3000/v1/health") {
         return Promise.resolve(
-          Response.json({ status: "ok", timestamp: Date.now() })
+          Response.json({ data: { status: "ok", timestamp: Date.now() } })
         );
       }
 
-      if (url === "http://localhost:3000/rooms") {
-        return Promise.resolve(Response.json({ rooms: [] }));
+      if (url === "http://localhost:3000/v1/rooms") {
+        return Promise.resolve(Response.json({ data: [] }));
       }
 
-      if (url === "http://192.168.1.60:3200/health") {
+      if (url === "http://192.168.1.60:3200/v1/health") {
         return Promise.resolve(
-          Response.json({ status: "ok", timestamp: Date.now() })
+          Response.json({ data: { status: "ok", timestamp: Date.now() } })
         );
       }
 
-      if (url === "http://192.168.1.60:3200/rooms") {
-        return Promise.resolve(Response.json({ rooms: [betaRoom] }));
+      if (url === "http://192.168.1.60:3200/v1/rooms") {
+        return Promise.resolve(Response.json({ data: [betaRoom] }));
       }
 
       throw new Error(`Unexpected URL: ${url}`);
@@ -236,10 +238,10 @@ describe("room discovery", () => {
     });
 
     expect(fetchCalls).toEqual([
-      "http://localhost:3000/health",
-      "http://192.168.1.60:3200/health",
-      "http://localhost:3000/rooms",
-      "http://192.168.1.60:3200/rooms",
+      "http://localhost:3000/v1/health",
+      "http://192.168.1.60:3200/v1/health",
+      "http://localhost:3000/v1/rooms",
+      "http://192.168.1.60:3200/v1/rooms",
     ]);
     expect(rooms).toEqual([
       {

@@ -88,10 +88,15 @@ describe("fetchJson", () => {
   test("extracts error message from response body", async () => {
     globalThis.fetch = mock(() =>
       Promise.resolve(
-        new Response(JSON.stringify({ error: "Room not found" }), {
+        new Response(
+          JSON.stringify({
+            error: { message: "Room not found" },
+          }),
+          {
           status: 404,
           statusText: "Not Found",
-        })
+          }
+        )
       )
     ) as unknown as typeof fetch;
 

@@ -9,7 +9,7 @@ interface HubHealthResult {
 }
 
 async function checkHubHealth(url: string): Promise<HubHealthResult> {
-  const response = await fetch(`${url}/health`, {
+  const response = await fetch(`${url}/v1/health`, {
     method: "GET",
     signal: AbortSignal.timeout(5000),
   });

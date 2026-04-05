@@ -3,7 +3,7 @@ import {
   type ParticipantAuthHeaders,
   type ParticipantCapabilities,
   ParticipantInfo,
-  RoomInfoPublic,
+  RoomSummary,
   type RuntimeConfig,
 } from "@gambi/core/types";
 import { useCallback } from "react";
@@ -22,17 +22,11 @@ const HealthResponse = z.object({
 });
 
 const CreateRoomResponse = z.object({
-  room: RoomInfoPublic,
+  room: RoomSummary,
   hostId: z.string(),
 });
 
-const ListRoomsResponse = z.object({
-  rooms: z.array(
-    RoomInfoPublic.extend({
-      participantCount: z.number().optional(),
-    })
-  ),
-});
+const ListRoomsResponse = z.array(RoomSummary);
 
 const JoinRoomResponse = z.object({
   participant: ParticipantInfo,
@@ -43,9 +37,7 @@ const SuccessResponse = z.object({
   success: z.literal(true),
 });
 
-const ParticipantsResponse = z.object({
-  participants: z.array(ParticipantInfo),
-});
+const ParticipantsResponse = z.array(ParticipantInfo);
 
 // Inferred types
 type HealthResponse = z.infer<typeof HealthResponse>;
@@ -122,13 +114,17 @@ export async function fetchJson<T>(
     if (!response.ok) {
       const errorBody = await response.json().catch(() => ({}));
       const errorMessage =
-        (errorBody as { error?: string }).error ||
+        (errorBody as { error?: { message?: string } }).error?.message ||
         `HTTP ${response.status}: ${response.statusText}`;
       return createErrorResult(errorMessage);
     }
 
-    const data: unknown = await response.json();
-    const parsed = schema.safeParse(data);
+    const envelope: unknown = await response.json();
+    const rawData =
+      envelope && typeof envelope === "object" && "data" in envelope
+        ? (envelope as { data: unknown }).data
+        : envelope;
+    const parsed = schema.safeParse(rawData);
 
     if (!parsed.success) {
       return createErrorResult(`Invalid response: ${parsed.error.message}`);
@@ -150,19 +146,19 @@ export function useHubApi(): UseHubApiReturn {
 
   const checkHub = useCallback(
     (): Promise<ApiResult<HealthResponse>> =>
-      fetchJson(`${hubUrl}/health`, HealthResponse),
+      fetchJson(`${hubUrl}/v1/health`, HealthResponse),
     [hubUrl]
   );
 
   const listRooms = useCallback(
     (): Promise<ApiResult<ListRoomsResponse>> =>
-      fetchJson(`${hubUrl}/rooms`, ListRoomsResponse),
+      fetchJson(`${hubUrl}/v1/rooms`, ListRoomsResponse),
     [hubUrl]
   );
 
   const createRoom = useCallback(
     (data: CreateRoomData): Promise<ApiResult<CreateRoomResponse>> =>
-      fetchJson(`${hubUrl}/rooms`, CreateRoomResponse, {
+      fetchJson(`${hubUrl}/v1/rooms`, CreateRoomResponse, {
         method: "POST",
         body: JSON.stringify(data),
       }),
@@ -174,10 +170,14 @@ export function useHubApi(): UseHubApiReturn {
       code: string,
       participantData: JoinParticipantData
     ): Promise<ApiResult<JoinRoomResponse>> =>
-      fetchJson(`${hubUrl}/rooms/${code}/join`, JoinRoomResponse, {
-        method: "POST",
-        body: JSON.stringify(participantData),
-      }),
+      fetchJson(
+        `${hubUrl}/v1/rooms/${code}/participants/${participantData.id}`,
+        JoinRoomResponse,
+        {
+          method: "PUT",
+          body: JSON.stringify(participantData),
+        }
+      ),
     [hubUrl]
   );
 
@@ -187,7 +187,7 @@ export function useHubApi(): UseHubApiReturn {
       participantId: string
     ): Promise<ApiResult<SuccessResponse>> =>
       fetchJson(
-        `${hubUrl}/rooms/${code}/leave/${participantId}`,
+        `${hubUrl}/v1/rooms/${code}/participants/${participantId}`,
         SuccessResponse,
         {
           method: "DELETE",
@@ -201,16 +201,19 @@ export function useHubApi(): UseHubApiReturn {
       code: string,
       participantId: string
     ): Promise<ApiResult<SuccessResponse>> =>
-      fetchJson(`${hubUrl}/rooms/${code}/health`, SuccessResponse, {
-        method: "POST",
-        body: JSON.stringify({ id: participantId }),
-      }),
+      fetchJson(
+        `${hubUrl}/v1/rooms/${code}/participants/${participantId}/heartbeat`,
+        SuccessResponse,
+        {
+          method: "POST",
+        }
+      ),
     [hubUrl]
   );
 
   const getParticipants = useCallback(
     (code: string): Promise<ApiResult<ParticipantsResponse>> =>
-      fetchJson(`${hubUrl}/rooms/${code}/participants`, ParticipantsResponse),
+      fetchJson(`${hubUrl}/v1/rooms/${code}/participants`, ParticipantsResponse),
     [hubUrl]
   );
 

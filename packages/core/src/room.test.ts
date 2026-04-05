@@ -21,6 +21,7 @@ function createMockParticipant(
     status: overrides.status ?? "online",
     joinedAt: overrides.joinedAt ?? now,
     lastSeen: overrides.lastSeen ?? now,
+    updatedAt: overrides.updatedAt ?? now,
   };
 }
 
