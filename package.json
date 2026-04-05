@@ -7,10 +7,11 @@
   ],
   "type": "module",
   "scripts": {
-    "dev": "bun run --cwd packages/cli src/cli.ts serve",
-    "dev:hub": "bun run --cwd packages/cli src/cli.ts serve",
+    "dev": "bun run --cwd packages/cli dev -- hub serve",
+    "dev:hub": "bun run --cwd packages/cli dev -- hub serve",
+    "dev:cli": "bun run --cwd packages/cli dev --",
     "dev:tui": "bun run --cwd apps/tui src/index.tsx",
-    "dev:monitor": "bun run --cwd packages/cli src/cli.ts monitor",
+    "dev:monitor": "bun run --cwd apps/tui dev",
     "dev:docs": "turbo -F docs dev",
     "build": "turbo build",
     "check-types": "turbo check-types"

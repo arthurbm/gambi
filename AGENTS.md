@@ -107,13 +107,22 @@ Comandos na raiz:
 ```bash
 bun run dev
 bun run dev:hub
+bun run dev:cli -- --help
+bun run dev:cli -- room list --format json
 bun run dev:tui
+bun run dev:monitor
 bun run dev:docs
 bun run build
 bun run check-types
 bun x ultracite check
 bun x ultracite fix
 ```
+
+Fluxo de dev na raiz:
+- `bun run dev` e `bun run dev:hub` iniciam o hub com `gambi hub serve`.
+- `bun run dev:cli -- <subcomando...>` e o entrypoint padrao para testar qualquer subcomando do CLI a partir da raiz.
+- `bun run dev:monitor` aponta para a TUI; nao existe mais comando plano `monitor` no CLI.
+- Nao reintroduzir scripts raiz com comandos removidos como `serve`, `create`, `join`, `list`, `update` ou `monitor` sem namespace de recurso.
 
 Comandos por workspace:
 ```bash
@@ -122,6 +131,7 @@ bun run --cwd packages/core check-types
 
 # CLI
 bun run --cwd packages/cli dev
+bun run --cwd packages/cli dev -- --help
 bun run --cwd packages/cli build
 bun run --cwd packages/cli check-types
 

@@ -358,9 +358,20 @@ Sensitive config is redacted from public management responses. Public room and p
 ```bash
 bun install
 bun run dev
+bun run dev:hub
+bun run dev:cli -- --help
+bun run dev:cli -- room list --format json
+bun run dev:cli -- hub serve --dry-run --format json
 bun run build
 bun run check-types
 ```
+
+Root dev workflow:
+
+- `bun run dev` and `bun run dev:hub` start the hub with `gambi hub serve`
+- `bun run dev:cli -- <subcommand...>` forwards any CLI command from the repo root
+- `bun run dev:monitor` is a TUI alias for human-first monitoring
+- Prefer `bun run dev:cli -- room create --help` and `bun run dev:cli -- participant join --help` for CLI discovery during development
 
 Workspace-specific:
 
