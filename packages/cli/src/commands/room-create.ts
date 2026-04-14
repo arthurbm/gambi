@@ -9,6 +9,7 @@ import {
 } from "../utils/management-api.ts";
 import { Command, Option } from "../utils/option.ts";
 import { writeStructured } from "../utils/output.ts";
+import { handleCancel } from "../utils/prompt.ts";
 
 async function promptForRoomSettings(params: {
   name?: string;
@@ -18,6 +19,7 @@ async function promptForRoomSettings(params: {
 
   if (!name) {
     const nameResult = await text({ message: "Room name:" });
+    handleCancel(nameResult);
     name = String(nameResult).trim();
   }
 
@@ -25,6 +27,7 @@ async function promptForRoomSettings(params: {
     const passwordResult = await passwordPrompt({
       message: "Room password (leave empty for none):",
     });
+    handleCancel(passwordResult);
     const candidatePassword = String(passwordResult).trim();
     if (candidatePassword) {
       password = candidatePassword;

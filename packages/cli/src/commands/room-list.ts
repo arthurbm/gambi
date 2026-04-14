@@ -9,6 +9,13 @@ import { Command, Option } from "../utils/option.ts";
 import { writeStructured } from "../utils/output.ts";
 
 type RoomSort = "participant-count" | "created-at" | "name";
+const ROOM_SORT_VALUES = ["participant-count", "created-at", "name"] as const;
+
+export function parseRoomSort(value: string): RoomSort | null {
+  return ROOM_SORT_VALUES.includes(value as RoomSort)
+    ? (value as RoomSort)
+    : null;
+}
 
 function sortRooms(rooms: RoomSummary[], sortBy: RoomSort, reverse: boolean) {
   const sorted = [...rooms].sort((left, right) => {
@@ -67,7 +74,13 @@ export class RoomListCommand extends AgentCommand {
     }
     const envConfig = envConfigResult.value;
     const hubUrl = this.hub ?? envConfig?.hubUrl ?? "http://localhost:3000";
-    const sortBy = (this.sort ?? "participant-count") as RoomSort;
+    const sortBy = parseRoomSort(this.sort ?? "participant-count");
+    if (!sortBy) {
+      this.context.stderr.write(
+        `Error: Invalid sort '${this.sort}'.\nHint: use participant-count, created-at, or name.\n`
+      );
+      return 2;
+    }
     const format = this.resolveFormat(false);
 
     const response = await requestManagement<RoomSummary[]>(

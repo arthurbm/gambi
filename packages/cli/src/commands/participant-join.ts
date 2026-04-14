@@ -23,6 +23,7 @@ import {
 } from "../utils/network-endpoint.ts";
 import { Command, Option } from "../utils/option.ts";
 import { writeStructured } from "../utils/output.ts";
+import { handleCancel } from "../utils/prompt.ts";
 import { detectSpecs } from "../utils/specs.ts";
 
 function parseHeaderAssignment(input: string): { name: string; value: string } {
@@ -223,13 +224,18 @@ export class ParticipantJoinCommand extends AgentCommand {
 
     if (this.allowInteractive(true)) {
       if (!room) {
-        room = String(await text({ message: "Room code:" })).trim();
+        const roomResult = await text({ message: "Room code:" });
+        handleCancel(roomResult);
+        room = String(roomResult).trim();
       }
 
       if (!participantId) {
-        participantId = String(
-          await text({ message: "Participant ID:", placeholder: nanoid(8) })
-        ).trim();
+        const participantIdResult = await text({
+          message: "Participant ID:",
+          placeholder: nanoid(8),
+        });
+        handleCancel(participantIdResult);
+        participantId = String(participantIdResult).trim();
       }
 
       if (!model) {
@@ -246,32 +252,35 @@ export class ParticipantJoinCommand extends AgentCommand {
           );
           return 3;
         }
-        model = String(
-          await select({
-            message: "Model:",
-            options: probe.models.map((candidate) => ({
-              value: candidate,
-              label: candidate,
-            })),
-          })
-        );
+        const modelResult = await select({
+          message: "Model:",
+          options: probe.models.map((candidate) => ({
+            value: candidate,
+            label: candidate,
+          })),
+        });
+        handleCancel(modelResult);
+        model = String(modelResult);
       }
 
       if (nickname === undefined) {
-        const nicknameResult = String(
-          await text({ message: "Nickname (optional):", placeholder: model })
-        ).trim();
+        const nicknamePromptResult = await text({
+          message: "Nickname (optional):",
+          placeholder: model,
+        });
+        handleCancel(nicknamePromptResult);
+        const nicknameResult = String(nicknamePromptResult).trim();
         if (nicknameResult) {
           nickname = nicknameResult;
         }
       }
 
       if (password === undefined) {
-        const passwordResult = String(
-          await passwordPrompt({
-            message: "Room password (leave empty if none):",
-          })
-        ).trim();
+        const passwordPromptResult = await passwordPrompt({
+          message: "Room password (leave empty if none):",
+        });
+        handleCancel(passwordPromptResult);
+        const passwordResult = String(passwordPromptResult).trim();
         if (passwordResult) {
           password = passwordResult;
         }

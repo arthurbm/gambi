@@ -112,6 +112,12 @@ export function parseErrorEnvelope(
   });
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === "AbortError"
+    : error instanceof Error && error.name === "AbortError";
+}
+
 function isApiResult<T>(value: unknown): value is ApiResult<T> {
   return (
     typeof value === "object" &&
@@ -164,7 +170,10 @@ async function fetchResponse(
 ): Promise<Response> {
   try {
     return await fetch(input, init);
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
     throw createConnectivityError();
   }
 }
@@ -210,7 +219,17 @@ async function* streamRoomEvents(response: Response): AsyncIterable<RoomEvent> {
   let buffer = "";
 
   while (true) {
-    const { done, value } = await reader.read();
+    let chunk;
+    try {
+      chunk = await reader.read();
+    } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
+      throw error;
+    }
+
+    const { done, value } = chunk;
     if (done) {
       break;
     }
@@ -317,13 +336,21 @@ export function createClient(options: ClientOptions = {}): GambiClient {
     },
     events: {
       async *watchRoom(options: WatchRoomOptions): AsyncIterable<RoomEvent> {
-        const response = await fetchResponse(
-          `${hubUrl}/v1/rooms/${options.roomCode}/events`,
-          {
-            headers: { Accept: "text/event-stream" },
-            signal: options.signal,
+        let response: Response;
+        try {
+          response = await fetchResponse(
+            `${hubUrl}/v1/rooms/${options.roomCode}/events`,
+            {
+              headers: { Accept: "text/event-stream" },
+              signal: options.signal,
+            }
+          );
+        } catch (error) {
+          if (isAbortError(error)) {
+            return;
           }
-        );
+          throw error;
+        }
 
         if (!response.ok) {
           const body = (await readJsonBody(response)) as

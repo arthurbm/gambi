@@ -10,7 +10,9 @@ describe("management api helpers", () => {
 
   test("requestManagement returns a structured connectivity failure when fetch rejects", async () => {
     globalThis.fetch = (() =>
-      Promise.reject(new Error("connect ECONNREFUSED"))) as unknown as typeof fetch;
+      Promise.reject(
+        new Error("connect ECONNREFUSED")
+      )) as unknown as typeof fetch;
 
     const result = await requestManagement(
       "http://localhost:3000",
@@ -85,5 +87,23 @@ describe("management api helpers", () => {
         data: { id: "worker-1" },
       },
     ]);
+  });
+
+  test("watchRoomEvents ends cleanly when aborted", async () => {
+    globalThis.fetch = (() =>
+      Promise.reject(
+        new DOMException("Aborted", "AbortError")
+      )) as unknown as typeof fetch;
+
+    const events: unknown[] = [];
+    for await (const event of watchRoomEvents(
+      "http://localhost:3000",
+      "ABC123",
+      AbortSignal.abort()
+    )) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([]);
   });
 });

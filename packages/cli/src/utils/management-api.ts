@@ -21,6 +21,12 @@ export class WatchRoomEventsError extends Error {
   }
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === "AbortError"
+    : error instanceof Error && error.name === "AbortError";
+}
+
 function isApiSuccess<T>(value: unknown): value is ApiSuccess<T> {
   return (
     typeof value === "object" &&
@@ -189,7 +195,10 @@ export async function* watchRoomEvents(
       headers: { Accept: "text/event-stream" },
       signal,
     });
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) {
+      return;
+    }
     throw new WatchRoomEventsError(createConnectivityFailure());
   }
 
@@ -222,7 +231,17 @@ export async function* watchRoomEvents(
   let buffer = "";
 
   while (true) {
-    const { done, value } = await reader.read();
+    let chunk;
+    try {
+      chunk = await reader.read();
+    } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
+      throw new WatchRoomEventsError(createConnectivityFailure());
+    }
+
+    const { done, value } = chunk;
     if (done) {
       break;
     }

@@ -56,4 +56,22 @@ describe("SDK provider", () => {
       requestId: "req_123",
     } satisfies Partial<ClientError>);
   });
+
+  test("treats invalid success JSON as a protocol ClientError", async () => {
+    globalThis.fetch = (async () =>
+      new Response("not-json", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })) as unknown as typeof fetch;
+
+    const provider = createGambi({ roomCode: "ABC123" });
+
+    await expect(provider.listParticipants()).rejects.toMatchObject({
+      name: "ClientError",
+      status: 502,
+      code: "INTERNAL_ERROR",
+      message: "Invalid JSON response from hub.",
+      hint: "Check hub compatibility or proxy behavior.",
+    } satisfies Partial<ClientError>);
+  });
 });

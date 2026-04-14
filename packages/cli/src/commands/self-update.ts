@@ -1,13 +1,14 @@
-import { confirm } from "@clack/prompts";
 import { spawnSync } from "node:child_process";
+import { confirm } from "@clack/prompts";
 import { AgentCommand } from "../utils/agent-command.ts";
 import { Command, Option } from "../utils/option.ts";
+import { writeStructured } from "../utils/output.ts";
+import { handleCancel } from "../utils/prompt.ts";
 import {
   executeStandaloneUpdate,
   normalizePackageManager,
   resolveUpdatePlan,
 } from "../utils/update.ts";
-import { writeStructured } from "../utils/output.ts";
 
 function runPackageManagerUpdate(manager: "bun" | "npm", args: string[]) {
   const result = spawnSync(manager, args, {
@@ -79,6 +80,7 @@ export class SelfUpdateCommand extends AgentCommand {
         message: `Run update now?\n${plan.command}`,
         initialValue: true,
       });
+      handleCancel(shouldProceed);
       if (!shouldProceed) {
         this.context.stdout.write("Update cancelled.\n");
         return 0;

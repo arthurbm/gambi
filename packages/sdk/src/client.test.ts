@@ -201,4 +201,26 @@ describe("HTTP Client", () => {
       hint: "Check hub URL and connectivity.",
     } satisfies Partial<ClientError>);
   });
+
+  test("ends room event watches cleanly when aborted", async () => {
+    globalThis.fetch = (() =>
+      Promise.reject(
+        new DOMException("Aborted", "AbortError")
+      )) as typeof fetch;
+
+    const abortController = new AbortController();
+    abortController.abort();
+
+    const iterator = client.events
+      .watchRoom({
+        roomCode: "ABC123",
+        signal: abortController.signal,
+      })
+      [Symbol.asyncIterator]();
+
+    await expect(iterator.next()).resolves.toEqual({
+      done: true,
+      value: undefined,
+    });
+  });
 });
