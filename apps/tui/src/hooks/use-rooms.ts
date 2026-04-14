@@ -25,6 +25,13 @@ interface RoomConnection {
   connected: boolean;
 }
 
+interface RoomEventEnvelope {
+  type: string;
+  timestamp: number;
+  roomCode: string;
+  data: unknown;
+}
+
 interface UseRoomsReturn {
   rooms: Map<string, RoomState>;
   activeRoom: string | null;
@@ -36,6 +43,37 @@ interface UseRoomsReturn {
 }
 
 const RECONNECT_DELAY = 3000;
+
+function isRoomEventEnvelope(value: unknown): value is RoomEventEnvelope {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    typeof value.type === "string" &&
+    "timestamp" in value &&
+    typeof value.timestamp === "number" &&
+    "roomCode" in value &&
+    typeof value.roomCode === "string" &&
+    "data" in value
+  );
+}
+
+export function unwrapSSEEventPayload(
+  fallbackEvent: string,
+  payload: unknown
+): { event: string; data: unknown } {
+  if (isRoomEventEnvelope(payload)) {
+    return {
+      event: payload.type,
+      data: payload.data,
+    };
+  }
+
+  return {
+    event: fallbackEvent,
+    data: payload,
+  };
+}
 
 // Types for event handler results - exported for testing
 export interface LogAction {
@@ -428,7 +466,11 @@ export function useRooms(): UseRoomsReturn {
         buffer = remaining;
 
         for (const sseEvent of events) {
-          handleSSEEvent(code, sseEvent.event, sseEvent.data);
+          const unwrapped = unwrapSSEEventPayload(
+            sseEvent.event,
+            sseEvent.data
+          );
+          handleSSEEvent(code, unwrapped.event, unwrapped.data);
         }
       }
     },
