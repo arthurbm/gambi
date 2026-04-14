@@ -1,3 +1,4 @@
+import type { RoomSummary } from "@gambi/core/types";
 import { useKeyboard } from "@opentui/react";
 import { useCallback, useState } from "react";
 import { Footer } from "../components/footer";
@@ -34,10 +35,10 @@ export function ListRooms({ onNavigate, onBack, canGoBack }: ListRoomsProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   const rooms: RoomData[] =
-    data?.rooms.map((room) => ({
+    data?.map((room: RoomSummary) => ({
       code: room.code,
       name: room.name,
-      participantCount: room.participantCount ?? 0,
+      participantCount: room.participantCount,
       createdAt: new Date(room.createdAt).toLocaleString(),
     })) ?? [];
 

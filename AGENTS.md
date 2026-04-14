@@ -1,7 +1,7 @@
 # AGENTS.md - Guia Operacional para Agentes de Código
 
 Escopo: este arquivo orienta agentes que iniciam trabalho no repositório `gambi`.
-Status de validação: conteúdo conferido no código em 2026-03-18.
+Status de validação: conteúdo conferido no código em 2026-04-05.
 
 ## 1) Objetivo do projeto
 
@@ -44,16 +44,22 @@ Arquivos de referência rápida:
 ## 4) Contratos e comportamentos críticos
 
 Endpoints do hub (HTTP):
-- `POST /rooms`
-- `GET /rooms`
-- `POST /rooms/:code/join`
-- `DELETE /rooms/:code/leave/:id`
-- `POST /rooms/:code/health`
-- `GET /rooms/:code/participants`
+- `GET /v1/health`
+- `GET /v1/rooms`
+- `POST /v1/rooms`
+- `GET /v1/rooms/:code`
+- `GET /v1/rooms/:code/participants`
+- `PUT /v1/rooms/:code/participants/:id`
+- `DELETE /v1/rooms/:code/participants/:id`
+- `POST /v1/rooms/:code/participants/:id/heartbeat`
+- `GET /v1/rooms/:code/events` (SSE)
 - `GET /rooms/:code/v1/models`
 - `POST /rooms/:code/v1/chat/completions`
-- `GET /rooms/:code/events` (SSE)
-- `GET /health`
+- `POST /rooms/:code/v1/responses`
+- `GET /rooms/:code/v1/responses/:id`
+- `DELETE /rooms/:code/v1/responses/:id`
+- `POST /rooms/:code/v1/responses/:id/cancel`
+- `GET /rooms/:code/v1/responses/:id/input_items`
 
 Roteamento de modelo no proxy:
 - `model = <participant-id>`: participante específico.
@@ -67,11 +73,28 @@ Health e disponibilidade:
 
 Comportamento do CLI:
 - `gambi` sem argumentos exibe help com referencia ao `gambi-tui`.
-- Subcomandos registrados hoje: `serve`, `create`, `join`, `list`, `update`.
-- Todos os comandos suportam modo interativo: quando rodados sem flags obrigatorias em TTY, promptam o usuario via `@clack/prompts`.
-- Flags continuam funcionando normalmente para scripting e automacao.
-- `gambi update` atualiza instalacoes via `bun`, `npm` ou binario standalone do instalador oficial.
-- No modo interativo do `join`, o usuario seleciona provedor LLM (Ollama, LM Studio, vLLM ou custom) e modelo de uma lista.
+- Comandos operacionais atuais:
+  - `gambi hub serve`
+  - `gambi room create|list|get`
+  - `gambi participant join|leave|heartbeat`
+  - `gambi events watch`
+  - `gambi self update`
+- O CLI e orientado a recursos e a automacao por flags.
+- Saida estruturada:
+  - `--format text|json|ndjson`
+  - stdout pipeado escolhe `json` ou `ndjson` por padrao
+- Controles de interatividade:
+  - `--interactive`
+  - `--no-interactive`
+  - `GAMBI_NO_INTERACTIVE=1`
+- `gambi self update` atualiza instalacoes via `bun`, `npm` ou binario standalone do instalador oficial.
+- `gambi participant join` exige `--participant-id` para fluxos nao interativos retry-safe.
+
+Contratos operacionais:
+- O management plane em `/v1` e a superficie canonica para automacao.
+- SDK de operacao deve mapear diretamente para os contratos do core.
+- O CLI deve renderizar sobre contratos estruturados do core, sem inventar contratos textuais paralelos.
+- Compatibilidade retroativa nao e um requisito padrao quando houver pedido explicito de clean break, como neste redesign.
 
 ## 5) Setup e comandos oficiais
 
@@ -84,13 +107,22 @@ Comandos na raiz:
 ```bash
 bun run dev
 bun run dev:hub
+bun run dev:cli -- --help
+bun run dev:cli -- room list --format json
 bun run dev:tui
+bun run dev:monitor
 bun run dev:docs
 bun run build
 bun run check-types
 bun x ultracite check
 bun x ultracite fix
 ```
+
+Fluxo de dev na raiz:
+- `bun run dev` e `bun run dev:hub` iniciam o hub com `gambi hub serve`.
+- `bun run dev:cli -- <subcomando...>` e o entrypoint padrao para testar qualquer subcomando do CLI a partir da raiz.
+- `bun run dev:monitor` aponta para a TUI; nao existe mais comando plano `monitor` no CLI.
+- Nao reintroduzir scripts raiz com comandos removidos como `serve`, `create`, `join`, `list`, `update` ou `monitor` sem namespace de recurso.
 
 Comandos por workspace:
 ```bash
@@ -99,6 +131,7 @@ bun run --cwd packages/core check-types
 
 # CLI
 bun run --cwd packages/cli dev
+bun run --cwd packages/cli dev -- --help
 bun run --cwd packages/cli build
 bun run --cwd packages/cli check-types
 
@@ -181,6 +214,7 @@ Obrigatorio:
 - Nao executar comandos destrutivos sem solicitacao explicita.
 - Nao assumir arvore limpa.
 - Se detectar mudancas inesperadas novas durante a tarefa, pausar e reportar.
+- Usar **Conventional Commits** em todo novo commit (`tipo(escopo): resumo`), por exemplo `fix(cli): tratar cancelamento em prompts`.
 
 ## 10) Inconsistencias conhecidas (documentar, nao ignorar)
 

@@ -170,6 +170,7 @@ node ./packages/cli/dist/npm/gambi/bin/gambi --help
 ## Rules for Everyday Development
 
 - Do not bump versions manually in feature PRs.
+- Use Conventional Commits for new commits whenever possible, for example `fix(cli): harden self update output`.
 - Let the release workflow update synchronized versions.
 - Treat `packages/cli/dist` as generated output only.
 - If a change affects install, publish, wrapper resolution, or platform binaries, update this document and `AGENTS.md` in the same PR.

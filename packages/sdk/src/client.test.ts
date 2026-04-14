@@ -1,7 +1,16 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "bun:test";
 import { createHub, type Hub } from "@gambi/core/hub";
 import { Room } from "@gambi/core/room";
-import { ClientError, createClient } from "./client.ts";
+import { type ClientError, createClient } from "./client.ts";
+
+const originalFetch = globalThis.fetch;
 
 function getRandomPort(): number {
   return 30_000 + Math.floor(Math.random() * 20_000);
@@ -27,278 +36,222 @@ describe("HTTP Client", () => {
 
   beforeAll(() => {
     hub = createHubWithRetry();
-    Room.clear();
     client = createClient({ hubUrl: hub.url });
   });
 
   afterAll(() => {
     hub.close();
   });
-  describe("create", () => {
-    test("creates a new room", async () => {
-      const { room, hostId } = await client.create("Test Room");
 
-      expect(room.name).toBe("Test Room");
-      expect(room.code).toHaveLength(6);
-      expect(hostId).toBeDefined();
-    });
-
-    test("throws ClientError on failure", async () => {
-      // Invalid request (empty name will fail validation)
-      await expect(
-        fetch(`${hub.url}/rooms`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        }).then((res) => res.json())
-      ).resolves.toHaveProperty("error");
-    });
-
-    test("supports room defaults via options object", async () => {
-      const { room } = await client.create("Configured Room", {
-        defaults: {
-          instructions: "Room instructions",
-          temperature: 0.4,
-        },
-      });
-
-      expect(room.defaults).toEqual({
-        hasInstructions: true,
-        temperature: 0.4,
-      });
-      expect(room.defaults).not.toHaveProperty("instructions");
-    });
+  beforeEach(() => {
+    Room.clear();
+    globalThis.fetch = originalFetch;
   });
 
-  describe("list", () => {
-    test("lists all rooms", async () => {
-      Room.clear();
-      await client.create("Room 1");
-      await client.create("Room 2");
+  test("creates and lists rooms through the namespaced client", async () => {
+    const created = await client.rooms.create({ name: "Test Room" });
+    const listed = await client.rooms.list();
 
-      const rooms = await client.list();
-
-      expect(rooms).toHaveLength(2);
-      expect(rooms[0].name).toBe("Room 1");
-      expect(rooms[1].name).toBe("Room 2");
-    });
-
-    test("returns empty array when no rooms", async () => {
-      Room.clear();
-      const rooms = await client.list();
-
-      expect(rooms).toEqual([]);
-    });
+    expect(created.data.room.name).toBe("Test Room");
+    expect(created.data.room.code).toHaveLength(6);
+    expect(listed.data).toHaveLength(1);
+    expect(listed.data[0]?.name).toBe("Test Room");
   });
 
-  describe("join", () => {
-    test("joins a room as a participant", async () => {
-      const { room } = await client.create("Test Room");
+  test("gets one room summary", async () => {
+    const created = await client.rooms.create({ name: "Lookup Room" });
+    const fetched = await client.rooms.get(created.data.room.code);
 
-      const { participant, roomId } = await client.join(room.code, {
-        id: "participant-1",
-        nickname: "Test Bot",
-        model: "llama3",
-        endpoint: "http://localhost:11434",
-      });
+    expect(fetched.data.code).toBe(created.data.room.code);
+    expect(fetched.data.passwordProtected).toBe(false);
+  });
 
-      expect(participant.id).toBe("participant-1");
-      expect(participant.nickname).toBe("Test Bot");
-      expect(roomId).toBe(room.id);
-    });
+  test("upserts participants and redacts runtime instructions publicly", async () => {
+    const created = await client.rooms.create({ name: "Workers" });
 
-    test("accepts auth headers without exposing them in the response", async () => {
-      const { room } = await client.create("Authenticated Room");
-
-      const { participant } = await client.join(room.code, {
-        id: "participant-2",
-        nickname: "Remote Bot",
-        model: "gpt-4o-mini",
-        endpoint: "https://api.example.com",
-        authHeaders: {
-          Authorization: "Bearer secret-token",
-        },
-      });
-
-      expect(participant.id).toBe("participant-2");
-      expect(participant).not.toHaveProperty("authHeaders");
-    });
-
-    test("redacts instructions in public participant responses", async () => {
-      const { room } = await client.create("Configured Participant Room");
-
-      const { participant } = await client.join(room.code, {
-        id: "participant-3",
-        nickname: "Configured Bot",
+    const joined = await client.participants.upsert(
+      created.data.room.code,
+      "worker-1",
+      {
+        nickname: "Worker 1",
         model: "llama3",
         endpoint: "http://localhost:11434",
         config: {
-          instructions: "Private instructions",
-          temperature: 0.6,
+          instructions: "Private",
+          temperature: 0.4,
         },
-      });
+      }
+    );
 
-      expect(participant.config).toEqual({
-        hasInstructions: true,
-        temperature: 0.6,
-      });
-      expect(participant.config).not.toHaveProperty("instructions");
+    expect(joined.data.participant.id).toBe("worker-1");
+    expect(joined.data.participant.config).toEqual({
+      hasInstructions: true,
+      temperature: 0.4,
     });
 
-    test("throws ClientError for non-existent room", async () => {
-      await expect(
-        client.join("XXXXXX", {
-          id: "participant-1",
-          nickname: "Test Bot",
-          model: "llama3",
-          endpoint: "http://localhost:11434",
-        })
-      ).rejects.toThrow(ClientError);
+    const listed = await client.participants.list(created.data.room.code);
+    expect(listed.data).toHaveLength(1);
+    expect(listed.data[0]?.config).toEqual({
+      hasInstructions: true,
+      temperature: 0.4,
     });
   });
 
-  describe("leave", () => {
-    test("removes participant from room", async () => {
-      const { room } = await client.create("Test Room");
-      await client.join(room.code, {
-        id: "participant-1",
-        nickname: "Test Bot",
-        model: "llama3",
-        endpoint: "http://localhost:11434",
-      });
-
-      const result = await client.leave(room.code, "participant-1");
-
-      expect(result.success).toBe(true);
+  test("supports heartbeat and remove for participants", async () => {
+    const created = await client.rooms.create({ name: "Lifecycle" });
+    await client.participants.upsert(created.data.room.code, "worker-1", {
+      nickname: "Worker 1",
+      model: "llama3",
+      endpoint: "http://localhost:11434",
     });
 
-    test("throws ClientError for non-existent participant", async () => {
-      const { room } = await client.create("Test Room");
+    const heartbeat = await client.participants.heartbeat(
+      created.data.room.code,
+      "worker-1"
+    );
+    expect(heartbeat.data.success).toBe(true);
+    expect(heartbeat.data.status).toBe("online");
 
-      await expect(client.leave(room.code, "non-existent")).rejects.toThrow(
-        ClientError
-      );
+    const removed = await client.participants.remove(
+      created.data.room.code,
+      "worker-1"
+    );
+    expect(removed.data.success).toBe(true);
+  });
+
+  test("parses typed management errors into ClientError", async () => {
+    await expect(client.rooms.get("XXXXXX")).rejects.toMatchObject({
+      name: "ClientError",
+      status: 404,
+      code: "ROOM_NOT_FOUND",
+    } satisfies Partial<ClientError>);
+  });
+
+  test("maps connectivity failures to ClientError", async () => {
+    globalThis.fetch = (() =>
+      Promise.reject(new Error("connect ECONNREFUSED"))) as typeof fetch;
+
+    await expect(client.rooms.list()).rejects.toMatchObject({
+      name: "ClientError",
+      status: 503,
+      code: "INTERNAL_ERROR",
+      message: "Failed to reach hub.",
+      hint: "Check hub URL and connectivity.",
+    } satisfies Partial<ClientError>);
+  });
+
+  test("treats invalid success JSON as a protocol ClientError", async () => {
+    globalThis.fetch = (async () =>
+      new Response("not-json", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })) as unknown as typeof fetch;
+
+    await expect(client.rooms.list()).rejects.toMatchObject({
+      name: "ClientError",
+      status: 502,
+      code: "INTERNAL_ERROR",
+      message: "Invalid JSON response from hub.",
+      hint: "Check hub compatibility or proxy behavior.",
+    } satisfies Partial<ClientError>);
+  });
+
+  test("watches typed room events", async () => {
+    const created = await client.rooms.create({ name: "Watched Room" });
+    const abortController = new AbortController();
+    const iterator = client.events
+      .watchRoom({
+        roomCode: created.data.room.code,
+        signal: abortController.signal,
+      })
+      [Symbol.asyncIterator]();
+
+    const connectedEvent = await iterator.next();
+    expect(connectedEvent.done).toBe(false);
+    expect(connectedEvent.value?.type).toBe("connected");
+
+    await client.participants.upsert(created.data.room.code, "worker-1", {
+      nickname: "Worker 1",
+      model: "llama3",
+      endpoint: "http://localhost:11434",
+    });
+
+    const joinedEvent = await iterator.next();
+    expect(joinedEvent.done).toBe(false);
+    expect(joinedEvent.value?.type).toBe("participant.joined");
+
+    abortController.abort();
+  });
+
+  test("maps room event connectivity failures to ClientError", async () => {
+    globalThis.fetch = (() =>
+      Promise.reject(new Error("connect ECONNREFUSED"))) as typeof fetch;
+
+    const iterator = client.events
+      .watchRoom({
+        roomCode: "ABC123",
+      })
+      [Symbol.asyncIterator]();
+
+    await expect(iterator.next()).rejects.toMatchObject({
+      name: "ClientError",
+      status: 503,
+      code: "INTERNAL_ERROR",
+      message: "Failed to reach hub.",
+      hint: "Check hub URL and connectivity.",
+    } satisfies Partial<ClientError>);
+  });
+
+  test("ends room event watches cleanly when aborted", async () => {
+    globalThis.fetch = (() =>
+      Promise.reject(
+        new DOMException("Aborted", "AbortError")
+      )) as typeof fetch;
+
+    const abortController = new AbortController();
+    abortController.abort();
+
+    const iterator = client.events
+      .watchRoom({
+        roomCode: "ABC123",
+        signal: abortController.signal,
+      })
+      [Symbol.asyncIterator]();
+
+    await expect(iterator.next()).resolves.toEqual({
+      done: true,
+      value: undefined,
     });
   });
 
-  describe("getParticipants", () => {
-    test("returns participants in room", async () => {
-      const { room } = await client.create("Test Room");
-      await client.join(room.code, {
-        id: "participant-1",
-        nickname: "Test Bot",
-        model: "llama3",
-        endpoint: "http://localhost:11434",
-      });
+  test("maps room event stream interruptions to ClientError", async () => {
+    globalThis.fetch = (async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode("data: "));
+            queueMicrotask(() => {
+              controller.error(new Error("stream dropped"));
+            });
+          },
+        }),
+        {
+          headers: { "Content-Type": "text/event-stream" },
+        }
+      )) as unknown as typeof fetch;
 
-      const participants = await client.getParticipants(room.code);
+    const iterator = client.events
+      .watchRoom({
+        roomCode: "ABC123",
+      })
+      [Symbol.asyncIterator]();
 
-      expect(participants).toHaveLength(1);
-      expect(participants[0].nickname).toBe("Test Bot");
-    });
-
-    test("throws ClientError for non-existent room", async () => {
-      await expect(client.getParticipants("XXXXXX")).rejects.toThrow(
-        ClientError
-      );
-    });
-  });
-
-  describe("healthCheck", () => {
-    test("sends health check for participant", async () => {
-      const { room } = await client.create("Test Room");
-      await client.join(room.code, {
-        id: "participant-1",
-        nickname: "Test Bot",
-        model: "llama3",
-        endpoint: "http://localhost:11434",
-      });
-
-      const result = await client.healthCheck(room.code, "participant-1");
-
-      expect(result.success).toBe(true);
-    });
-
-    test("throws ClientError for non-existent participant", async () => {
-      const { room } = await client.create("Test Room");
-
-      await expect(
-        client.healthCheck(room.code, "non-existent")
-      ).rejects.toThrow(ClientError);
-    });
-  });
-
-  describe("password protection", () => {
-    test("creates password-protected room", async () => {
-      const { room } = await client.create("Secured Room", "secret123");
-
-      expect(room.name).toBe("Secured Room");
-      // Password hash should NOT be exposed in API responses (security)
-    });
-
-    test("allows join with correct password", async () => {
-      const { room } = await client.create("Protected", "mypass");
-
-      const { participant } = await client.join(room.code, {
-        id: "participant-1",
-        nickname: "Test Bot",
-        model: "llama3",
-        endpoint: "http://localhost:11434",
-        password: "mypass",
-      });
-
-      expect(participant.id).toBe("participant-1");
-    });
-
-    test("rejects join with incorrect password", async () => {
-      const { room } = await client.create("Protected", "correctpass");
-
-      await expect(
-        client.join(room.code, {
-          id: "participant-1",
-          nickname: "Test Bot",
-          model: "llama3",
-          endpoint: "http://localhost:11434",
-          password: "wrongpass",
-        })
-      ).rejects.toThrow(ClientError);
-    });
-
-    test("rejects join without password when required", async () => {
-      const { room } = await client.create("Protected", "required");
-
-      await expect(
-        client.join(room.code, {
-          id: "participant-1",
-          nickname: "Test Bot",
-          model: "llama3",
-          endpoint: "http://localhost:11434",
-        })
-      ).rejects.toThrow(ClientError);
-    });
-
-    test("allows join without password when not required", async () => {
-      const { room } = await client.create("Open Room");
-
-      const { participant } = await client.join(room.code, {
-        id: "participant-1",
-        nickname: "Test Bot",
-        model: "llama3",
-        endpoint: "http://localhost:11434",
-      });
-
-      expect(participant.id).toBe("participant-1");
-    });
-  });
-
-  describe("ClientError", () => {
-    test("includes status and response", () => {
-      const error = new ClientError("Test error", 404, { detail: "Not found" });
-
-      expect(error.message).toBe("Test error");
-      expect(error.status).toBe(404);
-      expect(error.response).toEqual({ detail: "Not found" });
-      expect(error.name).toBe("ClientError");
-    });
+    await expect(iterator.next()).rejects.toMatchObject({
+      name: "ClientError",
+      status: 503,
+      code: "INTERNAL_ERROR",
+      message: "Event stream interrupted.",
+      hint: "Check hub URL and connectivity.",
+    } satisfies Partial<ClientError>);
   });
 });

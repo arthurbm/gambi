@@ -26,7 +26,7 @@ export function AddRoomModal({ onAdd, onCancel }: AddRoomModalProps) {
 
     try {
       // Verify room exists
-      const response = await fetch(`${hubUrl}/rooms/${code}/participants`);
+      const response = await fetch(`${hubUrl}/v1/rooms/${code}`);
       if (!response.ok) {
         throw new Error("Room not found");
       }

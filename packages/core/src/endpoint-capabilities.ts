@@ -44,6 +44,8 @@ async function probePostEndpoint(
     });
 
     if (
+      response.status === 401 ||
+      response.status === 403 ||
       response.status === 404 ||
       response.status === 405 ||
       response.status === 501

@@ -1,7 +1,8 @@
 import { createOpenResponses } from "@ai-sdk/open-responses";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
-import type { ParticipantInfo } from "@gambi/core/types";
+import type { ApiErrorResponse, ParticipantInfo } from "@gambi/core/types";
+import { ClientError, parseErrorEnvelope } from "./client.ts";
 
 export type GambiProtocol = "openResponses" | "chatCompletions";
 const DEFAULT_PROTOCOL: GambiProtocol = "openResponses";
@@ -21,7 +22,7 @@ export interface GambiModel {
 }
 
 interface ParticipantsResponse {
-  participants: ParticipantInfo[];
+  data: ParticipantInfo[];
 }
 
 interface ModelsResponse {
@@ -94,6 +95,28 @@ function createNamespace(
   return protocolNamespaceFactories[protocol](baseURL);
 }
 
+function isParticipantsResponse(value: unknown): value is ParticipantsResponse {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "data" in value &&
+    Array.isArray(value.data)
+  );
+}
+
+async function readJsonBody(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Create a Gambi provider for use with AI SDK.
  *
@@ -119,13 +142,29 @@ export function createGambi(options: GambiOptions): GambiProvider {
 
     async listParticipants(): Promise<ParticipantInfo[]> {
       const response = await fetch(
-        `${hubUrl}/rooms/${options.roomCode}/participants`
+        `${hubUrl}/v1/rooms/${options.roomCode}/participants`
       );
       if (!response.ok) {
-        throw new Error(`Failed to fetch participants: ${response.statusText}`);
+        const body = (await readJsonBody(response)) as
+          | Partial<ApiErrorResponse>
+          | undefined;
+        throw parseErrorEnvelope(
+          response.status,
+          body,
+          `Failed to fetch participants: ${response.statusText}`
+        );
       }
-      const data = (await response.json()) as ParticipantsResponse;
-      return data.participants;
+      const body = await readJsonBody(response);
+      if (!isParticipantsResponse(body)) {
+        throw new ClientError({
+          message: "Invalid JSON response from hub.",
+          status: 502,
+          code: "INTERNAL_ERROR",
+          hint: "Check hub compatibility or proxy behavior.",
+        });
+      }
+
+      return body.data;
     },
 
     async listModels(): Promise<GambiModel[]> {

@@ -13,6 +13,7 @@ import {
   handleParticipantLeftEvent,
   handleParticipantOfflineEvent,
   handleRoomCreatedEvent,
+  unwrapSSEEventPayload,
 } from "./use-rooms";
 
 describe("handleConnectedEvent", () => {
@@ -28,6 +29,32 @@ describe("handleConnectedEvent", () => {
     const result = handleConnectedEvent(room);
 
     expect(result.log).toBeUndefined();
+  });
+});
+
+describe("unwrapSSEEventPayload", () => {
+  test("unwraps room event envelopes and prefers payload.type", () => {
+    const result = unwrapSSEEventPayload("participant.joined", {
+      type: "llm.complete",
+      timestamp: Date.now(),
+      roomCode: "ABC123",
+      data: { participantId: "p1", metrics: { latencyMs: 12 } },
+    });
+
+    expect(result).toEqual({
+      event: "llm.complete",
+      data: { participantId: "p1", metrics: { latencyMs: 12 } },
+    });
+  });
+
+  test("passes through legacy payloads unchanged", () => {
+    const payload = { participantId: "p1" };
+    const result = unwrapSSEEventPayload("participant.left", payload);
+
+    expect(result).toEqual({
+      event: "participant.left",
+      data: payload,
+    });
   });
 });
 
@@ -75,6 +102,7 @@ describe("handleParticipantJoinedEvent", () => {
       status: "online",
       joinedAt: Date.now(),
       lastSeen: Date.now(),
+      updatedAt: Date.now(),
       specs: {},
       config: {},
     };
@@ -94,6 +122,7 @@ describe("handleParticipantJoinedEvent", () => {
       status: "online",
       joinedAt: Date.now(),
       lastSeen: Date.now(),
+      updatedAt: Date.now(),
       specs: {},
       config: {},
     };

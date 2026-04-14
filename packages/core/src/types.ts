@@ -101,6 +101,7 @@ export const ParticipantInfoInternal = z.object({
   status: ParticipantStatus,
   joinedAt: z.number(),
   lastSeen: z.number(), // Timestamp of last health check
+  updatedAt: z.number(),
 });
 
 export type ParticipantInfoInternal = z.infer<typeof ParticipantInfoInternal>;
@@ -119,6 +120,7 @@ export const ParticipantInfo = z.object({
   status: ParticipantStatus,
   joinedAt: z.number(),
   lastSeen: z.number(),
+  updatedAt: z.number(),
 });
 
 export type ParticipantInfo = z.infer<typeof ParticipantInfo>;
@@ -156,6 +158,7 @@ export const RoomInfoPublic = z.object({
   hostId: z.string(),
   createdAt: z.number(),
   defaults: RuntimeConfigPublic.optional(),
+  passwordProtected: z.boolean().default(false),
 });
 
 // Type aliases
@@ -186,3 +189,87 @@ export const HubConfig = z.object({
 });
 
 export type HubConfig = z.infer<typeof HubConfig>;
+
+export const ApiMeta = z.object({
+  requestId: z.string(),
+});
+
+export type ApiMeta = z.infer<typeof ApiMeta>;
+
+export const ApiErrorCode = z.enum([
+  "ROOM_NOT_FOUND",
+  "PARTICIPANT_NOT_FOUND",
+  "INVALID_REQUEST",
+  "INVALID_PASSWORD",
+  "ENDPOINT_NOT_REACHABLE",
+  "LOOPBACK_ENDPOINT_FOR_REMOTE_HUB",
+  "PARTICIPANT_CONFLICT",
+  "MODEL_NOT_FOUND",
+  "INTERNAL_ERROR",
+]);
+
+export type ApiErrorCode = z.infer<typeof ApiErrorCode>;
+
+export const ApiErrorShape = z.object({
+  code: ApiErrorCode,
+  message: z.string(),
+  hint: z.string().optional(),
+  details: z.unknown().optional(),
+});
+
+export type ApiErrorShape = z.infer<typeof ApiErrorShape>;
+
+export const ApiErrorResponse = z.object({
+  error: ApiErrorShape,
+  meta: ApiMeta,
+});
+
+export type ApiErrorResponse = z.infer<typeof ApiErrorResponse>;
+
+export function createApiSuccessSchema<T extends z.ZodType>(data: T) {
+  return z.object({
+    data,
+    meta: ApiMeta,
+  });
+}
+
+export const RoomSummary = RoomInfoPublic.extend({
+  participantCount: z.number().int().nonnegative(),
+});
+
+export type RoomSummary = z.infer<typeof RoomSummary>;
+
+export const ParticipantSummary = ParticipantInfo;
+
+export type ParticipantSummary = z.infer<typeof ParticipantSummary>;
+
+export const HeartbeatResult = z.object({
+  success: z.literal(true),
+  status: ParticipantStatus,
+  lastSeen: z.number(),
+});
+
+export type HeartbeatResult = z.infer<typeof HeartbeatResult>;
+
+export const RoomEventType = z.enum([
+  "connected",
+  "room.created",
+  "participant.joined",
+  "participant.updated",
+  "participant.left",
+  "participant.offline",
+  "llm.request",
+  "llm.complete",
+  "llm.error",
+]);
+
+export type RoomEventType = z.infer<typeof RoomEventType>;
+
+export const RoomEvent = z.object({
+  type: RoomEventType,
+  timestamp: z.number(),
+  roomCode: z.string().optional(),
+  data: z.unknown(),
+});
+
+export type RoomEvent = z.infer<typeof RoomEvent>;

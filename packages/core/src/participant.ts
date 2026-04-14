@@ -33,6 +33,7 @@ function create(options: CreateParticipantOptions): ParticipantInfoInternal {
     status: "online",
     joinedAt: now,
     lastSeen: now,
+    updatedAt: now,
   };
 }
 

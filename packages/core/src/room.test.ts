@@ -21,6 +21,7 @@ function createMockParticipant(
     status: overrides.status ?? "online",
     joinedAt: overrides.joinedAt ?? now,
     lastSeen: overrides.lastSeen ?? now,
+    updatedAt: overrides.updatedAt ?? now,
   };
 }
 
@@ -117,6 +118,23 @@ describe("Room", () => {
     });
   });
 
+  describe("getSummaryByCode", () => {
+    test("returns a single room summary without scanning all rooms", async () => {
+      const room = await Room.create("Test", "host");
+      Room.addParticipant(room.id, createMockParticipant());
+
+      const summary = Room.getSummaryByCode(room.code);
+
+      expect(summary).toBeDefined();
+      expect(summary?.code).toBe(room.code);
+      expect(summary?.participantCount).toBe(1);
+    });
+
+    test("returns undefined for non-existent codes", () => {
+      expect(Room.getSummaryByCode("XXXXXX")).toBeUndefined();
+    });
+  });
+
   describe("remove", () => {
     test("removes existing room", async () => {
       const room = await Room.create("Test", "host");
@@ -197,6 +215,19 @@ describe("Room", () => {
 
     test("getParticipants returns empty array for non-existent room", () => {
       expect(Room.getParticipants("non-existent")).toEqual([]);
+    });
+
+    test("upsertParticipant preserves an explicit joinedAt value of zero", async () => {
+      const room = await Room.create("Test", "host");
+      const participant = createMockParticipant({
+        id: "participant-zero",
+        joinedAt: 0,
+      });
+
+      const result = Room.upsertParticipant(room.id, participant);
+
+      expect(result?.created).toBe(true);
+      expect(result?.participant.joinedAt).toBe(0);
     });
   });
 

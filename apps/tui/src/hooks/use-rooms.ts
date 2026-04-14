@@ -25,6 +25,13 @@ interface RoomConnection {
   connected: boolean;
 }
 
+interface RoomEventEnvelope {
+  type: string;
+  timestamp: number;
+  roomCode: string;
+  data: unknown;
+}
+
 interface UseRoomsReturn {
   rooms: Map<string, RoomState>;
   activeRoom: string | null;
@@ -36,6 +43,37 @@ interface UseRoomsReturn {
 }
 
 const RECONNECT_DELAY = 3000;
+
+function isRoomEventEnvelope(value: unknown): value is RoomEventEnvelope {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    typeof value.type === "string" &&
+    "timestamp" in value &&
+    typeof value.timestamp === "number" &&
+    "roomCode" in value &&
+    typeof value.roomCode === "string" &&
+    "data" in value
+  );
+}
+
+export function unwrapSSEEventPayload(
+  fallbackEvent: string,
+  payload: unknown
+): { event: string; data: unknown } {
+  if (isRoomEventEnvelope(payload)) {
+    return {
+      event: payload.type,
+      data: payload.data,
+    };
+  }
+
+  return {
+    event: fallbackEvent,
+    data: payload,
+  };
+}
 
 // Types for event handler results - exported for testing
 export interface LogAction {
@@ -326,13 +364,13 @@ export function useRooms(): UseRoomsReturn {
           (r: RoomState, d: unknown) => EventResult
         > = {
           connected: (r) => handleConnectedEvent(r),
-          "room:created": (r, d) => handleRoomCreatedEvent(r, code, d),
-          "participant:joined": handleParticipantJoinedEvent,
-          "participant:left": handleParticipantLeftEvent,
-          "participant:offline": handleParticipantOfflineEvent,
-          "llm:request": handleLlmRequestEvent,
-          "llm:complete": handleLlmCompleteEvent,
-          "llm:error": handleLlmErrorEvent,
+          "room.created": (r, d) => handleRoomCreatedEvent(r, code, d),
+          "participant.joined": handleParticipantJoinedEvent,
+          "participant.left": handleParticipantLeftEvent,
+          "participant.offline": handleParticipantOfflineEvent,
+          "llm.request": handleLlmRequestEvent,
+          "llm.complete": handleLlmCompleteEvent,
+          "llm.error": handleLlmErrorEvent,
         };
 
         const handler = handlers[event];
@@ -354,9 +392,9 @@ export function useRooms(): UseRoomsReturn {
 
       // Invalidate participant queries when relevant events occur
       if (
-        event === "participant:joined" ||
-        event === "participant:left" ||
-        event === "participant:offline"
+        event === "participant.joined" ||
+        event === "participant.left" ||
+        event === "participant.offline"
       ) {
         queryClient.invalidateQueries({
           queryKey: roomKeys.participants(code),
@@ -364,7 +402,7 @@ export function useRooms(): UseRoomsReturn {
       }
 
       // Invalidate room list when room is created
-      if (event === "room:created") {
+      if (event === "room.created") {
         queryClient.invalidateQueries({ queryKey: roomKeys.list() });
       }
     },
@@ -374,17 +412,13 @@ export function useRooms(): UseRoomsReturn {
   const fetchParticipants = useCallback(
     async (code: string) => {
       try {
-        const response = await fetch(`${hubUrl}/rooms/${code}/participants`);
+        const response = await fetch(`${hubUrl}/v1/rooms/${code}/participants`);
         if (!response.ok) {
           return;
         }
 
-        const data: unknown = await response.json();
-        // API returns { participants: [...] }
-        const participantsArray =
-          data && typeof data === "object" && "participants" in data
-            ? (data as { participants: unknown }).participants
-            : data;
+        const envelope = (await response.json()) as { data?: unknown };
+        const participantsArray = envelope.data ?? envelope;
         const parsed = z
           .array(ParticipantInfoSchema)
           .safeParse(participantsArray);
@@ -432,7 +466,11 @@ export function useRooms(): UseRoomsReturn {
         buffer = remaining;
 
         for (const sseEvent of events) {
-          handleSSEEvent(code, sseEvent.event, sseEvent.data);
+          const unwrapped = unwrapSSEEventPayload(
+            sseEvent.event,
+            sseEvent.data
+          );
+          handleSSEEvent(code, unwrapped.event, unwrapped.data);
         }
       }
     },
@@ -477,7 +515,7 @@ export function useRooms(): UseRoomsReturn {
       });
 
       try {
-        const response = await fetch(`${hubUrl}/rooms/${code}/events`, {
+        const response = await fetch(`${hubUrl}/v1/rooms/${code}/events`, {
           signal: abortController.signal,
           headers: { Accept: "text/event-stream" },
         });

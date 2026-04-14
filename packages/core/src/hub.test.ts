@@ -9,54 +9,85 @@ import {
 import { z } from "zod";
 import { createHub, type Hub } from "./hub.ts";
 import { Room } from "./room.ts";
+import type { RoomEvent } from "./types.ts";
 
-const HealthResponseSchema = z.object({
-  status: z.string(),
-  timestamp: z.number(),
+const ApiMetaSchema = z.object({
+  requestId: z.string(),
 });
 
-const RoomResponseSchema = z.object({
-  room: z.object({
-    id: z.string(),
-    code: z.string(),
-    name: z.string(),
-    defaults: z
-      .object({
-        hasInstructions: z.boolean(),
-        temperature: z.number().optional(),
-      })
-      .optional(),
-  }),
-  hostId: z.string(),
+function successSchema<T extends z.ZodType>(schema: T) {
+  return z.object({
+    data: schema,
+    meta: ApiMetaSchema,
+  });
+}
+
+const HealthResponseSchema = successSchema(
+  z.object({
+    status: z.string(),
+    timestamp: z.number(),
+  })
+);
+
+const RoomSummarySchema = z.object({
+  id: z.string(),
+  code: z.string(),
+  name: z.string(),
+  passwordProtected: z.boolean(),
+  participantCount: z.number(),
+  defaults: z
+    .object({
+      hasInstructions: z.boolean(),
+      temperature: z.number().optional(),
+    })
+    .optional(),
 });
+
+const RoomResponseSchema = successSchema(
+  z.object({
+    room: RoomSummarySchema,
+    hostId: z.string(),
+  })
+);
 
 const ErrorResponseSchema = z.object({
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+    hint: z.string().optional(),
+  }),
+  meta: ApiMetaSchema,
+});
+
+const LegacyErrorResponseSchema = z.object({
   error: z.string(),
 });
 
-const RoomsListResponseSchema = z.object({
-  rooms: z.array(z.object({ participantCount: z.number() })),
-});
+const RoomsListResponseSchema = successSchema(z.array(RoomSummarySchema));
 
-const JoinResponseSchema = z.object({
-  participant: z.object({
-    id: z.string(),
-    nickname: z.string(),
-    config: z.object({
-      hasInstructions: z.boolean(),
-      temperature: z.number().optional(),
-      max_tokens: z.number().optional(),
+const JoinResponseSchema = successSchema(
+  z.object({
+    participant: z.object({
+      id: z.string(),
+      nickname: z.string(),
+      config: z.object({
+        hasInstructions: z.boolean(),
+        temperature: z.number().optional(),
+        max_tokens: z.number().optional(),
+      }),
     }),
-  }),
-  roomId: z.string(),
-});
+    roomId: z.string(),
+  })
+);
 
-const SuccessResponseSchema = z.object({
-  success: z.boolean(),
-});
+const SuccessResponseSchema = successSchema(
+  z.object({
+    success: z.boolean(),
+  })
+);
 
-const ParticipantsResponseSchema = z.object({
-  participants: z.array(
+const ParticipantsResponseSchema = successSchema(
+  z.array(
     z.object({
       nickname: z.string(),
       config: z.object({
@@ -65,8 +96,8 @@ const ParticipantsResponseSchema = z.object({
         max_tokens: z.number().optional(),
       }),
     })
-  ),
-});
+  )
+);
 
 const ModelsResponseSchema = z.object({
   object: z.string(),
@@ -460,7 +491,7 @@ describe("Hub", () => {
       temperature?: number;
     }
   ) {
-    const res = await fetch(`${baseUrl}/rooms`, {
+    const res = await fetch(`${baseUrl}/v1/rooms`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ defaults, name }),
@@ -488,15 +519,80 @@ describe("Hub", () => {
     },
     headers?: Record<string, string>
   ) {
-    const res = await fetch(`${baseUrl}/rooms/${code}/join`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...headers,
-      },
-      body: JSON.stringify(participant),
-    });
+    const res = await fetch(
+      `${baseUrl}/v1/rooms/${code}/participants/${participant.id}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...headers,
+        },
+        body: JSON.stringify(participant),
+      }
+    );
     return { res, data: await res.json() };
+  }
+
+  async function connectRoomEvents(roomCode: string) {
+    const controller = new AbortController();
+    const res = await fetch(`${baseUrl}/v1/rooms/${roomCode}/events`, {
+      signal: controller.signal,
+    });
+    const reader = res.body?.getReader();
+    if (!reader) {
+      throw new Error("Expected an SSE response body.");
+    }
+
+    const decoder = new TextDecoder();
+    const queuedEvents: RoomEvent[] = [];
+    let buffer = "";
+
+    return {
+      close: async () => {
+        controller.abort();
+        try {
+          await reader.cancel();
+        } catch {
+          // The stream can already be closed by the time cleanup runs.
+        }
+      },
+      nextEvent: async () => {
+        if (queuedEvents[0]) {
+          return queuedEvents.shift() as RoomEvent;
+        }
+
+        while (true) {
+          const { done, value } = await Promise.race([
+            reader.read(),
+            new Promise<never>((_, reject) => {
+              setTimeout(() => reject(new Error("Timed out waiting for room event.")), 1000);
+            }),
+          ]);
+          if (done) {
+            throw new Error("Event stream closed before the expected event arrived.");
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+          const blocks = buffer.split("\n\n");
+          buffer = blocks.pop() ?? "";
+
+          for (const block of blocks) {
+            const payloadLine = block
+              .split("\n")
+              .find((line) => line.startsWith("data: "));
+            if (!payloadLine) {
+              continue;
+            }
+
+            queuedEvents.push(JSON.parse(payloadLine.slice(6)) as RoomEvent);
+          }
+
+          if (queuedEvents[0]) {
+            return queuedEvents.shift() as RoomEvent;
+          }
+        }
+      },
+    };
   }
 
   describe("mDNS", () => {
@@ -513,20 +609,20 @@ describe("Hub", () => {
     });
   });
 
-  describe("GET /health", () => {
+  describe("GET /v1/health", () => {
     test("returns health status", async () => {
-      const res = await fetch(`${baseUrl}/health`);
+      const res = await fetch(`${baseUrl}/v1/health`);
       const data = HealthResponseSchema.parse(await res.json());
 
       expect(res.status).toBe(200);
-      expect(data.status).toBe("ok");
-      expect(data.timestamp).toBeDefined();
+      expect(data.data.status).toBe("ok");
+      expect(data.data.timestamp).toBeDefined();
     });
   });
 
-  describe("POST /rooms", () => {
+  describe("POST /v1/rooms", () => {
     test("creates a new room", async () => {
-      const res = await fetch(`${baseUrl}/rooms`, {
+      const res = await fetch(`${baseUrl}/v1/rooms`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: "Test Room" }),
@@ -534,13 +630,13 @@ describe("Hub", () => {
       const data = RoomResponseSchema.parse(await res.json());
 
       expect(res.status).toBe(201);
-      expect(data.room.name).toBe("Test Room");
-      expect(data.room.code).toHaveLength(6);
-      expect(data.hostId).toBeDefined();
+      expect(data.data.room.name).toBe("Test Room");
+      expect(data.data.room.code).toHaveLength(6);
+      expect(data.data.hostId).toBeDefined();
     });
 
     test("returns error when name is missing", async () => {
-      const res = await fetch(`${baseUrl}/rooms`, {
+      const res = await fetch(`${baseUrl}/v1/rooms`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -548,51 +644,65 @@ describe("Hub", () => {
       const data = ErrorResponseSchema.parse(await res.json());
 
       expect(res.status).toBe(400);
-      expect(data.error).toBe("Name is required");
+      expect(data.error.code).toBe("INVALID_REQUEST");
+    });
+
+    test("returns typed error when the body is invalid JSON", async () => {
+      const res = await fetch(`${baseUrl}/v1/rooms`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{",
+      });
+      const data = ErrorResponseSchema.parse(await res.json());
+
+      expect(res.status).toBe(400);
+      expect(data.error.code).toBe("INVALID_REQUEST");
+      expect(data.error.message).toBe("Invalid JSON body.");
+      expect(data.meta.requestId).toBeDefined();
     });
 
     test("accepts room defaults and redacts instructions in public responses", async () => {
-      const { room } = await createRoom("Configured Room", {
+      const { data } = await createRoom("Configured Room", {
         instructions: "Room-level system prompt",
         temperature: 0.3,
       });
 
-      expect(room.defaults).toEqual({
+      expect(data.room.defaults).toEqual({
         hasInstructions: true,
         temperature: 0.3,
       });
-      expect(room.defaults).not.toHaveProperty("instructions");
+      expect(data.room.defaults).not.toHaveProperty("instructions");
     });
   });
 
-  describe("GET /rooms", () => {
+  describe("GET /v1/rooms", () => {
     test("returns empty list when no rooms", async () => {
-      const res = await fetch(`${baseUrl}/rooms`);
+      const res = await fetch(`${baseUrl}/v1/rooms`);
       const data = RoomsListResponseSchema.parse(await res.json());
 
       expect(res.status).toBe(200);
-      expect(data.rooms).toEqual([]);
+      expect(data.data).toEqual([]);
     });
 
     test("returns list of rooms with participant count", async () => {
       await createRoom("Room 1");
       await createRoom("Room 2");
 
-      const res = await fetch(`${baseUrl}/rooms`);
+      const res = await fetch(`${baseUrl}/v1/rooms`);
       const data = RoomsListResponseSchema.parse(await res.json());
 
       expect(res.status).toBe(200);
-      expect(data.rooms).toHaveLength(2);
-      const firstRoom = data.rooms[0];
+      expect(data.data).toHaveLength(2);
+      const firstRoom = data.data[0];
       expect(firstRoom).toBeDefined();
       expect(firstRoom?.participantCount).toBe(0);
     });
   });
 
-  describe("POST /rooms/:code/join", () => {
+  describe("PUT /v1/rooms/:code/participants/:id", () => {
     test("joins a room", async () => {
-      const { room } = await createRoom("Test Room");
-      const { res, data } = await joinRoom(room.code, {
+      const { data: created } = await createRoom("Test Room");
+      const { res, data } = await joinRoom(created.room.code, {
         id: "participant-1",
         nickname: "test-user",
         model: "llama3",
@@ -601,11 +711,11 @@ describe("Hub", () => {
 
       expect(res.status).toBe(201);
       const joinData = JoinResponseSchema.parse(data);
-      expect(joinData.participant.id).toBe("participant-1");
-      expect(joinData.participant.nickname).toBe("test-user");
-      expect(joinData.roomId).toBe(room.id);
-      expect("authHeaders" in joinData.participant).toBe(false);
-      expect(joinData.participant.config.hasInstructions).toBe(false);
+      expect(joinData.data.participant.id).toBe("participant-1");
+      expect(joinData.data.participant.nickname).toBe("test-user");
+      expect(joinData.data.roomId).toBe(created.room.id);
+      expect("authHeaders" in joinData.data.participant).toBe(false);
+      expect(joinData.data.participant.config.hasInstructions).toBe(false);
     });
 
     test("returns error for non-existent room", async () => {
@@ -618,26 +728,47 @@ describe("Hub", () => {
 
       expect(res.status).toBe(404);
       const errorData = ErrorResponseSchema.parse(data);
-      expect(errorData.error).toBe("Room not found");
+      expect(errorData.error.code).toBe("ROOM_NOT_FOUND");
     });
 
     test("returns error when required fields are missing", async () => {
-      const { room } = await createRoom("Test Room");
-      const res = await fetch(`${baseUrl}/rooms/${room.code}/join`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: "participant-1" }),
-      });
+      const { data: created } = await createRoom("Test Room");
+      const res = await fetch(
+        `${baseUrl}/v1/rooms/${created.room.code}/participants/participant-1`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        }
+      );
       const data = ErrorResponseSchema.parse(await res.json());
 
       expect(res.status).toBe(400);
-      expect(data.error).toContain("Missing required fields");
+      expect(data.error.code).toBe("INVALID_REQUEST");
+    });
+
+    test("returns typed error when the participant payload is invalid JSON", async () => {
+      const { data: created } = await createRoom("Test Room");
+      const res = await fetch(
+        `${baseUrl}/v1/rooms/${created.room.code}/participants/participant-1`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: "{",
+        }
+      );
+      const data = ErrorResponseSchema.parse(await res.json());
+
+      expect(res.status).toBe(400);
+      expect(data.error.code).toBe("INVALID_REQUEST");
+      expect(data.error.message).toBe("Invalid JSON body.");
+      expect(data.meta.requestId).toBeDefined();
     });
 
     test("rejects loopback endpoints when the participant joins remotely", async () => {
-      const { room } = await createRoom("Remote Room");
+      const { data: created } = await createRoom("Remote Room");
       const { res, data } = await joinRoom(
-        room.code,
+        created.room.code,
         {
           id: "participant-remote",
           nickname: "remote-user",
@@ -649,15 +780,15 @@ describe("Hub", () => {
 
       expect(res.status).toBe(400);
       const errorData = ErrorResponseSchema.parse(data);
-      expect(errorData.error).toContain(
+      expect(errorData.error.message).toContain(
         "only reachable on the participant machine"
       );
-      expect(errorData.error).toContain("--network-endpoint");
+      expect(errorData.error.hint).toContain("--network-endpoint");
     });
 
     test("redacts participant instructions in join and list responses", async () => {
-      const { room } = await createRoom("Test Room");
-      const { data } = await joinRoom(room.code, {
+      const { data: created } = await createRoom("Test Room");
+      const { data } = await joinRoom(created.room.code, {
         id: "participant-redacted",
         nickname: "config-user",
         model: "llama3",
@@ -670,34 +801,36 @@ describe("Hub", () => {
       });
 
       const joinData = JoinResponseSchema.parse(data);
-      expect(joinData.participant.config).toEqual({
+      expect(joinData.data.participant.config).toEqual({
         hasInstructions: true,
         temperature: 0.5,
         max_tokens: 256,
       });
-      expect(joinData.participant.config).not.toHaveProperty("instructions");
+      expect(joinData.data.participant.config).not.toHaveProperty(
+        "instructions"
+      );
 
       const participantsResponse = await fetch(
-        `${baseUrl}/rooms/${room.code}/participants`
+        `${baseUrl}/v1/rooms/${created.room.code}/participants`
       );
       const participantsData = ParticipantsResponseSchema.parse(
         await participantsResponse.json()
       );
-      expect(participantsData.participants[0]?.config).toEqual({
+      expect(participantsData.data[0]?.config).toEqual({
         hasInstructions: true,
         temperature: 0.5,
         max_tokens: 256,
       });
-      expect(participantsData.participants[0]?.config).not.toHaveProperty(
+      expect(participantsData.data[0]?.config).not.toHaveProperty(
         "instructions"
       );
     });
   });
 
-  describe("DELETE /rooms/:code/leave/:id", () => {
+  describe("DELETE /v1/rooms/:code/participants/:id", () => {
     test("removes participant from room", async () => {
-      const { room } = await createRoom("Test Room");
-      await joinRoom(room.code, {
+      const { data: created } = await createRoom("Test Room");
+      await joinRoom(created.room.code, {
         id: "participant-1",
         nickname: "test-user",
         model: "llama3",
@@ -705,96 +838,119 @@ describe("Hub", () => {
       });
 
       const res = await fetch(
-        `${baseUrl}/rooms/${room.code}/leave/participant-1`,
+        `${baseUrl}/v1/rooms/${created.room.code}/participants/participant-1`,
         { method: "DELETE" }
       );
       const data = SuccessResponseSchema.parse(await res.json());
 
       expect(res.status).toBe(200);
-      expect(data.success).toBe(true);
+      expect(data.data.success).toBe(true);
     });
 
     test("returns error for non-existent participant", async () => {
-      const { room } = await createRoom("Test Room");
+      const { data: created } = await createRoom("Test Room");
       const res = await fetch(
-        `${baseUrl}/rooms/${room.code}/leave/non-existent`,
+        `${baseUrl}/v1/rooms/${created.room.code}/participants/non-existent`,
         { method: "DELETE" }
       );
       const data = ErrorResponseSchema.parse(await res.json());
 
       expect(res.status).toBe(404);
-      expect(data.error).toBe("Participant not found");
+      expect(data.error.code).toBe("PARTICIPANT_NOT_FOUND");
     });
   });
 
-  describe("POST /rooms/:code/health", () => {
+  describe("POST /v1/rooms/:code/participants/:id/heartbeat", () => {
     test("updates participant last seen", async () => {
-      const { room } = await createRoom("Test Room");
-      await joinRoom(room.code, {
+      const { data: created } = await createRoom("Test Room");
+      await joinRoom(created.room.code, {
         id: "participant-1",
         nickname: "test-user",
         model: "llama3",
         endpoint: "http://localhost:11434",
       });
 
-      const res = await fetch(`${baseUrl}/rooms/${room.code}/health`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: "participant-1" }),
-      });
-      const data = SuccessResponseSchema.parse(await res.json());
+      const res = await fetch(
+        `${baseUrl}/v1/rooms/${created.room.code}/participants/participant-1/heartbeat`,
+        {
+          method: "POST",
+        }
+      );
+      const data = successSchema(
+        z.object({
+          success: z.literal(true),
+          status: z.string(),
+          lastSeen: z.number(),
+        })
+      ).parse(await res.json());
 
       expect(res.status).toBe(200);
-      expect(data.success).toBe(true);
+      expect(data.data.success).toBe(true);
     });
 
     test("returns error for non-existent participant", async () => {
-      const { room } = await createRoom("Test Room");
-      const res = await fetch(`${baseUrl}/rooms/${room.code}/health`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: "non-existent" }),
-      });
+      const { data: created } = await createRoom("Test Room");
+      const res = await fetch(
+        `${baseUrl}/v1/rooms/${created.room.code}/participants/non-existent/heartbeat`,
+        {
+          method: "POST",
+        }
+      );
       const data = ErrorResponseSchema.parse(await res.json());
 
       expect(res.status).toBe(404);
-      expect(data.error).toBe("Participant not found");
+      expect(data.error.code).toBe("PARTICIPANT_NOT_FOUND");
     });
   });
 
-  describe("GET /rooms/:code/participants", () => {
+  describe("GET /v1/rooms/:code/participants", () => {
     test("returns participants in room", async () => {
-      const { room } = await createRoom("Test Room");
-      await joinRoom(room.code, {
+      const { data: created } = await createRoom("Test Room");
+      await joinRoom(created.room.code, {
         id: "participant-1",
         nickname: "test-user",
         model: "llama3",
         endpoint: "http://localhost:11434",
       });
 
-      const res = await fetch(`${baseUrl}/rooms/${room.code}/participants`);
+      const res = await fetch(
+        `${baseUrl}/v1/rooms/${created.room.code}/participants`
+      );
       const data = ParticipantsResponseSchema.parse(await res.json());
 
       expect(res.status).toBe(200);
-      expect(data.participants).toHaveLength(1);
-      const firstParticipant = data.participants[0];
+      expect(data.data).toHaveLength(1);
+      const firstParticipant = data.data[0];
       expect(firstParticipant).toBeDefined();
       expect(firstParticipant?.nickname).toBe("test-user");
       expect(firstParticipant).not.toHaveProperty("authHeaders");
     });
 
     test("returns error for non-existent room", async () => {
-      const res = await fetch(`${baseUrl}/rooms/XXXXXX/participants`);
+      const res = await fetch(`${baseUrl}/v1/rooms/XXXXXX/participants`);
       const data = ErrorResponseSchema.parse(await res.json());
 
       expect(res.status).toBe(404);
-      expect(data.error).toBe("Room not found");
+      expect(data.error.code).toBe("ROOM_NOT_FOUND");
+    });
+  });
+
+  describe("GET /v1/rooms/:code/events", () => {
+    test("returns a typed 404 envelope for missing rooms", async () => {
+      const res = await fetch(`${baseUrl}/v1/rooms/XXXXXX/events`);
+      const data = ErrorResponseSchema.parse(await res.json());
+
+      expect(res.status).toBe(404);
+      expect(data.error.code).toBe("ROOM_NOT_FOUND");
+      expect(data.meta.requestId).toBeDefined();
     });
   });
 
   describe("GET /rooms/:code/v1/models", () => {
     test("returns OpenAI-compatible models list", async () => {
-      const { room } = await createRoom("Test Room");
+      const {
+        data: { room },
+      } = await createRoom("Test Room");
       await joinRoom(room.code, {
         id: "participant-1",
         nickname: "test-user",
@@ -825,7 +981,9 @@ describe("Hub", () => {
     });
 
     test("only returns online participants", async () => {
-      const { room } = await createRoom("Test Room");
+      const {
+        data: { room },
+      } = await createRoom("Test Room");
       await joinRoom(room.code, {
         id: "participant-1",
         nickname: "test-user",
@@ -844,12 +1002,64 @@ describe("Hub", () => {
     });
   });
 
+  describe("LLM lifecycle events", () => {
+    test("emits llm.complete after a successful non-streaming responses request", async () => {
+      const participantEndpoint = createMockParticipantServer("responses");
+      try {
+        const {
+          data: { room },
+        } = await createRoom("Responses Events Room");
+        await joinRoom(room.code, {
+          id: "participant-events",
+          nickname: "events-worker",
+          model: "llama3",
+          endpoint: participantEndpoint.url,
+        });
+
+        const events = await connectRoomEvents(room.code);
+        try {
+          const connectedEvent = await events.nextEvent();
+          expect(connectedEvent.type).toBe("connected");
+
+          const response = await fetch(`${baseUrl}/rooms/${room.code}/v1/responses`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: "participant-events",
+              input: "Hello",
+            }),
+          });
+          expect(response.status).toBe(200);
+
+          const requestEvent = await events.nextEvent();
+          const completeEvent = await events.nextEvent();
+
+          expect(requestEvent.type).toBe("llm.request");
+          expect(requestEvent.data).toEqual({
+            participantId: "participant-events",
+            model: "participant-events",
+          });
+          expect(completeEvent.type).toBe("llm.complete");
+          expect(completeEvent.data).toEqual({
+            participantId: "participant-events",
+          });
+        } finally {
+          await events.close();
+        }
+      } finally {
+        participantEndpoint.close();
+      }
+    });
+  });
+
   describe("Responses API", () => {
     test("proxies native OpenResponses requests and lifecycle operations", async () => {
       const participantServer = createMockParticipantServer("responses");
 
       try {
-        const { room } = await createRoom("Responses Room");
+        const {
+          data: { room },
+        } = await createRoom("Responses Room");
         await joinRoom(room.code, {
           id: "participant-native",
           nickname: "native-server",
@@ -918,38 +1128,43 @@ describe("Hub", () => {
       });
 
       try {
-        const { room } = await createRoom("Authenticated Responses Room");
+        const {
+          data: { room },
+        } = await createRoom("Authenticated Responses Room");
         const joined = JoinResponseSchema.parse(
           await (
-            await fetch(`${baseUrl}/rooms/${room.code}/join`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                id: "participant-auth",
-                nickname: "auth-server",
-                model: "llama3",
-                endpoint: participantServer.url,
-                authHeaders: {
-                  Authorization: "Bearer secret-token",
-                },
-                capabilities: {
-                  openResponses: "supported",
-                  chatCompletions: "supported",
-                },
-              }),
-            })
+            await fetch(
+              `${baseUrl}/v1/rooms/${room.code}/participants/participant-auth`,
+              {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  id: "participant-auth",
+                  nickname: "auth-server",
+                  model: "llama3",
+                  endpoint: participantServer.url,
+                  authHeaders: {
+                    Authorization: "Bearer secret-token",
+                  },
+                  capabilities: {
+                    openResponses: "supported",
+                    chatCompletions: "supported",
+                  },
+                }),
+              }
+            )
           ).json()
         );
 
-        expect(joined.participant).not.toHaveProperty("authHeaders");
+        expect(joined.data.participant).not.toHaveProperty("authHeaders");
 
         const participantsResponse = await fetch(
-          `${baseUrl}/rooms/${room.code}/participants`
+          `${baseUrl}/v1/rooms/${room.code}/participants`
         );
         const participants = ParticipantsResponseSchema.parse(
           await participantsResponse.json()
         );
-        expect(participants.participants[0]).not.toHaveProperty("authHeaders");
+        expect(participants.data[0]).not.toHaveProperty("authHeaders");
 
         const createResponse = await fetch(
           `${baseUrl}/rooms/${room.code}/v1/responses`,
@@ -976,7 +1191,9 @@ describe("Hub", () => {
       const participantServer = createMockParticipantServer("chat-only");
 
       try {
-        const { room } = await createRoom("Fallback Room");
+        const {
+          data: { room },
+        } = await createRoom("Fallback Room");
         await joinRoom(room.code, {
           id: "participant-fallback",
           nickname: "fallback-server",
@@ -1009,7 +1226,7 @@ describe("Hub", () => {
         const retrieveResponse = await fetch(
           `${baseUrl}/rooms/${room.code}/v1/responses/${created.id}`
         );
-        const retrieveError = ErrorResponseSchema.parse(
+        const retrieveError = LegacyErrorResponseSchema.parse(
           await retrieveResponse.json()
         );
 
@@ -1024,7 +1241,9 @@ describe("Hub", () => {
       const participantServer = createMockParticipantServer("chat-only");
 
       try {
-        const { room } = await createRoom("Streaming Fallback Room");
+        const {
+          data: { room },
+        } = await createRoom("Streaming Fallback Room");
         await joinRoom(room.code, {
           id: "participant-stream",
           nickname: "stream-server",
@@ -1063,7 +1282,9 @@ describe("Hub", () => {
       const participantServer = createMockParticipantServer("responses");
 
       try {
-        const { room } = await createRoom("Merged Responses Room", {
+        const {
+          data: { room },
+        } = await createRoom("Merged Responses Room", {
           instructions: "Room instructions",
           temperature: 0.2,
           max_tokens: 128,
@@ -1115,7 +1336,9 @@ describe("Hub", () => {
       const participantServer = createMockParticipantServer("chat-only");
 
       try {
-        const { room } = await createRoom("Merged Chat Room", {
+        const {
+          data: { room },
+        } = await createRoom("Merged Chat Room", {
           instructions: "Room instructions",
           temperature: 0.2,
         });
@@ -1171,7 +1394,7 @@ describe("Hub", () => {
 
   describe("OPTIONS (CORS)", () => {
     test("returns CORS headers", async () => {
-      const res = await fetch(`${baseUrl}/rooms`, { method: "OPTIONS" });
+      const res = await fetch(`${baseUrl}/v1/rooms`, { method: "OPTIONS" });
 
       expect(res.status).toBe(204);
       expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");

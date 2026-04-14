@@ -1,6 +1,7 @@
 /**
  * Server-Sent Events helper for broadcasting events to TUI clients
  */
+import type { RoomEvent, RoomEventType } from "./types.ts";
 
 export interface SSEClient {
   id: string;
@@ -23,8 +24,14 @@ export function createSSEResponse(
       clients.set(clientId, { id: clientId, controller, roomCode });
 
       // Send initial connection event
+      const connectedEvent: RoomEvent = {
+        type: "connected",
+        timestamp: Date.now(),
+        roomCode,
+        data: { clientId },
+      };
       const data = encoder.encode(
-        `event: connected\ndata: ${JSON.stringify({ clientId })}\n\n`
+        `event: connected\ndata: ${JSON.stringify(connectedEvent)}\n\n`
       );
       controller.enqueue(data);
     },
@@ -47,12 +54,18 @@ export function createSSEResponse(
  * Broadcast an event to all connected clients
  */
 export function broadcast(
-  event: string,
+  event: RoomEventType,
   data: unknown,
   roomCode?: string
 ): void {
+  const payload: RoomEvent = {
+    type: event,
+    timestamp: Date.now(),
+    roomCode,
+    data,
+  };
   const message = encoder.encode(
-    `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+    `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`
   );
 
   for (const client of clients.values()) {

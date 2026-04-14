@@ -49,9 +49,12 @@ describe("SDK discovery", () => {
       fetchFn: (input) => {
         const url = String(input);
 
-        if (url === "http://localhost:3000/health") {
+        if (url === "http://localhost:3000/v1/health") {
           return Promise.resolve(
-            Response.json({ status: "ok", timestamp: Date.now() })
+            Response.json({
+              data: { status: "ok", timestamp: Date.now() },
+              meta: { requestId: "req-local" },
+            })
           );
         }
 
@@ -75,9 +78,12 @@ describe("SDK discovery", () => {
       fetchFn: (input) => {
         const url = String(input);
 
-        if (url === "http://localhost:3000/health") {
+        if (url === "http://localhost:3000/v1/health") {
           return Promise.resolve(
-            Response.json({ status: "ok", timestamp: Date.now() })
+            Response.json({
+              data: { status: "ok", timestamp: Date.now() },
+              meta: { requestId: "req-local" },
+            })
           );
         }
 
@@ -104,15 +110,21 @@ describe("SDK discovery", () => {
     const fetchFn: FetchLike = (input) => {
       const url = String(input);
 
-      if (url === "http://localhost:3000/health") {
+      if (url === "http://localhost:3000/v1/health") {
         return Promise.resolve(
-          Response.json({ status: "ok", timestamp: Date.now() })
+          Response.json({
+            data: { status: "ok", timestamp: Date.now() },
+            meta: { requestId: "req-local" },
+          })
         );
       }
 
-      if (url === "http://192.168.1.40:3100/health") {
+      if (url === "http://192.168.1.40:3100/v1/health") {
         return Promise.resolve(
-          Response.json({ status: "ok", timestamp: Date.now() })
+          Response.json({
+            data: { status: "ok", timestamp: Date.now() },
+            meta: { requestId: "req-remote" },
+          })
         );
       }
 
@@ -162,24 +174,40 @@ describe("SDK discovery", () => {
       const url = String(input);
       fetchCalls.push(url);
 
-      if (url === "http://localhost:3000/health") {
+      if (url === "http://localhost:3000/v1/health") {
         return Promise.resolve(
-          Response.json({ status: "ok", timestamp: Date.now() })
+          Response.json({
+            data: { status: "ok", timestamp: Date.now() },
+            meta: { requestId: "req-local" },
+          })
         );
       }
 
-      if (url === "http://localhost:3000/rooms") {
-        return Promise.resolve(Response.json({ rooms: [alphaRoom] }));
-      }
-
-      if (url === "http://192.168.1.40:3100/health") {
+      if (url === "http://localhost:3000/v1/rooms") {
         return Promise.resolve(
-          Response.json({ status: "ok", timestamp: Date.now() })
+          Response.json({
+            data: [alphaRoom],
+            meta: { requestId: "req-rooms-local" },
+          })
         );
       }
 
-      if (url === "http://192.168.1.40:3100/rooms") {
-        return Promise.resolve(Response.json({ rooms: [betaRoom] }));
+      if (url === "http://192.168.1.40:3100/v1/health") {
+        return Promise.resolve(
+          Response.json({
+            data: { status: "ok", timestamp: Date.now() },
+            meta: { requestId: "req-remote" },
+          })
+        );
+      }
+
+      if (url === "http://192.168.1.40:3100/v1/rooms") {
+        return Promise.resolve(
+          Response.json({
+            data: [betaRoom],
+            meta: { requestId: "req-rooms-remote" },
+          })
+        );
       }
 
       throw new Error(`Unexpected URL: ${url}`);
@@ -205,10 +233,10 @@ describe("SDK discovery", () => {
     expect(target.roomCode).toBe("XYZ999");
     expect(target.room.name).toBe("Beta");
     expect(fetchCalls).toEqual([
-      "http://localhost:3000/health",
-      "http://192.168.1.40:3100/health",
-      "http://localhost:3000/rooms",
-      "http://192.168.1.40:3100/rooms",
+      "http://localhost:3000/v1/health",
+      "http://192.168.1.40:3100/v1/health",
+      "http://localhost:3000/v1/rooms",
+      "http://192.168.1.40:3100/v1/rooms",
     ]);
 
     const provider = createGambi(target);
@@ -219,14 +247,22 @@ describe("SDK discovery", () => {
     const fetchFn: FetchLike = (input) => {
       const url = String(input);
 
-      if (url === "http://localhost:3000/health") {
+      if (url === "http://localhost:3000/v1/health") {
         return Promise.resolve(
-          Response.json({ status: "ok", timestamp: Date.now() })
+          Response.json({
+            data: { status: "ok", timestamp: Date.now() },
+            meta: { requestId: "req-local" },
+          })
         );
       }
 
-      if (url === "http://localhost:3000/rooms") {
-        return Promise.resolve(Response.json({ rooms: [alphaRoom, betaRoom] }));
+      if (url === "http://localhost:3000/v1/rooms") {
+        return Promise.resolve(
+          Response.json({
+            data: [alphaRoom, betaRoom],
+            meta: { requestId: "req-rooms-local" },
+          })
+        );
       }
 
       throw new Error(`Unexpected URL: ${url}`);
@@ -252,7 +288,7 @@ describe("SDK discovery", () => {
     const fetchFn: FetchLike = (input) => {
       const url = String(input);
 
-      if (url === "http://localhost:3000/health") {
+      if (url === "http://localhost:3000/v1/health") {
         return Promise.resolve(new Response("offline", { status: 503 }));
       }
 

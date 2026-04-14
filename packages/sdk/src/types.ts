@@ -2,6 +2,10 @@
 
 // Type exports
 export type {
+  ApiErrorCode,
+  ApiErrorResponse,
+  ApiErrorShape,
+  ApiMeta,
   ChatCompletion,
   ChatCompletionChunk,
   ChatCompletionCreateParams,
@@ -9,6 +13,7 @@ export type {
   ChatCompletionMessageParam,
   GenerationConfig,
   HubConfig,
+  HeartbeatResult,
   InputItemListParams,
   LlmMetrics,
   MachineSpecs,
@@ -21,7 +26,10 @@ export type {
   ParticipantInfo,
   ParticipantInfoInternal,
   ParticipantRegistration,
+  ParticipantSummary,
   ParticipantStatus,
+  RoomEvent,
+  RoomEventType,
   Response,
   ResponseCreateParams,
   ResponseCreateParamsNonStreaming,
@@ -35,15 +43,21 @@ export type {
   ResponseUsage,
   RoomInfo,
   RoomInfoPublic,
+  RoomSummary,
   RuntimeConfig,
   RuntimeConfigPublic,
 } from "@gambi/core/types";
 // Re-export Zod schemas for runtime validation (with Schema suffix to avoid conflicts)
 // Re-export constants
 export {
+  ApiErrorCode as ApiErrorCodeSchema,
+  ApiErrorResponse as ApiErrorResponseSchema,
+  ApiErrorShape as ApiErrorShapeSchema,
+  ApiMeta as ApiMetaSchema,
   GenerationConfig as GenerationConfigSchema,
   HEALTH_CHECK_INTERVAL,
   HubConfig as HubConfigSchema,
+  HeartbeatResult as HeartbeatResultSchema,
   LlmMetrics as LlmMetricsSchema,
   MachineSpecs as MachineSpecsSchema,
   NetworkConfig as NetworkConfigSchema,
@@ -53,9 +67,13 @@ export {
   ParticipantInfo as ParticipantInfoSchema,
   ParticipantInfoInternal as ParticipantInfoInternalSchema,
   ParticipantRegistration as ParticipantRegistrationSchema,
+  ParticipantSummary as ParticipantSummarySchema,
   ParticipantStatus as ParticipantStatusSchema,
+  RoomEvent as RoomEventSchema,
+  RoomEventType as RoomEventTypeSchema,
   RoomInfoInternal as RoomInfoSchema,
   RoomInfoPublic as RoomInfoPublicSchema,
+  RoomSummary as RoomSummarySchema,
   RuntimeConfig as RuntimeConfigSchema,
   RuntimeConfigPublic as RuntimeConfigPublicSchema,
 } from "@gambi/core/types";
