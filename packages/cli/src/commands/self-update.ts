@@ -10,9 +10,23 @@ import {
   resolveUpdatePlan,
 } from "../utils/update.ts";
 
-function runPackageManagerUpdate(manager: "bun" | "npm", args: string[]) {
-  const result = spawnSync(manager, args, {
-    stdio: "inherit",
+export interface PackageManagerUpdateResult {
+  code: number;
+  stderr: string;
+  stdout: string;
+}
+
+export function runPackageManagerUpdate(
+  manager: "bun" | "npm",
+  args: string[],
+  options: {
+    captureOutput?: boolean;
+    spawnImpl?: typeof spawnSync;
+  } = {}
+): PackageManagerUpdateResult {
+  const result = (options.spawnImpl ?? spawnSync)(manager, args, {
+    encoding: "utf8",
+    stdio: options.captureOutput ? "pipe" : "inherit",
     windowsHide: false,
   });
 
@@ -20,7 +34,11 @@ function runPackageManagerUpdate(manager: "bun" | "npm", args: string[]) {
     throw result.error;
   }
 
-  return typeof result.status === "number" ? result.status : 1;
+  return {
+    code: typeof result.status === "number" ? result.status : 1,
+    stdout: typeof result.stdout === "string" ? result.stdout : "",
+    stderr: typeof result.stderr === "string" ? result.stderr : "",
+  };
 }
 
 export class SelfUpdateCommand extends AgentCommand {
@@ -101,11 +119,18 @@ export class SelfUpdateCommand extends AgentCommand {
     }
 
     try {
-      const code = runPackageManagerUpdate(plan.manager, plan.args);
-      if (code === 0 && format === "text") {
+      const result = runPackageManagerUpdate(plan.manager, plan.args, {
+        captureOutput: format !== "text",
+      });
+      if (format !== "text") {
+        writeStructured(this.context.stdout, format, {
+          plan,
+          result,
+        });
+      } else if (result.code === 0) {
         this.context.stdout.write("Update finished.\n");
       }
-      return code;
+      return result.code;
     } catch (error) {
       this.context.stderr.write(
         `Error: ${error instanceof Error ? error.message : String(error)}\n`

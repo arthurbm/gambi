@@ -223,4 +223,35 @@ describe("HTTP Client", () => {
       value: undefined,
     });
   });
+
+  test("maps room event stream interruptions to ClientError", async () => {
+    globalThis.fetch = (async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode("data: "));
+            queueMicrotask(() => {
+              controller.error(new Error("stream dropped"));
+            });
+          },
+        }),
+        {
+          headers: { "Content-Type": "text/event-stream" },
+        }
+      )) as unknown as typeof fetch;
+
+    const iterator = client.events
+      .watchRoom({
+        roomCode: "ABC123",
+      })
+      [Symbol.asyncIterator]();
+
+    await expect(iterator.next()).rejects.toMatchObject({
+      name: "ClientError",
+      status: 503,
+      code: "INTERNAL_ERROR",
+      message: "Event stream interrupted.",
+      hint: "Check hub URL and connectivity.",
+    } satisfies Partial<ClientError>);
+  });
 });

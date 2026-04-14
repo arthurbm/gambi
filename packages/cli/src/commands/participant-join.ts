@@ -26,16 +26,22 @@ import { writeStructured } from "../utils/output.ts";
 import { handleCancel } from "../utils/prompt.ts";
 import { detectSpecs } from "../utils/specs.ts";
 
-function parseHeaderAssignment(input: string): { name: string; value: string } {
+export function parseHeaderAssignment(input: string): {
+  name: string;
+  value: string;
+} {
   const index = input.indexOf("=");
   if (index <= 0 || index === input.length - 1) {
     throw new Error(`Invalid header assignment '${input}'. Use Header=Value.`);
   }
 
-  return {
-    name: input.slice(0, index).trim(),
-    value: input.slice(index + 1).trim(),
-  };
+  const name = input.slice(0, index).trim();
+  const value = input.slice(index + 1).trim();
+  if (!(name && value)) {
+    throw new Error(`Invalid header assignment '${input}'. Use Header=Value.`);
+  }
+
+  return { name, value };
 }
 
 function resolveAuthHeaders(

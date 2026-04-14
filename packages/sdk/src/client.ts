@@ -216,17 +216,18 @@ async function* streamRoomEvents(response: Response): AsyncIterable<RoomEvent> {
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  type ReaderChunk = Awaited<ReturnType<typeof reader.read>>;
   let buffer = "";
 
   while (true) {
-    let chunk;
+    let chunk: ReaderChunk;
     try {
       chunk = await reader.read();
     } catch (error) {
       if (isAbortError(error)) {
         return;
       }
-      throw error;
+      throw createConnectivityError("Event stream interrupted.");
     }
 
     const { done, value } = chunk;

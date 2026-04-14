@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { resolvePublishedEndpoint } from "./participant-join.ts";
+import {
+  parseHeaderAssignment,
+  resolvePublishedEndpoint,
+} from "./participant-join.ts";
 
 describe("participant join endpoint validation", () => {
   test("rejects an invalid published network endpoint", () => {
@@ -16,5 +19,14 @@ describe("participant join endpoint validation", () => {
     expect(() =>
       resolvePublishedEndpoint("http://192.168.1.10:3000", "not-a-url")
     ).toThrow("Invalid endpoint URL: not-a-url.");
+  });
+
+  test("rejects header assignments with empty trimmed parts", () => {
+    expect(() => parseHeaderAssignment(" Authorization=   ")).toThrow(
+      "Invalid header assignment ' Authorization=   '. Use Header=Value."
+    );
+    expect(() => parseHeaderAssignment(" =value")).toThrow(
+      "Invalid header assignment ' =value'. Use Header=Value."
+    );
   });
 });
