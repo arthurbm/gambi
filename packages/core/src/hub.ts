@@ -459,9 +459,7 @@ function listRooms(requestId: string): Response {
 }
 
 function getRoomSummary(code: string, requestId: string): Response {
-  const room = Room.listWithParticipantCount().find(
-    (candidate) => candidate.code === code.toUpperCase()
-  );
+  const room = Room.getSummaryByCode(code);
   if (!room) {
     return managementError(
       requestId,

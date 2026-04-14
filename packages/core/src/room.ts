@@ -101,6 +101,12 @@ function listWithParticipantCount(): (RoomInfoPublic & {
   return Array.from(rooms.values()).map((room) => toSummary(room));
 }
 
+function getSummaryByCode(code: string): RoomSummary | undefined {
+  const id = codeToRoomId.get(code.toUpperCase());
+  const room = id ? rooms.get(id) : undefined;
+  return room ? toSummary(room) : undefined;
+}
+
 function remove(id: string): boolean {
   const room = rooms.get(id);
   if (!room) {
@@ -313,6 +319,7 @@ export const Room = {
   create,
   get,
   getByCode,
+  getSummaryByCode,
   list,
   listWithParticipantCount,
   toSummary,
