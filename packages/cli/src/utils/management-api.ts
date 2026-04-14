@@ -21,6 +21,41 @@ export class WatchRoomEventsError extends Error {
   }
 }
 
+function createConnectivityFailure(
+  message = "Failed to reach hub.",
+  hint = "Check hub URL and connectivity."
+): ApiFailure {
+  return {
+    status: 503,
+    error: {
+      code: "INTERNAL_ERROR",
+      message,
+      hint,
+    },
+  };
+}
+
+function parseSseBlocks(chunk: string): RoomEvent[] {
+  const events: RoomEvent[] = [];
+
+  for (const block of chunk.split("\n\n")) {
+    const payloadLine = block
+      .split("\n")
+      .find((line) => line.startsWith("data: "));
+    if (!payloadLine) {
+      continue;
+    }
+
+    try {
+      events.push(JSON.parse(payloadLine.slice(6)) as RoomEvent);
+    } catch {
+      // Ignore malformed SSE payloads and continue consuming the stream.
+    }
+  }
+
+  return events;
+}
+
 export async function requestManagement<T>(
   hubUrl: string,
   path: string,
@@ -28,13 +63,21 @@ export async function requestManagement<T>(
 ): Promise<
   { ok: true; value: ApiSuccess<T> } | { ok: false; value: ApiFailure }
 > {
-  const response = await fetch(`${hubUrl}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${hubUrl}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...init?.headers,
+      },
+    });
+  } catch {
+    return {
+      ok: false,
+      value: createConnectivityFailure(),
+    };
+  }
 
   const body = (await response.json().catch(() => undefined)) as
     | ApiSuccess<T>
@@ -97,10 +140,15 @@ export async function* watchRoomEvents(
   roomCode: string,
   signal?: AbortSignal
 ): AsyncIterable<RoomEvent> {
-  const response = await fetch(`${hubUrl}/v1/rooms/${roomCode}/events`, {
-    headers: { Accept: "text/event-stream" },
-    signal,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${hubUrl}/v1/rooms/${roomCode}/events`, {
+      headers: { Accept: "text/event-stream" },
+      signal,
+    });
+  } catch {
+    throw new WatchRoomEventsError(createConnectivityFailure());
+  }
 
   if (!response.ok) {
     const body = (await response.json().catch(() => undefined)) as
@@ -140,19 +188,14 @@ export async function* watchRoomEvents(
     const blocks = buffer.split("\n\n");
     buffer = blocks.pop() ?? "";
 
-    for (const block of blocks) {
-      const payloadLine = block
-        .split("\n")
-        .find((line) => line.startsWith("data: "));
-      if (!payloadLine) {
-        continue;
-      }
+    for (const event of parseSseBlocks(blocks.join("\n\n"))) {
+      yield event;
+    }
+  }
 
-      try {
-        yield JSON.parse(payloadLine.slice(6)) as RoomEvent;
-      } catch {
-        // Ignore malformed SSE payloads and continue consuming the stream.
-      }
+  if (buffer.trim()) {
+    for (const event of parseSseBlocks(buffer)) {
+      yield event;
     }
   }
 }

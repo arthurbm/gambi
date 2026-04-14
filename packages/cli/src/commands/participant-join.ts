@@ -9,6 +9,7 @@ import { nanoid } from "nanoid";
 import { AgentCommand } from "../utils/agent-command.ts";
 import { loadRuntimeConfigFromInput } from "../utils/cli-config.ts";
 import {
+  type ApiFailure,
   exitCodeForFailure,
   renderFailure,
   requestManagement,
@@ -396,34 +397,54 @@ export class ParticipantJoinCommand extends AgentCommand {
 
     return await new Promise<number>((resolve) => {
       let closed = false;
-      const heartbeatInterval = setInterval(async () => {
-        const heartbeat = await requestManagement(
-          hubUrl,
-          `/v1/rooms/${room}/participants/${participantId}/heartbeat`,
-          { method: "POST" }
-        );
+      const handleHeartbeatFailure = (
+        message: string,
+        failure: ApiFailure = {
+          status: 503,
+          error: {
+            code: "INTERNAL_ERROR" as const,
+            message,
+            hint: "Check hub URL and connectivity.",
+          },
+        }
+      ) => {
+        clearInterval(heartbeatInterval);
+        if (format === "text") {
+          this.context.stderr.write(renderFailure(failure));
+        } else {
+          writeStructured(this.context.stdout, format, {
+            type: "heartbeat_failed",
+            timestamp: Date.now(),
+            data: failure,
+          });
+        }
+        resolve(exitCodeForFailure(failure));
+      };
 
-        if (!heartbeat.ok) {
-          clearInterval(heartbeatInterval);
-          if (format === "text") {
-            this.context.stderr.write(renderFailure(heartbeat.value));
-          } else {
+      const heartbeatInterval = setInterval(async () => {
+        try {
+          const heartbeat = await requestManagement(
+            hubUrl,
+            `/v1/rooms/${room}/participants/${participantId}/heartbeat`,
+            { method: "POST" }
+          );
+
+          if (!heartbeat.ok) {
+            handleHeartbeatFailure(heartbeat.value.error.message, heartbeat.value);
+            return;
+          }
+
+          if (format !== "text") {
             writeStructured(this.context.stdout, format, {
-              type: "heartbeat_failed",
+              type: "heartbeat_ok",
               timestamp: Date.now(),
-              data: heartbeat.value,
+              data: heartbeat.value.data,
             });
           }
-          resolve(exitCodeForFailure(heartbeat.value));
-          return;
-        }
-
-        if (format !== "text") {
-          writeStructured(this.context.stdout, format, {
-            type: "heartbeat_ok",
-            timestamp: Date.now(),
-            data: heartbeat.value.data,
-          });
+        } catch (error) {
+          handleHeartbeatFailure(
+            error instanceof Error ? error.message : String(error)
+          );
         }
       }, HEALTH_CHECK_INTERVAL);
 

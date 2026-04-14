@@ -264,6 +264,7 @@ Current event types:
 - `participant.left`
 - `participant.offline`
 - `llm.request`
+- `llm.complete`
 - `llm.error`
 
 Example event:

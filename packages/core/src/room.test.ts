@@ -199,6 +199,19 @@ describe("Room", () => {
     test("getParticipants returns empty array for non-existent room", () => {
       expect(Room.getParticipants("non-existent")).toEqual([]);
     });
+
+    test("upsertParticipant preserves an explicit joinedAt value of zero", async () => {
+      const room = await Room.create("Test", "host");
+      const participant = createMockParticipant({
+        id: "participant-zero",
+        joinedAt: 0,
+      });
+
+      const result = Room.upsertParticipant(room.id, participant);
+
+      expect(result?.created).toBe(true);
+      expect(result?.participant.joinedAt).toBe(0);
+    });
   });
 
   describe("updateParticipantStatus", () => {

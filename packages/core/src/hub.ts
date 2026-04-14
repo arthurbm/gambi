@@ -1505,6 +1505,86 @@ function createStreamingHeaders(): Record<string, string> {
   };
 }
 
+function broadcastLlmComplete(
+  code: string,
+  participant: ParticipantInfoInternal
+): void {
+  SSE.broadcast(
+    "llm.complete",
+    {
+      participantId: participant.id,
+    },
+    code
+  );
+}
+
+function broadcastLlmError(
+  code: string,
+  participant: ParticipantInfoInternal,
+  model: string,
+  proxyError: unknown
+): void {
+  SSE.broadcast(
+    "llm.error",
+    {
+      participantId: participant.id,
+      nickname: participant.nickname,
+      endpoint: participant.endpoint,
+      model,
+      error: String(proxyError),
+    },
+    code
+  );
+}
+
+function wrapProxyLifecycleStream(
+  response: Response,
+  params: {
+    code: string;
+    model: string;
+    participant: ParticipantInfoInternal;
+  }
+): Response {
+  if (!response.body) {
+    broadcastLlmComplete(params.code, params.participant);
+    return response;
+  }
+
+  const reader = response.body.getReader();
+  const stream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          broadcastLlmComplete(params.code, params.participant);
+          controller.close();
+          return;
+        }
+
+        if (value) {
+          controller.enqueue(value);
+        }
+      } catch (streamError) {
+        broadcastLlmError(
+          params.code,
+          params.participant,
+          params.model,
+          streamError
+        );
+        controller.error(streamError);
+      }
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
+  });
+
+  return new Response(stream, {
+    status: response.status,
+    headers: response.headers,
+  });
+}
+
 async function forwardNativeResponsesCreate(
   response: Response,
   isStreaming: boolean | undefined,
@@ -1785,6 +1865,15 @@ async function proxyResponsesCreate(
       });
 
       if (response !== ADAPTER_SKIP) {
+        if (request.stream) {
+          return wrapProxyLifecycleStream(response, {
+            code,
+            model: body.model,
+            participant,
+          });
+        }
+
+        broadcastLlmComplete(code, participant);
         return response;
       }
     }
@@ -1794,17 +1883,7 @@ async function proxyResponsesCreate(
       501
     );
   } catch (proxyError) {
-    SSE.broadcast(
-      "llm.error",
-      {
-        participantId: participant.id,
-        nickname: participant.nickname,
-        endpoint: participant.endpoint,
-        model: body.model,
-        error: String(proxyError),
-      },
-      code
-    );
+    broadcastLlmError(code, participant, body.model, proxyError);
     console.error("[gambi] responses proxy failed", {
       participantId: participant.id,
       nickname: participant.nickname,
@@ -1838,23 +1917,24 @@ async function proxyChatCompletions(
   );
 
   try {
-    return await chatCompletionsAdapter.create({
+    const response = await chatCompletionsAdapter.create({
       authHeaders,
       participant,
       request,
     });
-  } catch (proxyError) {
-    SSE.broadcast(
-      "llm.error",
-      {
-        participantId: participant.id,
-        nickname: participant.nickname,
-        endpoint: participant.endpoint,
+
+    if (request.stream) {
+      return wrapProxyLifecycleStream(response, {
+        code,
         model: body.model,
-        error: String(proxyError),
-      },
-      code
-    );
+        participant,
+      });
+    }
+
+    broadcastLlmComplete(code, participant);
+    return response;
+  } catch (proxyError) {
+    broadcastLlmError(code, participant, body.model, proxyError);
     console.error("[gambi] chat proxy failed", {
       participantId: participant.id,
       nickname: participant.nickname,

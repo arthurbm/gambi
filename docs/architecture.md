@@ -207,6 +207,7 @@ Current event types:
 - `participant.left`
 - `participant.offline`
 - `llm.request`
+- `llm.complete`
 - `llm.error`
 
 The CLI converts these directly into NDJSON for `gambi events watch --format ndjson`. The SDK exposes the same shape through `client.events.watchRoom()`.

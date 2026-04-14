@@ -259,6 +259,7 @@ export const RoomEventType = z.enum([
   "participant.left",
   "participant.offline",
   "llm.request",
+  "llm.complete",
   "llm.error",
 ]);
 

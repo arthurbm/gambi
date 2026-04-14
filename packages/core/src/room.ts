@@ -152,7 +152,7 @@ function upsertParticipant(
       }
     : {
         ...participant,
-        joinedAt: participant.joinedAt || now,
+        joinedAt: participant.joinedAt ?? now,
         lastSeen: now,
         updatedAt: now,
         status: "online",

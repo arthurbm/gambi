@@ -9,6 +9,7 @@ import {
 import { z } from "zod";
 import { createHub, type Hub } from "./hub.ts";
 import { Room } from "./room.ts";
+import type { RoomEvent } from "./types.ts";
 
 const ApiMetaSchema = z.object({
   requestId: z.string(),
@@ -532,6 +533,68 @@ describe("Hub", () => {
     return { res, data: await res.json() };
   }
 
+  async function connectRoomEvents(roomCode: string) {
+    const controller = new AbortController();
+    const res = await fetch(`${baseUrl}/v1/rooms/${roomCode}/events`, {
+      signal: controller.signal,
+    });
+    const reader = res.body?.getReader();
+    if (!reader) {
+      throw new Error("Expected an SSE response body.");
+    }
+
+    const decoder = new TextDecoder();
+    const queuedEvents: RoomEvent[] = [];
+    let buffer = "";
+
+    return {
+      close: async () => {
+        controller.abort();
+        try {
+          await reader.cancel();
+        } catch {
+          // The stream can already be closed by the time cleanup runs.
+        }
+      },
+      nextEvent: async () => {
+        if (queuedEvents[0]) {
+          return queuedEvents.shift() as RoomEvent;
+        }
+
+        while (true) {
+          const { done, value } = await Promise.race([
+            reader.read(),
+            new Promise<never>((_, reject) => {
+              setTimeout(() => reject(new Error("Timed out waiting for room event.")), 1000);
+            }),
+          ]);
+          if (done) {
+            throw new Error("Event stream closed before the expected event arrived.");
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+          const blocks = buffer.split("\n\n");
+          buffer = blocks.pop() ?? "";
+
+          for (const block of blocks) {
+            const payloadLine = block
+              .split("\n")
+              .find((line) => line.startsWith("data: "));
+            if (!payloadLine) {
+              continue;
+            }
+
+            queuedEvents.push(JSON.parse(payloadLine.slice(6)) as RoomEvent);
+          }
+
+          if (queuedEvents[0]) {
+            return queuedEvents.shift() as RoomEvent;
+          }
+        }
+      },
+    };
+  }
+
   describe("mDNS", () => {
     test("starts and stops with mDNS enabled", () => {
       const mdnsHub = createHub({
@@ -936,6 +999,56 @@ describe("Hub", () => {
 
       expect(res.status).toBe(200);
       expect(data.data).toHaveLength(0);
+    });
+  });
+
+  describe("LLM lifecycle events", () => {
+    test("emits llm.complete after a successful non-streaming responses request", async () => {
+      const participantEndpoint = createMockParticipantServer("responses");
+      try {
+        const {
+          data: { room },
+        } = await createRoom("Responses Events Room");
+        await joinRoom(room.code, {
+          id: "participant-events",
+          nickname: "events-worker",
+          model: "llama3",
+          endpoint: participantEndpoint.url,
+        });
+
+        const events = await connectRoomEvents(room.code);
+        try {
+          const connectedEvent = await events.nextEvent();
+          expect(connectedEvent.type).toBe("connected");
+
+          const response = await fetch(`${baseUrl}/rooms/${room.code}/v1/responses`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: "participant-events",
+              input: "Hello",
+            }),
+          });
+          expect(response.status).toBe(200);
+
+          const requestEvent = await events.nextEvent();
+          const completeEvent = await events.nextEvent();
+
+          expect(requestEvent.type).toBe("llm.request");
+          expect(requestEvent.data).toEqual({
+            participantId: "participant-events",
+            model: "participant-events",
+          });
+          expect(completeEvent.type).toBe("llm.complete");
+          expect(completeEvent.data).toEqual({
+            participantId: "participant-events",
+          });
+        } finally {
+          await events.close();
+        }
+      } finally {
+        participantEndpoint.close();
+      }
     });
   });
 

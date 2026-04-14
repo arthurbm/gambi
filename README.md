@@ -139,6 +139,8 @@ As NDJSON for scripts:
 gambi events watch --room ABC123 --format ndjson
 ```
 
+Room event streams include lifecycle signals such as `llm.request`, `llm.complete`, and `llm.error`.
+
 ### 5. Use the SDK for inference
 
 ```ts
