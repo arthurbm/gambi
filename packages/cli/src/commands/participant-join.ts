@@ -63,20 +63,39 @@ function resolveAuthHeaders(
   return authHeaders;
 }
 
-function resolvePublishedEndpoint(
+export function resolvePublishedEndpoint(
   hubUrl: string,
   endpoint: string,
   explicitNetworkEndpoint?: string
 ): string {
+  const invalidEndpointHint =
+    "Hint: pass --endpoint with a full URL such as http://localhost:11434.";
+  const invalidNetworkEndpointHint =
+    "Hint: pass --network-endpoint with a full URL such as http://192.168.1.25:11434.";
+
   if (explicitNetworkEndpoint) {
-    return new URL(explicitNetworkEndpoint).toString();
+    try {
+      return new URL(explicitNetworkEndpoint).toString();
+    } catch {
+      throw new Error(
+        `Invalid --network-endpoint URL: ${explicitNetworkEndpoint}.\n${invalidNetworkEndpointHint}`
+      );
+    }
   }
 
   if (!isRemoteHubUrl(hubUrl)) {
     return endpoint;
   }
 
-  const hostname = new URL(endpoint).hostname;
+  let hostname: string;
+  try {
+    hostname = new URL(endpoint).hostname;
+  } catch {
+    throw new Error(
+      `Invalid endpoint URL: ${endpoint}.\n${invalidEndpointHint}`
+    );
+  }
+
   if (!isLoopbackLikeHost(hostname)) {
     return endpoint;
   }
@@ -91,7 +110,10 @@ function resolvePublishedEndpoint(
 
   if (publishedEndpoints.length === 0) {
     throw new Error(
-      "Remote hub detected, but no LAN endpoint could be inferred. Pass --network-endpoint."
+      [
+        "Remote hub detected, but no LAN endpoint could be inferred.",
+        "Hint: pass --network-endpoint with the URL that the hub can reach.",
+      ].join("\n")
     );
   }
 
@@ -294,6 +316,15 @@ export class ParticipantJoinCommand extends AgentCommand {
       return 2;
     }
 
+    try {
+      new URL(endpoint);
+    } catch {
+      this.context.stderr.write(
+        `Error: Invalid endpoint URL: ${endpoint}.\nHint: pass --endpoint with a full URL such as http://localhost:11434.\n`
+      );
+      return 2;
+    }
+
     const probe = await probeEndpoint(endpoint, { authHeaders });
     if (!probe.models.includes(model)) {
       this.context.stderr.write(
@@ -302,11 +333,19 @@ export class ParticipantJoinCommand extends AgentCommand {
       return 3;
     }
 
-    const publishedEndpoint = resolvePublishedEndpoint(
-      hubUrl,
-      endpoint,
-      this.networkEndpoint ?? envConfig?.networkEndpoint
-    );
+    let publishedEndpoint: string;
+    try {
+      publishedEndpoint = resolvePublishedEndpoint(
+        hubUrl,
+        endpoint,
+        this.networkEndpoint ?? envConfig?.networkEndpoint
+      );
+    } catch (error) {
+      this.context.stderr.write(
+        `Error: ${error instanceof Error ? error.message : String(error)}\n`
+      );
+      return 2;
+    }
     const specs =
       this.noSpecs || envConfig?.noSpecs ? undefined : await detectSpecs();
     const payload = {
@@ -397,6 +436,19 @@ export class ParticipantJoinCommand extends AgentCommand {
 
     return await new Promise<number>((resolve) => {
       let closed = false;
+      let heartbeatInterval: ReturnType<typeof setInterval>;
+      const onSigint = () => {
+        shutdown("SIGINT").catch(() => undefined);
+      };
+      const onSigterm = () => {
+        shutdown("SIGTERM").catch(() => undefined);
+      };
+      const cleanup = () => {
+        clearInterval(heartbeatInterval);
+        process.off("SIGINT", onSigint);
+        process.off("SIGTERM", onSigterm);
+      };
+
       const handleHeartbeatFailure = (
         message: string,
         failure: ApiFailure = {
@@ -408,7 +460,11 @@ export class ParticipantJoinCommand extends AgentCommand {
           },
         }
       ) => {
-        clearInterval(heartbeatInterval);
+        if (closed) {
+          return;
+        }
+        closed = true;
+        cleanup();
         if (format === "text") {
           this.context.stderr.write(renderFailure(failure));
         } else {
@@ -421,7 +477,7 @@ export class ParticipantJoinCommand extends AgentCommand {
         resolve(exitCodeForFailure(failure));
       };
 
-      const heartbeatInterval = setInterval(async () => {
+      heartbeatInterval = setInterval(async () => {
         try {
           const heartbeat = await requestManagement(
             hubUrl,
@@ -430,7 +486,10 @@ export class ParticipantJoinCommand extends AgentCommand {
           );
 
           if (!heartbeat.ok) {
-            handleHeartbeatFailure(heartbeat.value.error.message, heartbeat.value);
+            handleHeartbeatFailure(
+              heartbeat.value.error.message,
+              heartbeat.value
+            );
             return;
           }
 
@@ -453,7 +512,7 @@ export class ParticipantJoinCommand extends AgentCommand {
           return;
         }
         closed = true;
-        clearInterval(heartbeatInterval);
+        cleanup();
 
         if (format === "text") {
           this.context.stdout.write(`Leaving room ${room}...\n`);
@@ -489,12 +548,8 @@ export class ParticipantJoinCommand extends AgentCommand {
         resolve(0);
       };
 
-      process.once("SIGINT", () => {
-        shutdown("SIGINT").catch(() => undefined);
-      });
-      process.once("SIGTERM", () => {
-        shutdown("SIGTERM").catch(() => undefined);
-      });
+      process.once("SIGINT", onSigint);
+      process.once("SIGTERM", onSigterm);
     });
   }
 }

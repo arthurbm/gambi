@@ -3,6 +3,15 @@ import { AgentCommand } from "../utils/agent-command.ts";
 import { Command, Option } from "../utils/option.ts";
 import { writeStructured } from "../utils/output.ts";
 
+export function parseServePort(input: string | number): number | null {
+  const port = Number(input);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    return null;
+  }
+
+  return port;
+}
+
 export class HubServeCommand extends AgentCommand {
   static override paths = [["hub", "serve"]];
 
@@ -42,7 +51,14 @@ export class HubServeCommand extends AgentCommand {
     }
     const envConfig = envConfigResult.value;
     const host = this.host ?? envConfig?.serve?.host ?? "0.0.0.0";
-    const port = Number(this.port ?? envConfig?.serve?.port ?? 3000);
+    const rawPort = this.port ?? envConfig?.serve?.port ?? 3000;
+    const port = parseServePort(rawPort);
+    if (port === null) {
+      this.context.stderr.write(
+        `Error: Invalid port '${String(rawPort)}'.\nHint: pass an integer between 1 and 65535.\n`
+      );
+      return 2;
+    }
     const mdns = this.mdns || envConfig?.serve?.mdns;
     const format = this.resolveFormat(true);
     const startupPlan = { host, port, mdns, bindUrl: `http://${host}:${port}` };
