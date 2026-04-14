@@ -1,6 +1,5 @@
 import { createHub } from "@gambi/core/hub";
 import { AgentCommand } from "../utils/agent-command.ts";
-import { loadCliConfig, resolveEnvConfig } from "../utils/cli-config.ts";
 import { Command, Option } from "../utils/option.ts";
 import { writeStructured } from "../utils/output.ts";
 
@@ -13,7 +12,7 @@ export class HubServeCommand extends AgentCommand {
       "Starts the Gambi hub. Prefer --format ndjson for machine supervision and --dry-run for startup validation.",
     examples: [
       ["Start the hub", "gambi hub serve"],
-      ["Preview startup", "gambi hub serve --dry-run --format json"],
+      ["Preview startup", "gambi hub serve --dry-run --format ndjson"],
       ["Enable mDNS", "gambi hub serve --mdns"],
     ],
   });
@@ -37,11 +36,14 @@ export class HubServeCommand extends AgentCommand {
   });
 
   async execute(): Promise<number> {
-    const config = await loadCliConfig(this.resolveConfigPath());
-    const envConfig = resolveEnvConfig(config, this.env);
+    const envConfigResult = await this.loadEnvConfig();
+    if (!envConfigResult.ok) {
+      return envConfigResult.exitCode;
+    }
+    const envConfig = envConfigResult.value;
     const host = this.host ?? envConfig?.serve?.host ?? "0.0.0.0";
     const port = Number(this.port ?? envConfig?.serve?.port ?? 3000);
-    const mdns = this.mdns || envConfig?.serve?.mdns || false;
+    const mdns = this.mdns || envConfig?.serve?.mdns;
     const format = this.resolveFormat(true);
     const startupPlan = { host, port, mdns, bindUrl: `http://${host}:${port}` };
 
@@ -62,7 +64,7 @@ export class HubServeCommand extends AgentCommand {
       this.context.stdout.write(`Hub started at ${hub.url}\n`);
       this.context.stdout.write("Press Ctrl+C to stop\n");
     } else {
-      writeStructured(this.context.stdout, "ndjson", {
+      writeStructured(this.context.stdout, format, {
         type: "started",
         timestamp: Date.now(),
         data: {
@@ -71,7 +73,7 @@ export class HubServeCommand extends AgentCommand {
         },
       });
       if (hub.mdnsName) {
-        writeStructured(this.context.stdout, "ndjson", {
+        writeStructured(this.context.stdout, format, {
           type: "mdns_registered",
           timestamp: Date.now(),
           data: { name: hub.mdnsName },
@@ -84,7 +86,7 @@ export class HubServeCommand extends AgentCommand {
         if (format === "text") {
           this.context.stdout.write(`Shutting down (${signal})...\n`);
         } else {
-          writeStructured(this.context.stdout, "ndjson", {
+          writeStructured(this.context.stdout, format, {
             type: "signal_received",
             timestamp: Date.now(),
             data: { signal },
@@ -92,7 +94,7 @@ export class HubServeCommand extends AgentCommand {
         }
         hub.close();
         if (format !== "text") {
-          writeStructured(this.context.stdout, "ndjson", {
+          writeStructured(this.context.stdout, format, {
             type: "stopped",
             timestamp: Date.now(),
             data: { signal },

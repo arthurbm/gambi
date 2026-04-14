@@ -76,7 +76,7 @@ const JoinResponseSchema = successSchema(
       }),
     }),
     roomId: z.string(),
-  }),
+  })
 );
 
 const SuccessResponseSchema = successSchema(
@@ -584,6 +584,20 @@ describe("Hub", () => {
       expect(data.error.code).toBe("INVALID_REQUEST");
     });
 
+    test("returns typed error when the body is invalid JSON", async () => {
+      const res = await fetch(`${baseUrl}/v1/rooms`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{",
+      });
+      const data = ErrorResponseSchema.parse(await res.json());
+
+      expect(res.status).toBe(400);
+      expect(data.error.code).toBe("INVALID_REQUEST");
+      expect(data.error.message).toBe("Invalid JSON body.");
+      expect(data.meta.requestId).toBeDefined();
+    });
+
     test("accepts room defaults and redacts instructions in public responses", async () => {
       const { data } = await createRoom("Configured Room", {
         instructions: "Room-level system prompt",
@@ -670,6 +684,24 @@ describe("Hub", () => {
       expect(data.error.code).toBe("INVALID_REQUEST");
     });
 
+    test("returns typed error when the participant payload is invalid JSON", async () => {
+      const { data: created } = await createRoom("Test Room");
+      const res = await fetch(
+        `${baseUrl}/v1/rooms/${created.room.code}/participants/participant-1`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: "{",
+        }
+      );
+      const data = ErrorResponseSchema.parse(await res.json());
+
+      expect(res.status).toBe(400);
+      expect(data.error.code).toBe("INVALID_REQUEST");
+      expect(data.error.message).toBe("Invalid JSON body.");
+      expect(data.meta.requestId).toBeDefined();
+    });
+
     test("rejects loopback endpoints when the participant joins remotely", async () => {
       const { data: created } = await createRoom("Remote Room");
       const { res, data } = await joinRoom(
@@ -711,7 +743,9 @@ describe("Hub", () => {
         temperature: 0.5,
         max_tokens: 256,
       });
-      expect(joinData.data.participant.config).not.toHaveProperty("instructions");
+      expect(joinData.data.participant.config).not.toHaveProperty(
+        "instructions"
+      );
 
       const participantsResponse = await fetch(
         `${baseUrl}/v1/rooms/${created.room.code}/participants`
@@ -835,6 +869,17 @@ describe("Hub", () => {
 
       expect(res.status).toBe(404);
       expect(data.error.code).toBe("ROOM_NOT_FOUND");
+    });
+  });
+
+  describe("GET /v1/rooms/:code/events", () => {
+    test("returns a typed 404 envelope for missing rooms", async () => {
+      const res = await fetch(`${baseUrl}/v1/rooms/XXXXXX/events`);
+      const data = ErrorResponseSchema.parse(await res.json());
+
+      expect(res.status).toBe(404);
+      expect(data.error.code).toBe("ROOM_NOT_FOUND");
+      expect(data.meta.requestId).toBeDefined();
     });
   });
 

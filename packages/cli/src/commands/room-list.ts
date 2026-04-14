@@ -1,6 +1,5 @@
 import type { RoomSummary } from "@gambi/core/types";
 import { AgentCommand } from "../utils/agent-command.ts";
-import { loadCliConfig, resolveEnvConfig } from "../utils/cli-config.ts";
 import {
   exitCodeForFailure,
   renderFailure,
@@ -41,7 +40,10 @@ export class RoomListCommand extends AgentCommand {
     examples: [
       ["List rooms", "gambi room list"],
       ["List as JSON", "gambi room list --format json"],
-      ["List from another hub", "gambi room list --hub http://192.168.1.10:3000"],
+      [
+        "List from another hub",
+        "gambi room list --hub http://192.168.1.10:3000",
+      ],
     ],
   });
 
@@ -59,13 +61,19 @@ export class RoomListCommand extends AgentCommand {
   });
 
   async execute(): Promise<number> {
-    const config = await loadCliConfig(this.resolveConfigPath());
-    const envConfig = resolveEnvConfig(config, this.env);
+    const envConfigResult = await this.loadEnvConfig();
+    if (!envConfigResult.ok) {
+      return envConfigResult.exitCode;
+    }
+    const envConfig = envConfigResult.value;
     const hubUrl = this.hub ?? envConfig?.hubUrl ?? "http://localhost:3000";
     const sortBy = (this.sort ?? "participant-count") as RoomSort;
     const format = this.resolveFormat(false);
 
-    const response = await requestManagement<RoomSummary[]>(hubUrl, "/v1/rooms");
+    const response = await requestManagement<RoomSummary[]>(
+      hubUrl,
+      "/v1/rooms"
+    );
     if (!response.ok) {
       this.context.stderr.write(renderFailure(response.value));
       return exitCodeForFailure(response.value);

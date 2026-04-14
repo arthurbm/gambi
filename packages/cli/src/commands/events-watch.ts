@@ -1,7 +1,11 @@
 import type { RoomEvent } from "@gambi/core/types";
 import { AgentCommand } from "../utils/agent-command.ts";
-import { loadCliConfig, resolveEnvConfig } from "../utils/cli-config.ts";
-import { watchRoomEvents } from "../utils/management-api.ts";
+import {
+  exitCodeForFailure,
+  renderFailure,
+  WatchRoomEventsError,
+  watchRoomEvents,
+} from "../utils/management-api.ts";
 import { Command, Option } from "../utils/option.ts";
 import { writeStructured } from "../utils/output.ts";
 
@@ -18,10 +22,7 @@ export class EventsWatchCommand extends AgentCommand {
       "Streams typed room events. Use --format ndjson for agents and log processors.",
     examples: [
       ["Watch room events", "gambi events watch --room ABC123"],
-      [
-        "Watch as NDJSON",
-        "gambi events watch --room ABC123 --format ndjson",
-      ],
+      ["Watch as NDJSON", "gambi events watch --room ABC123 --format ndjson"],
     ],
   });
 
@@ -36,17 +37,32 @@ export class EventsWatchCommand extends AgentCommand {
   });
 
   async execute(): Promise<number> {
-    const config = await loadCliConfig(this.resolveConfigPath());
-    const envConfig = resolveEnvConfig(config, this.env);
+    const envConfigResult = await this.loadEnvConfig();
+    if (!envConfigResult.ok) {
+      return envConfigResult.exitCode;
+    }
+    const envConfig = envConfigResult.value;
     const hubUrl = this.hub ?? envConfig?.hubUrl ?? "http://localhost:3000";
     const format = this.resolveFormat(true);
 
-    for await (const event of watchRoomEvents(hubUrl, this.room)) {
-      if (format === "text") {
-        this.context.stdout.write(`${renderEvent(event)}\n`);
-      } else {
-        writeStructured(this.context.stdout, format, event);
+    try {
+      for await (const event of watchRoomEvents(hubUrl, this.room)) {
+        if (format === "text") {
+          this.context.stdout.write(`${renderEvent(event)}\n`);
+        } else {
+          writeStructured(this.context.stdout, format, event);
+        }
       }
+    } catch (error) {
+      if (error instanceof WatchRoomEventsError) {
+        this.context.stderr.write(renderFailure(error.failure));
+        return exitCodeForFailure(error.failure);
+      }
+
+      this.context.stderr.write(
+        `Error: ${error instanceof Error ? error.message : String(error)}\n`
+      );
+      return 1;
     }
 
     return 0;

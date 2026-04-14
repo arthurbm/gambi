@@ -1,7 +1,8 @@
 import { createOpenResponses } from "@ai-sdk/open-responses";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
-import type { ParticipantInfo } from "@gambi/core/types";
+import type { ApiErrorResponse, ParticipantInfo } from "@gambi/core/types";
+import { parseErrorEnvelope } from "./client.ts";
 
 export type GambiProtocol = "openResponses" | "chatCompletions";
 const DEFAULT_PROTOCOL: GambiProtocol = "openResponses";
@@ -118,9 +119,18 @@ export function createGambi(options: GambiOptions): GambiProvider {
     defaultProtocol,
 
     async listParticipants(): Promise<ParticipantInfo[]> {
-      const response = await fetch(`${hubUrl}/v1/rooms/${options.roomCode}/participants`);
+      const response = await fetch(
+        `${hubUrl}/v1/rooms/${options.roomCode}/participants`
+      );
       if (!response.ok) {
-        throw new Error(`Failed to fetch participants: ${response.statusText}`);
+        const body = (await response.json().catch(() => undefined)) as
+          | Partial<ApiErrorResponse>
+          | undefined;
+        throw parseErrorEnvelope(
+          response.status,
+          body,
+          `Failed to fetch participants: ${response.statusText}`
+        );
       }
       const data = (await response.json()) as ParticipantsResponse;
       return data.data;

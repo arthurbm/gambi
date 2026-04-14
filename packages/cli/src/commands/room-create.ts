@@ -1,11 +1,7 @@
 import { password as passwordPrompt, text } from "@clack/prompts";
 import type { RoomSummary, RuntimeConfig } from "@gambi/core/types";
 import { AgentCommand } from "../utils/agent-command.ts";
-import {
-  loadCliConfig,
-  loadRuntimeConfigFromInput,
-  resolveEnvConfig,
-} from "../utils/cli-config.ts";
+import { loadRuntimeConfigFromInput } from "../utils/cli-config.ts";
 import {
   exitCodeForFailure,
   renderFailure,
@@ -13,6 +9,30 @@ import {
 } from "../utils/management-api.ts";
 import { Command, Option } from "../utils/option.ts";
 import { writeStructured } from "../utils/output.ts";
+
+async function promptForRoomSettings(params: {
+  name?: string;
+  password?: string;
+}): Promise<{ name?: string; password?: string }> {
+  let { name, password } = params;
+
+  if (!name) {
+    const nameResult = await text({ message: "Room name:" });
+    name = String(nameResult).trim();
+  }
+
+  if (password === undefined) {
+    const passwordResult = await passwordPrompt({
+      message: "Room password (leave empty for none):",
+    });
+    const candidatePassword = String(passwordResult).trim();
+    if (candidatePassword) {
+      password = candidatePassword;
+    }
+  }
+
+  return { name, password };
+}
 
 export class RoomCreateCommand extends AgentCommand {
   static override paths = [["room", "create"]];
@@ -23,8 +43,14 @@ export class RoomCreateCommand extends AgentCommand {
       "Creates a new room and optionally attaches runtime defaults from JSON. Use --config - to read JSON from stdin.",
     examples: [
       ["Create a room", "gambi room create --name Demo"],
-      ["Create with defaults", "gambi room create --name Demo --config ./room.json"],
-      ["Preview request", "gambi room create --name Demo --dry-run --format json"],
+      [
+        "Create with defaults",
+        "gambi room create --name Demo --config ./room.json",
+      ],
+      [
+        "Preview request",
+        "gambi room create --name Demo --dry-run --format json",
+      ],
     ],
   });
 
@@ -53,26 +79,18 @@ export class RoomCreateCommand extends AgentCommand {
   });
 
   async execute(): Promise<number> {
-    const config = await loadCliConfig(this.resolveConfigPath());
-    const envConfig = resolveEnvConfig(config, this.env);
+    const envConfigResult = await this.loadEnvConfig();
+    if (!envConfigResult.ok) {
+      return envConfigResult.exitCode;
+    }
+    const envConfig = envConfigResult.value;
     const hubUrl = this.hub ?? envConfig?.hubUrl ?? "http://localhost:3000";
     const format = this.resolveFormat(false);
     let name = this.name;
     let password = this.password;
 
     if (!name && this.allowInteractive(true)) {
-      const nameResult = await text({ message: "Room name:" });
-      name = String(nameResult).trim();
-
-      if (password === undefined) {
-        const passwordResult = await passwordPrompt({
-          message: "Room password (leave empty for none):",
-        });
-        const candidatePassword = String(passwordResult).trim();
-        if (candidatePassword) {
-          password = candidatePassword;
-        }
-      }
+      ({ name, password } = await promptForRoomSettings({ name, password }));
     }
 
     if (!name) {
@@ -116,14 +134,13 @@ export class RoomCreateCommand extends AgentCommand {
       return 0;
     }
 
-    const response = await requestManagement<{ room: RoomSummary; hostId: string }>(
-      hubUrl,
-      "/v1/rooms",
-      {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }
-    );
+    const response = await requestManagement<{
+      room: RoomSummary;
+      hostId: string;
+    }>(hubUrl, "/v1/rooms", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
     if (!response.ok) {
       this.context.stderr.write(renderFailure(response.value));
       return exitCodeForFailure(response.value);

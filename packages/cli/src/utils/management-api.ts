@@ -1,11 +1,4 @@
-import type {
-  ApiErrorResponse,
-  ApiMeta,
-  HeartbeatResult,
-  ParticipantSummary,
-  RoomEvent,
-  RoomSummary,
-} from "@gambi/core/types";
+import type { ApiErrorResponse, ApiMeta, RoomEvent } from "@gambi/core/types";
 
 export interface ApiSuccess<T> {
   data: T;
@@ -18,11 +11,23 @@ export interface ApiFailure {
   meta?: ApiMeta;
 }
 
+export class WatchRoomEventsError extends Error {
+  readonly failure: ApiFailure;
+
+  constructor(failure: ApiFailure) {
+    super(failure.error.message);
+    this.name = "WatchRoomEventsError";
+    this.failure = failure;
+  }
+}
+
 export async function requestManagement<T>(
   hubUrl: string,
   path: string,
   init?: RequestInit
-): Promise<{ ok: true; value: ApiSuccess<T> } | { ok: false; value: ApiFailure }> {
+): Promise<
+  { ok: true; value: ApiSuccess<T> } | { ok: false; value: ApiFailure }
+> {
   const response = await fetch(`${hubUrl}${path}`, {
     ...init,
     headers: {
@@ -61,7 +66,11 @@ export function exitCodeForFailure(failure: ApiFailure): number {
     return 2;
   }
 
-  if (failure.status === 401 || failure.status === 403 || failure.status === 503) {
+  if (
+    failure.status === 401 ||
+    failure.status === 403 ||
+    failure.status === 503
+  ) {
     return 3;
   }
 
@@ -97,11 +106,24 @@ export async function* watchRoomEvents(
     const body = (await response.json().catch(() => undefined)) as
       | ApiErrorResponse
       | undefined;
-    throw new Error(body?.error?.message ?? response.statusText);
+    throw new WatchRoomEventsError({
+      status: response.status,
+      error: body?.error ?? {
+        code: "INTERNAL_ERROR",
+        message: response.statusText,
+      },
+      meta: body?.meta,
+    });
   }
 
   if (!response.body) {
-    throw new Error("Missing event stream body.");
+    throw new WatchRoomEventsError({
+      status: 502,
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "Missing event stream body.",
+      },
+    });
   }
 
   const reader = response.body.getReader();
@@ -129,10 +151,14 @@ export async function* watchRoomEvents(
       try {
         yield JSON.parse(payloadLine.slice(6)) as RoomEvent;
       } catch {
-        continue;
+        // Ignore malformed SSE payloads and continue consuming the stream.
       }
     }
   }
 }
 
-export type { HeartbeatResult, ParticipantSummary, RoomSummary };
+export type {
+  HeartbeatResult,
+  ParticipantSummary,
+  RoomSummary,
+} from "@gambi/core/types";

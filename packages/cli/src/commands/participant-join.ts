@@ -1,11 +1,18 @@
-import {
-  password as passwordPrompt,
-  select,
-  text,
-} from "@clack/prompts";
+import { password as passwordPrompt, select, text } from "@clack/prompts";
 import { probeEndpoint } from "@gambi/core/endpoint";
-import { HEALTH_CHECK_INTERVAL, type ParticipantAuthHeaders } from "@gambi/core/types";
+import {
+  HEALTH_CHECK_INTERVAL,
+  type ParticipantAuthHeaders,
+  type RuntimeConfig,
+} from "@gambi/core/types";
 import { nanoid } from "nanoid";
+import { AgentCommand } from "../utils/agent-command.ts";
+import { loadRuntimeConfigFromInput } from "../utils/cli-config.ts";
+import {
+  exitCodeForFailure,
+  renderFailure,
+  requestManagement,
+} from "../utils/management-api.ts";
 import {
   isLoopbackLikeHost,
   isRemoteHubUrl,
@@ -13,17 +20,6 @@ import {
   rankNetworkCandidatesForHub,
   replaceEndpointHost,
 } from "../utils/network-endpoint.ts";
-import { AgentCommand } from "../utils/agent-command.ts";
-import {
-  loadCliConfig,
-  loadRuntimeConfigFromInput,
-  resolveEnvConfig,
-} from "../utils/cli-config.ts";
-import {
-  exitCodeForFailure,
-  renderFailure,
-  requestManagement,
-} from "../utils/management-api.ts";
 import { Command, Option } from "../utils/option.ts";
 import { writeStructured } from "../utils/output.ts";
 import { detectSpecs } from "../utils/specs.ts";
@@ -31,9 +27,7 @@ import { detectSpecs } from "../utils/specs.ts";
 function parseHeaderAssignment(input: string): { name: string; value: string } {
   const index = input.indexOf("=");
   if (index <= 0 || index === input.length - 1) {
-    throw new Error(
-      `Invalid header assignment '${input}'. Use Header=Value.`
-    );
+    throw new Error(`Invalid header assignment '${input}'. Use Header=Value.`);
   }
 
   return {
@@ -117,7 +111,7 @@ export class ParticipantJoinCommand extends AgentCommand {
       ],
       [
         "Preview the registration",
-        "gambi participant join --room ABC123 --participant-id worker-1 --model llama3 --dry-run --format json",
+        "gambi participant join --room ABC123 --participant-id worker-1 --model llama3 --dry-run --format ndjson",
       ],
       [
         "Register against a remote hub",
@@ -188,10 +182,14 @@ export class ParticipantJoinCommand extends AgentCommand {
   });
 
   async execute(): Promise<number> {
-    const cliConfig = await loadCliConfig(this.resolveConfigPath());
-    const envConfig = resolveEnvConfig(cliConfig, this.env);
+    const envConfigResult = await this.loadEnvConfig();
+    if (!envConfigResult.ok) {
+      return envConfigResult.exitCode;
+    }
+    const envConfig = envConfigResult.value;
     const hubUrl = this.hub ?? envConfig?.hubUrl ?? "http://localhost:3000";
-    const endpoint = this.endpoint ?? envConfig?.endpoint ?? "http://localhost:11434";
+    const endpoint =
+      this.endpoint ?? envConfig?.endpoint ?? "http://localhost:11434";
     const format = this.resolveFormat(true);
 
     let room = this.room;
@@ -285,7 +283,7 @@ export class ParticipantJoinCommand extends AgentCommand {
       return 2;
     }
 
-    let runtimeConfig;
+    let runtimeConfig: RuntimeConfig | undefined;
     try {
       runtimeConfig = await loadRuntimeConfigFromInput(this.configPath);
     } catch (error) {
@@ -318,7 +316,8 @@ export class ParticipantJoinCommand extends AgentCommand {
       specs,
       config: runtimeConfig,
       capabilities: probe.capabilities,
-      authHeaders: Object.keys(authHeaders).length > 0 ? authHeaders : undefined,
+      authHeaders:
+        Object.keys(authHeaders).length > 0 ? authHeaders : undefined,
     };
 
     if (this.dryRun) {
@@ -332,7 +331,10 @@ export class ParticipantJoinCommand extends AgentCommand {
           ...payload,
           authHeaders: payload.authHeaders
             ? Object.fromEntries(
-                Object.keys(payload.authHeaders).map((key) => [key, "[redacted]"])
+                Object.keys(payload.authHeaders).map((key) => [
+                  key,
+                  "[redacted]",
+                ])
               )
             : undefined,
           password: password ? "[redacted]" : undefined,
@@ -349,7 +351,7 @@ export class ParticipantJoinCommand extends AgentCommand {
     }
 
     if (format !== "text") {
-      writeStructured(this.context.stdout, "ndjson", {
+      writeStructured(this.context.stdout, format, {
         type: "prepared",
         timestamp: Date.now(),
         data: {
@@ -385,7 +387,7 @@ export class ParticipantJoinCommand extends AgentCommand {
       );
       this.context.stdout.write("Press Ctrl+C to leave.\n");
     } else {
-      writeStructured(this.context.stdout, "ndjson", {
+      writeStructured(this.context.stdout, format, {
         type: "registered",
         timestamp: Date.now(),
         data: registration.value.data,
@@ -406,7 +408,7 @@ export class ParticipantJoinCommand extends AgentCommand {
           if (format === "text") {
             this.context.stderr.write(renderFailure(heartbeat.value));
           } else {
-            writeStructured(this.context.stdout, "ndjson", {
+            writeStructured(this.context.stdout, format, {
               type: "heartbeat_failed",
               timestamp: Date.now(),
               data: heartbeat.value,
@@ -417,7 +419,7 @@ export class ParticipantJoinCommand extends AgentCommand {
         }
 
         if (format !== "text") {
-          writeStructured(this.context.stdout, "ndjson", {
+          writeStructured(this.context.stdout, format, {
             type: "heartbeat_ok",
             timestamp: Date.now(),
             data: heartbeat.value.data,
@@ -435,7 +437,7 @@ export class ParticipantJoinCommand extends AgentCommand {
         if (format === "text") {
           this.context.stdout.write(`Leaving room ${room}...\n`);
         } else {
-          writeStructured(this.context.stdout, "ndjson", {
+          writeStructured(this.context.stdout, format, {
             type: "leaving",
             timestamp: Date.now(),
             data: { signal, participantId, room },
@@ -456,7 +458,7 @@ export class ParticipantJoinCommand extends AgentCommand {
         if (format === "text") {
           this.context.stdout.write("Left room successfully.\n");
         } else {
-          writeStructured(this.context.stdout, "ndjson", {
+          writeStructured(this.context.stdout, format, {
             type: "left",
             timestamp: Date.now(),
             data: { participantId, room },
@@ -466,8 +468,12 @@ export class ParticipantJoinCommand extends AgentCommand {
         resolve(0);
       };
 
-      process.once("SIGINT", () => void shutdown("SIGINT"));
-      process.once("SIGTERM", () => void shutdown("SIGTERM"));
+      process.once("SIGINT", () => {
+        shutdown("SIGINT").catch(() => undefined);
+      });
+      process.once("SIGTERM", () => {
+        shutdown("SIGTERM").catch(() => undefined);
+      });
     });
   }
 }

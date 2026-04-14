@@ -28,8 +28,8 @@ import {
   type ParticipantAuthHeaders,
   type ParticipantInfo,
   type ParticipantInfoInternal,
-  ParticipantSummary,
   ParticipantRegistration,
+  ParticipantSummary,
   RoomSummary,
   RuntimeConfig,
 } from "./types.ts";
@@ -51,6 +51,8 @@ export interface Hub {
 // Top-level regex for route matching
 const ROOM_PATH_REGEX = /^\/rooms\/([^/]+)/;
 const MANAGEMENT_ROOM_PATH_REGEX = /^\/v1\/rooms\/([^/]+)/;
+const MANAGEMENT_PARTICIPANT_PATH_REGEX =
+  /^\/v1\/rooms\/([^/]+)\/participants\/([^/]+)(?:\/heartbeat)?$/;
 const RESPONSES_PATH_REGEX =
   /^\/rooms\/([^/]+)\/v1\/responses\/([^/]+)(?:\/(cancel|input_items))?$/;
 const TRAILING_SLASH_REGEX = /\/$/;
@@ -394,11 +396,25 @@ function applyChatCompletionsDefaults(
 
 // Route handlers
 async function createRoom(req: Request, requestId: string): Promise<Response> {
-  const body = (await req.json()) as {
+  let body: {
     defaults?: unknown;
     name?: string;
     password?: string;
   };
+  try {
+    body = (await req.json()) as typeof body;
+  } catch (error) {
+    return managementError(
+      requestId,
+      "INVALID_REQUEST",
+      "Invalid JSON body.",
+      "Provide a valid JSON object and retry.",
+      400,
+      {
+        cause: error instanceof Error ? error.message : String(error),
+      }
+    );
+  }
   if (!body.name) {
     return managementError(
       requestId,
@@ -477,7 +493,21 @@ async function upsertParticipant(
     );
   }
 
-  const bodyInput = (await req.json()) as Record<string, unknown>;
+  let bodyInput: Record<string, unknown>;
+  try {
+    bodyInput = (await req.json()) as Record<string, unknown>;
+  } catch (error) {
+    return managementError(
+      requestId,
+      "INVALID_REQUEST",
+      "Invalid JSON body.",
+      "Provide a valid JSON object and retry.",
+      400,
+      {
+        cause: error instanceof Error ? error.message : String(error),
+      }
+    );
+  }
   bodyInput.id = participantId;
   if (!(bodyInput.nickname && bodyInput.model && bodyInput.endpoint)) {
     return managementError(
@@ -546,7 +576,11 @@ async function upsertParticipant(
     updatedAt: now,
   };
 
-  const result = Room.upsertParticipant(room.id, participant, body.authHeaders ?? {});
+  const result = Room.upsertParticipant(
+    room.id,
+    participant,
+    body.authHeaders ?? {}
+  );
   if (!result) {
     return managementError(
       requestId,
@@ -1902,18 +1936,17 @@ async function proxyStoredResponse(
   });
 }
 
-function sseEvents(code: string): Response {
+function sseEvents(
+  code: string,
+  requestId: string = crypto.randomUUID()
+): Response {
   const room = Room.getByCode(code);
   if (!room) {
-    return json(
-      {
-        error: {
-          code: "ROOM_NOT_FOUND",
-          message: "Room not found.",
-          hint: "Run 'gambi room list' to inspect available rooms.",
-        },
-        meta: { requestId: crypto.randomUUID() },
-      },
+    return managementError(
+      requestId,
+      "ROOM_NOT_FOUND",
+      "Room not found.",
+      "Run 'gambi room list' to inspect available rooms.",
       404
     );
   }
@@ -1972,7 +2005,7 @@ function handleRoomRoute(
   method: string,
   path: string,
   code: string,
-  requesterIp: string | null
+  _requesterIp: string | null
 ): Promise<Response> | Response | null {
   if (path === `/rooms/${code}/v1/models` && method === "GET") {
     return listModels(code);
@@ -2010,15 +2043,19 @@ function handleManagementRoomRoute(
     return getParticipants(code, requestId);
   }
 
-  const participantMatch = path.match(
-    /^\/v1\/rooms\/([^/]+)\/participants\/([^/]+)(?:\/heartbeat)?$/
-  );
+  const participantMatch = path.match(MANAGEMENT_PARTICIPANT_PATH_REGEX);
   if (participantMatch?.[1] === code && participantMatch[2]) {
     const participantId = participantMatch[2];
     const isHeartbeat = path.endsWith("/heartbeat");
 
     if (method === "PUT" && !isHeartbeat) {
-      return upsertParticipant(req, code, participantId, requesterIp, requestId);
+      return upsertParticipant(
+        req,
+        code,
+        participantId,
+        requesterIp,
+        requestId
+      );
     }
 
     if (method === "DELETE" && !isHeartbeat) {
@@ -2031,7 +2068,7 @@ function handleManagementRoomRoute(
   }
 
   if (path === `/v1/rooms/${code}/events` && method === "GET") {
-    return sseEvents(code);
+    return sseEvents(code, requestId);
   }
 
   return null;

@@ -54,7 +54,9 @@ export interface GambiClient {
       roomCode: string,
       participantId: string,
       input: UpsertParticipantInput
-    ) => Promise<ApiResult<{ participant: ParticipantSummary; roomId: string }>>;
+    ) => Promise<
+      ApiResult<{ participant: ParticipantSummary; roomId: string }>
+    >;
     list: (roomCode: string) => Promise<ApiResult<ParticipantSummary[]>>;
     remove: (
       roomCode: string,
@@ -95,7 +97,7 @@ export class ClientError extends Error {
   }
 }
 
-function parseErrorEnvelope(
+export function parseErrorEnvelope(
   status: number,
   body: Partial<ApiErrorResponse> | undefined,
   fallbackMessage: string
@@ -130,7 +132,7 @@ function parseEventStreamChunk(chunk: string): RoomEvent[] {
       const data = JSON.parse(eventLine.slice(6)) as RoomEvent;
       events.push(data);
     } catch {
-      continue;
+      // Ignore malformed SSE payloads and keep the stream parser resilient.
     }
   }
 
@@ -140,7 +142,10 @@ function parseEventStreamChunk(chunk: string): RoomEvent[] {
 export function createClient(options: ClientOptions = {}): GambiClient {
   const hubUrl = options.hubUrl ?? "http://localhost:3000";
 
-  async function request<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
+  async function request<T>(
+    path: string,
+    init?: RequestInit
+  ): Promise<ApiResult<T>> {
     const response = await fetch(`${hubUrl}${path}`, {
       ...init,
       headers: {

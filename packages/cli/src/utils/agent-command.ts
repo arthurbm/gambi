@@ -1,26 +1,14 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import {
+  type CliEnvironmentConfig,
+  loadCliConfig,
+  renderCliConfigError,
+  resolveEnvConfig,
+} from "./cli-config.ts";
 import { Command, Option } from "./option.ts";
 
 export type OutputFormat = "text" | "json" | "ndjson";
-
-export interface CliEnvironmentConfig {
-  endpoint?: string;
-  headers?: Record<string, string>;
-  hubUrl?: string;
-  networkEndpoint?: string;
-  noSpecs?: boolean;
-  serve?: {
-    host?: string;
-    mdns?: boolean;
-    port?: number;
-  };
-}
-
-export interface CliConfig {
-  defaultEnv?: string;
-  envs?: Record<string, CliEnvironmentConfig>;
-}
 
 export abstract class AgentCommand extends Command {
   format = Option.String("--format", {
@@ -57,6 +45,10 @@ export abstract class AgentCommand extends Command {
       requestedFormat === "json" ||
       requestedFormat === "ndjson"
     ) {
+      if (streaming && requestedFormat === "json") {
+        return "ndjson";
+      }
+
       return requestedFormat;
     }
 
@@ -65,6 +57,29 @@ export abstract class AgentCommand extends Command {
     }
 
     return "text";
+  }
+
+  protected resolveEnvName(): string | undefined {
+    return this.env ?? process.env.GAMBI_ENV ?? undefined;
+  }
+
+  protected async loadEnvConfig(): Promise<
+    | { ok: true; value: CliEnvironmentConfig | undefined }
+    | { exitCode: 2; ok: false }
+  > {
+    try {
+      const config = await loadCliConfig(this.resolveConfigPath());
+      return {
+        ok: true,
+        value: resolveEnvConfig(config, this.resolveEnvName()),
+      };
+    } catch (error) {
+      this.context.stderr.write(renderCliConfigError(error));
+      return {
+        ok: false,
+        exitCode: 2,
+      };
+    }
   }
 
   protected allowInteractive(defaultWhenTty = false): boolean {

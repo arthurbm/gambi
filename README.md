@@ -91,7 +91,7 @@ gambi hub serve
 Machine-readable dry run:
 
 ```bash
-gambi hub serve --dry-run --format json
+gambi hub serve --dry-run --format ndjson
 ```
 
 ### 2. Create a room
@@ -124,7 +124,7 @@ gambi participant join \
   --participant-id worker-1 \
   --model llama3 \
   --dry-run \
-  --format json
+  --format ndjson
 ```
 
 ### 4. Watch room events
@@ -353,6 +353,8 @@ Rooms and participants can both provide runtime defaults. The hub merges them at
 
 Sensitive config is redacted from public management responses. Public room and participant payloads expose safe summaries instead of raw secrets or instructions.
 
+Streaming commands always emit NDJSON for machine-readable output. If you pass `--format json` to a streaming command, the CLI coerces it to `ndjson`.
+
 ## Development
 
 ```bash
@@ -361,7 +363,7 @@ bun run dev
 bun run dev:hub
 bun run dev:cli -- --help
 bun run dev:cli -- room list --format json
-bun run dev:cli -- hub serve --dry-run --format json
+bun run dev:cli -- hub serve --dry-run --format ndjson
 bun run build
 bun run check-types
 ```

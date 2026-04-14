@@ -162,6 +162,8 @@ Operational commands use deterministic exit codes:
 | `3` | connectivity or dependency failure |
 | `4` | remote rejection or conflict |
 
+Streaming commands always emit NDJSON for machine-readable output. If you pass `--format json` to a streaming command, the CLI coerces it to `ndjson`.
+
 ## Command reference
 
 ## `gambi hub serve`
@@ -187,7 +189,7 @@ Examples:
 ```bash
 gambi hub serve
 gambi hub serve --mdns
-gambi hub serve --dry-run --format json
+gambi hub serve --dry-run --format ndjson
 ```
 
 Machine-readable NDJSON events:
@@ -334,7 +336,7 @@ gambi participant join \
   --participant-id worker-1 \
   --model llama3 \
   --dry-run \
-  --format json
+  --format ndjson
 
 gambi participant join \
   --room ABC123 \

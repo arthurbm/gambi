@@ -1,6 +1,5 @@
 import type { RoomSummary } from "@gambi/core/types";
 import { AgentCommand } from "../utils/agent-command.ts";
-import { loadCliConfig, resolveEnvConfig } from "../utils/cli-config.ts";
 import {
   exitCodeForFailure,
   renderFailure,
@@ -32,8 +31,11 @@ export class RoomGetCommand extends AgentCommand {
   });
 
   async execute(): Promise<number> {
-    const config = await loadCliConfig(this.resolveConfigPath());
-    const envConfig = resolveEnvConfig(config, this.env);
+    const envConfigResult = await this.loadEnvConfig();
+    if (!envConfigResult.ok) {
+      return envConfigResult.exitCode;
+    }
+    const envConfig = envConfigResult.value;
     const hubUrl = this.hub ?? envConfig?.hubUrl ?? "http://localhost:3000";
     const format = this.resolveFormat(false);
 
