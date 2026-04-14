@@ -214,6 +214,7 @@ Obrigatorio:
 - Nao executar comandos destrutivos sem solicitacao explicita.
 - Nao assumir arvore limpa.
 - Se detectar mudancas inesperadas novas durante a tarefa, pausar e reportar.
+- Usar **Conventional Commits** em todo novo commit (`tipo(escopo): resumo`), por exemplo `fix(cli): tratar cancelamento em prompts`.
 
 ## 10) Inconsistencias conhecidas (documentar, nao ignorar)
 
