@@ -112,6 +112,63 @@ export function parseErrorEnvelope(
   });
 }
 
+function isApiResult<T>(value: unknown): value is ApiResult<T> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "data" in value &&
+    "meta" in value
+  );
+}
+
+function createConnectivityError(
+  message = "Failed to reach hub.",
+  hint = "Check hub URL and connectivity."
+): ClientError {
+  return new ClientError({
+    message,
+    status: 503,
+    code: "INTERNAL_ERROR",
+    hint,
+  });
+}
+
+function createProtocolError(
+  message = "Invalid JSON response from hub.",
+  hint = "Check hub compatibility or proxy behavior."
+): ClientError {
+  return new ClientError({
+    message,
+    status: 502,
+    code: "INTERNAL_ERROR",
+    hint,
+  });
+}
+
+async function readJsonBody(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+async function fetchResponse(
+  input: string,
+  init?: RequestInit
+): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch {
+    throw createConnectivityError();
+  }
+}
+
 function parseEventStreamChunk(chunk: string): RoomEvent[] {
   const events: RoomEvent[] = [];
   const blocks = chunk.split("\n\n");
@@ -139,6 +196,43 @@ function parseEventStreamChunk(chunk: string): RoomEvent[] {
   return events;
 }
 
+async function* streamRoomEvents(response: Response): AsyncIterable<RoomEvent> {
+  if (!response.body) {
+    throw new ClientError({
+      message: "Event stream body is missing.",
+      status: 500,
+      code: "INTERNAL_ERROR",
+    });
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const split = buffer.split("\n\n");
+    buffer = split.pop() ?? "";
+    for (const block of split) {
+      for (const event of parseEventStreamChunk(`${block}\n\n`)) {
+        yield event;
+      }
+    }
+  }
+
+  buffer += decoder.decode();
+  if (buffer.trim()) {
+    for (const event of parseEventStreamChunk(buffer)) {
+      yield event;
+    }
+  }
+}
+
 export function createClient(options: ClientOptions = {}): GambiClient {
   const hubUrl = options.hubUrl ?? "http://localhost:3000";
 
@@ -146,7 +240,7 @@ export function createClient(options: ClientOptions = {}): GambiClient {
     path: string,
     init?: RequestInit
   ): Promise<ApiResult<T>> {
-    const response = await fetch(`${hubUrl}${path}`, {
+    const response = await fetchResponse(`${hubUrl}${path}`, {
       ...init,
       headers: {
         "Content-Type": "application/json",
@@ -154,7 +248,7 @@ export function createClient(options: ClientOptions = {}): GambiClient {
       },
     });
 
-    const body = (await response.json().catch(() => undefined)) as
+    const body = (await readJsonBody(response)) as
       | ApiResult<T>
       | ApiErrorResponse
       | undefined;
@@ -167,7 +261,11 @@ export function createClient(options: ClientOptions = {}): GambiClient {
       );
     }
 
-    return body as ApiResult<T>;
+    if (!isApiResult<T>(body)) {
+      throw createProtocolError();
+    }
+
+    return body;
   }
 
   return {
@@ -219,7 +317,7 @@ export function createClient(options: ClientOptions = {}): GambiClient {
     },
     events: {
       async *watchRoom(options: WatchRoomOptions): AsyncIterable<RoomEvent> {
-        const response = await fetch(
+        const response = await fetchResponse(
           `${hubUrl}/v1/rooms/${options.roomCode}/events`,
           {
             headers: { Accept: "text/event-stream" },
@@ -228,7 +326,7 @@ export function createClient(options: ClientOptions = {}): GambiClient {
         );
 
         if (!response.ok) {
-          const body = (await response.json().catch(() => undefined)) as
+          const body = (await readJsonBody(response)) as
             | ApiErrorResponse
             | undefined;
           throw parseErrorEnvelope(
@@ -238,38 +336,8 @@ export function createClient(options: ClientOptions = {}): GambiClient {
           );
         }
 
-        if (!response.body) {
-          throw new ClientError({
-            message: "Event stream body is missing.",
-            status: 500,
-            code: "INTERNAL_ERROR",
-          });
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            break;
-          }
-
-          buffer += decoder.decode(value, { stream: true });
-          const split = buffer.split("\n\n");
-          buffer = split.pop() ?? "";
-          for (const block of split) {
-            for (const event of parseEventStreamChunk(`${block}\n\n`)) {
-              yield event;
-            }
-          }
-        }
-
-        if (buffer.trim()) {
-          for (const event of parseEventStreamChunk(buffer)) {
-            yield event;
-          }
+        for await (const event of streamRoomEvents(response)) {
+          yield event;
         }
       },
     },

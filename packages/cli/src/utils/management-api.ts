@@ -21,6 +21,15 @@ export class WatchRoomEventsError extends Error {
   }
 }
 
+function isApiSuccess<T>(value: unknown): value is ApiSuccess<T> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "data" in value &&
+    "meta" in value
+  );
+}
+
 function createConnectivityFailure(
   message = "Failed to reach hub.",
   hint = "Check hub URL and connectivity."
@@ -33,6 +42,33 @@ function createConnectivityFailure(
       hint,
     },
   };
+}
+
+function createProtocolFailure(
+  message = "Invalid JSON response from hub.",
+  hint = "Check hub compatibility or proxy behavior."
+): ApiFailure {
+  return {
+    status: 502,
+    error: {
+      code: "INTERNAL_ERROR",
+      message,
+      hint,
+    },
+  };
+}
+
+async function readJsonBody(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 }
 
 function parseSseBlocks(chunk: string): RoomEvent[] {
@@ -79,7 +115,7 @@ export async function requestManagement<T>(
     };
   }
 
-  const body = (await response.json().catch(() => undefined)) as
+  const body = (await readJsonBody(response)) as
     | ApiSuccess<T>
     | ApiErrorResponse
     | undefined;
@@ -98,9 +134,16 @@ export async function requestManagement<T>(
     };
   }
 
+  if (!isApiSuccess<T>(body)) {
+    return {
+      ok: false,
+      value: createProtocolFailure(),
+    };
+  }
+
   return {
     ok: true,
-    value: body as ApiSuccess<T>,
+    value: body,
   };
 }
 
@@ -193,6 +236,7 @@ export async function* watchRoomEvents(
     }
   }
 
+  buffer += decoder.decode();
   if (buffer.trim()) {
     for (const event of parseSseBlocks(buffer)) {
       yield event;

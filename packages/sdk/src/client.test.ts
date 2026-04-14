@@ -1,7 +1,16 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "bun:test";
 import { createHub, type Hub } from "@gambi/core/hub";
 import { Room } from "@gambi/core/room";
-import { ClientError, createClient } from "./client.ts";
+import { type ClientError, createClient } from "./client.ts";
+
+const originalFetch = globalThis.fetch;
 
 function getRandomPort(): number {
   return 30_000 + Math.floor(Math.random() * 20_000);
@@ -36,6 +45,7 @@ describe("HTTP Client", () => {
 
   beforeEach(() => {
     Room.clear();
+    globalThis.fetch = originalFetch;
   });
 
   test("creates and lists rooms through the namespaced client", async () => {
@@ -117,13 +127,44 @@ describe("HTTP Client", () => {
     } satisfies Partial<ClientError>);
   });
 
+  test("maps connectivity failures to ClientError", async () => {
+    globalThis.fetch = (() =>
+      Promise.reject(new Error("connect ECONNREFUSED"))) as typeof fetch;
+
+    await expect(client.rooms.list()).rejects.toMatchObject({
+      name: "ClientError",
+      status: 503,
+      code: "INTERNAL_ERROR",
+      message: "Failed to reach hub.",
+      hint: "Check hub URL and connectivity.",
+    } satisfies Partial<ClientError>);
+  });
+
+  test("treats invalid success JSON as a protocol ClientError", async () => {
+    globalThis.fetch = (async () =>
+      new Response("not-json", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })) as unknown as typeof fetch;
+
+    await expect(client.rooms.list()).rejects.toMatchObject({
+      name: "ClientError",
+      status: 502,
+      code: "INTERNAL_ERROR",
+      message: "Invalid JSON response from hub.",
+      hint: "Check hub compatibility or proxy behavior.",
+    } satisfies Partial<ClientError>);
+  });
+
   test("watches typed room events", async () => {
     const created = await client.rooms.create({ name: "Watched Room" });
     const abortController = new AbortController();
-    const iterator = client.events.watchRoom({
-      roomCode: created.data.room.code,
-      signal: abortController.signal,
-    })[Symbol.asyncIterator]();
+    const iterator = client.events
+      .watchRoom({
+        roomCode: created.data.room.code,
+        signal: abortController.signal,
+      })
+      [Symbol.asyncIterator]();
 
     const connectedEvent = await iterator.next();
     expect(connectedEvent.done).toBe(false);
@@ -140,5 +181,24 @@ describe("HTTP Client", () => {
     expect(joinedEvent.value?.type).toBe("participant.joined");
 
     abortController.abort();
+  });
+
+  test("maps room event connectivity failures to ClientError", async () => {
+    globalThis.fetch = (() =>
+      Promise.reject(new Error("connect ECONNREFUSED"))) as typeof fetch;
+
+    const iterator = client.events
+      .watchRoom({
+        roomCode: "ABC123",
+      })
+      [Symbol.asyncIterator]();
+
+    await expect(iterator.next()).rejects.toMatchObject({
+      name: "ClientError",
+      status: 503,
+      code: "INTERNAL_ERROR",
+      message: "Failed to reach hub.",
+      hint: "Check hub URL and connectivity.",
+    } satisfies Partial<ClientError>);
   });
 });
