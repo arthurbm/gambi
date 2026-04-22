@@ -2083,12 +2083,13 @@ function wrapProxyLifecycleStream(
     participant: ParticipantInfoInternal;
     protocol: "openResponses" | "chatCompletions";
     requestId: string;
+    requestStartedAt: number;
     roomId: string;
   }
 ): Response {
   const lifecycle: ProxyRequestLifecycle = {
     requestId: params.requestId,
-    durationStartedAt: Date.now(),
+    durationStartedAt: params.requestStartedAt,
   };
 
   if (!response.body) {
@@ -2462,6 +2463,7 @@ async function proxyResponsesCreate(
             participant,
             protocol,
             requestId,
+            requestStartedAt,
             roomId: room.id,
           });
         }
@@ -2555,6 +2557,7 @@ async function proxyChatCompletions(
         participant,
         protocol: "chatCompletions",
         requestId,
+        requestStartedAt,
         roomId: room.id,
       });
     }

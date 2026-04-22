@@ -254,7 +254,9 @@ function updateLastSeen(roomId: string, participantId: string): boolean {
 
   participant.lastSeen = Date.now();
   participant.updatedAt = participant.lastSeen;
-  participant.status = participant.connection.connected ? "online" : "offline";
+  if (participant.status !== "busy") {
+    participant.status = participant.connection.connected ? "online" : "offline";
+  }
   return true;
 }
 

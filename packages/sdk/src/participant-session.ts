@@ -261,14 +261,16 @@ class ManagedParticipantSession implements ParticipantSession {
         })
       );
     } catch (error) {
-      this.#ws.send(
-        JSON.stringify({
-          type: "tunnel.response.error",
-          requestId: message.requestId,
-          stage: "proxy",
-          message: error instanceof Error ? error.message : String(error),
-        })
-      );
+      if (this.#ws.readyState === WebSocket.OPEN) {
+        this.#ws.send(
+          JSON.stringify({
+            type: "tunnel.response.error",
+            requestId: message.requestId,
+            stage: "proxy",
+            message: error instanceof Error ? error.message : String(error),
+          })
+        );
+      }
     }
   }
 
