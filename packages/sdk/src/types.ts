@@ -23,6 +23,7 @@ export type {
   OllamaConfig,
   ParticipantAuthHeaders,
   ParticipantCapabilities,
+  ParticipantConnection,
   ParticipantInfo,
   ParticipantInfoInternal,
   ParticipantRegistration,
@@ -46,6 +47,7 @@ export type {
   RoomSummary,
   RuntimeConfig,
   RuntimeConfigPublic,
+  TunnelBootstrap,
 } from "@gambi/core/types";
 // Re-export Zod schemas for runtime validation (with Schema suffix to avoid conflicts)
 // Re-export constants
@@ -64,6 +66,7 @@ export {
   OllamaConfig as OllamaConfigSchema,
   PARTICIPANT_TIMEOUT,
   ParticipantAuthHeaders as ParticipantAuthHeadersSchema,
+  ParticipantConnection as ParticipantConnectionSchema,
   ParticipantInfo as ParticipantInfoSchema,
   ParticipantInfoInternal as ParticipantInfoInternalSchema,
   ParticipantRegistration as ParticipantRegistrationSchema,
@@ -76,4 +79,5 @@ export {
   RoomSummary as RoomSummarySchema,
   RuntimeConfig as RuntimeConfigSchema,
   RuntimeConfigPublic as RuntimeConfigPublicSchema,
+  TunnelBootstrap as TunnelBootstrapSchema,
 } from "@gambi/core/types";

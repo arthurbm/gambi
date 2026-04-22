@@ -87,16 +87,28 @@ export type ParticipantCapabilities = z.infer<typeof ParticipantCapabilities>;
 export const ParticipantAuthHeaders = z.record(z.string().min(1), z.string());
 export type ParticipantAuthHeaders = z.infer<typeof ParticipantAuthHeaders>;
 
+export const ParticipantConnection = z.object({
+  kind: z.literal("tunnel"),
+  connected: z.boolean().default(false),
+  lastTunnelSeenAt: z.number().nullable().default(null),
+});
+export type ParticipantConnection = z.infer<typeof ParticipantConnection>;
+
 export const ParticipantInfoInternal = z.object({
   id: z.string(),
   nickname: z.string(),
   model: z.string(),
-  endpoint: z.string().url(), // Endpoint exposing OpenResponses and/or chat/completions
+  endpoint: z.string().url(), // Informational local endpoint on the participant machine
   config: RuntimeConfig,
   specs: MachineSpecs,
   capabilities: ParticipantCapabilities.default({
     openResponses: "unknown",
     chatCompletions: "unknown",
+  }),
+  connection: ParticipantConnection.default({
+    kind: "tunnel",
+    connected: false,
+    lastTunnelSeenAt: null,
   }),
   status: ParticipantStatus,
   joinedAt: z.number(),
@@ -117,6 +129,11 @@ export const ParticipantInfo = z.object({
     openResponses: "unknown",
     chatCompletions: "unknown",
   }),
+  connection: ParticipantConnection.default({
+    kind: "tunnel",
+    connected: false,
+    lastTunnelSeenAt: null,
+  }),
   status: ParticipantStatus,
   joinedAt: z.number(),
   lastSeen: z.number(),
@@ -134,10 +151,16 @@ export const ParticipantRegistration = z.object({
   specs: MachineSpecs.optional(),
   config: RuntimeConfig.optional(),
   capabilities: ParticipantCapabilities.optional(),
-  authHeaders: ParticipantAuthHeaders.optional(),
 });
 
 export type ParticipantRegistration = z.infer<typeof ParticipantRegistration>;
+
+export const TunnelBootstrap = z.object({
+  url: z.string().url(),
+  token: z.string().min(1),
+});
+
+export type TunnelBootstrap = z.infer<typeof TunnelBootstrap>;
 
 // Internal room info schema (includes sensitive fields like passwordHash)
 export const RoomInfoInternal = z.object({
@@ -166,10 +189,12 @@ export type RoomInfo = z.infer<typeof RoomInfoInternal>; // Internal type
 export type RoomInfoPublic = z.infer<typeof RoomInfoPublic>; // Public type
 
 export const LlmMetrics = z.object({
-  tokens: z.number(),
-  latencyFirstTokenMs: z.number(),
+  ttftMs: z.number().nonnegative(),
   durationMs: z.number(),
-  tokensPerSecond: z.number(),
+  inputTokens: z.number().nonnegative().optional(),
+  outputTokens: z.number().nonnegative().optional(),
+  totalTokens: z.number().nonnegative().optional(),
+  tokensPerSecond: z.number().nonnegative().optional(),
 });
 
 export type LlmMetrics = z.infer<typeof LlmMetrics>;
@@ -202,8 +227,9 @@ export const ApiErrorCode = z.enum([
   "INVALID_REQUEST",
   "INVALID_PASSWORD",
   "ENDPOINT_NOT_REACHABLE",
-  "LOOPBACK_ENDPOINT_FOR_REMOTE_HUB",
   "PARTICIPANT_CONFLICT",
+  "PARTICIPANT_BUSY",
+  "PARTICIPANT_TUNNEL_NOT_CONNECTED",
   "MODEL_NOT_FOUND",
   "INTERNAL_ERROR",
 ]);

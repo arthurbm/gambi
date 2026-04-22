@@ -6,6 +6,7 @@
     "./types": "./src/types.ts",
     "./protocol": "./src/protocol.ts",
     "./protocol-adapters": "./src/protocol-adapters.ts",
+    "./tunnel-protocol": "./src/tunnel-protocol.ts",
     "./room": "./src/room.ts",
     "./participant": "./src/participant.ts",
     "./endpoint": "./src/endpoint-capabilities.ts",

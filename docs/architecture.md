@@ -9,6 +9,8 @@ Gambi is a local-first hub for sharing OpenAI-compatible LLM endpoints across a 
 - Management plane: Gambi-native operations for rooms, participants, heartbeats, and room events.
 - Inference plane: OpenAI-compatible room-scoped endpoints for responses, chat completions, and model listing.
 
+Participants connect to the hub through a participant tunnel. The public inference surface remains HTTP, but hub-to-participant forwarding is now tunnel-backed instead of requiring the participant endpoint to be directly reachable from the hub.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                           GAMBI HUB                                │
@@ -23,6 +25,7 @@ Gambi is a local-first hub for sharing OpenAI-compatible LLM endpoints across a 
 │  │ PUT    /v1/rooms/:code/participants/:id                      │  │
 │  │ DELETE /v1/rooms/:code/participants/:id                      │  │
 │  │ POST   /v1/rooms/:code/participants/:id/heartbeat            │  │
+│  │ GET    /v1/rooms/:code/participants/:id/tunnel              │  │
 │  │ GET    /v1/rooms/:code/events                                │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 │                                                                     │
@@ -63,6 +66,7 @@ The redesign intentionally separates the operational and application contracts.
 - OpenAI-compatible transport
 - compatibility with AI SDK and similar clients
 - room-scoped model routing
+- Responses-first semantics with explicit Chat Completions compatibility
 
 ## Component roles
 
@@ -75,6 +79,7 @@ Key responsibilities:
 - room and participant registry
 - management HTTP handlers
 - inference proxying
+- participant tunnel runtime
 - SSE room events
 - mDNS discovery support
 - shared transport and domain schemas
@@ -174,6 +179,18 @@ Behavior:
 
 This is the foundation for retry-safe automation and the CLI’s `participant join --participant-id`.
 
+The registration response also returns tunnel bootstrap data:
+
+- `participant`
+- `roomId`
+- `tunnel`
+
+The participant then opens:
+
+- `GET /v1/rooms/:code/participants/:id/tunnel?token=<token>`
+
+This route is an internal bootstrap route for participant runtimes, not the public inference surface consumed by apps.
+
 ### Heartbeats and liveness
 
 Participants stay online by sending:
@@ -186,6 +203,14 @@ Constants:
 - `PARTICIPANT_TIMEOUT = 30_000`
 
 The hub marks inactive participants offline when the timeout window is exceeded.
+
+Tunnel liveness is tracked separately through `participant.connection`:
+
+- `kind = "tunnel"`
+- `connected`
+- `lastTunnelSeenAt`
+
+Operationally, a participant is only routable when the tunnel is connected and the participant is not offline.
 
 ## Event model
 
@@ -212,6 +237,32 @@ Current event types:
 
 The CLI converts these directly into NDJSON for `gambi events watch --format ndjson`. The SDK exposes the same shape through `client.events.watchRoom()`.
 
+`llm.request` carries:
+
+- `requestId`
+- `participantId`
+- `model`
+- `protocol`
+
+`llm.complete` carries:
+
+- `requestId`
+- `participantId`
+- `model`
+- `protocol`
+- `metrics`
+
+`llm.error` carries:
+
+- `requestId`
+- `participantId`
+- `nickname`
+- `endpoint`
+- `model`
+- `protocol`
+- `stage`
+- `error`
+
 ## Inference plane
 
 The inference plane remains OpenAI-compatible and room-scoped:
@@ -230,7 +281,42 @@ Model routing rules:
 - `model = model:<name>` routes to the first online participant matching that model
 - `model = *` or `any` routes to a random online participant
 
-The hub still prefers the Responses API first and keeps chat completions available explicitly.
+The hub prefers the Responses API first and keeps Chat Completions available explicitly for compatibility.
+
+Routing only considers participants that:
+
+- have a connected tunnel
+- are not offline
+- are not already handling another request
+
+Specific participant targeting returns explicit errors when the participant is busy or its tunnel is disconnected.
+
+## Tunnel transport
+
+The participant tunnel exists to remove the requirement that participant endpoints be published on the network.
+
+Transport properties:
+
+- the participant may keep its provider on `localhost`
+- provider auth headers stay local to the participant runtime
+- the hub forwards inference operations across a WebSocket tunnel
+- the public client-facing API remains HTTP + SSE
+
+This split is intentional:
+
+- HTTP remains the compatibility surface for applications
+- WebSocket is used only for the hub-to-participant control path
+- participant count does not change the app-facing protocol
+
+The tunnel protocol currently includes:
+
+- `tunnel.request`
+- `tunnel.response.start`
+- `tunnel.response.chunk`
+- `tunnel.response.end`
+- `tunnel.response.error`
+- `tunnel.ping`
+- `tunnel.pong`
 
 ## Runtime defaults
 
@@ -241,6 +327,8 @@ Rooms and participants can both contribute runtime defaults. At proxy time, the 
 3. request-time overrides
 
 Sensitive config is not exposed raw in public management responses. Public responses expose redacted or summarized values where needed.
+
+Provider auth headers are no longer uploaded to the hub as participant registration state. They remain on the participant runtime and are applied locally when the runtime serves tunnel requests to the real provider endpoint.
 
 ## Discovery
 
@@ -293,3 +381,12 @@ Optimized for human monitoring. It is not the canonical operational contract.
 ## Security model
 
 Gambi is designed for trusted local networks. The hub does not include native authentication. Do not expose it publicly without an external auth and proxy layer.
+
+## Forward path
+
+The current architecture is meant to stay narrow: transport, routing, and operability.
+
+Related internal docs:
+
+- `docs/observability.md`
+- `docs/gambi-agents.md`

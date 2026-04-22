@@ -7,141 +7,130 @@ description: Troubleshooting common problems with Gambi
 
 ## Participant Shows as Offline
 
-**Symptoms:**
-- Participant joined successfully but shows as offline
-- Requests fail with "No online participants"
+Symptoms:
 
-**Causes & Solutions:**
+- participant joined successfully but shows as offline
+- requests fail because no participant is available
 
-1. **Health check failing** - The participant sends health checks every 10 seconds. If the hub doesn't receive them for 30 seconds, the participant is marked offline.
-   - Check if the participant process is still running
-   - Check network connectivity between participant and hub
+Causes and solutions:
 
-2. **Firewall blocking traffic** - Ensure the hub port (default 3000) is accessible.
-   ```bash
-   # Test connectivity
-   curl http://hub-ip:3000/rooms
-   ```
+1. Health checks are failing.
+   - The participant sends a heartbeat every 10 seconds.
+   - If the hub misses them for 30 seconds, the participant is marked offline.
+   - Check whether the `gambi participant join` process is still running.
 
-3. **Wrong hub URL** - Verify the participant is connecting to the correct hub.
+2. The participant tunnel is disconnected.
+   - A participant is only routable while its tunnel is connected.
+   - Restart `gambi participant join`.
+   - Check whether a firewall or proxy is blocking WebSocket upgrades.
+
+3. The hub is unreachable.
+
+```bash
+curl http://hub-ip:3000/v1/health
+```
 
 ## Connection Timeout
 
-**Symptoms:**
-- Requests hang and eventually timeout
-- "ETIMEDOUT" or "ECONNREFUSED" errors
+Symptoms:
 
-**Causes & Solutions:**
+- requests hang and eventually time out
+- you see `ETIMEDOUT` or `ECONNREFUSED`
 
-1. **Hub not running** - Start the hub first:
-   ```bash
-   gambi serve --port 3000
-   ```
+Causes and solutions:
 
-2. **Wrong port** - Ensure you're using the same port everywhere.
+1. The hub is not running.
 
-3. **Network issues** - Check if machines can reach each other:
-   ```bash
-   ping hub-ip
-   ```
+```bash
+gambi hub serve --port 3000
+```
 
-4. **Participant published `localhost` to a remote hub** - `localhost` only works on the participant machine itself.
-   - Let Gambi auto-rewrite it in interactive mode
-   - Or pass `--network-endpoint http://<participant-lan-ip>:11434`
-   - Use `--no-network-rewrite` only if you intentionally want to opt out
+2. The participant can reach the hub over HTTP, but the tunnel upgrade is blocked.
+   - Test without an intermediate reverse proxy.
+   - If you are using nginx, Caddy, or another proxy, ensure WebSocket upgrade headers are passed through.
+
+3. The wrong hub URL is configured.
 
 ## mDNS Discovery Not Working
 
-**Symptoms:**
-- `gambi list` doesn't find any hubs
-- "No hubs found on network"
+Symptoms:
 
-**Causes & Solutions:**
+- discovery helpers do not find any hubs
+- no rooms are discovered on the local network
 
-1. **mDNS not enabled** - Start the hub with `--mdns` flag:
-   ```bash
-   gambi serve --mdns
-   ```
+Causes and solutions:
 
-2. **Different network segments** - mDNS only works on the same local network segment. VPNs and different subnets won't work.
+1. mDNS is not enabled.
 
-3. **Firewall blocking mDNS** - mDNS uses UDP port 5353. Ensure it's not blocked.
+```bash
+gambi hub serve --mdns
+```
 
-4. **macOS/Linux permission issues** - mDNS may require elevated privileges on some systems.
+2. Machines are on different network segments.
+
+3. UDP port 5353 is blocked.
 
 ## CORS Errors
 
-**Symptoms:**
-- Browser console shows CORS errors
-- SDK works from Node.js but not from browser
+Symptoms:
 
-**Causes & Solutions:**
+- browser console shows CORS errors
+- Node.js usage works but browser usage does not
 
-Gambi's hub includes CORS headers by default. If you're still seeing errors:
+Causes and solutions:
 
-1. **Custom proxy interfering** - If using a reverse proxy (nginx, Caddy), ensure it passes CORS headers.
+1. A custom proxy is stripping CORS headers.
+2. A custom proxy is also stripping WebSocket upgrade headers needed for participant tunnels.
 
-2. **Different origin** - The SDK must be served from the same origin or the hub must allow the origin.
+## Request Goes To The Wrong Participant
 
-## Request Goes to Wrong Participant
+Symptoms:
 
-**Symptoms:**
-- Request goes to a different participant than expected
-- `gambi.model("llama3")` routes to wrong endpoint
+- a request routes to a different participant than expected
 
-**Causes & Solutions:**
+Causes and solutions:
 
-1. **Multiple participants with same model** - When using `gambi.model()`, it routes to the first online participant with that model. Use `gambi.participant()` for specific targeting.
+1. `gambi.model("llama3")` routes to the first available participant with that model.
+   - Use `gambi.participant("worker-1")` for exact targeting.
 
-2. **Participant went offline** - The routing falls back to available participants.
-
-## SDK Not Finding Hub
-
-**Symptoms:**
-- "Failed to connect to hub" errors
-- SDK initialization fails
-
-**Causes & Solutions:**
-
-1. **Wrong hubUrl** - Ensure the URL is correct:
-   ```typescript
-   const gambi = createGambi({
-     roomCode: "ABC123",
-     hubUrl: "http://192.168.1.100:3000", // Include protocol and port
-   });
-   ```
-
-2. **Hub on different network** - If using mDNS, both SDK and hub must be on the same network.
+2. The intended participant is offline, busy, or tunnel-disconnected.
 
 ## High Latency
 
-**Symptoms:**
-- Requests take much longer than expected
-- Streaming feels slow
+Symptoms:
 
-**Causes & Solutions:**
+- requests take much longer than expected
+- streaming feels slow
 
-1. **Network latency** - Check ping times between machines.
+Causes and solutions:
 
-2. **LLM endpoint slow** - The bottleneck is usually the LLM itself, not Gambi.
+1. Network latency between participant and hub.
+2. Slow provider or model.
+3. Too many requests targeting too few participants.
 
-3. **Too many concurrent requests** - Consider adding more participants to distribute load.
+Watch room events and look at `llm.complete.metrics` to inspect:
+
+- `ttftMs`
+- `durationMs`
+- `tokensPerSecond`
 
 ## Still Having Issues?
 
-1. **Check logs** - Run the hub with verbose output:
-   ```bash
-   DEBUG=* gambi serve
-   ```
+1. Check hub logs:
 
-2. **Test endpoint directly** - Verify the LLM endpoint works:
-   ```bash
-   curl http://localhost:11434/v1/responses \
-     -H "Content-Type: application/json" \
-     -d '{"model": "llama3", "input": "Hi"}'
-   ```
+```bash
+DEBUG=* gambi hub serve
+```
 
-3. **Open an issue** - If the problem persists, [open an issue on GitHub](https://github.com/arthurbm/gambi/issues) with:
-   - Error message
-   - Steps to reproduce
-   - Environment (OS, Node version, LLM provider)
+2. Test the provider endpoint directly:
+
+```bash
+curl http://localhost:11434/v1/responses \
+  -H "Content-Type: application/json" \
+  -d '{"model": "llama3", "input": "Hi"}'
+```
+
+3. Open an issue on GitHub with:
+   - the error message
+   - steps to reproduce
+   - environment details

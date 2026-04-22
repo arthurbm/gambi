@@ -1,26 +1,10 @@
 import { password as passwordPrompt, select, text } from "@clack/prompts";
 import { probeEndpoint } from "@gambi/core/endpoint";
-import {
-  HEALTH_CHECK_INTERVAL,
-  type ParticipantAuthHeaders,
-  type RuntimeConfig,
-} from "@gambi/core/types";
+import type { ParticipantAuthHeaders, RuntimeConfig } from "@gambi/core/types";
 import { nanoid } from "nanoid";
+import { createParticipantSession } from "../../../sdk/src/participant-session.ts";
 import { AgentCommand } from "../utils/agent-command.ts";
 import { loadRuntimeConfigFromInput } from "../utils/cli-config.ts";
-import {
-  type ApiFailure,
-  exitCodeForFailure,
-  renderFailure,
-  requestManagement,
-} from "../utils/management-api.ts";
-import {
-  isLoopbackLikeHost,
-  isRemoteHubUrl,
-  listNetworkCandidates,
-  rankNetworkCandidatesForHub,
-  replaceEndpointHost,
-} from "../utils/network-endpoint.ts";
 import { Command, Option } from "../utils/option.ts";
 import { writeStructured } from "../utils/output.ts";
 import { handleCancel } from "../utils/prompt.ts";
@@ -70,82 +54,25 @@ function resolveAuthHeaders(
   return authHeaders;
 }
 
-export function resolvePublishedEndpoint(
-  hubUrl: string,
-  endpoint: string,
-  explicitNetworkEndpoint?: string
-): string {
-  const invalidEndpointHint =
-    "Hint: pass --endpoint with a full URL such as http://localhost:11434.";
-  const invalidNetworkEndpointHint =
-    "Hint: pass --network-endpoint with a full URL such as http://192.168.1.25:11434.";
-
-  if (explicitNetworkEndpoint) {
-    try {
-      return new URL(explicitNetworkEndpoint).toString();
-    } catch {
-      throw new Error(
-        `Invalid --network-endpoint URL: ${explicitNetworkEndpoint}.\n${invalidNetworkEndpointHint}`
-      );
-    }
-  }
-
-  if (!isRemoteHubUrl(hubUrl)) {
-    return endpoint;
-  }
-
-  let hostname: string;
-  try {
-    hostname = new URL(endpoint).hostname;
-  } catch {
-    throw new Error(
-      `Invalid endpoint URL: ${endpoint}.\n${invalidEndpointHint}`
-    );
-  }
-
-  if (!isLoopbackLikeHost(hostname)) {
-    return endpoint;
-  }
-
-  const rankedCandidates = rankNetworkCandidatesForHub(
-    hubUrl,
-    listNetworkCandidates()
-  );
-  const publishedEndpoints = rankedCandidates.map((candidate) =>
-    replaceEndpointHost(endpoint, candidate.address)
-  );
-
-  if (publishedEndpoints.length === 0) {
-    throw new Error(
-      [
-        "Remote hub detected, but no LAN endpoint could be inferred.",
-        "Hint: pass --network-endpoint with the URL that the hub can reach.",
-      ].join("\n")
-    );
-  }
-
-  return publishedEndpoints[0] ?? endpoint;
-}
-
 export class ParticipantJoinCommand extends AgentCommand {
   static override paths = [["participant", "join"]];
 
   static override usage = Command.Usage({
-    description: "Register a participant and keep heartbeats alive",
+    description: "Register a participant and keep its tunnel alive",
     details:
-      "Probes the local endpoint, registers the participant through the management API, and keeps sending heartbeats until interrupted.",
+      "Probes the local endpoint, registers the participant through the management API, opens a participant tunnel, and keeps the session alive until interrupted.",
     examples: [
       [
         "Join a room",
         "gambi participant join --room ABC123 --participant-id worker-1 --model llama3",
       ],
       [
-        "Preview the registration",
+        "Preview the session payload",
         "gambi participant join --room ABC123 --participant-id worker-1 --model llama3 --dry-run --format ndjson",
       ],
       [
-        "Register against a remote hub",
-        "gambi participant join --room ABC123 --participant-id worker-1 --model llama3 --hub http://192.168.1.10:3000 --network-endpoint http://192.168.1.25:11434",
+        "Join a remote hub",
+        "gambi participant join --room ABC123 --participant-id worker-1 --model llama3 --hub http://192.168.1.10:3000",
       ],
     ],
   });
@@ -172,11 +99,6 @@ export class ParticipantJoinCommand extends AgentCommand {
 
   endpoint = Option.String("--endpoint,-e", {
     description: "Local endpoint used for probing and inference",
-    required: false,
-  });
-
-  networkEndpoint = Option.String("--network-endpoint", {
-    description: "Network-reachable URL to publish to the hub",
     required: false,
   });
 
@@ -208,7 +130,7 @@ export class ParticipantJoinCommand extends AgentCommand {
   });
 
   dryRun = Option.Boolean("--dry-run", false, {
-    description: "Validate registration inputs and exit",
+    description: "Validate session inputs and exit",
   });
 
   async execute(): Promise<number> {
@@ -216,6 +138,7 @@ export class ParticipantJoinCommand extends AgentCommand {
     if (!envConfigResult.ok) {
       return envConfigResult.exitCode;
     }
+
     const envConfig = envConfigResult.value;
     const hubUrl = this.hub ?? envConfig?.hubUrl ?? "http://localhost:3000";
     const endpoint =
@@ -227,6 +150,20 @@ export class ParticipantJoinCommand extends AgentCommand {
     let password = this.password;
     let nickname = this.nickname;
     let participantId = this.participantId;
+
+    let authHeaders: ParticipantAuthHeaders;
+    try {
+      authHeaders = resolveAuthHeaders(
+        this.headers,
+        this.headerEnv,
+        envConfig?.headers
+      );
+    } catch (error) {
+      this.context.stderr.write(
+        `Error: ${error instanceof Error ? error.message : String(error)}\n`
+      );
+      return 2;
+    }
 
     if (this.allowInteractive(true)) {
       if (!room) {
@@ -245,13 +182,7 @@ export class ParticipantJoinCommand extends AgentCommand {
       }
 
       if (!model) {
-        const probe = await probeEndpoint(endpoint, {
-          authHeaders: resolveAuthHeaders(
-            this.headers,
-            this.headerEnv,
-            envConfig?.headers
-          ),
-        });
+        const probe = await probeEndpoint(endpoint, { authHeaders });
         if (probe.models.length === 0) {
           this.context.stderr.write(
             "Error: No models found on the endpoint.\nHint: verify the local endpoint and retry.\n"
@@ -307,20 +238,6 @@ export class ParticipantJoinCommand extends AgentCommand {
       return 2;
     }
 
-    let authHeaders: ParticipantAuthHeaders;
-    try {
-      authHeaders = resolveAuthHeaders(
-        this.headers,
-        this.headerEnv,
-        envConfig?.headers
-      );
-    } catch (error) {
-      this.context.stderr.write(
-        `Error: ${error instanceof Error ? error.message : String(error)}\n`
-      );
-      return 2;
-    }
-
     let runtimeConfig: RuntimeConfig | undefined;
     try {
       runtimeConfig = await loadRuntimeConfigFromInput(this.configPath);
@@ -348,31 +265,16 @@ export class ParticipantJoinCommand extends AgentCommand {
       return 3;
     }
 
-    let publishedEndpoint: string;
-    try {
-      publishedEndpoint = resolvePublishedEndpoint(
-        hubUrl,
-        endpoint,
-        this.networkEndpoint ?? envConfig?.networkEndpoint
-      );
-    } catch (error) {
-      this.context.stderr.write(
-        `Error: ${error instanceof Error ? error.message : String(error)}\n`
-      );
-      return 2;
-    }
     const specs =
       this.noSpecs || envConfig?.noSpecs ? undefined : await detectSpecs();
     const payload = {
       nickname: nickname ?? `${model}@${participantId.slice(0, 6)}`,
       model,
-      endpoint: publishedEndpoint,
+      endpoint,
       password,
       specs,
       config: runtimeConfig,
       capabilities: probe.capabilities,
-      authHeaders:
-        Object.keys(authHeaders).length > 0 ? authHeaders : undefined,
     };
 
     if (this.dryRun) {
@@ -381,15 +283,12 @@ export class ParticipantJoinCommand extends AgentCommand {
         room,
         participantId,
         endpoint,
-        publishedEndpoint,
+        connection: { kind: "tunnel" },
         payload: {
           ...payload,
-          authHeaders: payload.authHeaders
+          authHeaders: Object.keys(authHeaders).length
             ? Object.fromEntries(
-                Object.keys(payload.authHeaders).map((key) => [
-                  key,
-                  "[redacted]",
-                ])
+                Object.keys(authHeaders).map((key) => [key, "[redacted]"])
               )
             : undefined,
           password: password ? "[redacted]" : undefined,
@@ -413,121 +312,79 @@ export class ParticipantJoinCommand extends AgentCommand {
           room,
           participantId,
           endpoint,
-          publishedEndpoint,
+          connection: { kind: "tunnel" },
         },
       });
     }
 
-    const registration = await requestManagement<{
-      participant: {
-        id: string;
-        nickname: string;
-        model: string;
-        endpoint: string;
-      };
-      roomId: string;
-    }>(hubUrl, `/v1/rooms/${room}/participants/${participantId}`, {
-      method: "PUT",
-      body: JSON.stringify(payload),
-    });
-
-    if (!registration.ok) {
-      this.context.stderr.write(renderFailure(registration.value));
-      return exitCodeForFailure(registration.value);
+    let session;
+    try {
+      session = await createParticipantSession({
+        hubUrl,
+        roomCode: room,
+        participantId,
+        endpoint,
+        model,
+        nickname: payload.nickname,
+        password,
+        specs,
+        config: runtimeConfig,
+        capabilities: probe.capabilities,
+        authHeaders,
+      });
+    } catch (error) {
+      this.context.stderr.write(
+        `Error: ${error instanceof Error ? error.message : String(error)}\n`
+      );
+      return 3;
     }
 
     if (format === "text") {
       this.context.stdout.write(
-        `Registered ${registration.value.data.participant.nickname} in room ${room}.\n`
+        `Registered ${session.participant.nickname} in room ${room}.\n`
       );
+      this.context.stdout.write("Participant tunnel connected.\n");
       this.context.stdout.write("Press Ctrl+C to leave.\n");
     } else {
       writeStructured(this.context.stdout, format, {
         type: "registered",
         timestamp: Date.now(),
-        data: registration.value.data,
+        data: {
+          participant: session.participant,
+          roomId: session.roomId,
+          tunnel: { url: session.tunnel.url },
+        },
+      });
+      writeStructured(this.context.stdout, format, {
+        type: "tunnel_connected",
+        timestamp: Date.now(),
+        data: {
+          participantId,
+          room,
+        },
       });
     }
 
     return await new Promise<number>((resolve) => {
-      let closed = false;
-      let heartbeatInterval: ReturnType<typeof setInterval>;
-      const onSigint = () => {
-        shutdown("SIGINT").catch(() => undefined);
-      };
-      const onSigterm = () => {
-        shutdown("SIGTERM").catch(() => undefined);
-      };
+      let closing = false;
+
       const cleanup = () => {
-        clearInterval(heartbeatInterval);
         process.off("SIGINT", onSigint);
         process.off("SIGTERM", onSigterm);
       };
 
-      const handleHeartbeatFailure = (
-        message: string,
-        failure: ApiFailure = {
-          status: 503,
-          error: {
-            code: "INTERNAL_ERROR" as const,
-            message,
-            hint: "Check hub URL and connectivity.",
-          },
-        }
-      ) => {
-        if (closed) {
-          return;
-        }
-        closed = true;
-        cleanup();
-        if (format === "text") {
-          this.context.stderr.write(renderFailure(failure));
-        } else {
-          writeStructured(this.context.stdout, format, {
-            type: "heartbeat_failed",
-            timestamp: Date.now(),
-            data: failure,
-          });
-        }
-        resolve(exitCodeForFailure(failure));
+      const onSigint = () => {
+        shutdown("SIGINT");
+      };
+      const onSigterm = () => {
+        shutdown("SIGTERM");
       };
 
-      heartbeatInterval = setInterval(async () => {
-        try {
-          const heartbeat = await requestManagement(
-            hubUrl,
-            `/v1/rooms/${room}/participants/${participantId}/heartbeat`,
-            { method: "POST" }
-          );
-
-          if (!heartbeat.ok) {
-            handleHeartbeatFailure(
-              heartbeat.value.error.message,
-              heartbeat.value
-            );
-            return;
-          }
-
-          if (format !== "text") {
-            writeStructured(this.context.stdout, format, {
-              type: "heartbeat_ok",
-              timestamp: Date.now(),
-              data: heartbeat.value.data,
-            });
-          }
-        } catch (error) {
-          handleHeartbeatFailure(
-            error instanceof Error ? error.message : String(error)
-          );
-        }
-      }, HEALTH_CHECK_INTERVAL);
-
-      const shutdown = async (signal: string) => {
-        if (closed) {
+      const shutdown = (signal: string) => {
+        if (closing) {
           return;
         }
-        closed = true;
-        cleanup();
+        closing = true;
 
         if (format === "text") {
           this.context.stdout.write(`Leaving room ${room}...\n`);
@@ -539,32 +396,58 @@ export class ParticipantJoinCommand extends AgentCommand {
           });
         }
 
-        const leaveResult = await requestManagement<{ success: true }>(
-          hubUrl,
-          `/v1/rooms/${room}/participants/${participantId}`,
-          { method: "DELETE" }
-        );
-        if (!leaveResult.ok) {
-          this.context.stderr.write(renderFailure(leaveResult.value));
-          resolve(exitCodeForFailure(leaveResult.value));
-          return;
-        }
-
-        if (format === "text") {
-          this.context.stdout.write("Left room successfully.\n");
-        } else {
-          writeStructured(this.context.stdout, format, {
-            type: "left",
-            timestamp: Date.now(),
-            data: { participantId, room },
-          });
-        }
-
-        resolve(0);
+        void session.close();
       };
 
       process.once("SIGINT", onSigint);
       process.once("SIGTERM", onSigterm);
+
+      session
+        .waitUntilClosed()
+        .then((result) => {
+          cleanup();
+
+          if (result.reason === "closed") {
+            if (format === "text") {
+              this.context.stdout.write("Left room successfully.\n");
+            } else {
+              writeStructured(this.context.stdout, format, {
+                type: "left",
+                timestamp: Date.now(),
+                data: { participantId, room },
+              });
+            }
+            resolve(0);
+            return;
+          }
+
+          const message = result.error?.message ?? "Participant session closed.";
+          if (format === "text") {
+            this.context.stderr.write(`Error: ${message}\n`);
+          } else {
+            writeStructured(this.context.stdout, format, {
+              type:
+                result.reason === "heartbeat_failed"
+                  ? "heartbeat_failed"
+                  : "tunnel_failed",
+              timestamp: Date.now(),
+              data: {
+                participantId,
+                room,
+                reason: result.reason,
+                message,
+              },
+            });
+          }
+          resolve(3);
+        })
+        .catch((error) => {
+          cleanup();
+          this.context.stderr.write(
+            `Error: ${error instanceof Error ? error.message : String(error)}\n`
+          );
+          resolve(1);
+        });
     });
   }
 }

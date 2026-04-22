@@ -25,10 +25,17 @@ export type {
 } from "./hub.ts";
 export { hub } from "./hub.ts";
 export { participants } from "./participants.ts";
+export {
+  createParticipantSession,
+  type ParticipantSession,
+  type ParticipantSessionCloseEvent,
+  type ParticipantSessionOptions,
+} from "./participant-session.ts";
 // Protocol messages (re-exported from core)
 export type * from "./protocol.ts";
 export type * from "./protocol-adapters.ts";
 export * from "./protocol-adapters.ts";
+export type * from "@gambi/core/tunnel-protocol";
 // Existing AI SDK provider
 export {
   createGambi,

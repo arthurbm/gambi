@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import type {
   ChatCompletion,
   ChatCompletionChunk,
@@ -21,17 +22,22 @@ import {
 import { Room } from "./room.ts";
 import { SSE } from "./sse.ts";
 import {
+  TunnelClientMessage,
+  type TunnelRequestMessage,
+} from "./tunnel-protocol.ts";
+import {
   type ApiErrorCode,
   type ApiMeta,
   HEALTH_CHECK_INTERVAL,
   type HeartbeatResult,
-  type ParticipantAuthHeaders,
+  PARTICIPANT_TIMEOUT,
   type ParticipantInfo,
   type ParticipantInfoInternal,
   ParticipantRegistration,
   ParticipantSummary,
   RoomSummary,
   RuntimeConfig,
+  type TunnelBootstrap,
 } from "./types.ts";
 
 export interface HubOptions {
@@ -53,16 +59,17 @@ const ROOM_PATH_REGEX = /^\/rooms\/([^/]+)/;
 const MANAGEMENT_ROOM_PATH_REGEX = /^\/v1\/rooms\/([^/]+)/;
 const MANAGEMENT_PARTICIPANT_PATH_REGEX =
   /^\/v1\/rooms\/([^/]+)\/participants\/([^/]+)(?:\/heartbeat)?$/;
+const MANAGEMENT_PARTICIPANT_TUNNEL_PATH_REGEX =
+  /^\/v1\/rooms\/([^/]+)\/participants\/([^/]+)\/tunnel$/;
 const RESPONSES_PATH_REGEX =
   /^\/rooms\/([^/]+)\/v1\/responses\/([^/]+)(?:\/(cancel|input_items))?$/;
 const TRAILING_SLASH_REGEX = /\/$/;
 const SSE_LINE_SPLIT_REGEX = /\r?\n/;
 const SSE_EVENT_SEPARATOR = "\n\n";
 const FORWARDED_IP_SEPARATOR_REGEX = /,/;
+const TUNNEL_TOKEN_TTL_MS = 60_000;
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
-const UNSPECIFIED_HOSTS = new Set(["0.0.0.0", "::"]);
 
 interface AccumulatedToolCall {
   arguments: string;
@@ -71,7 +78,52 @@ interface AccumulatedToolCall {
   toolCallId?: string;
 }
 
+interface ProxyRequestLifecycle {
+  durationStartedAt: number;
+  firstByteAt?: number;
+  requestId: string;
+}
+
+interface TunnelBootstrapEntry {
+  expiresAt: number;
+  participantId: string;
+  roomCode: string;
+  roomId: string;
+}
+
+interface PendingTunnelRequest {
+  chunks: Uint8Array[];
+  headers?: Headers;
+  lifecycle: ProxyRequestLifecycle;
+  reject: (error: Error) => void;
+  resolve: (response: Response) => void;
+  responseStarted: boolean;
+  status?: number;
+  stream: boolean;
+  streamController?: ReadableStreamDefaultController<Uint8Array>;
+  streamBody?: ReadableStream<Uint8Array>;
+}
+
+interface TunnelSession {
+  lastTunnelSeenAt: number;
+  participantId: string;
+  pending: Map<string, PendingTunnelRequest>;
+  roomCode: string;
+  roomId: string;
+  ws: Bun.ServerWebSocket<TunnelSocketData>;
+}
+
+interface TunnelSocketData {
+  participantId: string;
+  roomCode: string;
+  roomId: string;
+  sessionKey: string;
+}
+
 const responseRegistry = new Map<string, ResponseRegistryEntry>();
+const tunnelBootstrapRegistry = new Map<string, TunnelBootstrapEntry>();
+const tunnelSessionRegistry = new Map<string, TunnelSession>();
+const participantActiveRequests = new Map<string, number>();
 
 function rememberResponse(
   responseId: string,
@@ -92,6 +144,186 @@ function deleteResponseEntry(responseId: string): void {
 
 function clearResponseRegistry(): void {
   responseRegistry.clear();
+}
+
+function getTunnelSessionKey(roomId: string, participantId: string): string {
+  return `${roomId}:${participantId}`;
+}
+
+function getParticipantRequestKey(
+  roomId: string,
+  participantId: string
+): string {
+  return `${roomId}:${participantId}`;
+}
+
+function rememberTunnelBootstrap(entry: TunnelBootstrapEntry): TunnelBootstrap {
+  const token = crypto.randomUUID();
+  tunnelBootstrapRegistry.set(token, entry);
+  return {
+    token,
+    url: "",
+  };
+}
+
+function getTunnelBootstrap(token: string): TunnelBootstrapEntry | undefined {
+  const entry = tunnelBootstrapRegistry.get(token);
+  if (!entry) {
+    return undefined;
+  }
+
+  if (entry.expiresAt < Date.now()) {
+    tunnelBootstrapRegistry.delete(token);
+    return undefined;
+  }
+
+  return entry;
+}
+
+function consumeTunnelBootstrap(
+  token: string
+): TunnelBootstrapEntry | undefined {
+  const entry = getTunnelBootstrap(token);
+  if (!entry) {
+    return undefined;
+  }
+
+  tunnelBootstrapRegistry.delete(token);
+  return entry;
+}
+
+function clearExpiredTunnelBootstraps(): void {
+  const now = Date.now();
+  for (const [token, entry] of tunnelBootstrapRegistry) {
+    if (entry.expiresAt < now) {
+      tunnelBootstrapRegistry.delete(token);
+    }
+  }
+}
+
+function getTunnelSession(
+  roomId: string,
+  participantId: string
+): TunnelSession | undefined {
+  return tunnelSessionRegistry.get(getTunnelSessionKey(roomId, participantId));
+}
+
+function setParticipantActiveRequestCount(
+  roomId: string,
+  participantId: string,
+  count: number
+): void {
+  const key = getParticipantRequestKey(roomId, participantId);
+  if (count <= 0) {
+    participantActiveRequests.delete(key);
+    return;
+  }
+
+  participantActiveRequests.set(key, count);
+}
+
+function getParticipantActiveRequestCount(
+  roomId: string,
+  participantId: string
+): number {
+  return (
+    participantActiveRequests.get(
+      getParticipantRequestKey(roomId, participantId)
+    ) ?? 0
+  );
+}
+
+function incrementParticipantActiveRequestCount(
+  roomId: string,
+  participantId: string
+): void {
+  setParticipantActiveRequestCount(
+    roomId,
+    participantId,
+    getParticipantActiveRequestCount(roomId, participantId) + 1
+  );
+}
+
+function decrementParticipantActiveRequestCount(
+  roomId: string,
+  participantId: string
+): void {
+  setParticipantActiveRequestCount(
+    roomId,
+    participantId,
+    getParticipantActiveRequestCount(roomId, participantId) - 1
+  );
+}
+
+function beginParticipantProxyRequest(
+  roomId: string,
+  participantId: string
+): void {
+  incrementParticipantActiveRequestCount(roomId, participantId);
+  Room.updateParticipantStatus(roomId, participantId, "busy");
+}
+
+function finishParticipantProxyRequest(
+  roomId: string,
+  participantId: string
+): void {
+  decrementParticipantActiveRequestCount(roomId, participantId);
+  const participant = Room.getParticipantRecord(roomId, participantId)?.info;
+  if (!participant) {
+    return;
+  }
+
+  Room.updateParticipantStatus(
+    roomId,
+    participantId,
+    participant.connection.connected ? "online" : "offline"
+  );
+}
+
+function updateTunnelConnectionState(
+  roomId: string,
+  participantId: string,
+  connected: boolean
+): void {
+  Room.updateParticipantConnection(roomId, participantId, {
+    connected,
+    lastTunnelSeenAt: connected ? Date.now() : null,
+  });
+
+  Room.updateParticipantStatus(
+    roomId,
+    participantId,
+    connected ? "online" : "offline"
+  );
+}
+
+function rejectPendingTunnelRequests(
+  session: TunnelSession,
+  message = "Participant tunnel disconnected."
+): void {
+  for (const pending of session.pending.values()) {
+    pending.reject(new Error(message));
+    pending.streamController?.error(new Error(message));
+  }
+  session.pending.clear();
+  setParticipantActiveRequestCount(session.roomId, session.participantId, 0);
+}
+
+function clearTunnelSession(
+  roomId: string,
+  participantId: string,
+  expectedWs?: TunnelSession["ws"]
+): TunnelSession | undefined {
+  const sessionKey = getTunnelSessionKey(roomId, participantId);
+  const session = tunnelSessionRegistry.get(sessionKey);
+  if (!session || (expectedWs && session.ws !== expectedWs)) {
+    return undefined;
+  }
+
+  tunnelSessionRegistry.delete(sessionKey);
+  updateTunnelConnectionState(roomId, participantId, false);
+  rejectPendingTunnelRequests(session);
+  return session;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -152,33 +384,308 @@ function corsHeaders(): Response {
   });
 }
 
+function createTunnelBootstrap(
+  req: Request,
+  roomId: string,
+  roomCode: string,
+  participantId: string
+): TunnelBootstrap {
+  const bootstrap = rememberTunnelBootstrap({
+    roomId,
+    roomCode,
+    participantId,
+    expiresAt: Date.now() + TUNNEL_TOKEN_TTL_MS,
+  });
+
+  const url = new URL(req.url);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.pathname = `/v1/rooms/${roomCode}/participants/${participantId}/tunnel`;
+  url.search = "";
+  return {
+    ...bootstrap,
+    url: url.toString(),
+  };
+}
+
+function headersToObject(headers: Headers | undefined): Record<string, string> {
+  if (!headers) {
+    return {};
+  }
+
+  return Object.fromEntries(headers.entries());
+}
+
+function recordToHeaders(headers: Record<string, string> | undefined): Headers {
+  return new Headers(headers ?? {});
+}
+
+function buildMetrics(params: {
+  completedAt: number;
+  lifecycle: ProxyRequestLifecycle;
+  usage?: {
+    completionTokens?: number;
+    promptTokens?: number;
+    totalTokens?: number;
+  };
+}) {
+  const ttftMs = Math.max(
+    0,
+    (params.lifecycle.firstByteAt ?? params.completedAt) -
+      params.lifecycle.durationStartedAt
+  );
+  const durationMs = Math.max(
+    0,
+    params.completedAt - params.lifecycle.durationStartedAt
+  );
+  const inputTokens = params.usage?.promptTokens;
+  const outputTokens = params.usage?.completionTokens;
+  const totalTokens =
+    params.usage?.totalTokens ??
+    ((inputTokens ?? 0) + (outputTokens ?? 0) || undefined);
+
+  return {
+    ttftMs,
+    durationMs,
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    tokensPerSecond:
+      outputTokens !== undefined && durationMs > 0
+        ? (outputTokens / durationMs) * 1000
+        : undefined,
+  };
+}
+
+function tryParseMetricsFromBody(
+  protocol: "openResponses" | "chatCompletions",
+  bodyText: string
+) {
+  if (!bodyText.trim()) {
+    return undefined;
+  }
+
+  try {
+    const data = JSON.parse(bodyText) as Record<string, unknown>;
+    if (protocol === "openResponses") {
+      const usage = data.usage as
+        | {
+            input_tokens?: number;
+            output_tokens?: number;
+            total_tokens?: number;
+          }
+        | undefined;
+      return usage
+        ? {
+            promptTokens: usage.input_tokens,
+            completionTokens: usage.output_tokens,
+            totalTokens: usage.total_tokens,
+          }
+        : undefined;
+    }
+
+    const usage = data.usage as
+      | {
+          prompt_tokens?: number;
+          completion_tokens?: number;
+          total_tokens?: number;
+        }
+      | undefined;
+    return usage
+      ? {
+          promptTokens: usage.prompt_tokens,
+          completionTokens: usage.completion_tokens,
+          totalTokens: usage.total_tokens,
+        }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function decodeTunnelChunk(chunk: string): Uint8Array {
+  return Buffer.from(chunk, "base64");
+}
+
+function finalizePendingTunnelRequest(
+  session: TunnelSession,
+  requestId: string,
+  finalize: (pending: PendingTunnelRequest) => void
+): void {
+  const pending = session.pending.get(requestId);
+  if (!pending) {
+    return;
+  }
+
+  session.pending.delete(requestId);
+  finalize(pending);
+}
+
+function handleTunnelMessage(
+  session: TunnelSession,
+  rawMessage: string | Buffer | ArrayBuffer | Uint8Array
+): void {
+  const text =
+    typeof rawMessage === "string"
+      ? rawMessage
+      : Buffer.from(
+          rawMessage instanceof ArrayBuffer
+            ? new Uint8Array(rawMessage)
+            : rawMessage
+        ).toString("utf8");
+  let message: unknown;
+  try {
+    message = JSON.parse(text);
+  } catch {
+    return;
+  }
+
+  const parsed = TunnelClientMessage.safeParse(message);
+  if (!parsed.success) {
+    return;
+  }
+
+  session.lastTunnelSeenAt = Date.now();
+  Room.updateParticipantConnection(session.roomId, session.participantId, {
+    connected: true,
+    lastTunnelSeenAt: session.lastTunnelSeenAt,
+  });
+
+  if (parsed.data.type === "tunnel.ping") {
+    session.ws.send(
+      JSON.stringify({ type: "tunnel.pong", timestamp: Date.now() })
+    );
+    return;
+  }
+
+  if (parsed.data.type === "tunnel.response.start") {
+    const pending = session.pending.get(parsed.data.requestId);
+    if (!pending) {
+      return;
+    }
+
+    pending.status = parsed.data.status;
+    pending.headers = recordToHeaders(parsed.data.headers);
+    pending.responseStarted = true;
+
+    if (pending.stream && pending.streamController) {
+      pending.resolve(
+        new Response(pending.streamBody, {
+          status: pending.status,
+          headers: pending.headers,
+        })
+      );
+    }
+    return;
+  }
+
+  if (parsed.data.type === "tunnel.response.chunk") {
+    const pending = session.pending.get(parsed.data.requestId);
+    if (!pending) {
+      return;
+    }
+
+    if (!pending.lifecycle.firstByteAt) {
+      pending.lifecycle.firstByteAt = Date.now();
+    }
+
+    const chunk = decodeTunnelChunk(parsed.data.chunk);
+    if (pending.stream && pending.streamController) {
+      pending.streamController.enqueue(chunk);
+      return;
+    }
+
+    pending.chunks.push(chunk);
+    return;
+  }
+
+  if (parsed.data.type === "tunnel.response.end") {
+    finalizePendingTunnelRequest(session, parsed.data.requestId, (pending) => {
+      if (pending.stream && pending.streamController) {
+        pending.streamController.close();
+        return;
+      }
+
+      const body = pending.chunks.length
+        ? Buffer.concat(pending.chunks.map((chunk) => Buffer.from(chunk)))
+        : undefined;
+      pending.resolve(
+        new Response(body, {
+          status: pending.status ?? 200,
+          headers: pending.headers,
+        })
+      );
+    });
+    return;
+  }
+
+  if (parsed.data.type === "tunnel.response.error") {
+    const { message, requestId } = parsed.data;
+    finalizePendingTunnelRequest(session, requestId, (pending) => {
+      const error = new Error(message);
+      if (pending.stream && pending.streamController) {
+        pending.streamController.error(error);
+      }
+      pending.reject(error);
+    });
+  }
+}
+
+function createBufferedResponseStream(pending: PendingTunnelRequest) {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      pending.streamController = controller;
+    },
+  });
+}
+
+function dispatchTunnelRequest(
+  session: TunnelSession,
+  request: TunnelRequestMessage
+): Promise<Response> {
+  return new Promise<Response>((resolve, reject) => {
+    const pending: PendingTunnelRequest = {
+      lifecycle: {
+        requestId: request.requestId,
+        durationStartedAt: Date.now(),
+      },
+      resolve,
+      reject,
+      stream: request.stream,
+      chunks: [],
+      responseStarted: false,
+    };
+
+    if (request.stream) {
+      const stream = createBufferedResponseStream(pending);
+      pending.streamBody = stream;
+      pending.resolve = (response) => resolve(response);
+      pending.reject = reject;
+      session.pending.set(request.requestId, pending);
+      const sent = session.ws.send(JSON.stringify(request));
+      if (sent <= 0) {
+        session.pending.delete(request.requestId);
+        reject(new Error("Failed to send tunnel request."));
+        return;
+      }
+
+      return;
+    }
+
+    session.pending.set(request.requestId, pending);
+    const sent = session.ws.send(JSON.stringify(request));
+    if (sent <= 0) {
+      session.pending.delete(request.requestId);
+      reject(new Error("Failed to send tunnel request."));
+      return;
+    }
+  });
+}
+
 function getDefaultCapabilities(): ParticipantInfoInternal["capabilities"] {
   return {
     openResponses: "unknown",
     chatCompletions: "unknown",
   };
-}
-
-function normalizeEndpoint(endpoint: string): string {
-  return endpoint.replace(TRAILING_SLASH_REGEX, "");
-}
-
-function isLoopbackLikeHost(hostname: string): boolean {
-  const normalizedHostname = hostname.toLowerCase();
-  return (
-    LOOPBACK_HOSTS.has(normalizedHostname) ||
-    UNSPECIFIED_HOSTS.has(normalizedHostname)
-  );
-}
-
-function isLoopbackRequesterIp(address: string): boolean {
-  return (
-    address === "::1" ||
-    address === "127.0.0.1" ||
-    address.startsWith("127.") ||
-    address === "::ffff:127.0.0.1" ||
-    address.startsWith("::ffff:127.")
-  );
 }
 
 function getRequesterIp(
@@ -196,58 +703,39 @@ function getRequesterIp(
   return server?.requestIP(req)?.address ?? null;
 }
 
-function getRemoteLoopbackJoinError(
-  requesterIp: string | null,
-  endpoint: string
-): string | null {
-  if (!(requesterIp && !isLoopbackRequesterIp(requesterIp))) {
-    return null;
-  }
-
-  const hostname = new URL(endpoint).hostname;
-  if (!isLoopbackLikeHost(hostname)) {
-    return null;
-  }
-
-  return `Endpoint '${endpoint}' is only reachable on the participant machine. You joined from ${requesterIp}, so publish a network-reachable URL instead (for example via '--network-endpoint').`;
+function createTunnelRequest(params: {
+  body?: unknown;
+  metadata?: Record<string, unknown>;
+  method: "GET" | "POST" | "DELETE";
+  operation: string;
+  path: string;
+  stream?: boolean;
+}): TunnelRequestMessage {
+  return {
+    type: "tunnel.request",
+    requestId: crypto.randomUUID(),
+    operation: params.operation,
+    method: params.method,
+    path: params.path,
+    headers:
+      params.body === undefined ? {} : { "Content-Type": "application/json" },
+    body: params.body,
+    stream: params.stream ?? false,
+    metadata: params.metadata,
+  };
 }
 
-function participantUrl(
+async function fetchParticipantThroughTunnel(
   participant: ParticipantInfoInternal,
-  path: string
-): string {
-  return `${normalizeEndpoint(participant.endpoint)}${path}`;
-}
-
-function createParticipantRequestHeaders(
-  authHeaders: ParticipantAuthHeaders,
-  headers?: RequestInit["headers"]
-): Headers {
-  const mergedHeaders = new Headers(headers);
-  for (const [name, value] of Object.entries(authHeaders)) {
-    mergedHeaders.set(name, value);
-  }
-  return mergedHeaders;
-}
-
-function createJsonParticipantHeaders(
-  authHeaders: ParticipantAuthHeaders
-): Headers {
-  const headers = createParticipantRequestHeaders(authHeaders);
-  headers.set("Content-Type", "application/json");
-  return headers;
-}
-
-function fetchParticipant(
-  participant: ParticipantInfoInternal,
-  authHeaders: ParticipantAuthHeaders,
-  path: string,
-  init?: RequestInit
+  roomId: string,
+  request: TunnelRequestMessage
 ): Promise<Response> {
-  return fetch(participantUrl(participant, path), {
-    ...init,
-    headers: createParticipantRequestHeaders(authHeaders, init?.headers),
-  });
+  const session = getTunnelSession(roomId, participant.id);
+  if (!(session && participant.connection.connected)) {
+    throw new Error("Participant tunnel is not connected.");
+  }
+
+  return await dispatchTunnelRequest(session, request);
 }
 
 function isResponseLike(value: unknown): value is { id: string } {
@@ -477,7 +965,7 @@ async function upsertParticipant(
   req: Request,
   code: string,
   participantId: string,
-  requesterIp: string | null,
+  _requesterIp: string | null,
   requestId: string
 ): Promise<Response> {
   const room = Room.getByCode(code);
@@ -531,18 +1019,6 @@ async function upsertParticipant(
   }
 
   const body = parsedBody.data;
-  const remoteLoopbackJoinError = getRemoteLoopbackJoinError(
-    requesterIp,
-    body.endpoint
-  );
-  if (remoteLoopbackJoinError) {
-    return managementError(
-      requestId,
-      "LOOPBACK_ENDPOINT_FOR_REMOTE_HUB",
-      remoteLoopbackJoinError,
-      "Publish a network-reachable endpoint, for example via '--network-endpoint'."
-    );
-  }
 
   // Validate password if room is protected
   const isPasswordValid = await Room.validatePassword(
@@ -568,17 +1044,18 @@ async function upsertParticipant(
     specs: body.specs ?? {},
     config: body.config ?? {},
     capabilities: body.capabilities ?? getDefaultCapabilities(),
-    status: "online",
+    connection: {
+      kind: "tunnel",
+      connected: false,
+      lastTunnelSeenAt: null,
+    },
+    status: "offline",
     joinedAt: now,
     lastSeen: now,
     updatedAt: now,
   };
 
-  const result = Room.upsertParticipant(
-    room.id,
-    participant,
-    body.authHeaders ?? {}
-  );
+  const result = Room.upsertParticipant(room.id, participant, {});
   if (!result) {
     return managementError(
       requestId,
@@ -598,8 +1075,10 @@ async function upsertParticipant(
     code
   );
 
+  const tunnel = createTunnelBootstrap(req, room.id, room.code, participantId);
+
   return managementJson(
-    { participant: publicParticipant, roomId: room.id },
+    { participant: publicParticipant, roomId: room.id, tunnel },
     requestId,
     result.created ? 201 : 200
   );
@@ -631,6 +1110,8 @@ function leaveRoom(
       404
     );
   }
+
+  clearTunnelSession(room.id, participantId);
 
   SSE.broadcast("participant.left", { participantId }, code);
 
@@ -696,7 +1177,8 @@ function listModels(code: string): Response {
   }
 
   const participants = Room.getParticipants(room.id).filter(
-    (participant) => participant.status === "online"
+    (participant) =>
+      participant.connection.connected && participant.status !== "offline"
   );
 
   const models: GambiModel[] = participants.map((participant) => ({
@@ -709,6 +1191,7 @@ function listModels(code: string): Response {
       model: participant.model,
       endpoint: participant.endpoint,
       capabilities: participant.capabilities,
+      connection: participant.connection,
     },
   }));
 
@@ -726,6 +1209,7 @@ export interface GambiModel {
     model: string;
     endpoint: string;
     capabilities: ParticipantInfo["capabilities"];
+    connection: ParticipantInfo["connection"];
   };
 }
 
@@ -766,21 +1250,37 @@ function findParticipant(
   roomId: string,
   modelId: string
 ): ParticipantInfoInternal | undefined {
+  const records = Room.getParticipantRecords(roomId)
+    .map((record) => record.info)
+    .filter(
+      (participant) =>
+        participant.connection.connected &&
+        participant.status !== "offline" &&
+        getParticipantActiveRequestCount(roomId, participant.id) === 0
+    );
+
   if (modelId === "*" || modelId === "any") {
-    return Room.getRandomOnlineParticipant(roomId);
+    if (records.length === 0) {
+      return undefined;
+    }
+    return records[Math.floor(Math.random() * records.length)];
   }
 
   if (modelId.startsWith("model:")) {
     const actualModel = modelId.slice(6);
-    return Room.findParticipantByModel(roomId, actualModel);
+    return records.find((participant) => participant.model === actualModel);
   }
 
   const participantRecord = Room.getParticipantRecord(roomId, modelId);
-  if (participantRecord) {
+  if (
+    participantRecord?.info.connection.connected &&
+    participantRecord.info.status !== "offline" &&
+    getParticipantActiveRequestCount(roomId, participantRecord.info.id) === 0
+  ) {
     return participantRecord.info;
   }
 
-  return Room.findParticipantByModel(roomId, modelId);
+  return records.find((participant) => participant.model === modelId);
 }
 
 function resolveParticipant(
@@ -788,7 +1288,6 @@ function resolveParticipant(
   modelId: string
 ):
   | {
-      authHeaders: ParticipantAuthHeaders;
       room: NonNullable<ReturnType<typeof Room.getByCode>>;
       participant: ParticipantInfoInternal;
     }
@@ -800,11 +1299,22 @@ function resolveParticipant(
 
   const participant = findParticipant(room.id, modelId);
   if (!participant) {
-    return error("No available participant for the requested model", 404);
-  }
+    const specificParticipant = Room.getParticipantRecord(
+      room.id,
+      modelId
+    )?.info;
+    if (
+      specificParticipant &&
+      getParticipantActiveRequestCount(room.id, modelId) > 0
+    ) {
+      return error("Participant is already handling another request.", 409);
+    }
 
-  if (participant.status !== "online") {
-    return error("Participant is offline", 503);
+    if (specificParticipant && !specificParticipant.connection.connected) {
+      return error("Participant tunnel is not connected.", 503);
+    }
+
+    return error("No available participant for the requested model", 404);
   }
 
   const participantRecord = Room.getParticipantRecord(room.id, participant.id);
@@ -815,7 +1325,6 @@ function resolveParticipant(
   return {
     room,
     participant,
-    authHeaders: participantRecord.authHeaders,
   };
 }
 
@@ -1505,46 +2014,93 @@ function createStreamingHeaders(): Record<string, string> {
 
 function broadcastLlmComplete(
   code: string,
-  participant: ParticipantInfoInternal
+  participant: ParticipantInfoInternal,
+  params: {
+    metrics?: ReturnType<typeof buildMetrics>;
+    protocol: "openResponses" | "chatCompletions";
+    requestId: string;
+  }
 ): void {
   SSE.broadcast(
     "llm.complete",
     {
+      requestId: params.requestId,
       participantId: participant.id,
+      model: participant.model,
+      protocol: params.protocol,
+      metrics: params.metrics,
     },
     code
   );
+  console.info("[gambi] llm.complete", {
+    requestId: params.requestId,
+    participantId: participant.id,
+    roomCode: code,
+    protocol: params.protocol,
+    metrics: params.metrics,
+  });
 }
 
 function broadcastLlmError(
   code: string,
   participant: ParticipantInfoInternal,
-  model: string,
-  proxyError: unknown
+  params: {
+    error: unknown;
+    model: string;
+    protocol: "openResponses" | "chatCompletions";
+    requestId: string;
+    stage: string;
+  }
 ): void {
   SSE.broadcast(
     "llm.error",
     {
+      requestId: params.requestId,
       participantId: participant.id,
       nickname: participant.nickname,
       endpoint: participant.endpoint,
-      model,
-      error: String(proxyError),
+      model: params.model,
+      protocol: params.protocol,
+      stage: params.stage,
+      error: String(params.error),
     },
     code
   );
+  console.error("[gambi] llm.error", {
+    requestId: params.requestId,
+    participantId: participant.id,
+    roomCode: code,
+    protocol: params.protocol,
+    stage: params.stage,
+    error: String(params.error),
+  });
 }
 
 function wrapProxyLifecycleStream(
   response: Response,
   params: {
     code: string;
-    model: string;
     participant: ParticipantInfoInternal;
+    protocol: "openResponses" | "chatCompletions";
+    requestId: string;
+    roomId: string;
   }
 ): Response {
+  const lifecycle: ProxyRequestLifecycle = {
+    requestId: params.requestId,
+    durationStartedAt: Date.now(),
+  };
+
   if (!response.body) {
-    broadcastLlmComplete(params.code, params.participant);
+    finishParticipantProxyRequest(params.roomId, params.participant.id);
+    broadcastLlmComplete(params.code, params.participant, {
+      requestId: params.requestId,
+      protocol: params.protocol,
+      metrics: buildMetrics({
+        completedAt: Date.now(),
+        lifecycle,
+      }),
+    });
     return response;
   }
 
@@ -1554,21 +2110,32 @@ function wrapProxyLifecycleStream(
       try {
         const { done, value } = await reader.read();
         if (done) {
-          broadcastLlmComplete(params.code, params.participant);
+          finishParticipantProxyRequest(params.roomId, params.participant.id);
+          broadcastLlmComplete(params.code, params.participant, {
+            requestId: params.requestId,
+            protocol: params.protocol,
+            metrics: buildMetrics({
+              completedAt: Date.now(),
+              lifecycle,
+            }),
+          });
           controller.close();
           return;
         }
 
         if (value) {
+          lifecycle.firstByteAt ??= Date.now();
           controller.enqueue(value);
         }
       } catch (streamError) {
-        broadcastLlmError(
-          params.code,
-          params.participant,
-          params.model,
-          streamError
-        );
+        finishParticipantProxyRequest(params.roomId, params.participant.id);
+        broadcastLlmError(params.code, params.participant, {
+          requestId: params.requestId,
+          model: params.participant.model,
+          protocol: params.protocol,
+          stage: "stream",
+          error: streamError,
+        });
         controller.error(streamError);
       }
     },
@@ -1608,8 +2175,8 @@ async function forwardNativeResponsesCreate(
 }
 
 async function proxyFallbackResponsesCreate(
-  authHeaders: ParticipantAuthHeaders,
   participant: ParticipantInfoInternal,
+  roomId: string,
   body: ResponsesCreateRequest,
   entry: ResponseRegistryEntry
 ): Promise<Response> {
@@ -1628,15 +2195,16 @@ async function proxyFallbackResponsesCreate(
   const responseId = createSyntheticResponseId();
   rememberResponse(responseId, entry);
 
-  const response = await fetchParticipant(
+  const response = await fetchParticipantThroughTunnel(
     participant,
-    authHeaders,
-    "/v1/chat/completions",
-    {
+    roomId,
+    createTunnelRequest({
       method: "POST",
-      headers: createJsonParticipantHeaders(authHeaders),
-      body: JSON.stringify({ ...chatRequest, model: participant.model }),
-    }
+      operation: "chat.completions.create",
+      path: "/v1/chat/completions",
+      body: { ...chatRequest, model: participant.model },
+      stream: body.stream,
+    })
   );
 
   if (body.stream) {
@@ -1672,8 +2240,8 @@ async function proxyFallbackResponsesCreate(
 
 async function proxyStoredOpenResponses(
   req: Request,
-  authHeaders: ParticipantAuthHeaders,
   participant: ParticipantInfoInternal,
+  roomId: string,
   responseId: string,
   entry: ResponseRegistryEntry,
   action?: "cancel" | "input_items"
@@ -1690,10 +2258,22 @@ async function proxyStoredOpenResponses(
     method = "GET";
   }
 
-  const response = await fetchParticipant(participant, authHeaders, path, {
-    method,
-    headers: createJsonParticipantHeaders(authHeaders),
-  });
+  const response = await fetchParticipantThroughTunnel(
+    participant,
+    roomId,
+    createTunnelRequest({
+      method: method as "GET" | "POST" | "DELETE",
+      operation:
+        action === "cancel"
+          ? "responses.cancel"
+          : action === "input_items"
+            ? "responses.input_items"
+            : req.method === "DELETE"
+              ? "responses.delete"
+              : "responses.get",
+      path,
+    })
+  );
 
   if (response.status === 404 && action === undefined) {
     deleteResponseEntry(responseId);
@@ -1728,16 +2308,17 @@ const openResponsesAdapter: ResponsesProtocolAdapter = {
   id: "openResponses",
   canCreate: (participant) =>
     participant.capabilities.openResponses !== "unsupported",
-  async create({ authHeaders, participant, request, entry }) {
-    const response = await fetchParticipant(
+  async create({ participant, request, entry }) {
+    const response = await fetchParticipantThroughTunnel(
       participant,
-      authHeaders,
-      "/v1/responses",
-      {
+      entry.roomId,
+      createTunnelRequest({
         method: "POST",
-        headers: createJsonParticipantHeaders(authHeaders),
-        body: JSON.stringify({ ...request, model: participant.model }),
-      }
+        operation: "responses.create",
+        path: "/v1/responses",
+        body: { ...request, model: participant.model },
+        stream: request.stream,
+      })
     );
 
     if (isProtocolFallbackStatus(response.status)) {
@@ -1746,18 +2327,11 @@ const openResponsesAdapter: ResponsesProtocolAdapter = {
 
     return forwardNativeResponsesCreate(response, request.stream, entry);
   },
-  proxyStoredResponse({
-    action,
-    authHeaders,
-    entry,
-    participant,
-    req,
-    responseId,
-  }) {
+  proxyStoredResponse({ action, entry, participant, req, responseId }) {
     return proxyStoredOpenResponses(
       req,
-      authHeaders,
       participant,
+      entry.roomId,
       responseId,
       entry,
       action
@@ -1769,10 +2343,10 @@ const chatCompletionsFallbackAdapter: ResponsesProtocolAdapter = {
   id: "chatCompletions",
   canCreate: (participant) =>
     participant.capabilities.chatCompletions !== "unsupported",
-  create({ authHeaders, entry, participant, request }) {
+  create({ entry, participant, request }) {
     return proxyFallbackResponsesCreate(
-      authHeaders,
       participant,
+      entry.roomId,
       request,
       entry
     );
@@ -1795,16 +2369,17 @@ const responsesLifecycleAdapters = new Map<
 
 const chatCompletionsAdapter: ChatCompletionsProtocolAdapter = {
   id: "chatCompletions",
-  async create({ authHeaders, participant, request }) {
-    const response = await fetchParticipant(
+  async create({ participant, request, roomId }) {
+    const response = await fetchParticipantThroughTunnel(
       participant,
-      authHeaders,
-      "/v1/chat/completions",
-      {
+      roomId,
+      createTunnelRequest({
         method: "POST",
-        headers: createJsonParticipantHeaders(authHeaders),
-        body: JSON.stringify({ ...request, model: participant.model }),
-      }
+        operation: "chat.completions.create",
+        path: "/v1/chat/completions",
+        body: { ...request, model: participant.model },
+        stream: request.stream,
+      })
     );
 
     if (request.stream) {
@@ -1829,21 +2404,36 @@ async function proxyResponsesCreate(
     return resolved;
   }
 
-  const { authHeaders, room, participant } = resolved;
+  const { room, participant } = resolved;
   const request = applyResponsesDefaults(
     body,
     buildMergedDefaults(room.defaults, participant.config)
   );
+  const requestId = crypto.randomUUID();
+  const requestStartedAt = Date.now();
   const baseEntry = {
     participantId: participant.id,
     roomId: room.id,
   };
 
+  beginParticipantProxyRequest(room.id, participant.id);
   SSE.broadcast(
     "llm.request",
-    { participantId: participant.id, model: body.model },
+    {
+      requestId,
+      participantId: participant.id,
+      model: body.model,
+      protocol: "openResponses",
+    },
     code
   );
+  console.info("[gambi] llm.request", {
+    requestId,
+    participantId: participant.id,
+    roomCode: code,
+    protocol: "openResponses",
+    model: body.model,
+  });
 
   try {
     for (const adapter of responsesProtocolAdapters) {
@@ -1856,37 +2446,60 @@ async function proxyResponsesCreate(
         adapterId: adapter.id,
       };
       const response = await adapter.create({
-        authHeaders,
         entry,
         participant,
         request,
       });
 
       if (response !== ADAPTER_SKIP) {
+        const protocol =
+          adapter.id === "chatCompletions"
+            ? "chatCompletions"
+            : "openResponses";
         if (request.stream) {
           return wrapProxyLifecycleStream(response, {
             code,
-            model: body.model,
             participant,
+            protocol,
+            requestId,
+            roomId: room.id,
           });
         }
 
-        broadcastLlmComplete(code, participant);
+        const metrics = buildMetrics({
+          completedAt: Date.now(),
+          lifecycle: {
+            requestId,
+            durationStartedAt: requestStartedAt,
+          },
+          usage: tryParseMetricsFromBody(
+            protocol,
+            await response.clone().text()
+          ),
+        });
+        finishParticipantProxyRequest(room.id, participant.id);
+        broadcastLlmComplete(code, participant, {
+          requestId,
+          protocol,
+          metrics,
+        });
         return response;
       }
     }
 
+    finishParticipantProxyRequest(room.id, participant.id);
     return error(
       "No compatible protocol adapter available for the requested Responses operation",
       501
     );
   } catch (proxyError) {
-    broadcastLlmError(code, participant, body.model, proxyError);
-    console.error("[gambi] responses proxy failed", {
-      participantId: participant.id,
-      nickname: participant.nickname,
-      endpoint: participant.endpoint,
-      error: String(proxyError),
+    finishParticipantProxyRequest(room.id, participant.id);
+    broadcastLlmError(code, participant, {
+      requestId,
+      model: body.model,
+      protocol: "openResponses",
+      stage: "dispatch",
+      error: proxyError,
     });
     return error(`Failed to proxy request: ${proxyError}`, 502);
   }
@@ -1902,42 +2515,76 @@ async function proxyChatCompletions(
     return resolved;
   }
 
-  const { authHeaders, room, participant } = resolved;
+  const { room, participant } = resolved;
   const request = applyChatCompletionsDefaults(
     body,
     buildMergedDefaults(room.defaults, participant.config)
   );
+  const requestId = crypto.randomUUID();
+  const requestStartedAt = Date.now();
 
+  beginParticipantProxyRequest(room.id, participant.id);
   SSE.broadcast(
     "llm.request",
-    { participantId: participant.id, model: body.model },
+    {
+      requestId,
+      participantId: participant.id,
+      model: body.model,
+      protocol: "chatCompletions",
+    },
     code
   );
+  console.info("[gambi] llm.request", {
+    requestId,
+    participantId: participant.id,
+    roomCode: code,
+    protocol: "chatCompletions",
+    model: body.model,
+  });
 
   try {
     const response = await chatCompletionsAdapter.create({
-      authHeaders,
       participant,
       request,
+      roomId: room.id,
     });
 
     if (request.stream) {
       return wrapProxyLifecycleStream(response, {
         code,
-        model: body.model,
         participant,
+        protocol: "chatCompletions",
+        requestId,
+        roomId: room.id,
       });
     }
 
-    broadcastLlmComplete(code, participant);
+    const metrics = buildMetrics({
+      completedAt: Date.now(),
+      lifecycle: {
+        requestId,
+        durationStartedAt: requestStartedAt,
+      },
+      usage: tryParseMetricsFromBody(
+        "chatCompletions",
+        await response.clone().text()
+      ),
+    });
+    finishParticipantProxyRequest(room.id, participant.id);
+    broadcastLlmComplete(code, participant, {
+      requestId,
+      protocol: "chatCompletions",
+      metrics,
+    });
     return response;
   } catch (proxyError) {
-    broadcastLlmError(code, participant, body.model, proxyError);
-    console.error("[gambi] chat proxy failed", {
-      participantId: participant.id,
-      nickname: participant.nickname,
-      endpoint: participant.endpoint,
-      error: String(proxyError),
+    finishParticipantProxyRequest(room.id, participant.id);
+    broadcastLlmError(code, participant, {
+      requestId,
+      model: body.model,
+      protocol: "chatCompletions",
+      stage: "dispatch",
+      error: proxyError,
     });
     return error(`Failed to proxy request: ${proxyError}`, 502);
   }
@@ -1948,7 +2595,6 @@ function getStoredParticipant(
   responseId: string
 ):
   | {
-      authHeaders: ParticipantAuthHeaders;
       entry: ResponseRegistryEntry;
       participant: ParticipantInfoInternal;
       room: NonNullable<ReturnType<typeof Room.getByCode>>;
@@ -1975,7 +2621,6 @@ function getStoredParticipant(
   return {
     entry,
     participant: participantRecord.info,
-    authHeaders: participantRecord.authHeaders,
     room,
   };
 }
@@ -1998,7 +2643,7 @@ async function proxyStoredResponse(
     return storedParticipant;
   }
 
-  const { authHeaders, entry, participant } = storedParticipant;
+  const { entry, participant } = storedParticipant;
   const adapter = responsesLifecycleAdapters.get(entry.adapterId);
   if (!adapter?.proxyStoredResponse) {
     return getLifecycleUnsupportedResponse();
@@ -2006,7 +2651,6 @@ async function proxyStoredResponse(
 
   return await adapter.proxyStoredResponse({
     action,
-    authHeaders,
     entry,
     participant,
     req,
@@ -2175,11 +2819,56 @@ export function createHub(options: HubOptions = {}): Hub {
         SSE.broadcast("participant.offline", { participantId }, room.code);
       }
     }
+
+    clearExpiredTunnelBootstraps();
+    const now = Date.now();
+    for (const session of tunnelSessionRegistry.values()) {
+      if (now - session.lastTunnelSeenAt > PARTICIPANT_TIMEOUT) {
+        session.ws.close(4001, "Tunnel heartbeat timed out.");
+      }
+    }
   }, HEALTH_CHECK_INTERVAL);
 
-  const server = Bun.serve({
+  const server = Bun.serve<TunnelSocketData>({
     port,
     hostname,
+    websocket: {
+      data: {} as TunnelSocketData,
+      message(ws, message) {
+        const session = tunnelSessionRegistry.get(ws.data.sessionKey);
+        if (!session) {
+          return;
+        }
+        handleTunnelMessage(session, message);
+      },
+      open(ws) {
+        const existing = tunnelSessionRegistry.get(ws.data.sessionKey);
+        if (existing && existing.ws !== ws) {
+          rejectPendingTunnelRequests(
+            existing,
+            "Participant tunnel superseded by a newer session."
+          );
+          existing.ws.close(1000, "Superseded by a newer tunnel session.");
+        }
+
+        tunnelSessionRegistry.set(ws.data.sessionKey, {
+          ws,
+          roomId: ws.data.roomId,
+          roomCode: ws.data.roomCode,
+          participantId: ws.data.participantId,
+          pending: new Map(),
+          lastTunnelSeenAt: Date.now(),
+        });
+        updateTunnelConnectionState(
+          ws.data.roomId,
+          ws.data.participantId,
+          true
+        );
+      },
+      close(ws) {
+        clearTunnelSession(ws.data.roomId, ws.data.participantId, ws);
+      },
+    },
     fetch(req) {
       const url = new URL(req.url);
       const method = req.method;
@@ -2199,6 +2888,83 @@ export function createHub(options: HubOptions = {}): Hub {
       }
       if (path === "/v1/rooms" && method === "GET") {
         return listRooms(requestId);
+      }
+
+      const tunnelMatch = path.match(MANAGEMENT_PARTICIPANT_TUNNEL_PATH_REGEX);
+      if (tunnelMatch?.[1] && tunnelMatch[2] && method === "GET") {
+        const roomCode = tunnelMatch[1];
+        const participantId = tunnelMatch[2];
+        const room = Room.getByCode(roomCode);
+        if (!room) {
+          return managementError(
+            requestId,
+            "ROOM_NOT_FOUND",
+            "Room not found.",
+            "Run 'gambi room list' to inspect available rooms.",
+            404
+          );
+        }
+
+        const participant = Room.getParticipantRecord(
+          room.id,
+          participantId
+        )?.info;
+        if (!participant) {
+          return managementError(
+            requestId,
+            "PARTICIPANT_NOT_FOUND",
+            "Participant not found.",
+            "Check the participant id and retry.",
+            404
+          );
+        }
+
+        const token = url.searchParams.get("token");
+        if (!token) {
+          return managementError(
+            requestId,
+            "INVALID_REQUEST",
+            "Tunnel token is required.",
+            "Reconnect using the bootstrap token returned during join.",
+            400
+          );
+        }
+
+        const bootstrap = getTunnelBootstrap(token);
+        if (
+          !bootstrap ||
+          bootstrap.roomId !== room.id ||
+          bootstrap.roomCode !== roomCode ||
+          bootstrap.participantId !== participantId
+        ) {
+          return managementError(
+            requestId,
+            "INVALID_REQUEST",
+            "Tunnel token is invalid or expired.",
+            "Re-register the participant and retry the tunnel connection.",
+            401
+          );
+        }
+
+        const upgraded = server.upgrade(req, {
+          data: {
+            roomId: room.id,
+            roomCode,
+            participantId,
+            sessionKey: getTunnelSessionKey(room.id, participantId),
+          },
+        });
+        if (!upgraded) {
+          return managementError(
+            requestId,
+            "INTERNAL_ERROR",
+            "Failed to upgrade the participant tunnel.",
+            "Retry the join operation."
+          );
+        }
+
+        consumeTunnelBootstrap(token);
+        return;
       }
 
       const managementRoomMatch = path.match(MANAGEMENT_ROOM_PATH_REGEX);
@@ -2254,6 +3020,12 @@ export function createHub(options: HubOptions = {}): Hub {
       if (mdnsName) {
         mDNS.unpublish(mdnsName);
       }
+      tunnelBootstrapRegistry.clear();
+      for (const session of tunnelSessionRegistry.values()) {
+        session.ws.close(1001, "Hub shutting down.");
+      }
+      tunnelSessionRegistry.clear();
+      participantActiveRequests.clear();
       clearResponseRegistry();
       Room.clear();
       SSE.closeAll();

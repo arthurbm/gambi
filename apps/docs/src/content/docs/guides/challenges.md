@@ -13,12 +13,12 @@ Every dynamic starts the same way: one person hosts the hub, everyone else joins
 
 ```bash
 # Host
-gambi serve --port 3000
-gambi create --name "My Room"
+gambi hub serve --port 3000
+gambi room create --name "My Room"
 # → Room code: ABC123
 
 # Participants
-gambi join --code ABC123 --model llama3
+gambi participant join --room ABC123 --participant-id demo-1 --model llama3
 ```
 
 Once everyone is in, the room exposes a single API that routes to all connected LLMs. See the [API Reference](/reference/api/) for details, or grab the `llms.txt` and paste it into an AI coding tool to start building.
@@ -30,9 +30,9 @@ Once everyone is in, the room exposes a single API that routes to all connected 
 Send `model: "*"` requests — the hub picks a random participant each time. Same prompt, different models, different answers. Compare quality, speed, and personality across the room.
 
 ```bash
-curl -s http://<hub>/rooms/ABC123/v1/chat/completions \
+curl -s http://<hub>/rooms/ABC123/v1/responses \
   -H "Content-Type: application/json" \
-  -d '{"model":"*","messages":[{"role":"user","content":"Explain gravity in one sentence"}]}'
+  -d '{"model":"*","input":"Explain gravity in one sentence"}'
 ```
 
 Run it 10 times and see what comes back. Good way to feel the diversity of models in the room.
@@ -81,7 +81,7 @@ No terminal needed. Any OpenAI-compatible chat UI works:
 Or just use curl:
 
 ```bash
-curl http://<hub>/rooms/ABC123/v1/chat/completions \
+curl http://<hub>/rooms/ABC123/v1/responses \
   -H "Content-Type: application/json" \
-  -d '{"model":"*","messages":[{"role":"user","content":"Tell me a joke"}]}'
+  -d '{"model":"*","input":"Tell me a joke"}'
 ```

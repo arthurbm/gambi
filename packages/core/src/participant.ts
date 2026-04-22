@@ -30,7 +30,12 @@ function create(options: CreateParticipantOptions): ParticipantInfoInternal {
       openResponses: "unknown",
       chatCompletions: "unknown",
     },
-    status: "online",
+    connection: {
+      kind: "tunnel",
+      connected: false,
+      lastTunnelSeenAt: null,
+    },
+    status: "offline",
     joinedAt: now,
     lastSeen: now,
     updatedAt: now,

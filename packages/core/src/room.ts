@@ -147,6 +147,7 @@ function upsertParticipant(
 
   const existing = room.participants.get(participant.id)?.info;
   const now = Date.now();
+  const nextStatus = participant.connection.connected ? "online" : "offline";
   const nextParticipant: ParticipantInfoInternal = existing
     ? {
         ...existing,
@@ -154,14 +155,14 @@ function upsertParticipant(
         joinedAt: existing.joinedAt,
         lastSeen: now,
         updatedAt: now,
-        status: "online",
+        status: nextStatus,
       }
     : {
         ...participant,
         joinedAt: participant.joinedAt ?? now,
         lastSeen: now,
         updatedAt: now,
-        status: "online",
+        status: nextStatus,
       };
 
   room.participants.set(nextParticipant.id, {
@@ -208,6 +209,11 @@ function getParticipantRecord(
   return rooms.get(roomId)?.participants.get(participantId);
 }
 
+function getParticipantRecords(roomId: string): StoredParticipant[] {
+  const room = rooms.get(roomId);
+  return room ? Array.from(room.participants.values()) : [];
+}
+
 function updateParticipantStatus(
   roomId: string,
   participantId: string,
@@ -222,6 +228,24 @@ function updateParticipantStatus(
   return true;
 }
 
+function updateParticipantConnection(
+  roomId: string,
+  participantId: string,
+  connection: Partial<ParticipantInfoInternal["connection"]>
+): boolean {
+  const participant = rooms.get(roomId)?.participants.get(participantId)?.info;
+  if (!participant) {
+    return false;
+  }
+
+  participant.connection = {
+    ...participant.connection,
+    ...connection,
+  };
+  participant.updatedAt = Date.now();
+  return true;
+}
+
 function updateLastSeen(roomId: string, participantId: string): boolean {
   const participant = rooms.get(roomId)?.participants.get(participantId)?.info;
   if (!participant) {
@@ -230,7 +254,7 @@ function updateLastSeen(roomId: string, participantId: string): boolean {
 
   participant.lastSeen = Date.now();
   participant.updatedAt = participant.lastSeen;
-  participant.status = "online";
+  participant.status = participant.connection.connected ? "online" : "offline";
   return true;
 }
 
@@ -330,7 +354,9 @@ export const Room = {
   getParticipants,
   getParticipant,
   getParticipantRecord,
+  getParticipantRecords,
   updateParticipantStatus,
+  updateParticipantConnection,
   updateLastSeen,
   findParticipantByModel,
   getRandomOnlineParticipant,
