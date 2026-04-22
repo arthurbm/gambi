@@ -1,106 +1,96 @@
+# gambi (CLI)
 
-Default to using Bun instead of Node.js.
+Workspace fonte do CLI `gambi`. Este workspace é `private: true`; a distribuição publicada no npm e no GitHub Release é gerada em `packages/cli/dist` pelo workflow oficial.
 
-- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
-- Use `bun test` instead of `jest` or `vitest`
-- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
-- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
-- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
-- Use `bunx <package> <command>` instead of `npx <package> <command>`
-- Bun automatically loads .env, so don't use dotenv.
+O CLI é **resource-oriented e agent-first**: pensado para automação (flags, output estruturado, exit codes previsíveis) e com modo interativo como segunda camada.
 
-## APIs
+## Estrutura
 
-- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
-- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
-- `Bun.redis` for Redis. Don't use `ioredis`.
-- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
-- `WebSocket` is built-in. Don't use `ws`.
-- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
-- Bun.$`ls` instead of execa.
+- `src/cli.ts` — entrypoint, roteamento de subcomandos.
+- `src/commands/*.ts` — definição autoritativa de cada comando e suas flags. Se um agente precisar confirmar uma flag, ler esse arquivo vence qualquer outra fonte.
+- `src/utils/agent-command.ts` — classe base `AgentCommand` com as flags globais (`--format`, `--env`, `--interactive`, `--no-interactive`, `--verbose`, `--quiet`).
+- `src/utils/management-api.ts` — envelope de chamadas ao management plane + mapeamento de HTTP status para exit codes.
+- `src/utils/output.ts` — renderização text/json/ndjson.
+- `src/utils/cli-config.ts` — leitura do `~/.config/gambi/config.json` (respeita `XDG_CONFIG_HOME`).
 
-## Testing
+## Comandos atuais
 
-Use `bun test` to run tests.
-
-```ts#index.test.ts
-import { test, expect } from "bun:test";
-
-test("hello world", () => {
-  expect(1).toBe(1);
-});
+```
+gambi hub serve
+gambi room create|list|get
+gambi participant join|leave|heartbeat
+gambi events watch
+gambi self update
 ```
 
-## Frontend
+`gambi participant join` é uma thin layer sobre `createParticipantSession()` da SDK. Não duplicar lógica de túnel/heartbeat aqui.
 
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
+## Contratos operacionais
 
-Server:
+Mantidos pelo base `AgentCommand`:
 
-```ts#index.ts
-import index from "./index.html"
+- **Saída estruturada**:
+  - `--format text|json|ndjson`
+  - TTY + comando one-shot → `text`
+  - stdout pipeado + one-shot → `json`
+  - stdout pipeado + streaming → `ndjson`
+  - streaming com `--format json` é coagido para `ndjson`
+- **Interatividade**: `--interactive` / `--no-interactive`; prompts também suprimidos com `GAMBI_NO_INTERACTIVE=1`.
+- **Ambientes nomeados**: `--env <name>` lê de `~/.config/gambi/config.json`; fallback `GAMBI_ENV`.
+- **Format fallback**: `GAMBI_FORMAT`.
 
-Bun.serve({
-  routes: {
-    "/": index,
-    "/api/users/:id": {
-      GET: (req) => {
-        return new Response(JSON.stringify({ id: req.params.id }));
-      },
-    },
-  },
-  // optional websocket support
-  websocket: {
-    open: (ws) => {
-      ws.send("Hello, world!");
-    },
-    message: (ws, message) => {
-      ws.send(message);
-    },
-    close: (ws) => {
-      // handle close
-    }
-  },
-  development: {
-    hmr: true,
-    console: true,
-  }
-})
+Exit codes (de `utils/management-api.ts`):
+
+| Code | Significado |
+| --- | --- |
+| `0` | sucesso |
+| `1` | falha interna / inesperada |
+| `2` | uso inválido (`400`/`422` do hub, validação local) |
+| `3` | conectividade/dependência (`401`/`403`/`503`, hub inacessível) |
+| `4` | rejeição remota (`404`/`409` do hub) |
+
+Agentes-supervisores usam esses códigos para decidir retry: `2` não retrier, `3` geralmente sim, `4` significa rejeição por estado do hub.
+
+## Eventos NDJSON de comandos streaming/longos
+
+- `hub serve`: `started`, `mdns_registered`, `signal_received`, `stopped`.
+- `participant join`: `prepared`, `registered`, `tunnel_connected`, `leaving`, `left`, `heartbeat_failed`, `tunnel_failed`.
+- `events watch`: os próprios eventos SSE do management (`connected`, `room.*`, `participant.*`, `llm.*`).
+
+Qualquer mudança nesses lifecycle events é contrato público — atualizar `apps/docs/src/content/docs/reference/cli.mdx`.
+
+## Regras de design
+
+- **Não inventar rotas/contratos paralelos**: o CLI só renderiza sobre o management plane do core. Se precisar de algo novo, adicionar no core primeiro.
+- **`--participant-id` é obrigatório em fluxos não interativos**: é o que garante retry-safe no `PUT /v1/rooms/:code/participants/:id` idempotente.
+- **Não reintroduzir aliases flat**: não existe mais `gambi serve` / `gambi join` / `gambi list` sem namespace de recurso.
+- **Flags são documentadas em três lugares em sync**: o próprio comando (`commands/*.ts`), `apps/docs/src/content/docs/reference/cli.mdx`, e `README.md`/guias quando relevantes para o usuário.
+- **Não adicionar lógica de negócio no CLI**: o CLI é uma shell sobre o core + SDK.
+
+## Validação
+
+Ao tocar este package:
+
+```bash
+bun run --cwd packages/cli dev -- <comando> --help
+bun run --cwd packages/cli check-types
+bun test packages/cli/src
 ```
 
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
+Ao tocar distribuição/release:
 
-```html#index.html
-<html>
-  <body>
-    <h1>Hello, world!</h1>
-    <script type="module" src="./frontend.tsx"></script>
-  </body>
-</html>
+```bash
+bun run --cwd packages/cli build
+npm pack --dry-run --cache /tmp/npm-cache ./packages/cli/dist/npm/gambi
+node ./packages/cli/dist/npm/gambi/bin/gambi --version
 ```
 
-With the following `frontend.tsx`:
+Ver `docs/release-architecture.md` e seção 11.1 do AGENTS.md da raiz para o fluxo de release completo.
 
-```tsx#frontend.tsx
-import React from "react";
-import { createRoot } from "react-dom/client";
+## Regras do Bun
 
-// import .css files directly and it works
-import './index.css';
-
-const root = createRoot(document.body);
-
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
-
-root.render(<Frontend />);
-```
-
-Then, run index.ts
-
-```sh
-bun --hot ./index.ts
-```
-
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
+Este workspace roda em Bun; prefira as APIs nativas:
+- `bun run <script>` para scripts; `bun <file>` para executar TS direto.
+- `bun test` para testes.
+- `Bun.$` (template tag) em vez de `execa` / `child_process`.
+- Bun carrega `.env` automaticamente — não usar `dotenv`.
