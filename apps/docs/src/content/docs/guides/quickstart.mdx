@@ -152,7 +152,7 @@ gambi participant join \
 
 The CLI probes your local endpoint, detects available models and protocol capabilities, registers the participant, opens a tunnel back to the hub, and keeps the session alive until interrupted.
 
-Important implication: your provider endpoint can stay on `localhost`, even when the hub is running on another machine in the same trusted network. You no longer need to publish a LAN-reachable provider URL just to join a room.
+Important implication: your provider endpoint can stay on `localhost`, even when the hub is running on another machine in the same trusted network. You no longer need to publish a LAN-reachable provider URL just to join a room. For the reasoning behind this, see [How Tunnels Work](/explanation/tunnel-first/).
 
 It also shares your machine specs (CPU, RAM, GPU) automatically. Use `--no-specs` if you prefer not to share them.
 

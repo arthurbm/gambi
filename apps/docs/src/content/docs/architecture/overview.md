@@ -89,11 +89,44 @@ A participant is available only when:
 - it is not offline
 - it is not already handling another request
 
-## Protocol Strategy
+## Tunnel Protocol
+
+The tunnel is a WebSocket between the hub and the participant runtime. Messages are JSON objects with a `type` field.
+
+Server → participant:
+
+- `tunnel.request` — a forwarded inference request. Includes `requestId`, HTTP `method`, `path`, `headers`, `body`, and a `stream` flag.
+- `tunnel.pong` — reply to a participant ping.
+
+Participant → server:
+
+- `tunnel.response.start` — response headers and HTTP status for `requestId`.
+- `tunnel.response.chunk` — one streamed body chunk for `requestId`.
+- `tunnel.response.end` — the response body is complete.
+- `tunnel.response.error` — the participant runtime failed to produce a response; includes a `stage` label and a human-readable `message`.
+- `tunnel.ping` — keepalive from the participant.
+
+See `packages/core/src/tunnel-protocol.ts` for the authoritative schemas.
+
+## Protocol Adaptation (Responses ↔ Chat Completions)
 
 The default protocol is Responses. Chat Completions remains available for compatibility.
 
-When needed, the hub can adapt between Responses and Chat Completions so that participants and clients do not have to support the same surface natively.
+When the client and the participant do not speak the same surface natively, the hub adapts between them. Two practical consequences:
+
+- a client using Responses can reach a participant that only exposes Chat Completions, and vice versa
+- the adapter focuses on the message-level contract; stateful Responses features such as `previous_response_id`, `store`, and `background` may be limited or unsupported when the underlying participant is a Chat Completions endpoint
+
+New integrations should prefer Responses. Fall back to Chat Completions only when you need explicit compatibility with an existing tool.
+
+## Health Timings
+
+Two constants drive liveness, both defined in `packages/core/src/types.ts`:
+
+- `HEALTH_CHECK_INTERVAL = 10_000 ms` — cadence for participant heartbeats and for tunnel pings.
+- `PARTICIPANT_TIMEOUT = 30_000 ms` — after this window without a heartbeat, the hub marks the participant offline. The tunnel uses the same window before closing a silent connection.
+
+If you build a custom participant runtime, match these windows. `createParticipantSession()` does it for you.
 
 ## Observability
 

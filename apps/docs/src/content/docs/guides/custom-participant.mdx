@@ -1,0 +1,189 @@
+---
+title: Build a Custom Participant Runtime
+description: Use createParticipantSession() to run your own participant process when the CLI is not enough.
+---
+
+The `gambi participant join` CLI covers the common case: pick a model, point at a hub, stay online. When you need more control — embedding the participant in a long-running service, adding custom shutdown logic, or running multiple participants in one process — build your own runtime on top of `createParticipantSession()`.
+
+This guide shows the minimum runtime that produces the same behavior as the CLI, and then points out the common extensions.
+
+## Before you start
+
+You need:
+
+- a reachable Gambi hub (`gambi hub serve` on a machine you can reach)
+- an existing room code (`gambi room create --name "Demo"`)
+- a local OpenAI-compatible provider endpoint (Ollama, LM Studio, vLLM, or anything else that serves `/v1/models` and `/v1/chat/completions`)
+- `gambi-sdk` installed
+
+```bash
+bun add gambi-sdk
+```
+
+## Step 1: Open a session
+
+`createParticipantSession()` does four things in one call: it probes your endpoint, registers the participant, opens the tunnel, and starts the heartbeat and ping loops.
+
+```ts
+import { createParticipantSession } from "gambi-sdk";
+
+const session = await createParticipantSession({
+  hubUrl: "http://localhost:3000",
+  roomCode: "ABC123",
+  participantId: "worker-1",
+  nickname: "worker-1",
+  endpoint: "http://localhost:11434",
+  model: "llama3",
+});
+
+console.log("registered as", session.participant.id);
+```
+
+If the endpoint does not expose the requested model, the call throws before anything is registered. Treat that as a configuration error and exit.
+
+## Step 2: Wait for the session to close
+
+`session.waitUntilClosed()` resolves with a close event the moment the runtime stops, whatever the reason.
+
+```ts
+const closeEvent = await session.waitUntilClosed();
+console.log("session ended:", closeEvent.reason);
+```
+
+Three close reasons, each with a different meaning:
+
+| Reason | Meaning | Suggested action |
+| --- | --- | --- |
+| `"closed"` | you or a received signal asked the session to stop | exit cleanly |
+| `"heartbeat_failed"` | the management heartbeat loop failed repeatedly | the hub is unreachable — exit and let your supervisor reschedule |
+| `"tunnel_closed"` | the WebSocket tunnel closed from either side | usually transient network trouble — safe to reconnect with a new session |
+
+`closeEvent.error` holds the underlying `Error` when one was observed, which is worth logging.
+
+## Step 3: Shut down cleanly
+
+Wire `session.close()` to your process signals so `SIGINT` and `SIGTERM` drain gracefully. `close()` removes the participant from the room and closes the tunnel before returning.
+
+```ts
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.on(signal, () => {
+    void session.close();
+  });
+}
+```
+
+If the tunnel is already gone when `close()` is called, the helper still best-effort removes the registration.
+
+## Step 4: Forward provider auth
+
+`authHeaders` apply only when the runtime calls your local provider endpoint. They never leave the participant runtime. Use this for API keys or bearer tokens that your local provider needs.
+
+```ts
+const session = await createParticipantSession({
+  hubUrl: "http://localhost:3000",
+  roomCode: "ABC123",
+  participantId: "worker-1",
+  nickname: "worker-1",
+  endpoint: "http://localhost:11434",
+  model: "llama3",
+  authHeaders: {
+    Authorization: `Bearer ${process.env.PROVIDER_TOKEN}`,
+  },
+});
+```
+
+The hub never sees `PROVIDER_TOKEN`.
+
+## Step 5: Common customizations
+
+### Declare machine specs
+
+Specs are shown in the TUI and passed to event consumers. Pass them when you know them:
+
+```ts
+await createParticipantSession({
+  // ...
+  specs: {
+    cpu: "Apple M2 Pro",
+    memoryGb: 32,
+    gpu: "Apple M2 Pro integrated",
+  },
+});
+```
+
+### Override capabilities
+
+The probe auto-detects which OpenAI-compatible surfaces your endpoint supports. Override when you want the hub to prefer a specific one:
+
+```ts
+await createParticipantSession({
+  // ...
+  capabilities: {
+    openResponses: "supported",
+    chatCompletions: "supported",
+  },
+});
+```
+
+### Joining a password-protected room
+
+```ts
+await createParticipantSession({
+  // ...
+  password: process.env.ROOM_PASSWORD,
+});
+```
+
+### Running more than one participant in one process
+
+Call `createParticipantSession()` once per participant. Each call returns an independent session with its own tunnel, heartbeat loop, and participant identity. Run their `waitUntilClosed()` promises in parallel.
+
+```ts
+const sessions = await Promise.all([
+  createParticipantSession({ /* worker-1 */ }),
+  createParticipantSession({ /* worker-2 */ }),
+]);
+
+await Promise.allSettled(
+  sessions.map((session) => session.waitUntilClosed())
+);
+```
+
+## A complete runtime
+
+Putting it all together:
+
+```ts
+import { createParticipantSession } from "gambi-sdk";
+
+const session = await createParticipantSession({
+  hubUrl: process.env.GAMBI_HUB ?? "http://localhost:3000",
+  roomCode: "ABC123",
+  participantId: "worker-1",
+  nickname: "worker-1",
+  endpoint: "http://localhost:11434",
+  model: "llama3",
+  authHeaders: process.env.PROVIDER_TOKEN
+    ? { Authorization: `Bearer ${process.env.PROVIDER_TOKEN}` }
+    : undefined,
+});
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.on(signal, () => {
+    void session.close();
+  });
+}
+
+const { reason, error } = await session.waitUntilClosed();
+console.log("[gambi] session ended:", reason);
+if (error) {
+  console.error(error);
+}
+process.exit(reason === "closed" ? 0 : 1);
+```
+
+## Further reading
+
+- [SDK Reference — `createParticipantSession()`](/reference/sdk/#createparticipantsessionoptions) — full option and return shape.
+- [How Tunnels Work](/explanation/tunnel-first/) — why the runtime opens a WebSocket instead of exposing an HTTP endpoint.
+- [CLI Reference — `gambi participant join`](/reference/cli/#gambi-participant-join) — the CLI variant, useful as a reference implementation.

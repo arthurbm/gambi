@@ -95,6 +95,35 @@ Causes and solutions:
 
 2. The intended participant is offline, busy, or tunnel-disconnected.
 
+## Participant Reports `tunnel_failed` or `heartbeat_failed`
+
+Symptoms:
+
+- `gambi participant join --format ndjson` emits a `tunnel_failed` event and exits
+- `gambi participant join --format ndjson` emits a `heartbeat_failed` event and exits
+- a custom runtime built on `createParticipantSession()` reports a close reason of `"tunnel_closed"` or `"heartbeat_failed"`
+
+These are distinct failure modes. Diagnose by the lifecycle event or close reason.
+
+### `tunnel_failed` / close reason `"tunnel_closed"`
+
+The WebSocket tunnel to the hub was interrupted. Common causes:
+
+1. A proxy between the participant and the hub is stripping `Upgrade: websocket`. Test by pointing the participant directly at the hub, bypassing the proxy.
+2. The hub process was restarted or crashed. Check hub logs and retry.
+3. The bootstrap token expired before the participant finished upgrading. The token has a 60-second TTL; a stalled or slow network can miss that window. Re-running `gambi participant join` issues a new token.
+4. The hub evicted the previous tunnel because the same participant id reconnected from elsewhere. Decide whether you intend to run two runtimes with the same id and pick a different id if not.
+
+### `heartbeat_failed`
+
+The management HTTP heartbeat loop failed repeatedly. This is about HTTP reachability to `/v1`, not the WebSocket path. Common causes:
+
+1. The hub URL is wrong or stale.
+2. A proxy or firewall is blocking `POST /v1/rooms/:code/participants/:id/heartbeat`.
+3. The room or participant was deleted from the hub while the runtime was still running. Check with `gambi room get` and `gambi participant join` again.
+
+In both cases, the runtime removes itself from the room as a best effort when it can, so restarting is a safe operation.
+
 ## High Latency
 
 Symptoms:

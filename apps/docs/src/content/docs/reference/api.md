@@ -146,6 +146,36 @@ Create or update a participant registration.
 
 This endpoint is idempotent and is the canonical registration path. The participant endpoint is treated as local metadata for the participant runtime. The hub does not need direct network reachability to it.
 
+Request body:
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `nickname` | `string` | yes | display name shown to operators |
+| `model` | `string` | yes | model name exposed by the participant |
+| `endpoint` | `string (URL)` | yes | participant-local provider endpoint |
+| `password` | `string` | no | room password, required when the room is protected |
+| `specs` | `MachineSpecs` | no | optional machine specs, see below |
+| `config` | `RuntimeConfig` | no | participant runtime defaults, see below |
+| `capabilities` | `ParticipantCapabilities` | no | participant protocol capabilities, see below |
+
+`MachineSpecs` fields (all optional):
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `cpu` | `string` | CPU description |
+| `gpu` | `string` | GPU description |
+| `ram` | `number` | system RAM in gigabytes |
+| `vram` | `number` | GPU VRAM in gigabytes |
+
+`ParticipantCapabilities` fields (each defaults to `"unknown"`):
+
+| Field | Values | Description |
+| --- | --- | --- |
+| `openResponses` | `"supported" \| "unsupported" \| "unknown"` | whether the participant endpoint speaks the OpenAI Responses API |
+| `chatCompletions` | `"supported" \| "unsupported" \| "unknown"` | whether the participant endpoint speaks OpenAI Chat Completions |
+
+`RuntimeConfig` fields (all optional): `temperature`, `top_p`, `max_tokens`, `stop`, `frequency_penalty`, `presence_penalty`, `seed`, `instructions`. These act as participant-level defaults and are merged under the room defaults and above request-time overrides. The `instructions` string is private to the participant runtime — management responses surface only `hasInstructions`.
+
 ```bash
 curl -X PUT http://localhost:3000/v1/rooms/ABC123/participants/worker-1 \
   -H "Content-Type: application/json" \
@@ -205,6 +235,21 @@ GET /v1/rooms/:code/participants/:id/tunnel?token=<token>
 ```
 
 This is an internal operational route for participant runtimes. Application clients should keep using the room-scoped HTTP inference API.
+
+Token lifecycle:
+
+- the bootstrap token is single-use — successful upgrade consumes it
+- the token expires 60 seconds after issuance
+- re-registering via `PUT /v1/rooms/:code/participants/:id` returns a fresh token
+
+Error responses:
+
+| Status | Code | Condition |
+| --- | --- | --- |
+| `400` | `INVALID_REQUEST` | `token` query parameter is missing |
+| `401` | `INVALID_REQUEST` | token is unknown, expired, or bound to a different participant |
+| `404` | `ROOM_NOT_FOUND` | room code does not exist |
+| `404` | `PARTICIPANT_NOT_FOUND` | participant is not registered in the room |
 
 ### DELETE /v1/rooms/:code/participants/:id
 

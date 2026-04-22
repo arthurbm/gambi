@@ -45,11 +45,28 @@ gambi self update
   </TabItem>
 </Tabs>
 
+Verify the install:
+
+```bash
+gambi --version
+```
+
 ## Global behavior
 
-### Output modes
+Every operational command inherits the same set of global flags from the shared command base. They can also be driven by environment variables, which is useful for scripts and supervisors.
 
-Every operational command supports:
+### Global flags
+
+| Flag | Description |
+| --- | --- |
+| `--format <text\|json\|ndjson>` | select output format |
+| `--env <name>` | pick a named environment from the CLI config file |
+| `--interactive` | allow prompts for missing required values |
+| `--no-interactive` | disable all prompts |
+| `--verbose` | include extended details in output |
+| `--quiet` | reduce non-essential text output |
+
+### Output modes
 
 | Mode | Meaning |
 | --- | --- |
@@ -65,15 +82,28 @@ Defaults:
 | piped stdout + one-shot command | `json` |
 | piped stdout + streaming command | `ndjson` |
 
-### Interactive control
+Streaming commands coerce `--format json` to `ndjson` so every event is a standalone JSON line.
 
-Available controls:
+### Environment variables
 
-| Control | Behavior |
+| Variable | Effect |
 | --- | --- |
-| `--interactive` | allow prompts for missing required values |
-| `--no-interactive` | disable all prompts |
-| `GAMBI_NO_INTERACTIVE=1` | disable prompts through the environment |
+| `GAMBI_FORMAT` | fallback for `--format` |
+| `GAMBI_ENV` | fallback for `--env` |
+| `GAMBI_NO_INTERACTIVE=1` | disable prompts everywhere |
+| `XDG_CONFIG_HOME` | override the base directory for `~/.config/gambi/config.json` |
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | success |
+| `1` | internal or unexpected failure |
+| `2` | invalid usage (missing flag, bad value, `400`/`422` from hub) |
+| `3` | connectivity or dependency failure (unreachable hub, `401`/`403`/`503`) |
+| `4` | remote rejection or conflict (`404`/`409` from hub) |
+
+Agent-style supervisors can key retries off these codes. `2` should not be retried, `3` usually should, and `4` means the operation is rejected by the hub state.
 
 ### Named environments
 
@@ -106,6 +136,8 @@ Example:
 }
 ```
 
+Select an environment per-invocation with `--env lab` or globally with `GAMBI_ENV=lab`.
+
 ## `gambi hub serve`
 
 Start the Gambi hub.
@@ -114,12 +146,60 @@ Start the Gambi hub.
 gambi hub serve [options]
 ```
 
+Options:
+
+| Option | Description |
+| --- | --- |
+| `--host` | host to bind to (default from env config or `0.0.0.0`) |
+| `--port` | port to bind to (default from env config or `3000`) |
+| `--mdns` | enable mDNS discovery so other machines can find the hub |
+| `--dry-run` | print the resolved startup plan and exit without binding |
+
+Examples:
+
+```bash
+gambi hub serve
+gambi hub serve --port 3000 --mdns
+gambi hub serve --dry-run --format ndjson
+```
+
+Structured lifecycle events (`--format json|ndjson`):
+
+| Event | Meaning |
+| --- | --- |
+| `started` | hub bound to `bindUrl` |
+| `mdns_registered` | mDNS advertisement is active under `name` |
+| `signal_received` | `SIGINT` or `SIGTERM` observed during shutdown |
+| `stopped` | hub has released the port |
+
 ## `gambi room create`
 
 Create a room through the management API.
 
 ```bash
 gambi room create --name <name> [options]
+```
+
+Options:
+
+| Option | Description |
+| --- | --- |
+| `--name`, `-n` | room display name |
+| `--password`, `-p` | optional room password |
+| `--config <path\|->` | runtime config JSON file or `-` for stdin |
+| `--hub`, `-H` | hub URL |
+| `--dry-run` | validate and print the request without creating the room |
+
+Examples:
+
+```bash
+gambi room create --name "Demo"
+
+gambi room create --name "Demo" --config ./room.json
+
+cat ./room.json | gambi room create --name "Demo" --config -
+
+gambi room create --name "Demo" --dry-run --format json
 ```
 
 ## `gambi room list`
@@ -130,12 +210,45 @@ List room summaries from the management API.
 gambi room list [options]
 ```
 
+Options:
+
+| Option | Description |
+| --- | --- |
+| `--hub`, `-H` | hub URL |
+| `--sort <participant-count\|created-at\|name>` | sort key (default `participant-count`) |
+| `--reverse` | reverse the selected sort order |
+
+Default sort is `participant-count` descending, with `created-at` descending as tiebreaker.
+
+Examples:
+
+```bash
+gambi room list
+gambi room list --format json
+gambi room list --sort created-at --reverse
+gambi room list --hub http://192.168.1.10:3000
+```
+
 ## `gambi room get`
 
 Fetch one room summary by code.
 
 ```bash
 gambi room get --code <room-code> [options]
+```
+
+Options:
+
+| Option | Description |
+| --- | --- |
+| `--code`, `-c` | room code |
+| `--hub`, `-H` | hub URL |
+
+Examples:
+
+```bash
+gambi room get --code ABC123
+gambi room get --code ABC123 --format json
 ```
 
 ## `gambi participant join`
@@ -158,7 +271,7 @@ Options:
 | `--header` | auth header in `Header=Value` format |
 | `--header-env` | auth header in `Header=ENV_VAR` format |
 | `--password` | room password |
-| `--config &lt;path|-&gt;` | runtime config JSON file or stdin |
+| `--config <path\|->` | runtime config JSON file or stdin |
 | `--no-specs` | skip machine specs collection |
 | `--hub` | hub URL |
 | `--dry-run` | validate and preview the session |
@@ -168,7 +281,7 @@ Notes:
 - `--participant-id` is required for non-interactive retry-safe automation.
 - `--config -` reads participant runtime config JSON from stdin.
 - The CLI probes the endpoint before registration to validate the model and detect capabilities.
-- Participant joins now always use a tunnel.
+- Participant joins now always use a tunnel, so the provider endpoint can stay on `localhost` even when the hub runs on another machine. See [How tunnels work](/explanation/tunnel-first/).
 
 Examples:
 
@@ -218,12 +331,40 @@ Remove a participant from a room.
 gambi participant leave --room <room> --participant-id <id> [options]
 ```
 
+Options:
+
+| Option | Description |
+| --- | --- |
+| `--room`, `-r` | room code |
+| `--participant-id` | participant identifier |
+| `--hub`, `-H` | hub URL |
+
+Example:
+
+```bash
+gambi participant leave --room ABC123 --participant-id worker-1
+```
+
 ## `gambi participant heartbeat`
 
-Send one participant heartbeat.
+Send one participant heartbeat. Useful for automation and liveness probing independently from the long-running `participant join` command.
 
 ```bash
 gambi participant heartbeat --room <room> --participant-id <id> [options]
+```
+
+Options:
+
+| Option | Description |
+| --- | --- |
+| `--room`, `-r` | room code |
+| `--participant-id` | participant identifier |
+| `--hub`, `-H` | hub URL |
+
+Example:
+
+```bash
+gambi participant heartbeat --room ABC123 --participant-id worker-1
 ```
 
 ## `gambi events watch`
@@ -234,8 +375,24 @@ Watch room events from the management SSE stream.
 gambi events watch --room <room> [options]
 ```
 
+Options:
+
+| Option | Description |
+| --- | --- |
+| `--room`, `-r` | room code (required) |
+| `--hub`, `-H` | hub URL |
+
+Examples:
+
+```bash
+gambi events watch --room ABC123
+gambi events watch --room ABC123 --format ndjson
+```
+
 Important event types:
 
+- `connected`
+- `room.created`
 - `participant.joined`
 - `participant.updated`
 - `participant.left`
@@ -244,10 +401,34 @@ Important event types:
 - `llm.complete`
 - `llm.error`
 
+See [Observability](/reference/observability/) for the field shape of the `llm.*` events.
+
 ## `gambi self update`
 
-Update the installed CLI.
+Update the installed CLI. The command detects the install source (bun, npm, or standalone binary) and runs the matching upgrade path.
+
+```bash
+gambi self update [options]
+```
+
+Options:
+
+| Option | Description |
+| --- | --- |
+| `--manager <bun\|npm>` | force a package manager instead of auto-detection |
+| `--yes` | skip confirmation prompt |
+| `--dry-run` | print the resolved update plan and exit |
+
+Examples:
 
 ```bash
 gambi self update
+gambi self update --yes
+gambi self update --dry-run --format json
 ```
+
+## See also
+
+- [API Reference](/reference/api/) for the HTTP surfaces backing the CLI.
+- [SDK Reference](/reference/sdk/) for programmatic equivalents.
+- [How tunnels work](/explanation/tunnel-first/) for the conceptual model behind `participant join`.

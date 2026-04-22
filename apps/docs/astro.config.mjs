@@ -54,6 +54,10 @@ export default defineConfig({
             { label: "Hackathon Setup", slug: "guides/hackathon" },
             { label: "Using with AI Tools", slug: "guides/ai-tools" },
             { label: "Remote Providers", slug: "guides/remote-providers" },
+            {
+              label: "Custom Participant Runtime",
+              slug: "guides/custom-participant",
+            },
             { label: "Home Lab Setup", slug: "guides/homelab" },
           ],
         },
@@ -63,6 +67,7 @@ export default defineConfig({
             { label: "API Reference", slug: "reference/api" },
             { label: "CLI Reference", slug: "reference/cli" },
             { label: "SDK Reference", slug: "reference/sdk" },
+            { label: "Observability", slug: "reference/observability" },
           ],
         },
         {
