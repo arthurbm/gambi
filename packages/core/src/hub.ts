@@ -90,6 +90,10 @@ interface TunnelBootstrapEntry {
   roomId: string;
 }
 
+interface StoredTunnelBootstrap {
+  token: string;
+}
+
 interface PendingTunnelRequest {
   chunks: Uint8Array[];
   headers?: Headers;
@@ -155,12 +159,13 @@ function getParticipantRequestKey(
   return `${roomId}:${participantId}`;
 }
 
-function rememberTunnelBootstrap(entry: TunnelBootstrapEntry): TunnelBootstrap {
+function rememberTunnelBootstrap(
+  entry: TunnelBootstrapEntry
+): StoredTunnelBootstrap {
   const token = crypto.randomUUID();
   tunnelBootstrapRegistry.set(token, entry);
   return {
     token,
-    url: "",
   };
 }
 
@@ -977,6 +982,17 @@ async function upsertParticipant(
     );
   }
   bodyInput.id = participantId;
+  if (Object.hasOwn(bodyInput, "authHeaders")) {
+    return managementError(
+      requestId,
+      "INVALID_REQUEST",
+      "Participant auth headers are not accepted by the hub.",
+      "Pass authHeaders to createParticipantSession() or the CLI runtime so credentials stay local to the participant.",
+      400,
+      { forbidden: ["authHeaders"] }
+    );
+  }
+
   if (!(bodyInput.nickname && bodyInput.model && bodyInput.endpoint)) {
     return managementError(
       requestId,

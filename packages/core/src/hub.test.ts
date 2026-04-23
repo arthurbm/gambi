@@ -545,6 +545,7 @@ describe("Hub", () => {
     },
     headers?: Record<string, string>
   ) {
+    const { authHeaders, ...registration } = participant;
     const res = await fetch(
       `${baseUrl}/v1/rooms/${code}/participants/${participant.id}`,
       {
@@ -553,7 +554,7 @@ describe("Hub", () => {
           "Content-Type": "application/json",
           ...headers,
         },
-        body: JSON.stringify(participant),
+        body: JSON.stringify(registration),
       }
     );
     const data = await res.json();
@@ -561,7 +562,7 @@ describe("Hub", () => {
     if (res.ok && parsed.success) {
       await connectParticipantTunnel({
         endpoint: participant.endpoint,
-        authHeaders: participant.authHeaders,
+        authHeaders,
         tunnel: parsed.data.data.tunnel,
       });
     }
@@ -849,6 +850,32 @@ describe("Hub", () => {
       expect(joinData.data.participant.connection.connected).toBe(false);
       expect("authHeaders" in joinData.data.participant).toBe(false);
       expect(joinData.data.participant.config.hasInstructions).toBe(false);
+    });
+
+    test("rejects provider auth headers in participant registration", async () => {
+      const { data: created } = await createRoom("Auth Header Reject Room");
+      const res = await fetch(
+        `${baseUrl}/v1/rooms/${created.room.code}/participants/participant-auth`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nickname: "auth-server",
+            model: "llama3",
+            endpoint: "http://localhost:11434",
+            authHeaders: {
+              Authorization: "Bearer secret-token",
+            },
+          }),
+        }
+      );
+      const data = ErrorResponseSchema.parse(await res.json());
+
+      expect(res.status).toBe(400);
+      expect(data.error.code).toBe("INVALID_REQUEST");
+      expect(data.error.message).toBe(
+        "Participant auth headers are not accepted by the hub."
+      );
     });
 
     test("returns error for non-existent room", async () => {

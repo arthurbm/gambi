@@ -158,6 +158,8 @@ Request body:
 | `config` | `RuntimeConfig` | no | participant runtime defaults, see below |
 | `capabilities` | `ParticipantCapabilities` | no | participant protocol capabilities, see below |
 
+Provider credentials are intentionally not part of participant registration. Do not send `authHeaders` to this endpoint; pass them to `createParticipantSession()` or the CLI runtime so they stay local to the participant.
+
 `MachineSpecs` fields (all optional):
 
 | Field | Type | Description |
