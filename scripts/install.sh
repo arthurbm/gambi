@@ -2,7 +2,7 @@
 set -e
 
 # Gambi CLI Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.sh | bash
+# Usage: curl -fsSL https://gambi.sh/install | bash
 
 REPO="arthurbm/gambi"
 INSTALL_DIR="${GAMBI_INSTALL_DIR:-$HOME/.local/bin}"

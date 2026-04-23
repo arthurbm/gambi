@@ -63,7 +63,7 @@ migrate_config() {
 
 install_new_cli() {
   info "Installing gambi"
-  curl -fsSL "https://raw.githubusercontent.com/${REPO}/main/scripts/install.sh" | bash
+  curl -fsSL "https://gambi.sh/install" | bash
 }
 
 main() {

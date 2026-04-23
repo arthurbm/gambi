@@ -45,13 +45,13 @@ The default inference protocol is the OpenAI Responses API. Chat Completions rem
 Linux / macOS:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.sh | bash
+curl -fsSL https://gambi.sh/install | bash
 ```
 
 Windows:
 
 ```powershell
-irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.ps1 | iex
+irm https://gambi.sh/install.ps1 | iex
 ```
 
 npm / bun:

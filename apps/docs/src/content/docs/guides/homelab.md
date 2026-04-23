@@ -38,7 +38,7 @@ With Gambi, you can access your server's LLM from anywhere on your home network.
 ### 1. Install Gambi
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.sh | bash
+curl -fsSL https://gambi.sh/install | bash
 ```
 
 ### 2. Create a Systemd Service

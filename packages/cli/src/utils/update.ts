@@ -76,9 +76,9 @@ const MANUAL_UPDATE_COMMANDS = {
   packageManagers: ["bun add -g gambi@latest", "npm install -g gambi@latest"],
   standalone: {
     posix:
-      "curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.sh | bash",
+      "curl -fsSL https://gambi.sh/install | bash",
     windows:
-      'powershell -Command "irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.ps1 | iex"',
+      'powershell -Command "irm https://gambi.sh/install.ps1 | iex"',
   },
 } as const;
 const STANDALONE_RELEASE_TARGETS: Record<

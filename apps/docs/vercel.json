@@ -1,0 +1,28 @@
+{
+  "redirects": [
+    {
+      "source": "/install",
+      "destination": "https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.sh"
+    },
+    {
+      "source": "/install.sh",
+      "destination": "https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.sh"
+    },
+    {
+      "source": "/install.ps1",
+      "destination": "https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.ps1"
+    },
+    {
+      "source": "/uninstall",
+      "destination": "https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.sh"
+    },
+    {
+      "source": "/uninstall.sh",
+      "destination": "https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.sh"
+    },
+    {
+      "source": "/migrate",
+      "destination": "https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/migrate-from-gambiarra.sh"
+    }
+  ]
+}

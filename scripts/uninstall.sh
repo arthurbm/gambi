@@ -2,7 +2,7 @@
 set -e
 
 # Gambi CLI Uninstaller
-# Usage: curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.sh | bash
+# Usage: curl -fsSL https://gambi.sh/uninstall | bash
 
 BINARY_NAME="gambi"
 DEFAULT_INSTALL_DIR="$HOME/.local/bin"
