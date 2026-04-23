@@ -70,7 +70,7 @@ class FailingWebSocket {
   static readonly CLOSED = 3;
 
   readyState = FailingWebSocket.CONNECTING;
-  #listeners = new Map<string, Set<(event?: Event) => void>>();
+  readonly #listeners = new Map<string, Set<(event?: Event) => void>>();
 
   constructor(_url: string | URL) {
     queueMicrotask(() => {
@@ -94,7 +94,9 @@ class FailingWebSocket {
     this.readyState = FailingWebSocket.CLOSED;
   }
 
-  send(): void {}
+  send(): void {
+    // The test socket fails before any payload can be sent.
+  }
 
   #emit(type: string): void {
     for (const listener of this.#listeners.get(type) ?? []) {

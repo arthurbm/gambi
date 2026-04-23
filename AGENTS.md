@@ -30,7 +30,7 @@ Regra obrigatória:
 ## 3) Mapa do monorepo
 
 Workspaces:
-- `packages/core`: hub HTTP, sala/participante, SSE, mDNS, schemas Zod, tipos compartilhados e protocolo do túnel.
+- `packages/core`: hub HTTP, sala/participante, SSE, mDNS, schemas Zod, tipos compartilhados, protocolo do túnel e runtime canônico de participante.
 - `packages/cli`: workspace fonte do CLI `gambi` (workspace `private: true`); a distribuição publicada é gerada em `packages/cli/dist`.
 - `packages/sdk`: quatro superfícies públicas — `createGambi()` (provider AI SDK), `createClient()` (cliente de management), `createParticipantSession()` (runtime de participante com túnel) e helpers de discovery (`discoverHubs`, `discoverRooms`, `resolveGambiTarget`).
 - `apps/tui`: interface terminal (OpenTUI + React) para operação/monitoramento. Publicada como `gambi-tui` no npm.
@@ -42,11 +42,12 @@ Arquivos de referência rápida:
 - `packages/core/src/room.ts` — estado de sala e participante.
 - `packages/core/src/types.ts` — schemas Zod públicos, `HEALTH_CHECK_INTERVAL`, `PARTICIPANT_TIMEOUT`, `ParticipantConnection`, `ParticipantCapabilities`.
 - `packages/core/src/tunnel-protocol.ts` — mensagens do túnel (`tunnel.request`, `tunnel.response.start/chunk/end/error`, `tunnel.ping/pong`).
+- `packages/core/src/participant-session.ts` — implementação canônica de `createParticipantSession()` e close reasons.
 - `packages/cli/src/cli.ts` — entrypoint e roteamento de subcomandos.
 - `packages/cli/src/commands/*.ts` — definição autoritativa de flags de cada comando.
 - `packages/sdk/src/provider.ts` — `createGambi()` e routing helpers.
 - `packages/sdk/src/client.ts` — `createClient()` e `ClientError`.
-- `packages/sdk/src/participant-session.ts` — `createParticipantSession()` e close reasons.
+- `packages/sdk/src/participant-session.ts` — reexport público de `createParticipantSession()` a partir do core.
 - `apps/tui/src/index.tsx` — entrypoint da TUI.
 
 ## 4) Contratos e comportamentos críticos
@@ -87,7 +88,7 @@ Um participante é "disponível" apenas quando: túnel conectado, status não of
 
 - O hub **nunca** origina conexão ao participante; é o participante que abre o WebSocket.
 - Headers de auth do participante (`ParticipantAuthHeaders`) nunca deixam o runtime do participante — aplicados só ao chamar o provider local.
-- `createParticipantSession()` em `packages/sdk` é a implementação canônica de runtime de participante. O CLI `gambi participant join` usa essa mesma função.
+- `createParticipantSession()` é implementado em `packages/core/src/participant-session.ts`; a SDK reexporta como superfície pública e o CLI `gambi participant join` usa a implementação do core.
 - Close reasons do runtime: `"closed"`, `"heartbeat_failed"`, `"tunnel_closed"`.
 - Mensagens do protocolo do túnel vivem em `packages/core/src/tunnel-protocol.ts` e são validadas via Zod em ambas as pontas.
 

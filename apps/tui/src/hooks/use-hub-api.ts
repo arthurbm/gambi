@@ -213,7 +213,10 @@ export function useHubApi(): UseHubApiReturn {
 
   const getParticipants = useCallback(
     (code: string): Promise<ApiResult<ParticipantsResponse>> =>
-      fetchJson(`${hubUrl}/v1/rooms/${code}/participants`, ParticipantsResponse),
+      fetchJson(
+        `${hubUrl}/v1/rooms/${code}/participants`,
+        ParticipantsResponse
+      ),
     [hubUrl]
   );
 

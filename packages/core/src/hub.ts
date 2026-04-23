@@ -63,7 +63,6 @@ const MANAGEMENT_PARTICIPANT_TUNNEL_PATH_REGEX =
   /^\/v1\/rooms\/([^/]+)\/participants\/([^/]+)\/tunnel$/;
 const RESPONSES_PATH_REGEX =
   /^\/rooms\/([^/]+)\/v1\/responses\/([^/]+)(?:\/(cancel|input_items))?$/;
-const TRAILING_SLASH_REGEX = /\/$/;
 const SSE_LINE_SPLIT_REGEX = /\r?\n/;
 const SSE_EVENT_SEPARATOR = "\n\n";
 const FORWARDED_IP_SEPARATOR_REGEX = /,/;
@@ -94,7 +93,6 @@ interface TunnelBootstrapEntry {
 interface PendingTunnelRequest {
   chunks: Uint8Array[];
   headers?: Headers;
-  lifecycle: ProxyRequestLifecycle;
   reject: (error: Error) => void;
   resolve: (response: Response) => void;
   responseStarted: boolean;
@@ -407,14 +405,6 @@ function createTunnelBootstrap(
   };
 }
 
-function headersToObject(headers: Headers | undefined): Record<string, string> {
-  if (!headers) {
-    return {};
-  }
-
-  return Object.fromEntries(headers.entries());
-}
-
 function recordToHeaders(headers: Record<string, string> | undefined): Headers {
   return new Headers(headers ?? {});
 }
@@ -584,10 +574,6 @@ function handleTunnelMessage(
       return;
     }
 
-    if (!pending.lifecycle.firstByteAt) {
-      pending.lifecycle.firstByteAt = Date.now();
-    }
-
     const chunk = decodeTunnelChunk(parsed.data.chunk);
     if (pending.stream && pending.streamController) {
       pending.streamController.enqueue(chunk);
@@ -644,10 +630,6 @@ function dispatchTunnelRequest(
 ): Promise<Response> {
   return new Promise<Response>((resolve, reject) => {
     const pending: PendingTunnelRequest = {
-      lifecycle: {
-        requestId: request.requestId,
-        durationStartedAt: Date.now(),
-      },
       resolve,
       reject,
       stream: request.stream,
@@ -2259,19 +2241,21 @@ async function proxyStoredOpenResponses(
     method = "GET";
   }
 
+  let operation = "responses.get";
+  if (action === "cancel") {
+    operation = "responses.cancel";
+  } else if (action === "input_items") {
+    operation = "responses.input_items";
+  } else if (req.method === "DELETE") {
+    operation = "responses.delete";
+  }
+
   const response = await fetchParticipantThroughTunnel(
     participant,
     roomId,
     createTunnelRequest({
       method: method as "GET" | "POST" | "DELETE",
-      operation:
-        action === "cancel"
-          ? "responses.cancel"
-          : action === "input_items"
-            ? "responses.input_items"
-            : req.method === "DELETE"
-              ? "responses.delete"
-              : "responses.get",
+      operation,
       path,
     })
   );

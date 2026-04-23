@@ -1,8 +1,11 @@
 import { password as passwordPrompt, select, text } from "@clack/prompts";
 import { probeEndpoint } from "@gambi/core/endpoint";
+import {
+  createParticipantSession,
+  type ParticipantSession,
+} from "@gambi/core/participant-session";
 import type { ParticipantAuthHeaders, RuntimeConfig } from "@gambi/core/types";
 import { nanoid } from "nanoid";
-import { createParticipantSession } from "../../../sdk/src/participant-session.ts";
 import { AgentCommand } from "../utils/agent-command.ts";
 import { loadRuntimeConfigFromInput } from "../utils/cli-config.ts";
 import { Command, Option } from "../utils/option.ts";
@@ -26,6 +29,10 @@ export function parseHeaderAssignment(input: string): {
   }
 
   return { name, value };
+}
+
+function ignorePromise(promise: Promise<unknown>): void {
+  promise.catch(() => undefined);
 }
 
 function resolveAuthHeaders(
@@ -317,7 +324,7 @@ export class ParticipantJoinCommand extends AgentCommand {
       });
     }
 
-    let session;
+    let session: ParticipantSession;
     try {
       session = await createParticipantSession({
         hubUrl,
@@ -396,7 +403,7 @@ export class ParticipantJoinCommand extends AgentCommand {
           });
         }
 
-        void session.close();
+        ignorePromise(session.close());
       };
 
       process.once("SIGINT", onSigint);
@@ -421,7 +428,8 @@ export class ParticipantJoinCommand extends AgentCommand {
             return;
           }
 
-          const message = result.error?.message ?? "Participant session closed.";
+          const message =
+            result.error?.message ?? "Participant session closed.";
           if (format === "text") {
             this.context.stderr.write(`Error: ${message}\n`);
           } else {

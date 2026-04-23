@@ -9,6 +9,7 @@
     "./tunnel-protocol": "./src/tunnel-protocol.ts",
     "./room": "./src/room.ts",
     "./participant": "./src/participant.ts",
+    "./participant-session": "./src/participant-session.ts",
     "./endpoint": "./src/endpoint-capabilities.ts",
     "./discovery": "./src/discovery.ts",
     "./mdns": "./src/mdns.ts",

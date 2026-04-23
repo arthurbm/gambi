@@ -9,6 +9,7 @@ Core do hub: servidor HTTP, estado de sala/participante, protocolo do túnel, SS
 - `src/participant.ts` — ciclo de vida de participante (join, leave, heartbeat, connection).
 - `src/types.ts` — schemas Zod **autoritativos** (`ParticipantInfo`, `ParticipantConnection`, `ParticipantCapabilities`, `RuntimeConfig`, etc.) e constantes `HEALTH_CHECK_INTERVAL` / `PARTICIPANT_TIMEOUT`.
 - `src/tunnel-protocol.ts` — mensagens do túnel: `tunnel.request`, `tunnel.response.start/chunk/end/error`, `tunnel.ping/pong`. Validação Zod usada nos dois lados.
+- `src/participant-session.ts` — runtime canônico de participante usado pelo CLI e reexportado pela SDK como `createParticipantSession()`.
 - `src/protocol.ts` / `src/protocol-adapters.ts` — adapter Responses ↔ Chat Completions.
 - `src/sse.ts` — publicação de eventos SSE.
 - `src/mdns.ts` / `src/discovery.ts` — anúncio mDNS do hub e helpers de descoberta usados pela SDK.
@@ -29,7 +30,7 @@ Qualquer mudança nesses contratos é breaking change pública e precisa atualiz
 - **Tunnel-first**: o hub nunca origina conexão ao participante. Toda transferência de request passa pelo WebSocket aberto pelo próprio participante. Não adicionar fallback de HTTP direto ao endpoint do provider.
 - **Token de bootstrap single-use, TTL 60 s**: implementado em `hub.ts` via `tunnelBootstrapRegistry`. Não relaxar essas garantias sem pedido explícito.
 - **Management plane é fonte canônica para automação**: rotas em `/v1` devem ser suficientes para SDK/CLI/TUI operarem o hub. Não inventar rotas alternativas.
-- **Headers de auth do participante (`ParticipantAuthHeaders`) nunca chegam ao core**: o hub jamais os armazena. São aplicados só no lado do participante via `createParticipantSession()` na SDK.
+- **Headers de auth do participante (`ParticipantAuthHeaders`) nunca chegam ao hub**: o hub jamais os armazena. São aplicados só no lado do participante via `createParticipantSession()`.
 - **Observabilidade baseline é parte do core**: eventos `llm.request`, `llm.complete`, `llm.error` e métricas `ttftMs`/`durationMs`/`*Tokens`/`tokensPerSecond` saem daqui.
 
 ## Constantes expostas

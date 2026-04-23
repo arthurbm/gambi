@@ -23,7 +23,7 @@ gambi events watch
 gambi self update
 ```
 
-`gambi participant join` é uma thin layer sobre `createParticipantSession()` da SDK. Não duplicar lógica de túnel/heartbeat aqui.
+`gambi participant join` é uma thin layer sobre `createParticipantSession()` de `@gambi/core/participant-session`. Não duplicar lógica de túnel/heartbeat aqui.
 
 ## Contratos operacionais
 

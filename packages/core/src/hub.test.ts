@@ -1,4 +1,3 @@
-import { Buffer } from "node:buffer";
 import {
   afterAll,
   beforeAll,
@@ -7,11 +6,14 @@ import {
   expect,
   test,
 } from "bun:test";
+import { Buffer } from "node:buffer";
 import { z } from "zod";
 import { createHub, type Hub } from "./hub.ts";
 import { Room } from "./room.ts";
 import { TunnelServerMessage } from "./tunnel-protocol.ts";
 import type { RoomEvent } from "./types.ts";
+
+const TRAILING_SLASH_REGEX = /\/$/;
 
 const ApiMetaSchema = z.object({
   requestId: z.string(),
@@ -596,7 +598,7 @@ describe("Hub", () => {
       }
 
       const response = await fetch(
-        `${params.endpoint.replace(/\/$/, "")}${parsed.data.path}`,
+        `${params.endpoint.replace(TRAILING_SLASH_REGEX, "")}${parsed.data.path}`,
         {
           method: parsed.data.method,
           headers: {
@@ -689,11 +691,16 @@ describe("Hub", () => {
           const { done, value } = await Promise.race([
             reader.read(),
             new Promise<never>((_, reject) => {
-              setTimeout(() => reject(new Error("Timed out waiting for room event.")), 1000);
+              setTimeout(
+                () => reject(new Error("Timed out waiting for room event.")),
+                1000
+              );
             }),
           ]);
           if (done) {
-            throw new Error("Event stream closed before the expected event arrived.");
+            throw new Error(
+              "Event stream closed before the expected event arrived."
+            );
           }
 
           buffer += decoder.decode(value, { stream: true });
@@ -907,7 +914,9 @@ describe("Hub", () => {
       expect(res.status).toBe(201);
       const joinData = JoinResponseSchema.parse(data);
       expect(joinData.data.participant.endpoint).toBe("http://localhost:11434");
-      expect(joinData.data.tunnel.url).toContain("/participants/participant-remote/tunnel");
+      expect(joinData.data.tunnel.url).toContain(
+        "/participants/participant-remote/tunnel"
+      );
     });
 
     test("keeps the replacement tunnel connected when an older socket closes", async () => {
@@ -1206,14 +1215,17 @@ describe("Hub", () => {
           const connectedEvent = await events.nextEvent();
           expect(connectedEvent.type).toBe("connected");
 
-          const response = await fetch(`${baseUrl}/rooms/${room.code}/v1/responses`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: "participant-events",
-              input: "Hello",
-            }),
-          });
+          const response = await fetch(
+            `${baseUrl}/rooms/${room.code}/v1/responses`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                model: "participant-events",
+                input: "Hello",
+              }),
+            }
+          );
           expect(response.status).toBe(200);
 
           const requestEvent = await events.nextEvent();

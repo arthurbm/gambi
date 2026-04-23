@@ -8,33 +8,33 @@ console.log("✓ Cleaned dist/");
 
 // 2. Build with Bun (bundles @gambi/core, externalizes npm deps)
 const result = await build({
-	entrypoints: ["./src/index.tsx"],
-	outdir: "./dist",
-	target: "bun",
-	format: "esm",
-	sourcemap: "external",
-	minify: false,
-	splitting: true,
-	external: [
-		"@hookform/resolvers",
-		"@opentui/core",
-		"@opentui/react",
-		"@tanstack/react-query",
-		"bonjour-service",
-		"nanoid",
-		"react",
-		"react-hook-form",
-		"zod",
-		"zustand",
-	],
+  entrypoints: ["./src/index.tsx"],
+  outdir: "./dist",
+  target: "bun",
+  format: "esm",
+  sourcemap: "external",
+  minify: false,
+  splitting: true,
+  external: [
+    "@hookform/resolvers",
+    "@opentui/core",
+    "@opentui/react",
+    "@tanstack/react-query",
+    "bonjour-service",
+    "nanoid",
+    "react",
+    "react-hook-form",
+    "zod",
+    "zustand",
+  ],
 });
 
 if (!result.success) {
-	console.error("✗ Build failed");
-	for (const log of result.logs) {
-		console.error(log);
-	}
-	process.exit(1);
+  console.error("✗ Build failed");
+  for (const log of result.logs) {
+    console.error(log);
+  }
+  process.exit(1);
 }
 
 console.log(`✓ Built ${result.outputs.length} files`);
