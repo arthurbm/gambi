@@ -1,8 +1,5 @@
 import type { ChatCompletionRequest, ResponsesCreateRequest } from "./hub.ts";
-import type {
-  ParticipantAuthHeaders,
-  ParticipantInfoInternal,
-} from "./types.ts";
+import type { ParticipantInfoInternal } from "./types.ts";
 
 export const ADAPTER_SKIP = Symbol("adapter-skip");
 export type AdapterSkip = typeof ADAPTER_SKIP;
@@ -19,7 +16,6 @@ export interface ResponseRegistryEntry {
 }
 
 export interface ResponsesCreateAdapterContext {
-  authHeaders: ParticipantAuthHeaders;
   entry: ResponseRegistryEntry;
   participant: ParticipantInfoInternal;
   request: ResponsesCreateRequest;
@@ -27,7 +23,6 @@ export interface ResponsesCreateAdapterContext {
 
 export interface StoredResponseAdapterContext {
   action?: "cancel" | "input_items";
-  authHeaders: ParticipantAuthHeaders;
   entry: ResponseRegistryEntry;
   participant: ParticipantInfoInternal;
   req: Request;
@@ -35,9 +30,9 @@ export interface StoredResponseAdapterContext {
 }
 
 export interface ChatCompletionsAdapterContext {
-  authHeaders: ParticipantAuthHeaders;
   participant: ParticipantInfoInternal;
   request: ChatCompletionRequest;
+  roomId: string;
 }
 
 export interface ResponsesProtocolAdapter {

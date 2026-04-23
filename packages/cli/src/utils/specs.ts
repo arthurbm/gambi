@@ -134,16 +134,3 @@ export async function detectSpecs(): Promise<MachineSpecs> {
     ...gpuInfo,
   };
 }
-
-export function formatSpecs(specs: MachineSpecs): string {
-  const parts = [`CPU: ${specs.cpu}`, `RAM: ${specs.ram}GB`];
-
-  if (specs.gpu) {
-    parts.push(`GPU: ${specs.gpu}`);
-  }
-  if (specs.vram) {
-    parts.push(`VRAM: ${specs.vram}GB`);
-  }
-
-  return parts.join(" | ");
-}

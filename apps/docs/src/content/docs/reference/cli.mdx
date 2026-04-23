@@ -42,14 +42,10 @@ gambi self update
     # or
     bun add -g gambi
     ```
-
-    The published `gambi` package is a wrapper that installs the matching platform binary for the current machine.
   </TabItem>
 </Tabs>
 
-The recommended path is the standalone installer via `curl` or PowerShell. npm and bun remain supported.
-
-Verify:
+Verify the install:
 
 ```bash
 gambi --version
@@ -57,15 +53,26 @@ gambi --version
 
 ## Global behavior
 
+Every operational command inherits the same set of global flags from the shared command base. They can also be driven by environment variables, which is useful for scripts and supervisors.
+
+### Global flags
+
+| Flag | Description |
+| --- | --- |
+| `--format <text\|json\|ndjson>` | select output format |
+| `--env <name>` | pick a named environment from the CLI config file |
+| `--interactive` | allow prompts for missing required values |
+| `--no-interactive` | disable all prompts |
+| `--verbose` | include extended details in output |
+| `--quiet` | reduce non-essential text output |
+
 ### Output modes
 
-Every operational command supports:
-
-| Mode | Meaning | Typical use |
-| --- | --- | --- |
-| `text` | compact human-readable output | local terminal usage |
-| `json` | one structured JSON object | scripts and API-style automation |
-| `ndjson` | one JSON object per line | streaming agents, logs, pipelines |
+| Mode | Meaning |
+| --- | --- |
+| `text` | compact human-readable output |
+| `json` | one structured JSON object |
+| `ndjson` | one JSON object per line |
 
 Defaults:
 
@@ -75,47 +82,28 @@ Defaults:
 | piped stdout + one-shot command | `json` |
 | piped stdout + streaming command | `ndjson` |
 
-### Interactive control
+Streaming commands coerce `--format json` to `ndjson` so every event is a standalone JSON line.
 
-The CLI does not assume interactive usage by default for every command.
+### Environment variables
 
-Interactive mode is still available when it helps humans fill in missing values:
-
-```text
-┌  gambi participant join
-│
-◇  Room code:
-│  ABC123
-│
-◇  Participant ID:
-│  worker-1
-│
-◆  Model:
-│  ● llama3
-│  ○ qwen2.5
-│  ○ mistral
-│
-◇  Nickname (optional):
-│  llama3@worker
-│
-└  Registered participant worker-1.
-```
-
-| Control | Behavior |
+| Variable | Effect |
 | --- | --- |
-| `--interactive` | allow prompts for missing required values |
-| `--no-interactive` | disable all prompts |
-| `GAMBI_NO_INTERACTIVE=1` | disable prompts through the environment |
+| `GAMBI_FORMAT` | fallback for `--format` |
+| `GAMBI_ENV` | fallback for `--env` |
+| `GAMBI_NO_INTERACTIVE=1` | disable prompts everywhere |
+| `XDG_CONFIG_HOME` | override the base directory for `~/.config/gambi/config.json` |
 
-Commands that never auto-prompt:
+### Exit codes
 
-| Command | Auto-prompts? |
+| Code | Meaning |
 | --- | --- |
-| `gambi hub serve` | no |
-| `gambi room list` | no |
-| `gambi room get` | no |
-| `gambi participant heartbeat` | no |
-| `gambi events watch` | no |
+| `0` | success |
+| `1` | internal or unexpected failure |
+| `2` | invalid usage (missing flag, bad value, `400`/`422` from hub) |
+| `3` | connectivity or dependency failure (unreachable hub, `401`/`403`/`503`) |
+| `4` | remote rejection or conflict (`404`/`409` from hub) |
+
+Agent-style supervisors can key retries off these codes. `2` should not be retried, `3` usually should, and `4` means the operation is rejected by the hub state.
 
 ### Named environments
 
@@ -124,8 +112,6 @@ The CLI reads XDG config from:
 ```text
 ~/.config/gambi/config.json
 ```
-
-Use `--env <name>` or `GAMBI_ENV` to select an environment profile.
 
 Example:
 
@@ -137,9 +123,9 @@ Example:
       "hubUrl": "http://localhost:3000",
       "endpoint": "http://localhost:11434"
     },
-    "staging": {
+    "lab": {
       "hubUrl": "http://192.168.1.10:3000",
-      "networkEndpoint": "http://192.168.1.25:11434",
+      "endpoint": "http://localhost:11434",
       "serve": {
         "host": "0.0.0.0",
         "port": 3000,
@@ -150,21 +136,7 @@ Example:
 }
 ```
 
-### Exit codes
-
-Operational commands use deterministic exit codes:
-
-| Code | Meaning |
-| --- | --- |
-| `0` | success |
-| `1` | internal or unexpected failure |
-| `2` | invalid usage or validation error |
-| `3` | connectivity or dependency failure |
-| `4` | remote rejection or conflict |
-
-Streaming commands always emit NDJSON for machine-readable output. If you pass `--format json` to a streaming command, the CLI coerces it to `ndjson`.
-
-## Command reference
+Select an environment per-invocation with `--env lab` or globally with `GAMBI_ENV=lab`.
 
 ## `gambi hub serve`
 
@@ -178,28 +150,27 @@ Options:
 
 | Option | Description |
 | --- | --- |
-| `--host` | host to bind to |
-| `--port` | port to bind to |
-| `--mdns` | enable mDNS discovery |
-| `--dry-run` | print the resolved startup plan and exit |
-| global flags | includes `--format`, `--env`, `--quiet`, `--verbose` |
+| `--host` | host to bind to (default from env config or `0.0.0.0`) |
+| `--port` | port to bind to (default from env config or `3000`) |
+| `--mdns` | enable mDNS discovery so other machines can find the hub |
+| `--dry-run` | print the resolved startup plan and exit without binding |
 
 Examples:
 
 ```bash
 gambi hub serve
-gambi hub serve --mdns
+gambi hub serve --port 3000 --mdns
 gambi hub serve --dry-run --format ndjson
 ```
 
-Machine-readable NDJSON events:
+Structured lifecycle events (`--format json|ndjson`):
 
 | Event | Meaning |
 | --- | --- |
-| `started` | hub startup completed |
-| `mdns_registered` | mDNS registration succeeded |
-| `signal_received` | a shutdown signal was received |
-| `stopped` | shutdown completed |
+| `started` | hub bound to `bindUrl` |
+| `mdns_registered` | mDNS advertisement is active under `name` |
+| `signal_received` | `SIGINT` or `SIGTERM` observed during shutdown |
+| `stopped` | hub has released the port |
 
 ## `gambi room create`
 
@@ -213,24 +184,22 @@ Options:
 
 | Option | Description |
 | --- | --- |
-| `--name` | room name |
-| `--password` | optional room password |
-| `--config &lt;path|-&gt;` | runtime config JSON file or stdin |
-| `--hub` | hub URL |
-| `--dry-run` | validate and preview the request |
-
-Notes:
-
-- `--config -` reads runtime config JSON from stdin.
-- In interactive mode, the CLI can prompt for `--name` and `--password`.
+| `--name`, `-n` | room display name |
+| `--password`, `-p` | optional room password |
+| `--config <path\|->` | runtime config JSON file or `-` for stdin |
+| `--hub`, `-H` | hub URL |
+| `--dry-run` | validate and print the request without creating the room |
 
 Examples:
 
 ```bash
-gambi room create --name Demo
-gambi room create --name Demo --config ./room-defaults.json
-cat defaults.json | gambi room create --name Demo --config -
-gambi room create --name Demo --dry-run --format json
+gambi room create --name "Demo"
+
+gambi room create --name "Demo" --config ./room.json
+
+cat ./room.json | gambi room create --name "Demo" --config -
+
+gambi room create --name "Demo" --dry-run --format json
 ```
 
 ## `gambi room list`
@@ -245,22 +214,20 @@ Options:
 
 | Option | Description |
 | --- | --- |
-| `--hub` | hub URL |
-| `--sort participant-count|created-at|name` | sort strategy |
-| `--reverse` | reverse the chosen sort order |
+| `--hub`, `-H` | hub URL |
+| `--sort <participant-count\|created-at\|name>` | sort key (default `participant-count`) |
+| `--reverse` | reverse the selected sort order |
+
+Default sort is `participant-count` descending, with `created-at` descending as tiebreaker.
 
 Examples:
 
 ```bash
 gambi room list
 gambi room list --format json
+gambi room list --sort created-at --reverse
 gambi room list --hub http://192.168.1.10:3000
 ```
-
-Default sort:
-
-1. participant count descending
-2. created date descending
 
 ## `gambi room get`
 
@@ -274,8 +241,8 @@ Options:
 
 | Option | Description |
 | --- | --- |
-| `--code` | room code |
-| `--hub` | hub URL |
+| `--code`, `-c` | room code |
+| `--hub`, `-H` | hub URL |
 
 Examples:
 
@@ -286,7 +253,7 @@ gambi room get --code ABC123 --format json
 
 ## `gambi participant join`
 
-Register a participant and keep heartbeats alive.
+Register a participant and keep its tunnel alive.
 
 ```bash
 gambi participant join --room <room> --participant-id <id> --model <model> [options]
@@ -301,21 +268,20 @@ Options:
 | `--nickname` | display name |
 | `--model` | model to expose |
 | `--endpoint` | local endpoint used for probing and inference |
-| `--network-endpoint` | explicit network-reachable URL to publish |
 | `--header` | auth header in `Header=Value` format |
 | `--header-env` | auth header in `Header=ENV_VAR` format |
 | `--password` | room password |
-| `--config &lt;path|-&gt;` | runtime config JSON file or stdin |
+| `--config <path\|->` | runtime config JSON file or stdin |
 | `--no-specs` | skip machine specs collection |
 | `--hub` | hub URL |
-| `--dry-run` | validate and preview the registration |
+| `--dry-run` | validate and preview the session |
 
 Notes:
 
 - `--participant-id` is required for non-interactive retry-safe automation.
 - `--config -` reads participant runtime config JSON from stdin.
 - The CLI probes the endpoint before registration to validate the model and detect capabilities.
-- When the hub is remote and the endpoint is loopback-only, Gambi tries to publish a LAN-reachable URL automatically unless `--network-endpoint` is provided.
+- Participant joins now always use a tunnel, so the provider endpoint can stay on `localhost` even when the hub runs on another machine. See [How tunnels work](/explanation/tunnel-first/).
 
 Examples:
 
@@ -335,15 +301,14 @@ gambi participant join \
   --room ABC123 \
   --participant-id worker-1 \
   --model llama3 \
-  --dry-run \
-  --format ndjson
+  --hub http://192.168.1.10:3000
 
 gambi participant join \
   --room ABC123 \
   --participant-id worker-1 \
   --model llama3 \
-  --hub http://192.168.1.10:3000 \
-  --network-endpoint http://192.168.1.25:11434
+  --dry-run \
+  --format ndjson
 ```
 
 NDJSON lifecycle events:
@@ -352,11 +317,11 @@ NDJSON lifecycle events:
 | --- | --- |
 | `prepared` | endpoint probing and payload assembly completed |
 | `registered` | participant registration succeeded |
-| `heartbeat_ok` | heartbeat loop is healthy |
-| `heartbeat_failed` | one heartbeat attempt failed |
+| `tunnel_connected` | the participant tunnel is open |
 | `leaving` | shutdown started |
 | `left` | participant removal completed |
-| `error` | an operational error occurred |
+| `heartbeat_failed` | management heartbeat loop failed |
+| `tunnel_failed` | tunnel connectivity failed |
 
 ## `gambi participant leave`
 
@@ -370,9 +335,9 @@ Options:
 
 | Option | Description |
 | --- | --- |
-| `--room` | room code |
+| `--room`, `-r` | room code |
 | `--participant-id` | participant identifier |
-| `--hub` | hub URL |
+| `--hub`, `-H` | hub URL |
 
 Example:
 
@@ -382,7 +347,7 @@ gambi participant leave --room ABC123 --participant-id worker-1
 
 ## `gambi participant heartbeat`
 
-Send a single participant heartbeat.
+Send one participant heartbeat. Useful for automation and liveness probing independently from the long-running `participant join` command.
 
 ```bash
 gambi participant heartbeat --room <room> --participant-id <id> [options]
@@ -392,9 +357,9 @@ Options:
 
 | Option | Description |
 | --- | --- |
-| `--room` | room code |
+| `--room`, `-r` | room code |
 | `--participant-id` | participant identifier |
-| `--hub` | hub URL |
+| `--hub`, `-H` | hub URL |
 
 Example:
 
@@ -404,7 +369,7 @@ gambi participant heartbeat --room ABC123 --participant-id worker-1
 
 ## `gambi events watch`
 
-Stream typed room events from the management API.
+Watch room events from the management SSE stream.
 
 ```bash
 gambi events watch --room <room> [options]
@@ -414,8 +379,8 @@ Options:
 
 | Option | Description |
 | --- | --- |
-| `--room` | room code |
-| `--hub` | hub URL |
+| `--room`, `-r` | room code (required) |
+| `--hub`, `-H` | hub URL |
 
 Examples:
 
@@ -424,11 +389,23 @@ gambi events watch --room ABC123
 gambi events watch --room ABC123 --format ndjson
 ```
 
-In NDJSON mode, the CLI relays the room event objects directly.
+Important event types:
+
+- `connected`
+- `room.created`
+- `participant.joined`
+- `participant.updated`
+- `participant.left`
+- `participant.offline`
+- `llm.request`
+- `llm.complete`
+- `llm.error`
+
+See [Observability](/reference/observability/) for the field shape of the `llm.*` events.
 
 ## `gambi self update`
 
-Update the installed CLI.
+Update the installed CLI. The command detects the install source (bun, npm, or standalone binary) and runs the matching upgrade path.
 
 ```bash
 gambi self update [options]
@@ -438,27 +415,20 @@ Options:
 
 | Option | Description |
 | --- | --- |
-| `--manager` | preferred package manager, such as `bun` or `npm` |
-| `--yes` | skip confirmation |
+| `--manager <bun\|npm>` | force a package manager instead of auto-detection |
+| `--yes` | skip confirmation prompt |
 | `--dry-run` | print the resolved update plan and exit |
 
 Examples:
 
 ```bash
-gambi self update --dry-run --format json
+gambi self update
 gambi self update --yes
+gambi self update --dry-run --format json
 ```
-
-## Environment variables
-
-| Variable | Meaning |
-| --- | --- |
-| `NO_COLOR=1` | disable ANSI colors |
-| `GAMBI_FORMAT` | set default output format |
-| `GAMBI_ENV` | select the named environment |
-| `GAMBI_NO_INTERACTIVE=1` | disable interactive prompts |
 
 ## See also
 
-- [API Reference](/reference/api/)
-- [SDK Reference](/reference/sdk/)
+- [API Reference](/reference/api/) for the HTTP surfaces backing the CLI.
+- [SDK Reference](/reference/sdk/) for programmatic equivalents.
+- [How tunnels work](/explanation/tunnel-first/) for the conceptual model behind `participant join`.

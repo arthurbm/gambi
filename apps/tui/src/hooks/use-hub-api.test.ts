@@ -93,8 +93,8 @@ describe("fetchJson", () => {
             error: { message: "Room not found" },
           }),
           {
-          status: 404,
-          statusText: "Not Found",
+            status: 404,
+            statusText: "Not Found",
           }
         )
       )

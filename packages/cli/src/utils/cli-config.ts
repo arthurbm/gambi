@@ -5,7 +5,6 @@ export interface CliEnvironmentConfig {
   endpoint?: string;
   headers?: Record<string, string>;
   hubUrl?: string;
-  networkEndpoint?: string;
   noSpecs?: boolean;
   serve?: {
     host?: string;

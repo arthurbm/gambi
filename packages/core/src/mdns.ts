@@ -1,9 +1,9 @@
-import * as BonjourService from "bonjour-service";
 import type {
   Bonjour as BonjourInstance,
   Browser,
   Service,
 } from "bonjour-service";
+import BonjourDefault, { Bonjour as BonjourNamed } from "bonjour-service";
 
 type BonjourConstructor = new () => BonjourInstance;
 
@@ -12,11 +12,8 @@ const publishedServices: Map<string, Service> = new Map();
 
 function resolveBonjourConstructor(): BonjourConstructor {
   const constructorCandidate =
-    BonjourService.Bonjour ??
-    (typeof BonjourService.default === "function"
-      ? BonjourService.default
-      : undefined) ??
-    (typeof BonjourService === "function" ? BonjourService : undefined);
+    BonjourNamed ??
+    (typeof BonjourDefault === "function" ? BonjourDefault : undefined);
 
   if (typeof constructorCandidate !== "function") {
     throw new TypeError(

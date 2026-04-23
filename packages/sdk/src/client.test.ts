@@ -88,6 +88,8 @@ describe("HTTP Client", () => {
       hasInstructions: true,
       temperature: 0.4,
     });
+    expect(joined.data.participant.status).toBe("offline");
+    expect(joined.data.participant.connection.connected).toBe(false);
 
     const listed = await client.participants.list(created.data.room.code);
     expect(listed.data).toHaveLength(1);
@@ -95,6 +97,8 @@ describe("HTTP Client", () => {
       hasInstructions: true,
       temperature: 0.4,
     });
+    expect(listed.data[0]?.status).toBe("offline");
+    expect(listed.data[0]?.connection.connected).toBe(false);
   });
 
   test("supports heartbeat and remove for participants", async () => {
@@ -110,7 +114,7 @@ describe("HTTP Client", () => {
       "worker-1"
     );
     expect(heartbeat.data.success).toBe(true);
-    expect(heartbeat.data.status).toBe("online");
+    expect(heartbeat.data.status).toBe("offline");
 
     const removed = await client.participants.remove(
       created.data.room.code,
@@ -179,6 +183,10 @@ describe("HTTP Client", () => {
     const joinedEvent = await iterator.next();
     expect(joinedEvent.done).toBe(false);
     expect(joinedEvent.value?.type).toBe("participant.joined");
+    expect(joinedEvent.value?.data).toMatchObject({
+      status: "offline",
+      connection: { connected: false },
+    });
 
     abortController.abort();
   });

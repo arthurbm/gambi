@@ -48,7 +48,9 @@ if (!discoveryResult.success) {
   process.exit(1);
 }
 
-console.log(`✓ Built discovery subpath (${discoveryResult.outputs.length} files)`);
+console.log(
+  `✓ Built discovery subpath (${discoveryResult.outputs.length} files)`
+);
 
 // 5. Gerar .d.ts files com tsc
 await $`bun tsc --emitDeclarationOnly --outDir dist --noEmit false`;

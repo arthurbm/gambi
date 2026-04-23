@@ -258,13 +258,13 @@ export function useRoom(options: UseRoomOptions): UseRoomReturn {
     (event: string, data: unknown) => {
       const handlers: Record<string, (d: unknown) => void> = {
         connected: handleConnected,
-      "room.created": handleRoomCreated,
-      "participant.joined": handleParticipantJoined,
-      "participant.left": handleParticipantLeft,
-      "participant.offline": handleParticipantOffline,
-      "llm.request": handleLlmRequest,
-      "llm.complete": handleLlmComplete,
-      "llm.error": handleLlmError,
+        "room.created": handleRoomCreated,
+        "participant.joined": handleParticipantJoined,
+        "participant.left": handleParticipantLeft,
+        "participant.offline": handleParticipantOffline,
+        "llm.request": handleLlmRequest,
+        "llm.complete": handleLlmComplete,
+        "llm.error": handleLlmError,
       };
       handlers[event]?.(data);
     },

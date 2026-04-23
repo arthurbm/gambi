@@ -39,7 +39,9 @@ export function RoomSelector({
         }
 
         const envelope = (await response.json()) as { data?: unknown };
-        const parsed = z.array(RoomInfoSchema).safeParse(envelope.data ?? envelope);
+        const parsed = z
+          .array(RoomInfoSchema)
+          .safeParse(envelope.data ?? envelope);
         if (!parsed.success) {
           throw new Error("Invalid room data");
         }

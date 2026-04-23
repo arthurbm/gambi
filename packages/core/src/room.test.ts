@@ -18,6 +18,11 @@ function createMockParticipant(
       openResponses: "unknown",
       chatCompletions: "unknown",
     },
+    connection: overrides.connection ?? {
+      kind: "tunnel",
+      connected: true,
+      lastTunnelSeenAt: now,
+    },
     status: overrides.status ?? "online",
     joinedAt: overrides.joinedAt ?? now,
     lastSeen: overrides.lastSeen ?? now,
@@ -228,6 +233,27 @@ describe("Room", () => {
 
       expect(result?.created).toBe(true);
       expect(result?.participant.joinedAt).toBe(0);
+    });
+
+    test("upsertParticipant keeps disconnected participants offline", async () => {
+      const room = await Room.create("Test", "host");
+      const participant = createMockParticipant({
+        id: "participant-offline",
+        connection: {
+          kind: "tunnel",
+          connected: false,
+          lastTunnelSeenAt: null,
+        },
+        status: "online",
+      });
+
+      const result = Room.upsertParticipant(room.id, participant);
+
+      expect(result?.created).toBe(true);
+      expect(result?.participant.status).toBe("offline");
+      expect(Room.getParticipant(room.id, participant.id)?.status).toBe(
+        "offline"
+      );
     });
   });
 

@@ -53,7 +53,7 @@ After=network.target
 [Service]
 Type=simple
 User=your-username
-ExecStart=/usr/local/bin/gambi serve --port 3000 --mdns
+ExecStart=/usr/local/bin/gambi hub serve --port 3000 --mdns
 Restart=always
 RestartSec=10
 
@@ -80,11 +80,12 @@ You'll want the same room code every time. Create a startup script:
 sleep 5
 
 # Create room (or use existing)
-ROOM_CODE=$(gambi create 2>/dev/null | grep -oP 'Code: \K\w+')
+ROOM_CODE=$(gambi room create 2>/dev/null | grep -oP 'Code: \K\w+')
 echo "Room code: $ROOM_CODE"
 
 # Join with local Ollama
-gambi join $ROOM_CODE \
+gambi participant join --room $ROOM_CODE \
+  --participant-id homelab-gpu \
   --endpoint http://localhost:11434 \
   --model llama3 \
   --nickname homelab-gpu
@@ -102,7 +103,7 @@ Requires=gambi-hub.service
 Type=simple
 User=your-username
 ExecStartPre=/bin/sleep 5
-ExecStart=/usr/local/bin/gambi join YOURCODE --endpoint http://localhost:11434 --model llama3 --nickname homelab
+ExecStart=/usr/local/bin/gambi participant join --room YOURCODE --participant-id homelab --endpoint http://localhost:11434 --model llama3 --nickname homelab
 Restart=always
 RestartSec=10
 
@@ -183,13 +184,15 @@ You can run multiple models on the same server:
 
 ```bash
 # Terminal 1: Join with llama3
-gambi join YOURCODE \
+gambi participant join --room YOURCODE \
+  --participant-id homelab-llama \
   --endpoint http://localhost:11434 \
   --model llama3 \
   --nickname homelab-llama
 
 # Terminal 2: Join with mistral (same Ollama, different model)
-gambi join YOURCODE \
+gambi participant join --room YOURCODE \
+  --participant-id homelab-mistral \
   --endpoint http://localhost:11434 \
   --model mistral \
   --nickname homelab-mistral
@@ -228,7 +231,7 @@ sudo journalctl -u gambi-hub -f
 ### List Participants
 
 ```bash
-gambi list
+gambi room get --code YOURCODE --format json
 ```
 
 ## Troubleshooting
@@ -237,7 +240,7 @@ gambi list
 
 1. Check logs: `sudo journalctl -u gambi-hub -n 50`
 2. Verify gambi is installed: `which gambi`
-3. Test manually: `gambi serve --port 3000`
+3. Test manually: `gambi hub serve --port 3000`
 
 ### Can't Connect from Client
 

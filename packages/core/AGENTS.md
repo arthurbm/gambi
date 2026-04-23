@@ -1,106 +1,66 @@
+# @gambi/core
 
-Default to using Bun instead of Node.js.
+Core do hub: servidor HTTP, estado de sala/participante, protocolo do túnel, SSE, mDNS e schemas Zod compartilhados. Este package é **consumido** pelo CLI, pela SDK e pela TUI; não importe nada de CLI/SDK/TUI de volta pra cá.
 
-- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
-- Use `bun test` instead of `jest` or `vitest`
-- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
-- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
-- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
-- Use `bunx <package> <command>` instead of `npx <package> <command>`
-- Bun automatically loads .env, so don't use dotenv.
+## Arquivos-chave
 
-## APIs
+- `src/hub.ts` — `Bun.serve()` do hub. Roteamento HTTP, upgrade do WebSocket do túnel, forward de requests, observabilidade baseline.
+- `src/room.ts` — estado de sala e participantes, routing (`<id>`, `model:<name>`, `*`/`any`), marcação de offline.
+- `src/participant.ts` — ciclo de vida de participante (join, leave, heartbeat, connection).
+- `src/types.ts` — schemas Zod **autoritativos** (`ParticipantInfo`, `ParticipantConnection`, `ParticipantCapabilities`, `RuntimeConfig`, etc.) e constantes `HEALTH_CHECK_INTERVAL` / `PARTICIPANT_TIMEOUT`.
+- `src/tunnel-protocol.ts` — mensagens do túnel: `tunnel.request`, `tunnel.response.start/chunk/end/error`, `tunnel.ping/pong`. Validação Zod usada nos dois lados.
+- `src/participant-session.ts` — runtime canônico de participante usado pelo CLI e reexportado pela SDK como `createParticipantSession()`.
+- `src/protocol.ts` / `src/protocol-adapters.ts` — adapter Responses ↔ Chat Completions.
+- `src/sse.ts` — publicação de eventos SSE.
+- `src/mdns.ts` / `src/discovery.ts` — anúncio mDNS do hub e helpers de descoberta usados pela SDK.
+- `src/endpoint-capabilities.ts` — probe de endpoint de provider para detectar modelos e capacidades.
 
-- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
-- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
-- `Bun.redis` for Redis. Don't use `ioredis`.
-- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
-- `WebSocket` is built-in. Don't use `ws`.
-- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
-- Bun.$`ls` instead of execa.
+## Contratos que este package define
 
-## Testing
+Qualquer mudança nesses contratos é breaking change pública e precisa atualizar `apps/docs/src/content/docs/reference/api.md`, `reference/sdk.md`, `reference/observability.md` e `docs/architecture.md`:
 
-Use `bun test` to run tests.
+- Shape do envelope de management (`{ data, meta }`, `{ error, meta }`).
+- Shape de `ParticipantInfo` público (inclui `connection`, `capabilities`, `status`, `config` já redigido).
+- Códigos de erro: `ROOM_NOT_FOUND`, `PARTICIPANT_NOT_FOUND`, `INVALID_REQUEST`, `INVALID_PASSWORD`, `ENDPOINT_NOT_REACHABLE`, `PARTICIPANT_CONFLICT`, `PARTICIPANT_BUSY`, `PARTICIPANT_TUNNEL_NOT_CONNECTED`, `MODEL_NOT_FOUND`, `INTERNAL_ERROR`.
+- Tipos de evento SSE e campos.
+- Mensagens do túnel e seu discriminated union (`TunnelClientMessage`, `TunnelServerMessage`).
 
-```ts#index.test.ts
-import { test, expect } from "bun:test";
+## Regras de design
 
-test("hello world", () => {
-  expect(1).toBe(1);
-});
+- **Tunnel-first**: o hub nunca origina conexão ao participante. Toda transferência de request passa pelo WebSocket aberto pelo próprio participante. Não adicionar fallback de HTTP direto ao endpoint do provider.
+- **Token de bootstrap single-use, TTL 60 s**: implementado em `hub.ts` via `tunnelBootstrapRegistry`. Não relaxar essas garantias sem pedido explícito.
+- **Management plane é fonte canônica para automação**: rotas em `/v1` devem ser suficientes para SDK/CLI/TUI operarem o hub. Não inventar rotas alternativas.
+- **Headers de auth do participante (`ParticipantAuthHeaders`) nunca chegam ao hub**: o hub jamais os armazena. São aplicados só no lado do participante via `createParticipantSession()`.
+- **Observabilidade baseline é parte do core**: eventos `llm.request`, `llm.complete`, `llm.error` e métricas `ttftMs`/`durationMs`/`*Tokens`/`tokensPerSecond` saem daqui.
+
+## Constantes expostas
+
+```ts
+HEALTH_CHECK_INTERVAL = 10_000          // ms entre heartbeats do management e pings do túnel
+PARTICIPANT_TIMEOUT   = 30_000          // ms sem heartbeat antes de marcar offline
+TUNNEL_TOKEN_TTL_MS   = 60_000          // TTL do token de bootstrap do túnel
 ```
 
-## Frontend
+Se for alterar qualquer uma, atualizar:
+- `apps/docs/src/content/docs/reference/api.md`
+- `apps/docs/src/content/docs/reference/sdk.md`
+- `apps/docs/src/content/docs/architecture/overview.md`
+- `docs/architecture.md`
 
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
+## Validação
 
-Server:
-
-```ts#index.ts
-import index from "./index.html"
-
-Bun.serve({
-  routes: {
-    "/": index,
-    "/api/users/:id": {
-      GET: (req) => {
-        return new Response(JSON.stringify({ id: req.params.id }));
-      },
-    },
-  },
-  // optional websocket support
-  websocket: {
-    open: (ws) => {
-      ws.send("Hello, world!");
-    },
-    message: (ws, message) => {
-      ws.send(message);
-    },
-    close: (ws) => {
-      // handle close
-    }
-  },
-  development: {
-    hmr: true,
-    console: true,
-  }
-})
+```bash
+bun test packages/core/src
+bun run --cwd packages/core check-types
 ```
 
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
+Observação: os testes sobem um hub real em portas fixas (ex.: 3998/3999). Se outra instância já estiver escutando, os testes falham — diagnosticar antes de acusar regressão.
 
-```html#index.html
-<html>
-  <body>
-    <h1>Hello, world!</h1>
-    <script type="module" src="./frontend.tsx"></script>
-  </body>
-</html>
-```
+## Regras do Bun
 
-With the following `frontend.tsx`:
-
-```tsx#frontend.tsx
-import React from "react";
-import { createRoot } from "react-dom/client";
-
-// import .css files directly and it works
-import './index.css';
-
-const root = createRoot(document.body);
-
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
-
-root.render(<Frontend />);
-```
-
-Then, run index.ts
-
-```sh
-bun --hot ./index.ts
-```
-
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
+Este package roda em Bun; prefira as APIs nativas:
+- `Bun.serve()` com `websocket: { ... }` para HTTP + WebSocket (não usar `express` nem `ws`).
+- `WebSocket` nativo.
+- `bun test` para testes (`import { test, expect } from "bun:test"`).
+- `Bun.file` em vez de `node:fs/promises` quando possível.
+- Bun carrega `.env` automaticamente — não usar `dotenv`.

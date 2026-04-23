@@ -1,29 +1,37 @@
 ---
 title: Remote Providers
-description: Use cloud LLM providers (OpenRouter, Together AI, Groq, etc.) as participants in a Gambi room.
+description: Use cloud LLM providers such as OpenRouter, Together AI, Groq, Fireworks, or OpenAI as participants in a Gambi room.
 ---
 
-You don't need a local GPU to participate. Any OpenAI-compatible cloud API can be used as your LLM endpoint — OpenRouter, Together AI, Groq, Fireworks, or even the OpenAI API itself.
+You do not need a local GPU to participate. Any OpenAI-compatible cloud API can be used as your LLM endpoint.
 
 ## How It Works
 
-When you join a room with a remote provider, the hub forwards requests from other participants through your cloud endpoint. Two protocols are supported:
+When you join a room with a remote provider, the participant runtime:
+
+1. probes the provider endpoint locally
+2. registers itself with the hub
+3. opens a tunnel back to the hub
+4. forwards tunnel requests to the provider endpoint using local auth headers
+
+This means the hub does not need your provider credentials as part of public participant state, and your provider endpoint does not need to be exposed to the rest of the network.
+
+Supported protocols:
 
 | Protocol | Endpoint | Best For |
-|----------|----------|----------|
-| **Responses API** | `/v1/responses` | OpenAI, providers that support the Responses API |
-| **Chat Completions** | `/v1/chat/completions` | Most providers (Ollama, LM Studio, OpenRouter, etc.) |
-
-The hub auto-detects which protocol(s) your endpoint supports when you join.
+| --- | --- | --- |
+| Responses API | `/v1/responses` | preferred default when the provider supports it |
+| Chat Completions | `/v1/chat/completions` | compatibility for providers and tools that still require it |
 
 ## Join With CLI
 
-For automation, prefer `--header-env` so secrets don't end up in shell history.
+For automation, prefer `--header-env` so secrets do not end up in shell history.
 
 ```bash
 export OPENROUTER_AUTH="Bearer sk-or-..."
 
-gambi join --code ABC123 \
+gambi participant join --room ABC123 \
+  --participant-id my-openrouter \
   --endpoint https://openrouter.ai/api \
   --model meta-llama/llama-3.1-8b-instruct:free \
   --nickname my-openrouter \
@@ -33,7 +41,8 @@ gambi join --code ABC123 \
 You can also send extra provider-specific headers:
 
 ```bash
-gambi join --code ABC123 \
+gambi participant join --room ABC123 \
+  --participant-id my-openrouter \
   --endpoint https://openrouter.ai/api \
   --model meta-llama/llama-3.1-8b-instruct:free \
   --nickname my-openrouter \
@@ -41,64 +50,57 @@ gambi join --code ABC123 \
   --header "HTTP-Referer=https://my-app.example"
 ```
 
-If you prefer interactive mode, `gambi join` now prompts for auth headers after you choose the endpoint. Header values are collected via hidden prompts.
+## Join Through The SDK
 
-## Join With TUI
+If you are building your own participant runtime, use `createParticipantSession()`:
 
-The TUI keeps remote auth secure by referencing environment variables instead of storing raw secret values in the UI state.
+```ts
+import { createParticipantSession } from "gambi-sdk";
 
-1. Export the header value you want to use:
-
-```bash
-export OPENAI_AUTH="Bearer sk-..."
+await createParticipantSession({
+  hubUrl: "http://localhost:3000",
+  roomCode: "ABC123",
+  participantId: "my-openrouter",
+  nickname: "my-openrouter",
+  endpoint: "https://openrouter.ai/api",
+  model: "meta-llama/llama-3.1-8b-instruct:free",
+  authHeaders: {
+    Authorization: `Bearer ${process.env.OPENROUTER_TOKEN}`,
+  },
+});
 ```
 
-2. Open the TUI join flow.
-3. Expand **Advanced options**.
-4. Add an auth header entry such as:
-   - Header name: `Authorization`
-   - Env var: `OPENAI_AUTH`
-
-The TUI resolves the environment variable locally before probing models and joining the room. The raw secret is never persisted to Gambi config files.
-
-## Join Through The API Or SDK
-
-`POST /rooms/:code/join` now accepts an optional `authHeaders` object. Those headers are stored only in hub memory and are used for:
-
-- endpoint probing (`/v1/models`, `/v1/responses`, `/v1/chat/completions`)
-- proxied inference requests
-- Responses lifecycle routes
-
-They are **not** returned by `GET /rooms/:code/participants`, `GET /rooms/:code/v1/models`, or join responses.
+`authHeaders` stay local to the participant runtime. They are applied only when that runtime talks to the provider endpoint.
 
 ## Popular Providers
 
 | Provider | Base URL | Free Models? |
-|----------|----------|-------------|
-| OpenRouter | `https://openrouter.ai/api` | Yes (`:free` suffix) |
-| Together AI | `https://api.together.xyz` | Free tier |
-| Groq | `https://api.groq.com/openai` | Free tier |
-| Fireworks | `https://api.fireworks.ai/inference` | Free tier |
-| OpenAI | `https://api.openai.com` | No |
+| --- | --- | --- |
+| OpenRouter | `https://openrouter.ai/api` | yes |
+| Together AI | `https://api.together.xyz` | free tier |
+| Groq | `https://api.groq.com/openai` | free tier |
+| Fireworks | `https://api.fireworks.ai/inference` | free tier |
+| OpenAI | `https://api.openai.com` | no |
 
 ## Cost Considerations
 
 When you join with a cloud provider:
-- **Your API key** is used for every request routed to you
-- **You pay** for the tokens consumed
-- Other participants don't see your API key — the hub keeps headers only in memory and does not expose them in participant listings
 
-Choose a model you're comfortable paying for, or use free-tier models for experimentation.
+- your API key is used for every request routed to you
+- you pay for the tokens consumed
+- other participants do not see your provider credentials
+
+Choose a model you are comfortable paying for, or use free-tier models for experimentation.
 
 ## Security Notes
 
-- Gambi sends `authHeaders` from the joining client to the hub, then stores them in memory for as long as that participant is registered.
-- In trusted local networks, that's usually enough.
-- If your hub is reachable outside your LAN, put it behind HTTPS or a reverse proxy before sending provider credentials through it.
+- Provider auth headers should remain on the participant runtime.
+- The tunnel-first model avoids publishing the provider endpoint or its credentials to the rest of the network just to participate.
+- If your hub is reachable outside your LAN, put it behind HTTPS or a reverse proxy and apply proper access control before using cloud provider credentials with it.
 
-## When to Use Which Protocol
+## When To Use Which Protocol
 
-- **Responses API** — newer, simpler input format (`"input": "text"`), supports multi-turn via `previous_response_id`. Use if your provider supports it.
-- **Chat Completions** — widely supported, familiar `messages` array format. Works with virtually every provider.
+- Responses API: preferred default
+- Chat Completions: compatibility path
 
-The hub handles both transparently. When a request comes in via one protocol and the participant only supports the other, the hub adapts automatically.
+The hub can adapt between the two protocols when needed, but new integrations should prefer Responses.

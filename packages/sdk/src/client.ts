@@ -2,12 +2,13 @@ import type {
   ApiErrorResponse,
   ApiMeta,
   HeartbeatResult,
-  ParticipantAuthHeaders,
   ParticipantCapabilities,
+  ParticipantConnection,
   ParticipantSummary,
   RoomEvent,
   RoomSummary,
   RuntimeConfig,
+  TunnelBootstrap,
 } from "./types.ts";
 
 export interface ClientOptions {
@@ -28,7 +29,12 @@ export interface UpsertParticipantInput {
   specs?: ParticipantSummary["specs"];
   config?: RuntimeConfig;
   capabilities?: ParticipantCapabilities;
-  authHeaders?: ParticipantAuthHeaders;
+}
+
+export interface UpsertParticipantResult {
+  participant: ParticipantSummary & { connection: ParticipantConnection };
+  roomId: string;
+  tunnel: TunnelBootstrap;
 }
 
 export interface ApiResult<T> {
@@ -54,9 +60,7 @@ export interface GambiClient {
       roomCode: string,
       participantId: string,
       input: UpsertParticipantInput
-    ) => Promise<
-      ApiResult<{ participant: ParticipantSummary; roomId: string }>
-    >;
+    ) => Promise<ApiResult<UpsertParticipantResult>>;
     list: (roomCode: string) => Promise<ApiResult<ParticipantSummary[]>>;
     remove: (
       roomCode: string,
@@ -305,7 +309,7 @@ export function createClient(options: ClientOptions = {}): GambiClient {
     },
     participants: {
       upsert(roomCode, participantId, input) {
-        return request<{ participant: ParticipantSummary; roomId: string }>(
+        return request<UpsertParticipantResult>(
           `/v1/rooms/${roomCode}/participants/${participantId}`,
           {
             method: "PUT",

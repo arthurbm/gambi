@@ -94,10 +94,10 @@ Pick a machine on the network to be the hub. It doesn't need a GPU — the hub o
 
 ```bash
 # Interactive — prompts for port, host, mDNS:
-gambi serve
+gambi hub serve
 
 # Or with flags:
-gambi serve --port 3000 --mdns
+gambi hub serve --port 3000 --mdns
 ```
 
 The `--mdns` flag enables auto-discovery so other machines on the network can find the hub automatically.
@@ -106,10 +106,10 @@ The `--mdns` flag enables auto-discovery so other machines on the network can fi
 
 ```bash
 # Interactive — prompts for room name and password:
-gambi create
+gambi room create
 
 # Or with flags:
-gambi create --name "My Room"
+gambi room create --name "My Room"
 # Output: Room created! Code: ABC123
 ```
 
@@ -118,7 +118,7 @@ Share this code with everyone who wants to join — via chat, projector, sticky 
 You can also create a password-protected room:
 
 ```bash
-gambi create --name "Private Room" --password secret123
+gambi room create --name "Private Room" --password secret123
 ```
 
 ### 3. Join with Your LLM
@@ -126,28 +126,35 @@ gambi create --name "Private Room" --password secret123
 Each person with an LLM endpoint joins the room:
 
 ```bash
-# Interactive — select provider, model, set nickname:
-gambi join
-
-# Or with flags:
-gambi join --code ABC123 --model llama3
+gambi participant join \
+  --room ABC123 \
+  --participant-id joao-1 \
+  --model llama3
 ```
-
-In interactive mode, you'll select your LLM provider from a list (Ollama, LM Studio, vLLM, or custom URL), then pick from detected models. You can also set a nickname and room password.
 
 With flags, the default endpoint is `http://localhost:11434` (Ollama). For other providers, use `--endpoint`:
 
 ```bash
 # LM Studio
-gambi join --code ABC123 --model mistral --endpoint http://localhost:1234
+gambi participant join \
+  --room ABC123 \
+  --participant-id joao-lmstudio \
+  --model mistral \
+  --endpoint http://localhost:1234
 
 # vLLM
-gambi join --code ABC123 --model llama3 --endpoint http://localhost:8000
+gambi participant join \
+  --room ABC123 \
+  --participant-id joao-vllm \
+  --model llama3 \
+  --endpoint http://localhost:8000
 ```
 
-The CLI will probe your local endpoint, detect available models and protocol capabilities, and register you in the room. If you join a remote hub from another machine while using `localhost`, Gambi automatically tries to publish a LAN-reachable URL instead. Use `--network-endpoint` only when you need to override that published URL manually.
+The CLI probes your local endpoint, detects available models and protocol capabilities, registers the participant, opens a tunnel back to the hub, and keeps the session alive until interrupted.
 
-It also shares your machine specs (CPU, RAM, GPU) automatically — use `--no-specs` if you prefer not to share.
+Important implication: your provider endpoint can stay on `localhost`, even when the hub is running on another machine in the same trusted network. You no longer need to publish a LAN-reachable provider URL just to join a room. For the reasoning behind this, see [How Tunnels Work](/explanation/tunnel-first/).
+
+It also shares your machine specs (CPU, RAM, GPU) automatically. Use `--no-specs` if you prefer not to share them.
 
 Once joined, your LLM is available to everyone in the room.
 
@@ -204,11 +211,11 @@ const gambi = createGambi({
 No SDK needed. The hub is an OpenAI-compatible API — use it from any language or tool:
 
 ```bash
-curl -X POST http://localhost:3000/rooms/ABC123/v1/chat/completions \
+curl -X POST http://localhost:3000/rooms/ABC123/v1/responses \
   -H "Content-Type: application/json" \
   -d '{
     "model": "*",
-    "messages": [{"role": "user", "content": "Hello!"}]
+    "input": "Hello!"
   }'
 ```
 

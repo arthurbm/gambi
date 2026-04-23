@@ -24,7 +24,7 @@ Choose one machine to run the hub. This can be any machine on the network - it d
 
 ```bash
 # On the hub machine (e.g., Bob's MacBook)
-gambi serve --port 3000 --mdns
+gambi hub serve --port 3000 --mdns
 ```
 
 The `--mdns` flag enables auto-discovery, so teammates don't need to know the IP address.
@@ -32,7 +32,7 @@ The `--mdns` flag enables auto-discovery, so teammates don't need to know the IP
 ### Step 2: Create a Room
 
 ```bash
-gambi create --name "Hackathon"
+gambi room create --name "Hackathon"
 # Output: Room created! Code: XK7P2M
 ```
 
@@ -44,19 +44,21 @@ Each person with an LLM endpoint joins the room:
 
 ```bash
 # Alice (Ollama)
-gambi join --code XK7P2M \
+gambi participant join --room XK7P2M \
+  --participant-id alice \
   --endpoint http://localhost:11434 \
   --model llama3 \
   --nickname alice
 
 # Carol (LM Studio)
-gambi join --code XK7P2M \
+gambi participant join --room XK7P2M \
+  --participant-id carol \
   --endpoint http://localhost:1234 \
   --model mistral \
   --nickname carol
 ```
 
-If the hub is running on a different machine, Gambi will automatically rewrite `localhost` endpoints to a LAN-reachable URL before publishing them to the hub. If your setup needs a custom published URL, pass `--network-endpoint`.
+The participant endpoint can stay on `localhost`. Gambi opens a tunnel back to the hub instead of asking you to publish a LAN-reachable provider URL.
 
 ### Step 4: Use from Your App
 
@@ -91,9 +93,9 @@ const gambi = createGambi({
 Or skip the SDK entirely and use the API directly:
 
 ```bash
-curl -X POST http://192.168.1.100:3000/rooms/XK7P2M/v1/chat/completions \
+curl -X POST http://192.168.1.100:3000/rooms/XK7P2M/v1/responses \
   -H "Content-Type: application/json" \
-  -d '{"model": "*", "messages": [{"role": "user", "content": "Hello!"}]}'
+  -d '{"model": "*", "input": "Hello!"}'
 ```
 
 See the [API Reference](/reference/api/) for all endpoints.
@@ -105,7 +107,7 @@ See the [API Reference](/reference/api/) for all endpoints.
 Give meaningful nicknames so you know who's who:
 
 ```bash
-gambi join --code XK7P2M --nickname "alice-4090" --model llama3
+gambi participant join --room XK7P2M --participant-id alice-4090 --nickname "alice-4090" --model llama3
 ```
 
 ### Target Specific Models
@@ -153,7 +155,7 @@ The hub is lightweight, but if one machine is struggling:
 
 ### "No participants online"
 
-1. Check if participants joined: `gambi list`
+1. Check room state: `gambi room get --code XK7P2M --format json`
 2. Verify the room code is correct
 3. Make sure LLM endpoints are running (`curl http://localhost:11434/v1/models`)
 

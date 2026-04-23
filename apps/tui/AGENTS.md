@@ -251,13 +251,16 @@ export function handleParticipantJoinedEvent(
 | Event | Handler | Description |
 |-------|---------|-------------|
 | `connected` | `handleConnectedEvent` | SSE connection established |
-| `room:created` | `handleRoomCreatedEvent` | Room name updated |
-| `participant:joined` | `handleParticipantJoinedEvent` | New participant |
-| `participant:left` | `handleParticipantLeftEvent` | Participant removed |
-| `participant:offline` | `handleParticipantOfflineEvent` | Heartbeat timeout |
-| `llm:request` | `handleLlmRequestEvent` | LLM request started |
-| `llm:complete` | `handleLlmCompleteEvent` | LLM request finished |
-| `llm:error` | `handleLlmErrorEvent` | LLM request failed |
+| `room.created` | `handleRoomCreatedEvent` | Room name updated |
+| `participant.joined` | `handleParticipantJoinedEvent` | New participant |
+| `participant.updated` | `handleParticipantUpdatedEvent` | Participant metadata or connection changed |
+| `participant.left` | `handleParticipantLeftEvent` | Participant removed |
+| `participant.offline` | `handleParticipantOfflineEvent` | Heartbeat timeout |
+| `llm.request` | `handleLlmRequestEvent` | LLM request started |
+| `llm.complete` | `handleLlmCompleteEvent` | LLM request finished (inclui `metrics`) |
+| `llm.error` | `handleLlmErrorEvent` | LLM request failed |
+
+Os nomes de evento usam ponto (`.`), não dois-pontos — são os `type` exatos emitidos pelo `@gambi/core` no stream SSE.
 
 ---
 

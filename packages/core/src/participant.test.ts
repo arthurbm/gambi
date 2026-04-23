@@ -14,7 +14,8 @@ describe("Participant", () => {
       expect(participant.nickname).toBe("test-user");
       expect(participant.model).toBe("llama3");
       expect(participant.endpoint).toBe("http://localhost:11434");
-      expect(participant.status).toBe("online");
+      expect(participant.status).toBe("offline");
+      expect(participant.connection.connected).toBe(false);
       expect(participant.joinedAt).toBeLessThanOrEqual(Date.now());
       expect(participant.lastSeen).toBeLessThanOrEqual(Date.now());
     });

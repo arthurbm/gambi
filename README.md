@@ -23,6 +23,8 @@
 
 Gambi is a local-first system for sharing OpenAI-compatible LLM endpoints across a trusted network. A central hub tracks rooms and participants, proxies inference requests, and publishes real-time events over SSE.
 
+Participants now connect through a hub-managed tunnel. The hub never needs direct network reachability to the participant's provider endpoint, so `localhost` and provider credentials can remain local to the participant machine.
+
 The public name **Gambi** is the short form of **gambiarra**. Here it means the good kind: creative improvisation under constraints, turned into a practical tool.
 
 ## Two planes
@@ -33,6 +35,8 @@ Gambi exposes two distinct surfaces:
 - Inference plane: OpenAI-compatible room-scoped endpoints under `/rooms/:code/v1/*`, consumed by `createGambi()` and other OpenAI-compatible clients.
 
 That split is deliberate. The management plane is optimized for agents and automation. The inference plane is optimized for application compatibility.
+
+The default inference protocol is the OpenAI Responses API. Chat Completions remains available as a compatibility surface.
 
 ## Installation
 
@@ -116,6 +120,8 @@ gambi participant join \
   --endpoint http://localhost:11434
 ```
 
+`gambi participant join` probes the local endpoint, registers the participant, opens a participant tunnel back to the hub, and keeps the session alive until interrupted. This works the same way for local hubs and remote hubs on the same trusted network: the endpoint can stay loopback-only on the participant machine.
+
 Preview the registration flow:
 
 ```bash
@@ -140,6 +146,15 @@ gambi events watch --room ABC123 --format ndjson
 ```
 
 Room event streams include lifecycle signals such as `llm.request`, `llm.complete`, and `llm.error`.
+
+`llm.complete` includes baseline observability metrics when available:
+
+- `ttftMs`
+- `durationMs`
+- `inputTokens`
+- `outputTokens`
+- `totalTokens`
+- `tokensPerSecond`
 
 ### 5. Use the SDK for inference
 
@@ -234,7 +249,7 @@ Example config:
     },
     "staging": {
       "hubUrl": "http://192.168.1.10:3000",
-      "networkEndpoint": "http://192.168.1.25:11434"
+      "endpoint": "http://localhost:11434"
     }
   }
 }
@@ -253,6 +268,8 @@ gambi.model("llama3");
 gambi.openResponses.any();
 gambi.chatCompletions.any();
 ```
+
+The top-level helpers default to `openResponses`. Use the `chatCompletions` namespace only when you need explicit compatibility with legacy clients or providers.
 
 Use `resolveGambiTarget()` when the room or hub should be discovered from the local network first:
 
@@ -355,6 +372,8 @@ Rooms and participants can both provide runtime defaults. The hub merges them at
 
 Sensitive config is redacted from public management responses. Public room and participant payloads expose safe summaries instead of raw secrets or instructions.
 
+Participant registrations also expose tunnel connection state through `connection`, including whether the tunnel is currently connected and the timestamp of the last tunnel heartbeat seen by the hub.
+
 Streaming commands always emit NDJSON for machine-readable output. If you pass `--format json` to a streaming command, the CLI coerces it to `ndjson`.
 
 ## Development
@@ -389,3 +408,9 @@ bun run --cwd apps/tui test
 ## Security
 
 Gambi is designed for trusted local networks. The hub does not provide built-in authentication. Do not expose it directly to the public internet without an external proxy and auth layer.
+
+For longer-term product direction, see:
+
+- `docs/architecture.md` for the current transport and proxy model
+- `docs/observability.md` for baseline metrics and future observability work
+- `docs/gambi-agents.md` for the future `gambi agents` direction above the current hub

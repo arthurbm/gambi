@@ -1,12 +1,14 @@
 ---
 title: SDK Reference
-description: Reference for the Gambi SDK provider, management client, and discovery helpers.
+description: Reference for the Gambi SDK provider, management client, participant session runtime, and discovery helpers.
 ---
 
-The Gambi SDK exposes two distinct entry points:
+The Gambi SDK exposes four distinct surfaces:
 
 - `createGambi()` for inference through the room-scoped OpenAI-compatible endpoints
 - `createClient()` for management operations against the native `/v1` API
+- `createParticipantSession()` for running a tunnel-backed participant session
+- discovery helpers for local-network hub and room resolution
 
 ## Installation
 
@@ -22,114 +24,12 @@ bun add gambi-sdk
 | --- | --- | --- |
 | `createGambi()` | application inference | `/rooms/:code/v1/*` |
 | `createClient()` | operational control | `/v1/*` |
+| `createParticipantSession()` | participant runtime | management API + participant tunnel |
 | discovery helpers | local-network room and hub resolution | mDNS + management API |
-
-## When to use what
-
-| Use case | Recommended API |
-| --- | --- |
-| send prompts and receive model output | `createGambi()` |
-| create a room or inspect rooms | `createClient().rooms.*` |
-| register or remove participants | `createClient().participants.*` |
-| watch live room events | `createClient().events.watchRoom()` |
-| discover hubs and rooms on the local network | `discoverHubs()`, `discoverRooms()`, `resolveGambiTarget()` |
-
-## Local Network Discovery
-
-For local Node.js and Bun applications, the SDK can discover hubs and rooms announced over mDNS/Bonjour.
-
-These helpers are optional. `createGambi()` and `createClient()` stay explicit and keep working with `hubUrl` and `roomCode` directly.
-
-```ts
-import { createClient, createGambi, resolveGambiTarget } from "gambi-sdk";
-// or import only discovery helpers:
-// import { resolveGambiTarget } from "gambi-sdk/discovery";
-
-const target = await resolveGambiTarget({
-  roomCode: "ABC123",
-  timeoutMs: 1500,
-});
-
-const gambi = createGambi({
-  hubUrl: target.hubUrl,
-  roomCode: target.roomCode,
-});
-
-const client = createClient({ hubUrl: target.hubUrl });
-```
-
-### `discoverHubs(options?)`
-
-Discover reachable hubs from the configured `hubUrl` seed plus mDNS services on the local network.
-
-| Option | Type | Default | Description |
-| --- | --- | --- | --- |
-| `hubUrl` | `string` | `http://localhost:3000` | seed hub to probe before mDNS results |
-| `timeoutMs` | `number` | `1500` | how long to listen for mDNS announcements |
-
-Returns `Promise<DiscoveredHub[]>`.
-
-Each discovered hub includes:
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `name` | `string` | display name for the hub |
-| `hubUrl` | `string` | resolved base URL |
-| `source` | `"configured" \| "mdns"` | where the hub came from |
-| `host` | `string` | advertised host |
-| `port` | `number` | advertised port |
-| `addresses` | `string[]` | resolved addresses |
-| `txt` | `Record<string, string>` | mDNS TXT records |
-
-### `discoverRooms(options?)`
-
-Discover rooms by listing `/v1/rooms` on each reachable hub found by `discoverHubs()`.
-
-The options are the same as `discoverHubs(options?)`.
-
-Returns `Promise<DiscoveredRoom[]>`.
-
-Each discovered room extends the room summary with:
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `hubName` | `string` | human-readable hub name |
-| `hubSource` | `"configured" \| "mdns"` | discovery source |
-| `hubUrl` | `string` | hub base URL for the room |
-
-### `resolveGambiTarget(options?)`
-
-Resolve one room to a concrete `{ hubUrl, roomCode }` target you can pass into `createGambi()` or `createClient()`.
-
-| Option | Type | Default | Description |
-| --- | --- | --- | --- |
-| `roomCode` | `string` | — | resolve a specific room code across discovered hubs |
-| `roomName` | `string` | — | resolve a specific room name across discovered hubs |
-| `hubUrl` | `string` | `http://localhost:3000` | seed hub to probe before mDNS results |
-| `timeoutMs` | `number` | `1500` | how long to listen for mDNS announcements |
-
-Behavior:
-
-- if exactly one room matches, it returns a `ResolvedGambiTarget`
-- if no hubs are found, it throws `DiscoveryError` with `code = "NO_HUBS_FOUND"`
-- if no rooms are found, it throws `DiscoveryError` with `code = "NO_ROOMS_FOUND"`
-- if no room matches the requested filters, it throws `DiscoveryError` with `code = "ROOM_NOT_FOUND"`
-- if multiple rooms match, it throws `DiscoveryError` with `code = "AMBIGUOUS_ROOM_MATCH"`
-
-### `DiscoveryError`
-
-Typed error thrown by discovery helpers such as `resolveGambiTarget()`.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `code` | `"NO_HUBS_FOUND" \| "NO_ROOMS_FOUND" \| "ROOM_NOT_FOUND" \| "AMBIGUOUS_ROOM_MATCH"` | discovery failure category |
-| `matches` | `DiscoveredRoom[]` | matching rooms when resolution is ambiguous |
-
-## Inference provider
 
 ## `createGambi(options)`
 
-Creates a Gambi provider instance.
+Create a provider instance for application inference.
 
 ```ts
 import { createGambi } from "gambi-sdk";
@@ -142,131 +42,89 @@ const gambi = createGambi({
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `roomCode` | `string` | — | room code to connect to. Required. |
+| `roomCode` | `string` | — | room code to connect to |
 | `hubUrl` | `string` | `http://localhost:3000` | hub URL |
-| `defaultProtocol` | `"openResponses" \| "chatCompletions"` | `"openResponses"` | protocol used by the top-level routing helpers |
+| `defaultProtocol` | `"openResponses" \| "chatCompletions"` | `"openResponses"` | default protocol for top-level routing helpers |
 
-## Protocol selection
+### Model routing
 
-The SDK defaults to `openResponses`. Both protocols are first-class:
-
-```ts
-// Default: Responses API
-const gambi = createGambi({
-  roomCode: "ABC123",
-});
-
-// Chat Completions
-const legacy = createGambi({
-  roomCode: "ABC123",
-  defaultProtocol: "chatCompletions",
-});
-```
-
-You can also select per-call via namespaces:
+The provider offers three routing strategies, all compatible with AI SDK v5.
 
 ```ts
-gambi.openResponses.any();   // Responses API
-gambi.chatCompletions.any(); // Chat Completions
+import { generateText } from "ai";
+
+await generateText({ model: gambi.any(), prompt: "..." });
+await generateText({ model: gambi.model("llama3"), prompt: "..." });
+await generateText({ model: gambi.participant("worker-1"), prompt: "..." });
 ```
 
-## Model routing
+| Helper | Selects | Use when |
+| --- | --- | --- |
+| `gambi.any()` | a random available participant | any online participant is acceptable |
+| `gambi.model(name)` | the first available participant exposing `name` | you need a specific model but not a specific machine |
+| `gambi.participant(id)` | the participant with that id | you need exact targeting (affinity, debugging, benchmarking) |
 
-Three routing methods are available. All return a Vercel AI SDK model instance.
+A participant is available only when its tunnel is connected, it is not offline, and it is not already handling another request.
 
-| Method | Description |
-| --- | --- |
-| `gambi.any()` | routes to a random online participant |
-| `gambi.participant(id)` | routes to a specific participant by ID |
-| `gambi.model(name)` | routes to the first online participant with that model |
+### Protocol selection
 
-Examples:
+The provider defaults to `openResponses`.
 
 ```ts
 gambi.any();
-gambi.participant("worker-1");
 gambi.model("llama3");
+gambi.participant("worker-1");
+
+gambi.openResponses.any();
+gambi.chatCompletions.any();
 ```
 
-All routing methods are also available under `gambi.openResponses.*` and `gambi.chatCompletions.*`.
+Use `chatCompletions` only when you need explicit compatibility. New integrations should prefer the default Responses path.
 
-## Streaming
+### Streaming
 
-Use `streamText` from the Vercel AI SDK:
+Streaming works through the AI SDK like any other provider.
 
 ```ts
 import { streamText } from "ai";
 
-const stream = await streamText({
+const result = streamText({
   model: gambi.any(),
-  prompt: "Write a story",
+  prompt: "Write a haiku about local-first infrastructure.",
 });
 
-for await (const chunk of stream.textStream) {
+for await (const chunk of result.textStream) {
   process.stdout.write(chunk);
 }
 ```
 
-## Generation options
-
-Standard Vercel AI SDK options are supported:
-
-```ts
-const result = await generateText({
-  model: gambi.any(),
-  prompt: "Explain recursion",
-  temperature: 0.7,
-  maxTokens: 500,
-});
-```
-
-See the [Vercel AI SDK docs](https://sdk.vercel.ai/docs) for the full generation surface.
-
-## Querying the room
+You can also call the inference API directly with `fetch` and `stream: true` against `${gambi.baseURL}/responses` or `${gambi.baseURL}/chat/completions`.
 
 ### `gambi.listModels()`
 
-Returns all models available in the room.
+Return room models in an OpenAI-compatible list shape.
 
-```ts
-const models = await gambi.listModels();
-```
+Each `GambiModel` includes a `gambi` extension with:
 
-Each entry is a `GambiModel`:
+- `nickname`
+- `model`
+- `endpoint`
+- `capabilities`
+- `connection`
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `id` | `string` | participant ID |
-| `nickname` | `string` | display name |
-| `model` | `string` | model name, such as `"llama3"` |
-| `endpoint` | `string` | participant endpoint URL |
-| `capabilities` | `object` | `{ openResponses, chatCompletions }` capability summary |
+`connection` exposes the participant tunnel state seen by the hub.
 
 ### `gambi.listParticipants()`
 
-Returns all participants in the room using the management API.
-
-```ts
-const participants = await gambi.listParticipants();
-for (const participant of participants) {
-  console.log(participant.nickname, participant.model, participant.status);
-}
-```
+Return management-plane participant summaries for the room.
 
 ### `gambi.baseURL`
 
-The computed base URL for the room's OpenAI-compatible API. Useful when you need to pass the URL to another tool or library.
-
-```ts
-console.log(gambi.baseURL);
-// "http://localhost:3000/rooms/ABC123/v1"
-```
-
-## Management client
+Return the room-scoped OpenAI-compatible base URL.
 
 ## `createClient(options)`
 
-The SDK also exports an HTTP client for managing rooms and participants programmatically. This is separate from the AI SDK provider.
+Create the management client.
 
 ```ts
 import { createClient } from "gambi-sdk";
@@ -276,19 +134,9 @@ const client = createClient({
 });
 ```
 
-| Option | Type | Default | Description |
-| --- | --- | --- | --- |
-| `hubUrl` | `string` | `http://localhost:3000` | hub URL |
+All management methods return `{ data, meta }` envelopes.
 
-Management methods return enveloped results:
-
-```ts
-const result = await client.rooms.list();
-console.log(result.data);
-console.log(result.meta.requestId);
-```
-
-### Namespace overview
+### Namespaces
 
 | Namespace | Methods |
 | --- | --- |
@@ -298,8 +146,6 @@ console.log(result.meta.requestId);
 
 ### `client.rooms.create(input)`
 
-Create a new room. Returns `{ data: { room, hostId }, meta }`.
-
 ```ts
 const created = await client.rooms.create({
   name: "Demo",
@@ -308,50 +154,41 @@ const created = await client.rooms.create({
 });
 
 console.log(created.data.room.code);
+console.log(created.data.hostId);
 ```
-
-Input fields:
-
-| Field | Type | Required | Description |
-| --- | --- | --- | --- |
-| `name` | `string` | yes | room name |
-| `password` | `string` | no | room password |
-| `defaults` | `RuntimeConfig` | no | room runtime defaults |
 
 ### `client.rooms.get(roomCode)`
 
-Fetch one room summary.
-
 ```ts
-const room = await client.rooms.get("ABC123");
-console.log(room.data.name);
+const { data } = await client.rooms.get("ABC123");
+console.log(data.participantCount, data.passwordProtected);
 ```
 
 ### `client.rooms.list()`
 
-List all room summaries.
-
 ```ts
-const rooms = await client.rooms.list();
-for (const room of rooms.data) {
-  console.log(room.code, room.name);
+const { data } = await client.rooms.list();
+for (const room of data) {
+  console.log(room.code, room.name, room.participantCount);
 }
 ```
 
 ### `client.participants.upsert(roomCode, participantId, input)`
 
-Create or update a participant registration. This maps to the idempotent management route.
+Create or update a participant registration.
 
 ```ts
-const registered = await client.participants.upsert("ABC123", "worker-1", {
+const result = await client.participants.upsert("ABC123", "worker-1", {
   nickname: "worker-1",
   model: "llama3",
-  endpoint: "http://192.168.1.25:11434",
+  endpoint: "http://localhost:11434",
   capabilities: {
     openResponses: "supported",
     chatCompletions: "supported",
   },
 });
+
+console.log(result.data.tunnel.url);
 ```
 
 Input fields:
@@ -360,107 +197,198 @@ Input fields:
 | --- | --- | --- | --- |
 | `nickname` | `string` | yes | display name |
 | `model` | `string` | yes | model name |
-| `endpoint` | `string` | yes | participant endpoint URL |
+| `endpoint` | `string` | yes | participant-local endpoint URL |
 | `password` | `string` | no | room password |
 | `specs` | `object` | no | machine specs |
 | `config` | `RuntimeConfig` | no | participant runtime defaults |
 | `capabilities` | `object` | no | protocol capability summary |
-| `authHeaders` | `object` | no | endpoint auth headers, kept only in hub memory |
 
-This method is retry-safe because the underlying management route is idempotent.
+Return fields:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `participant` | `ParticipantSummary` | public participant state |
+| `roomId` | `string` | internal room identifier |
+| `tunnel` | `TunnelBootstrap` | one-time tunnel bootstrap |
+
+This method is retry-safe because the underlying management route is idempotent. The tunnel bootstrap token is single-use and short-lived.
 
 ### `client.participants.list(roomCode)`
 
-List all participants in a room.
-
 ```ts
-const participants = await client.participants.list("ABC123");
-```
-
-### `client.participants.remove(roomCode, participantId)`
-
-Remove a participant from a room.
-
-```ts
-await client.participants.remove("ABC123", "worker-1");
+const { data } = await client.participants.list("ABC123");
+for (const participant of data) {
+  console.log(participant.id, participant.status, participant.connection);
+}
 ```
 
 ### `client.participants.heartbeat(roomCode, participantId)`
 
-Send one health check heartbeat.
+Send one heartbeat. Call this every ten seconds while your own participant runtime is alive. The hub marks a participant offline after thirty seconds without a heartbeat.
 
 ```ts
-await client.participants.heartbeat("ABC123", "worker-1");
+setInterval(() => {
+  client.participants.heartbeat("ABC123", "worker-1").catch(console.error);
+}, 10_000);
 ```
 
-Participants must keep sending heartbeats to stay online. The hub currently uses:
+Both cadence and timeout come from `HEALTH_CHECK_INTERVAL` and `PARTICIPANT_TIMEOUT` in `@gambi/core`. If you use `createParticipantSession()`, this loop is managed for you.
 
-| Constant | Value |
-| --- | --- |
-| heartbeat interval | `10_000 ms` |
-| offline timeout | `30_000 ms` |
+### `client.participants.remove(roomCode, participantId)`
+
+```ts
+await client.participants.remove("ABC123", "worker-1");
+```
 
 ### `client.events.watchRoom({ roomCode, signal? })`
 
 Watch room events as an async iterable.
 
 ```ts
-for await (const event of client.events.watchRoom({ roomCode: "ABC123" })) {
+const controller = new AbortController();
+
+for await (const event of client.events.watchRoom({
+  roomCode: "ABC123",
+  signal: controller.signal,
+})) {
   console.log(event.type, event.data);
 }
 ```
 
-The yielded event shape mirrors the management SSE contract:
+Event types:
+
+- `connected`
+- `room.created`
+- `participant.joined`
+- `participant.updated`
+- `participant.left`
+- `participant.offline`
+- `llm.request`
+- `llm.complete`
+- `llm.error`
+
+See [Observability](/reference/observability/) for the payload shapes of the `llm.*` events.
+
+## `createParticipantSession(options)`
+
+Create and manage a tunnel-backed participant runtime.
+
+```ts
+import { createParticipantSession } from "gambi-sdk";
+
+const session = await createParticipantSession({
+  hubUrl: "http://localhost:3000",
+  roomCode: "ABC123",
+  participantId: "worker-1",
+  nickname: "worker-1",
+  endpoint: "http://localhost:11434",
+  model: "llama3",
+  authHeaders: {
+    Authorization: `Bearer ${process.env.PROVIDER_TOKEN}`,
+  },
+});
+
+await session.waitUntilClosed();
+```
+
+What it does:
+
+1. Probe the local endpoint.
+2. Register the participant through the management API.
+3. Open the participant tunnel.
+4. Forward tunnel requests to the local provider endpoint.
+5. Keep sending management heartbeats every ten seconds and tunnel pings on the same cadence.
+
+`authHeaders` stay local to the participant runtime. They are applied only when the runtime talks to the provider endpoint.
+
+For a walkthrough, see [Custom participant runtime](/guides/custom-participant/).
+
+### Session return shape
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `type` | `string` | event name |
-| `timestamp` | `number` | event timestamp in milliseconds |
-| `roomCode` | `string` | room identifier |
-| `data` | `unknown` | event payload |
+| `participant` | registered participant summary |
+| `roomId` | room identifier |
+| `tunnel` | tunnel bootstrap details |
+| `close()` | best-effort graceful shutdown |
+| `waitUntilClosed()` | await final session close reason |
+
+Close reasons:
+
+- `"closed"` — shutdown initiated by `close()` or a received signal
+- `"heartbeat_failed"` — the management heartbeat loop failed repeatedly
+- `"tunnel_closed"` — the WebSocket tunnel was closed from either side
+
+## Discovery helpers
+
+Discovery remains optional. `createGambi()` and `createClient()` stay explicit — they never perform implicit discovery.
+
+Available helpers:
+
+- `discoverHubs(options?)`
+- `discoverRooms(options?)`
+- `resolveGambiTarget(options?)`
+
+Common options (`DiscoveryOptions`):
+
+| Option | Type | Description |
+| --- | --- | --- |
+| `hubUrl` | `string` | skip mDNS and query this hub directly |
+| `timeoutMs` | `number` | how long to wait for mDNS responses |
+| `fetchFn` | `typeof fetch` | custom fetch (tests, proxies) |
+| `browseServices` | `BrowseServicesLike` | custom mDNS browser |
+
+`resolveGambiTarget()` also accepts `roomCode` and `roomName` for picking a single room.
+
+### Example
+
+```ts
+import { createGambi, resolveGambiTarget } from "gambi-sdk";
+
+const target = await resolveGambiTarget({
+  roomCode: "ABC123",
+  timeoutMs: 1500,
+});
+
+const gambi = createGambi({
+  hubUrl: target.hubUrl,
+  roomCode: target.roomCode,
+});
+```
+
+### `DiscoveryError`
+
+Thrown when discovery cannot produce a unique target.
+
+Codes:
+
+- `NO_HUBS_FOUND`
+- `NO_ROOMS_FOUND`
+- `ROOM_NOT_FOUND`
+- `AMBIGUOUS_ROOM_MATCH` (inspect `error.matches`)
 
 ## Errors
 
-## `ClientError`
+Management operations throw `ClientError`.
 
-Management operations throw `ClientError` on failure.
+Important fields:
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `status` | `number` | HTTP status |
-| `code` | `string \| undefined` | typed management error code |
-| `hint` | `string \| undefined` | human-readable remediation hint |
-| `details` | `unknown` | optional structured details |
-| `requestId` | `string \| undefined` | management request identifier |
-
-Example:
+- `status` — HTTP status
+- `code` — Gambi error code (e.g. `ROOM_NOT_FOUND`, `PARTICIPANT_TUNNEL_NOT_CONNECTED`)
+- `hint` — operator-readable next step
+- `details` — optional structured payload from the hub
+- `requestId` — correlates with hub logs and SSE events
 
 ```ts
 import { ClientError } from "gambi-sdk";
 
 try {
-  await client.rooms.get("INVALID");
+  await client.rooms.get("ZZZZZZ");
 } catch (error) {
-  if (error instanceof ClientError) {
-    console.error(error.status);
-    console.error(error.code);
-    console.error(error.hint);
-    console.error(error.requestId);
+  if (error instanceof ClientError && error.code === "ROOM_NOT_FOUND") {
+    console.warn(error.hint);
+    return;
   }
+  throw error;
 }
 ```
-
-## Key types
-
-| Type | Description |
-| --- | --- |
-| `GambiProvider` | return type of `createGambi()` |
-| `GambiClient` | return type of `createClient()` |
-| `GambiModel` | model info from `gambi.listModels()` |
-| `DiscoveredHub` | hub discovered through configured seed or mDNS |
-| `DiscoveredRoom` | discovered room with hub metadata |
-| `ResolvedGambiTarget` | resolved `{ hub, room }` target |
-| `RoomSummary` | room summary transport type |
-| `ParticipantSummary` | participant summary transport type |
-| `RoomEvent` | typed room event payload |
-| `ClientError` | management client error type |

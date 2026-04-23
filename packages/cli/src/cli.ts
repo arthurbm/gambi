@@ -42,7 +42,7 @@ function renderRootHelp() {
     "  gambi room get               Get one room summary",
     "",
     "Participants:",
-    "  gambi participant join       Register a participant and keep heartbeats alive",
+    "  gambi participant join       Register a participant and keep its tunnel alive",
     "  gambi participant leave      Remove a participant",
     "  gambi participant heartbeat  Send one participant heartbeat",
     "",

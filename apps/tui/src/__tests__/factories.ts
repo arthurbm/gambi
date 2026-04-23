@@ -40,6 +40,11 @@ export function createParticipant(
       openResponses: "unknown",
       chatCompletions: "unknown",
     },
+    connection: {
+      kind: "tunnel",
+      connected: true,
+      lastTunnelSeenAt: now,
+    },
     ...overrides,
   };
 }

@@ -1,0 +1,75 @@
+---
+title: How Tunnels Work
+description: Why Gambi participants open a tunnel to the hub instead of publishing a network-reachable provider endpoint.
+---
+
+This page explains the mental model behind Gambi's tunnel-first transport: why the participant, not the hub, opens the connection.
+
+## The old shape
+
+An earlier version of Gambi treated each participant as a small HTTP server:
+
+1. The participant ran a local provider (Ollama, LM Studio, etc.).
+2. It told the hub, "my endpoint is reachable at `http://host:port`".
+3. The hub routed each inference request by making an HTTP call back to that address.
+
+This worked on a flat LAN, but it leaked several constraints into the participant:
+
+- the participant had to be reachable from the hub
+- NAT, Wi-Fi isolation, and VPN split-tunneling often blocked that path
+- the participant had to expose a port, which is a non-trivial ask for a teammate on a laptop
+- the hub had to rewrite or trust provider addresses it never owned
+
+The result was a system that demanded network symmetry where there wasn't any.
+
+## The tunnel-first shape
+
+Gambi now inverts the connection. The participant opens a WebSocket to the hub. Inference requests travel over that tunnel.
+
+```text
+┌──────────────┐   WebSocket   ┌─────────┐
+│ Participant  │ ────────────▶ │   Hub   │
+│  runtime     │ ◀──────────── │         │
+└──────────────┘               └─────────┘
+       │
+       │ HTTP (loopback)
+       ▼
+┌──────────────────┐
+│ Local provider   │
+│ (Ollama / etc.)  │
+└──────────────────┘
+```
+
+What changes:
+
+- the hub never initiates a connection to the participant
+- the participant can keep its provider endpoint on `localhost`
+- authentication headers stay on the participant runtime
+- the hub routes by `participant-id`, `model:<name>`, or `*`, and forwards the request through the tunnel the participant already opened
+
+## What you gain
+
+- **Localhost stays localhost.** The provider URL you pass to `gambi participant join` or `createParticipantSession()` can be `http://localhost:11434`, even when the hub runs on another machine. The hub never needs to reach that address.
+- **Credentials stay local.** `authHeaders` and API keys only leave the participant runtime when the runtime itself calls the provider, never through the hub.
+- **Fewer network pre-requisites for participants.** A participant needs outbound connectivity to the hub. That's it. No port forwarding, no mDNS advertising, no firewall exceptions.
+- **Retry-safe registration.** Participant registration is idempotent, and the tunnel bootstrap token is single-use. Reconnecting is a safe operation.
+
+## What you give up
+
+- **WebSocket upgrade must pass.** Any proxy between the participant and the hub has to forward `Upgrade: websocket`. Some corporate proxies block it.
+- **One direction, not two.** The participant needs to reach the hub. The hub does not need to reach the participant, but nothing gets through if outbound is blocked.
+- **Tunnel failures are now a first-class thing.** You will see `tunnel_failed` and `heartbeat_failed` events in participant runtimes. Monitor them.
+
+## Sticky guarantees
+
+The tunnel is not a clever trick layered on top of HTTP. It is the only transport the hub uses to reach participants. That gives you two durable guarantees:
+
+1. If a participant is not connected, it is not available. No stale DNS, no half-open sockets pretending to be live. Availability is a property of an active tunnel session.
+2. If the hub receives a request for a participant whose tunnel has dropped, it returns an explicit error (`PARTICIPANT_TUNNEL_NOT_CONNECTED`) instead of silently timing out.
+
+## Further reading
+
+- [Architecture Overview](/architecture/overview/) — the full picture, including the tunnel protocol shape.
+- [API Reference — Tunnel](/reference/api/#tunnel) — the exact HTTP and WebSocket contract.
+- [SDK Reference — `createParticipantSession()`](/reference/sdk/#createparticipantsessionoptions) — the programmatic runtime that manages a tunnel for you.
+- [Custom participant runtime](/guides/custom-participant/) — how to build your own runtime on top of `createParticipantSession()`.

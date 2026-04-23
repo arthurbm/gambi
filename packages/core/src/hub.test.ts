@@ -6,10 +6,14 @@ import {
   expect,
   test,
 } from "bun:test";
+import { Buffer } from "node:buffer";
 import { z } from "zod";
 import { createHub, type Hub } from "./hub.ts";
 import { Room } from "./room.ts";
+import { TunnelServerMessage } from "./tunnel-protocol.ts";
 import type { RoomEvent } from "./types.ts";
+
+const TRAILING_SLASH_REGEX = /\/$/;
 
 const ApiMetaSchema = z.object({
   requestId: z.string(),
@@ -70,6 +74,13 @@ const JoinResponseSchema = successSchema(
     participant: z.object({
       id: z.string(),
       nickname: z.string(),
+      endpoint: z.string().optional(),
+      status: z.string(),
+      connection: z.object({
+        kind: z.literal("tunnel"),
+        connected: z.boolean(),
+        lastTunnelSeenAt: z.number().nullable(),
+      }),
       config: z.object({
         hasInstructions: z.boolean(),
         temperature: z.number().optional(),
@@ -77,6 +88,10 @@ const JoinResponseSchema = successSchema(
       }),
     }),
     roomId: z.string(),
+    tunnel: z.object({
+      url: z.string(),
+      token: z.string(),
+    }),
   })
 );
 
@@ -90,6 +105,12 @@ const ParticipantsResponseSchema = successSchema(
   z.array(
     z.object({
       nickname: z.string(),
+      status: z.string(),
+      connection: z.object({
+        kind: z.literal("tunnel"),
+        connected: z.boolean(),
+        lastTunnelSeenAt: z.number().nullable(),
+      }),
       config: z.object({
         hasInstructions: z.boolean(),
         temperature: z.number().optional(),
@@ -469,6 +490,7 @@ function createMockParticipantServer(
 describe("Hub", () => {
   let hub: Hub;
   let baseUrl: string;
+  const tunnelSockets = new Set<WebSocket>();
 
   beforeAll(() => {
     hub = createHubWithRetry();
@@ -481,6 +503,10 @@ describe("Hub", () => {
 
   beforeEach(() => {
     Room.clear();
+    for (const socket of tunnelSockets) {
+      socket.close();
+    }
+    tunnelSockets.clear();
   });
 
   async function createRoom(
@@ -519,6 +545,7 @@ describe("Hub", () => {
     },
     headers?: Record<string, string>
   ) {
+    const { authHeaders, ...registration } = participant;
     const res = await fetch(
       `${baseUrl}/v1/rooms/${code}/participants/${participant.id}`,
       {
@@ -527,10 +554,110 @@ describe("Hub", () => {
           "Content-Type": "application/json",
           ...headers,
         },
-        body: JSON.stringify(participant),
+        body: JSON.stringify(registration),
       }
     );
-    return { res, data: await res.json() };
+    const data = await res.json();
+    const parsed = JoinResponseSchema.safeParse(data);
+    if (res.ok && parsed.success) {
+      await connectParticipantTunnel({
+        endpoint: participant.endpoint,
+        authHeaders,
+        tunnel: parsed.data.data.tunnel,
+      });
+    }
+    return { res, data };
+  }
+
+  async function connectParticipantTunnel(params: {
+    authHeaders?: Record<string, string>;
+    endpoint: string;
+    tunnel: { token: string; url: string };
+  }) {
+    const url = new URL(params.tunnel.url);
+    url.searchParams.set("token", params.tunnel.token);
+
+    const socket = await new Promise<WebSocket>((resolve, reject) => {
+      const ws = new WebSocket(url);
+      ws.addEventListener("open", () => resolve(ws), { once: true });
+      ws.addEventListener(
+        "error",
+        () => reject(new Error("Failed to connect participant tunnel.")),
+        { once: true }
+      );
+    });
+    tunnelSockets.add(socket);
+
+    socket.addEventListener("message", async (event) => {
+      const text =
+        typeof event.data === "string"
+          ? event.data
+          : Buffer.from(event.data as ArrayBuffer).toString("utf8");
+      const parsed = TunnelServerMessage.safeParse(JSON.parse(text));
+      if (!parsed.success || parsed.data.type === "tunnel.pong") {
+        return;
+      }
+
+      const response = await fetch(
+        `${params.endpoint.replace(TRAILING_SLASH_REGEX, "")}${parsed.data.path}`,
+        {
+          method: parsed.data.method,
+          headers: {
+            ...(params.authHeaders ?? {}),
+            ...parsed.data.headers,
+          },
+          body:
+            parsed.data.body === undefined
+              ? undefined
+              : JSON.stringify(parsed.data.body),
+        }
+      );
+
+      socket.send(
+        JSON.stringify({
+          type: "tunnel.response.start",
+          requestId: parsed.data.requestId,
+          status: response.status,
+          headers: Object.fromEntries(response.headers.entries()),
+        })
+      );
+
+      if (response.body) {
+        const reader = response.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            break;
+          }
+
+          if (value) {
+            socket.send(
+              JSON.stringify({
+                type: "tunnel.response.chunk",
+                requestId: parsed.data.requestId,
+                chunk: Buffer.from(value).toString("base64"),
+              })
+            );
+          }
+        }
+      }
+
+      socket.send(
+        JSON.stringify({
+          type: "tunnel.response.end",
+          requestId: parsed.data.requestId,
+        })
+      );
+    });
+
+    socket.send(
+      JSON.stringify({
+        type: "tunnel.ping",
+        timestamp: Date.now(),
+      })
+    );
+
+    return socket;
   }
 
   async function connectRoomEvents(roomCode: string) {
@@ -565,11 +692,16 @@ describe("Hub", () => {
           const { done, value } = await Promise.race([
             reader.read(),
             new Promise<never>((_, reject) => {
-              setTimeout(() => reject(new Error("Timed out waiting for room event.")), 1000);
+              setTimeout(
+                () => reject(new Error("Timed out waiting for room event.")),
+                1000
+              );
             }),
           ]);
           if (done) {
-            throw new Error("Event stream closed before the expected event arrived.");
+            throw new Error(
+              "Event stream closed before the expected event arrived."
+            );
           }
 
           buffer += decoder.decode(value, { stream: true });
@@ -714,8 +846,36 @@ describe("Hub", () => {
       expect(joinData.data.participant.id).toBe("participant-1");
       expect(joinData.data.participant.nickname).toBe("test-user");
       expect(joinData.data.roomId).toBe(created.room.id);
+      expect(joinData.data.participant.status).toBe("offline");
+      expect(joinData.data.participant.connection.connected).toBe(false);
       expect("authHeaders" in joinData.data.participant).toBe(false);
       expect(joinData.data.participant.config.hasInstructions).toBe(false);
+    });
+
+    test("rejects provider auth headers in participant registration", async () => {
+      const { data: created } = await createRoom("Auth Header Reject Room");
+      const res = await fetch(
+        `${baseUrl}/v1/rooms/${created.room.code}/participants/participant-auth`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nickname: "auth-server",
+            model: "llama3",
+            endpoint: "http://localhost:11434",
+            authHeaders: {
+              Authorization: "Bearer secret-token",
+            },
+          }),
+        }
+      );
+      const data = ErrorResponseSchema.parse(await res.json());
+
+      expect(res.status).toBe(400);
+      expect(data.error.code).toBe("INVALID_REQUEST");
+      expect(data.error.message).toBe(
+        "Participant auth headers are not accepted by the hub."
+      );
     });
 
     test("returns error for non-existent room", async () => {
@@ -765,7 +925,7 @@ describe("Hub", () => {
       expect(data.meta.requestId).toBeDefined();
     });
 
-    test("rejects loopback endpoints when the participant joins remotely", async () => {
+    test("accepts loopback endpoints for remote participants and returns tunnel bootstrap", async () => {
       const { data: created } = await createRoom("Remote Room");
       const { res, data } = await joinRoom(
         created.room.code,
@@ -778,12 +938,73 @@ describe("Hub", () => {
         { "x-forwarded-for": "192.168.1.50" }
       );
 
-      expect(res.status).toBe(400);
-      const errorData = ErrorResponseSchema.parse(data);
-      expect(errorData.error.message).toContain(
-        "only reachable on the participant machine"
+      expect(res.status).toBe(201);
+      const joinData = JoinResponseSchema.parse(data);
+      expect(joinData.data.participant.endpoint).toBe("http://localhost:11434");
+      expect(joinData.data.tunnel.url).toContain(
+        "/participants/participant-remote/tunnel"
       );
-      expect(errorData.error.hint).toContain("--network-endpoint");
+    });
+
+    test("keeps the replacement tunnel connected when an older socket closes", async () => {
+      const { data: created } = await createRoom("Reconnect Room");
+      const participantId = "participant-reconnect";
+
+      const firstRegistrationResponse = await fetch(
+        `${baseUrl}/v1/rooms/${created.room.code}/participants/${participantId}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: participantId,
+            nickname: "reconnect-user",
+            model: "llama3",
+            endpoint: "http://localhost:11434",
+          }),
+        }
+      );
+      const firstRegistration = JoinResponseSchema.parse(
+        await firstRegistrationResponse.json()
+      );
+      const firstSocket = await connectParticipantTunnel({
+        endpoint: "http://localhost:11434",
+        tunnel: firstRegistration.data.tunnel,
+      });
+
+      const secondRegistrationResponse = await fetch(
+        `${baseUrl}/v1/rooms/${created.room.code}/participants/${participantId}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: participantId,
+            nickname: "reconnect-user",
+            model: "llama3",
+            endpoint: "http://localhost:11434",
+          }),
+        }
+      );
+      const secondRegistration = JoinResponseSchema.parse(
+        await secondRegistrationResponse.json()
+      );
+      const secondSocket = await connectParticipantTunnel({
+        endpoint: "http://localhost:11434",
+        tunnel: secondRegistration.data.tunnel,
+      });
+
+      await Bun.sleep(25);
+
+      const participantsResponse = await fetch(
+        `${baseUrl}/v1/rooms/${created.room.code}/participants`
+      );
+      const participants = ParticipantsResponseSchema.parse(
+        await participantsResponse.json()
+      );
+
+      expect(firstSocket.readyState).toBe(WebSocket.CLOSED);
+      expect(secondSocket.readyState).toBe(WebSocket.OPEN);
+      expect(participants.data[0]?.status).toBe("online");
+      expect(participants.data[0]?.connection.connected).toBe(true);
     });
 
     test("redacts participant instructions in join and list responses", async () => {
@@ -1021,27 +1242,33 @@ describe("Hub", () => {
           const connectedEvent = await events.nextEvent();
           expect(connectedEvent.type).toBe("connected");
 
-          const response = await fetch(`${baseUrl}/rooms/${room.code}/v1/responses`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: "participant-events",
-              input: "Hello",
-            }),
-          });
+          const response = await fetch(
+            `${baseUrl}/rooms/${room.code}/v1/responses`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                model: "participant-events",
+                input: "Hello",
+              }),
+            }
+          );
           expect(response.status).toBe(200);
 
           const requestEvent = await events.nextEvent();
           const completeEvent = await events.nextEvent();
 
           expect(requestEvent.type).toBe("llm.request");
-          expect(requestEvent.data).toEqual({
+          expect(requestEvent.data).toMatchObject({
             participantId: "participant-events",
             model: "participant-events",
+            protocol: "openResponses",
           });
           expect(completeEvent.type).toBe("llm.complete");
-          expect(completeEvent.data).toEqual({
+          expect(completeEvent.data).toMatchObject({
             participantId: "participant-events",
+            protocol: "openResponses",
+            metrics: expect.any(Object),
           });
         } finally {
           await events.close();
@@ -1121,7 +1348,7 @@ describe("Hub", () => {
       }
     });
 
-    test("forwards stored auth headers without exposing them publicly", async () => {
+    test("keeps provider auth local to the tunnel without exposing it publicly", async () => {
       const participantServer = createMockParticipantServer("responses", {
         name: "Authorization",
         value: "Bearer secret-token",
@@ -1131,30 +1358,21 @@ describe("Hub", () => {
         const {
           data: { room },
         } = await createRoom("Authenticated Responses Room");
-        const joined = JoinResponseSchema.parse(
-          await (
-            await fetch(
-              `${baseUrl}/v1/rooms/${room.code}/participants/participant-auth`,
-              {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  id: "participant-auth",
-                  nickname: "auth-server",
-                  model: "llama3",
-                  endpoint: participantServer.url,
-                  authHeaders: {
-                    Authorization: "Bearer secret-token",
-                  },
-                  capabilities: {
-                    openResponses: "supported",
-                    chatCompletions: "supported",
-                  },
-                }),
-              }
-            )
-          ).json()
-        );
+        const { data, res } = await joinRoom(room.code, {
+          id: "participant-auth",
+          nickname: "auth-server",
+          model: "llama3",
+          endpoint: participantServer.url,
+          authHeaders: {
+            Authorization: "Bearer secret-token",
+          },
+          capabilities: {
+            openResponses: "supported",
+            chatCompletions: "supported",
+          },
+        });
+        expect(res.status).toBe(201);
+        const joined = JoinResponseSchema.parse(data);
 
         expect(joined.data.participant).not.toHaveProperty("authHeaders");
 

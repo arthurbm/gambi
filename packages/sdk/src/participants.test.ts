@@ -17,7 +17,8 @@ describe("SDK participants namespace", () => {
     expect(participant.nickname).toBe("Test Bot");
     expect(participant.model).toBe("llama3");
     expect(participant.endpoint).toBe("http://localhost:11434");
-    expect(participant.status).toBe("online");
+    expect(participant.status).toBe("offline");
+    expect(participant.connection.connected).toBe(false);
     expect(participant.specs).toEqual({});
     expect(participant.config).toEqual({});
   });
