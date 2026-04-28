@@ -9,6 +9,17 @@ const statusColorMap: Record<ParticipantInfo["status"], string> = {
   offline: colors.muted,
 };
 
+function formatTunnelSeenAt(timestamp: number | null): string {
+  if (!timestamp) {
+    return "never";
+  }
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (seconds < 60) {
+    return `${seconds}s ago`;
+  }
+  return `${Math.floor(seconds / 60)}m ago`;
+}
+
 interface ParticipantCardProps {
   participant: ParticipantInfo;
   isProcessing?: boolean;
@@ -28,7 +39,13 @@ export function ParticipantCard({
   isOwnParticipant = false,
   ownHealthStatus,
 }: ParticipantCardProps) {
-  const status = isProcessing ? "busy" : participant.status;
+  const available = participant.connection.connected;
+  const status =
+    isProcessing && available
+      ? "busy"
+      : available
+        ? participant.status
+        : "offline";
   const indicator = statusIndicators[status];
   const statusColor = statusColorMap[status];
 
@@ -49,6 +66,9 @@ export function ParticipantCard({
     isProcessing && metrics
       ? `${metrics.tokensPerSecond?.toFixed(0) ?? "?"} tok/s ${metrics.latencyMs ?? "?"}ms`
       : "";
+  const tunnelSeenText = participant.connection.lastTunnelSeenAt
+    ? new Date(participant.connection.lastTunnelSeenAt).toLocaleTimeString()
+    : "never";
 
   return (
     <box
@@ -123,6 +143,13 @@ export function ParticipantCard({
               )}
             </box>
           )}
+          <text fg={participant.connection.connected ? colors.success : colors.error}>
+            Tunnel {participant.connection.connected ? "connected" : "disconnected"}
+          </text>
+          <text fg={colors.muted}>
+            Last tunnel seen:{" "}
+            {formatTunnelSeenAt(participant.connection.lastTunnelSeenAt)}
+          </text>
           {participant.config.hasInstructions && (
             <text fg={colors.muted}> Prompt defaults configured</text>
           )}

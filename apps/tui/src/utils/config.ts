@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 export interface UserConfig {
   hubUrl?: string;
   llmEndpoint?: string;
+  participantId?: string;
 }
 
 const CONFIG_PATH = join(homedir(), ".gambi", "config.json");

@@ -47,6 +47,7 @@ export function App({ hubUrl: initialHubUrl }: AppProps) {
 
   // Confirmation modal state
   const [pendingConfirm, setPendingConfirm] = useState<ConfirmAction>(null);
+  const [isQuitting, setIsQuitting] = useState(false);
 
   // Initialize store with prop value
   useEffect(() => {
@@ -70,30 +71,46 @@ export function App({ hubUrl: initialHubUrl }: AppProps) {
   } = useRooms();
 
   // Check if confirmation is needed before quitting
-  const needsQuitConfirmation =
-    hubStatus === "running" || session.status === "joined";
+  const hasActiveSession =
+    session.status === "joining" ||
+    session.status === "joined" ||
+    session.status === "leaving";
+  const needsQuitConfirmation = hubStatus === "running" || hasActiveSession;
 
-  const doQuit = useCallback(() => {
+  const doQuit = useCallback(async () => {
+    if (isQuitting) {
+      return;
+    }
+    setIsQuitting(true);
+    if (hasActiveSession) {
+      await session.leave();
+    }
     shutdownHub();
     renderer.destroy();
-  }, [renderer]);
+  }, [renderer, session, hasActiveSession, isQuitting]);
 
   const handleQuit = useCallback(() => {
+    if (isQuitting) {
+      return;
+    }
     if (needsQuitConfirmation) {
       setPendingConfirm("quit");
     } else {
-      doQuit();
+      void doQuit();
     }
-  }, [needsQuitConfirmation, doQuit]);
+  }, [needsQuitConfirmation, doQuit, isQuitting]);
 
   const handleConfirm = useCallback(() => {
+    if (isQuitting) {
+      return;
+    }
     if (pendingConfirm === "quit") {
-      doQuit();
+      void doQuit();
     } else if (pendingConfirm === "leave") {
-      session.leave();
+      void session.leave();
     }
     setPendingConfirm(null);
-  }, [pendingConfirm, doQuit, session]);
+  }, [pendingConfirm, doQuit, session, isQuitting]);
 
   const handleCancelConfirm = useCallback(() => {
     setPendingConfirm(null);
@@ -144,18 +161,32 @@ export function App({ hubUrl: initialHubUrl }: AppProps) {
   );
 
   // Confirmation Modal
+  if (isQuitting) {
+    return (
+      <WithSidebar>
+        <box alignItems="center" flexGrow={1} justifyContent="center">
+          <text>Leaving participant session and shutting down...</text>
+        </box>
+      </WithSidebar>
+    );
+  }
+
   if (pendingConfirm === "quit") {
     const reasons: string[] = [];
     if (hubStatus === "running") {
       reasons.push("Hub is running");
     }
-    if (session.status === "joined") {
+    if (hasActiveSession) {
       reasons.push("You are joined in a room");
     }
     return (
       <WithSidebar>
         <ConfirmModal
-          message={`${reasons.join(" and ")}. Are you sure you want to quit?`}
+          message={
+            isQuitting
+              ? "Closing participant tunnel..."
+              : `${reasons.join(" and ")}. Are you sure you want to quit?`
+          }
           onCancel={handleCancelConfirm}
           onConfirm={handleConfirm}
           title="Confirm Quit"

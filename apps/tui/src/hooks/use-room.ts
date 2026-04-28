@@ -11,6 +11,7 @@ import {
   SSEParticipantJoinedEvent,
   SSEParticipantLeftEvent,
   SSEParticipantOfflineEvent,
+  SSEParticipantUpdatedEvent,
   SSERoomCreatedEvent,
 } from "../types";
 import { useSSE } from "./use-sse";
@@ -126,6 +127,16 @@ export function useRoom(options: UseRoomOptions): UseRoomReturn {
     },
     [addLog]
   );
+
+  const handleParticipantUpdated = useCallback((data: unknown) => {
+    const parsed = SSEParticipantUpdatedEvent.safeParse(data);
+    if (parsed.success) {
+      const participant = parsed.data;
+      setParticipants((prev) =>
+        new Map(prev).set(participant.id, participant)
+      );
+    }
+  }, []);
 
   const handleParticipantLeft = useCallback(
     (data: unknown) => {
@@ -260,6 +271,7 @@ export function useRoom(options: UseRoomOptions): UseRoomReturn {
         connected: handleConnected,
         "room.created": handleRoomCreated,
         "participant.joined": handleParticipantJoined,
+        "participant.updated": handleParticipantUpdated,
         "participant.left": handleParticipantLeft,
         "participant.offline": handleParticipantOffline,
         "llm.request": handleLlmRequest,
@@ -272,6 +284,7 @@ export function useRoom(options: UseRoomOptions): UseRoomReturn {
       handleConnected,
       handleRoomCreated,
       handleParticipantJoined,
+      handleParticipantUpdated,
       handleParticipantLeft,
       handleParticipantOffline,
       handleLlmRequest,

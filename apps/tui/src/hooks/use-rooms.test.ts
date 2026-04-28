@@ -12,6 +12,7 @@ import {
   handleParticipantJoinedEvent,
   handleParticipantLeftEvent,
   handleParticipantOfflineEvent,
+  handleParticipantUpdatedEvent,
   handleRoomCreatedEvent,
   unwrapSSEEventPayload,
 } from "./use-rooms";
@@ -94,18 +95,7 @@ describe("handleRoomCreatedEvent", () => {
 describe("handleParticipantJoinedEvent", () => {
   test("adds participant to room", () => {
     const room = createRoom();
-    const data = {
-      id: "p1",
-      nickname: "Bot1",
-      model: "llama3",
-      endpoint: "http://localhost:11434",
-      status: "online",
-      joinedAt: Date.now(),
-      lastSeen: Date.now(),
-      updatedAt: Date.now(),
-      specs: {},
-      config: {},
-    };
+    const data = createParticipant("p1", "Bot1");
     const result = handleParticipantJoinedEvent(room, data);
 
     expect(result.room.participants.has("p1")).toBe(true);
@@ -114,18 +104,7 @@ describe("handleParticipantJoinedEvent", () => {
 
   test("creates log entry with type join", () => {
     const room = createRoom();
-    const data = {
-      id: "p1",
-      nickname: "Bot1",
-      model: "llama3",
-      endpoint: "http://localhost:11434",
-      status: "online",
-      joinedAt: Date.now(),
-      lastSeen: Date.now(),
-      updatedAt: Date.now(),
-      specs: {},
-      config: {},
-    };
+    const data = createParticipant("p1", "Bot1");
     const result = handleParticipantJoinedEvent(room, data);
 
     expect(result.log).toBeDefined();
@@ -140,6 +119,36 @@ describe("handleParticipantJoinedEvent", () => {
     const result = handleParticipantJoinedEvent(room, { invalid: true });
 
     expect(result.room.participants.size).toBe(0);
+    expect(result.log).toBeUndefined();
+  });
+});
+
+describe("handleParticipantUpdatedEvent", () => {
+  test("updates participant in room", () => {
+    const participants = new Map();
+    participants.set("p1", createParticipant("p1", "Bot1"));
+    const room = createRoom({ participants });
+    const updated = createParticipant("p1", "Bot1-renamed", {
+      connection: {
+        kind: "tunnel",
+        connected: false,
+        lastTunnelSeenAt: null,
+      },
+      status: "offline",
+    });
+
+    const result = handleParticipantUpdatedEvent(room, updated);
+
+    expect(result.room.participants.get("p1")?.nickname).toBe("Bot1-renamed");
+    expect(result.room.participants.get("p1")?.connection.connected).toBe(false);
+    expect(result.log).toBeUndefined();
+  });
+
+  test("returns unchanged room on invalid data", () => {
+    const room = createRoomWithParticipants(1);
+    const result = handleParticipantUpdatedEvent(room, { invalid: true });
+
+    expect(result.room.participants.get("p1")?.nickname).toBe("Bot1");
     expect(result.log).toBeUndefined();
   });
 });

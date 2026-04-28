@@ -1,3 +1,4 @@
+import type { ParticipantSession } from "@gambi/core/participant-session";
 import { create } from "zustand";
 
 type SessionStatus = "idle" | "joining" | "joined" | "leaving" | "error";
@@ -12,30 +13,29 @@ interface SessionState {
   model: string | null;
   endpoint: string | null;
   error: string | null;
+  closeReason: string | null;
+  session: ParticipantSession | null;
 
   // Health tracking
   healthStatus: HealthStatus;
   lastHealthCheck: Date | null;
-  consecutiveFailures: number;
 
   // Connection actions
   setJoining: (roomCode: string) => void;
   setJoined: (
+    session: ParticipantSession,
     participantId: string,
     roomCode: string,
     details?: { nickname?: string; model?: string; endpoint?: string }
   ) => void;
   setLeaving: () => void;
-  setError: (error: string) => void;
+  setError: (error: string, closeReason?: string) => void;
   reset: () => void;
 
   // Health actions
   setHealthStatus: (status: HealthStatus) => void;
-  recordHealthCheck: (success: boolean) => void;
+  markHealthy: () => void;
 }
-
-const DEGRADED_THRESHOLD = 1;
-const UNHEALTHY_THRESHOLD = 3;
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   // Initial connection state
@@ -46,16 +46,25 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   model: null,
   endpoint: null,
   error: null,
+  closeReason: null,
+  session: null,
 
   // Initial health state
   healthStatus: "healthy",
   lastHealthCheck: null,
-  consecutiveFailures: 0,
 
   // Connection actions
-  setJoining: (roomCode) => set({ status: "joining", roomCode, error: null }),
+  setJoining: (roomCode) =>
+    set({
+      status: "joining",
+      roomCode,
+      error: null,
+      closeReason: null,
+      healthStatus: "degraded",
+      lastHealthCheck: null,
+    }),
 
-  setJoined: (participantId, roomCode, details) =>
+  setJoined: (session, participantId, roomCode, details) =>
     set({
       status: "joined",
       participantId,
@@ -64,13 +73,22 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       model: details?.model ?? null,
       endpoint: details?.endpoint ?? null,
       error: null,
+      closeReason: null,
+      session,
       healthStatus: "healthy",
-      consecutiveFailures: 0,
+      lastHealthCheck: new Date(),
     }),
 
-  setLeaving: () => set({ status: "leaving" }),
+  setLeaving: () => set({ status: "leaving", healthStatus: "degraded" }),
 
-  setError: (error) => set({ status: "error", error }),
+  setError: (error, closeReason) =>
+    set({
+      status: "error",
+      error,
+      closeReason: closeReason ?? null,
+      healthStatus: "unhealthy",
+      session: null,
+    }),
 
   reset: () =>
     set({
@@ -81,37 +99,18 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       model: null,
       endpoint: null,
       error: null,
+      closeReason: null,
+      session: null,
       healthStatus: "healthy",
       lastHealthCheck: null,
-      consecutiveFailures: 0,
     }),
 
   // Health actions
   setHealthStatus: (healthStatus) => set({ healthStatus }),
 
-  recordHealthCheck: (success) => {
-    const current = get();
-
-    if (success) {
-      set({
-        healthStatus: "healthy",
-        lastHealthCheck: new Date(),
-        consecutiveFailures: 0,
-      });
-    } else {
-      const failures = current.consecutiveFailures + 1;
-      let healthStatus: HealthStatus = "healthy";
-
-      if (failures >= UNHEALTHY_THRESHOLD) {
-        healthStatus = "unhealthy";
-      } else if (failures >= DEGRADED_THRESHOLD) {
-        healthStatus = "degraded";
-      }
-
-      set({
-        healthStatus,
-        consecutiveFailures: failures,
-      });
-    }
-  },
+  markHealthy: () =>
+    set({
+      healthStatus: "healthy",
+      lastHealthCheck: new Date(),
+    }),
 }));

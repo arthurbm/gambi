@@ -1,9 +1,30 @@
-import { useCallback, useEffect, useRef } from "react";
+import {
+  createParticipantSession,
+  type ParticipantSession,
+} from "@gambi/core/participant-session";
+import { useCallback, useEffect } from "react";
+import { useAppStore } from "../store/app-store";
 import { useSessionStore } from "../store/session-store";
-import { type JoinParticipantData, useHubApi } from "./use-hub-api";
+import type {
+  MachineSpecs,
+  ParticipantAuthHeaders,
+  ParticipantCapabilities,
+  RuntimeConfig,
+} from "@gambi/core/types";
 
-const HEALTH_CHECK_INTERVAL = 10_000;
-const MAX_FAILURES = 3;
+let activeSession: ParticipantSession | null = null;
+
+export interface JoinParticipantData {
+  authHeaders?: ParticipantAuthHeaders;
+  capabilities?: ParticipantCapabilities;
+  config?: RuntimeConfig;
+  endpoint: string;
+  id: string;
+  model: string;
+  nickname: string;
+  password?: string;
+  specs?: MachineSpecs;
+}
 
 export interface UseParticipantSessionReturn {
   status: "idle" | "joining" | "joined" | "leaving" | "error";
@@ -15,7 +36,7 @@ export interface UseParticipantSessionReturn {
 }
 
 export function useParticipantSession(): UseParticipantSessionReturn {
-  const api = useHubApi();
+  const hubUrl = useAppStore((s) => s.hubUrl);
 
   // Read state from session store
   const status = useSessionStore((s) => s.status);
@@ -29,97 +50,91 @@ export function useParticipantSession(): UseParticipantSessionReturn {
   const setLeaving = useSessionStore((s) => s.setLeaving);
   const setError = useSessionStore((s) => s.setError);
   const reset = useSessionStore((s) => s.reset);
-  const recordHealthCheck = useSessionStore((s) => s.recordHealthCheck);
-
-  const healthIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const failureCountRef = useRef(0);
-
-  const stopHealthCheck = useCallback(() => {
-    if (healthIntervalRef.current) {
-      clearInterval(healthIntervalRef.current);
-      healthIntervalRef.current = null;
-    }
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-  }, []);
-
-  const startHealthCheck = useCallback(
-    (code: string, id: string) => {
-      stopHealthCheck();
-      failureCountRef.current = 0;
-      abortControllerRef.current = new AbortController();
-
-      healthIntervalRef.current = setInterval(async () => {
-        const result = await api.healthCheck(code, id);
-        const success = !result.error;
-
-        // Update global health status in session store
-        recordHealthCheck(success);
-
-        if (success) {
-          failureCountRef.current = 0;
-        } else {
-          failureCountRef.current += 1;
-          if (failureCountRef.current >= MAX_FAILURES) {
-            setError(
-              `Lost connection after ${MAX_FAILURES} failed health checks`
-            );
-            stopHealthCheck();
-          }
-        }
-      }, HEALTH_CHECK_INTERVAL);
-    },
-    [api, stopHealthCheck, recordHealthCheck, setError]
-  );
+  const setHealthStatus = useSessionStore((s) => s.setHealthStatus);
 
   const join = useCallback(
     async (code: string, data: JoinParticipantData): Promise<boolean> => {
-      setJoining(code);
-
-      const result = await api.joinRoom(code, data);
-
-      if (result.error) {
-        setError(result.error);
+      const currentStatus = useSessionStore.getState().status;
+      if (currentStatus === "joined" || currentStatus === "joining") {
+        setError("Leave the current participant session before joining again.");
         return false;
       }
 
-      if (result.data) {
-        setJoined(result.data.participant.id, code, {
-          nickname: data.nickname,
-          model: data.model,
-          endpoint: data.endpoint,
-        });
-        startHealthCheck(code, result.data.participant.id);
-        return true;
-      }
+      setJoining(code);
 
-      return false;
+      try {
+        const session = await createParticipantSession({
+          hubUrl,
+          roomCode: code,
+          participantId: data.id,
+          endpoint: data.endpoint,
+          model: data.model,
+          nickname: data.nickname,
+          password: data.password,
+          specs: data.specs,
+          config: data.config,
+          capabilities: data.capabilities,
+          authHeaders: data.authHeaders,
+        });
+
+        activeSession = session;
+        setJoined(session, session.participant.id, code, {
+          nickname: session.participant.nickname,
+          model: session.participant.model,
+          endpoint: session.participant.endpoint,
+        });
+        setHealthStatus("healthy");
+
+        session.waitUntilClosed().then((event) => {
+          if (activeSession !== session) {
+            return;
+          }
+          activeSession = null;
+          if (event.reason === "closed") {
+            reset();
+            return;
+          }
+          setError(
+            event.error?.message ??
+              (event.reason === "heartbeat_failed"
+                ? "Participant heartbeat failed."
+                : "Participant tunnel closed.")
+          );
+          setHealthStatus("unhealthy");
+        });
+        return true;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setError(message);
+        setHealthStatus("unhealthy");
+        return false;
+      }
     },
-    [api, setJoining, setJoined, setError, startHealthCheck]
+    [hubUrl, setJoining, setJoined, setError, setHealthStatus, reset]
   );
 
   const leave = useCallback(async () => {
     setLeaving();
-    stopHealthCheck();
+    const session = activeSession;
+    activeSession = null;
 
-    // Get current values from store for API call
-    const currentState = useSessionStore.getState();
-    if (currentState.roomCode && currentState.participantId) {
-      await api.leaveRoom(currentState.roomCode, currentState.participantId);
+    if (session) {
+      await session.close();
     }
 
     reset();
-  }, [api, setLeaving, reset, stopHealthCheck]);
+  }, [setLeaving, reset]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      stopHealthCheck();
+      const session = activeSession;
+      activeSession = null;
+      if (session) {
+        void session.close();
+      }
     };
-  }, [stopHealthCheck]);
+  }, []);
 
   return {
     status,

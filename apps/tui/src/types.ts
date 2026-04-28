@@ -64,6 +64,8 @@ export const SSERoomCreatedEvent = z.object({
 
 export const SSEParticipantJoinedEvent = ParticipantInfoSchema;
 
+export const SSEParticipantUpdatedEvent = ParticipantInfoSchema;
+
 export const SSEParticipantLeftEvent = z.object({
   participantId: z.string(),
 });

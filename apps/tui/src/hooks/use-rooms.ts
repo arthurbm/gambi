@@ -16,6 +16,7 @@ import {
   SSEParticipantJoinedEvent,
   SSEParticipantLeftEvent,
   SSEParticipantOfflineEvent,
+  SSEParticipantUpdatedEvent,
   SSERoomCreatedEvent,
 } from "../types";
 
@@ -126,6 +127,20 @@ export function handleParticipantJoinedEvent(
       message: `${participant.nickname} joined`,
     },
   };
+}
+
+export function handleParticipantUpdatedEvent(
+  room: RoomState,
+  data: unknown
+): EventResult {
+  const parsed = SSEParticipantUpdatedEvent.safeParse(data);
+  if (!parsed.success) {
+    return { room };
+  }
+  const participant = parsed.data;
+  const participants = new Map(room.participants);
+  participants.set(participant.id, participant);
+  return { room: { ...room, participants } };
 }
 
 export function handleParticipantLeftEvent(
@@ -366,6 +381,7 @@ export function useRooms(): UseRoomsReturn {
           connected: (r) => handleConnectedEvent(r),
           "room.created": (r, d) => handleRoomCreatedEvent(r, code, d),
           "participant.joined": handleParticipantJoinedEvent,
+          "participant.updated": handleParticipantUpdatedEvent,
           "participant.left": handleParticipantLeftEvent,
           "participant.offline": handleParticipantOfflineEvent,
           "llm.request": handleLlmRequestEvent,
@@ -393,6 +409,7 @@ export function useRooms(): UseRoomsReturn {
       // Invalidate participant queries when relevant events occur
       if (
         event === "participant.joined" ||
+        event === "participant.updated" ||
         event === "participant.left" ||
         event === "participant.offline"
       ) {
