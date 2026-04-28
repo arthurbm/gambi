@@ -50,7 +50,6 @@ export function useParticipantSession(): UseParticipantSessionReturn {
   const setLeaving = useSessionStore((s) => s.setLeaving);
   const setError = useSessionStore((s) => s.setError);
   const reset = useSessionStore((s) => s.reset);
-  const setHealthStatus = useSessionStore((s) => s.setHealthStatus);
 
   const join = useCallback(
     async (code: string, data: JoinParticipantData): Promise<boolean> => {
@@ -83,7 +82,6 @@ export function useParticipantSession(): UseParticipantSessionReturn {
           model: session.participant.model,
           endpoint: session.participant.endpoint,
         });
-        setHealthStatus("healthy");
 
         session
           .waitUntilClosed()
@@ -118,7 +116,7 @@ export function useParticipantSession(): UseParticipantSessionReturn {
         return false;
       }
     },
-    [hubUrl, setJoining, setJoined, setError, setHealthStatus, reset]
+    [hubUrl, setJoining, setJoined, setError, reset]
   );
 
   const leave = useCallback(async () => {
@@ -127,7 +125,11 @@ export function useParticipantSession(): UseParticipantSessionReturn {
     activeSession = null;
 
     if (session) {
-      await session.close();
+      try {
+        await session.close();
+      } catch {
+        // Always reset local state even if best-effort remote cleanup fails.
+      }
     }
 
     reset();
