@@ -66,9 +66,6 @@ export function ParticipantCard({
     isProcessing && metrics
       ? `${metrics.tokensPerSecond?.toFixed(0) ?? "?"} tok/s ${metrics.latencyMs ?? "?"}ms`
       : "";
-  const tunnelSeenText = participant.connection.lastTunnelSeenAt
-    ? new Date(participant.connection.lastTunnelSeenAt).toLocaleTimeString()
-    : "never";
 
   return (
     <box

@@ -103,7 +103,7 @@ export const colors = {
   muted: "#737373", // Gray - secondary text, disabled
   metrics: "#BE185D", // Rose - tok/s, latency numbers
   text: "#D1D5DB", // Light neutral - primary text on dark terminals
-  surface: "#D1D5DB", // Gray - focused/selected backgrounds
+  surface: "#334155", // Slate - focused/selected backgrounds
   accent: "#7C3AED", // Violet - accent/highlight
 } as const;
 

@@ -77,7 +77,7 @@ export function useParticipantSession(): UseParticipantSessionReturn {
         });
 
         activeSession = session;
-        setJoined(session, session.participant.id, code, {
+        setJoined(session.participant.id, code, {
           nickname: session.participant.nickname,
           model: session.participant.model,
           endpoint: session.participant.endpoint,

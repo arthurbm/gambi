@@ -1,4 +1,3 @@
-import type { ParticipantSession } from "@gambi/core/participant-session";
 import { create } from "zustand";
 
 type SessionStatus = "idle" | "joining" | "joined" | "leaving" | "error";
@@ -14,7 +13,6 @@ interface SessionState {
   endpoint: string | null;
   error: string | null;
   closeReason: string | null;
-  session: ParticipantSession | null;
 
   // Health tracking
   healthStatus: HealthStatus;
@@ -23,7 +21,6 @@ interface SessionState {
   // Connection actions
   setJoining: (roomCode: string) => void;
   setJoined: (
-    session: ParticipantSession,
     participantId: string,
     roomCode: string,
     details?: { nickname?: string; model?: string; endpoint?: string }
@@ -46,7 +43,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   endpoint: null,
   error: null,
   closeReason: null,
-  session: null,
 
   // Initial health state
   healthStatus: "healthy",
@@ -63,7 +59,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       lastHealthCheck: null,
     }),
 
-  setJoined: (session, participantId, roomCode, details) =>
+  setJoined: (participantId, roomCode, details) =>
     set({
       status: "joined",
       participantId,
@@ -73,7 +69,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       endpoint: details?.endpoint ?? null,
       error: null,
       closeReason: null,
-      session,
       healthStatus: "healthy",
       lastHealthCheck: new Date(),
     }),
@@ -86,7 +81,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       error,
       closeReason: closeReason ?? null,
       healthStatus: "unhealthy",
-      session: null,
     }),
 
   reset: () =>
@@ -99,7 +93,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       endpoint: null,
       error: null,
       closeReason: null,
-      session: null,
       healthStatus: "healthy",
       lastHealthCheck: null,
     }),
