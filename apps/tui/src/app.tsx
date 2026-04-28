@@ -171,11 +171,7 @@ export function App() {
     return (
       <WithSidebar>
         <ConfirmModal
-          message={
-            isQuitting
-              ? "Closing participant tunnel..."
-              : `${reasons.join(" and ")}. Are you sure you want to quit?`
-          }
+          message={`${reasons.join(" and ")}. Are you sure you want to quit?`}
           onCancel={handleCancelConfirm}
           onConfirm={handleConfirm}
           title="Confirm Quit"

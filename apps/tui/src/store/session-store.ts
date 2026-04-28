@@ -34,7 +34,6 @@ interface SessionState {
 
   // Health actions
   setHealthStatus: (status: HealthStatus) => void;
-  markHealthy: () => void;
 }
 
 export const useSessionStore = create<SessionState>((set, get) => ({
@@ -107,10 +106,4 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   // Health actions
   setHealthStatus: (healthStatus) => set({ healthStatus }),
-
-  markHealthy: () =>
-    set({
-      healthStatus: "healthy",
-      lastHealthCheck: new Date(),
-    }),
 }));

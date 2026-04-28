@@ -85,28 +85,36 @@ export function useParticipantSession(): UseParticipantSessionReturn {
         });
         setHealthStatus("healthy");
 
-        session.waitUntilClosed().then((event) => {
-          if (activeSession !== session) {
-            return;
-          }
-          activeSession = null;
-          if (event.reason === "closed") {
-            reset();
-            return;
-          }
-          setError(
-            event.error?.message ??
-              (event.reason === "heartbeat_failed"
-                ? "Participant heartbeat failed."
-                : "Participant tunnel closed.")
-          );
-          setHealthStatus("unhealthy");
-        });
+        session
+          .waitUntilClosed()
+          .then((event) => {
+            if (activeSession !== session) {
+              return;
+            }
+            activeSession = null;
+            if (event.reason === "closed") {
+              reset();
+              return;
+            }
+            setError(
+              event.error?.message ??
+                (event.reason === "heartbeat_failed"
+                  ? "Participant heartbeat failed."
+                  : "Participant tunnel closed.")
+            );
+          })
+          .catch((err: unknown) => {
+            if (activeSession !== session) {
+              return;
+            }
+            activeSession = null;
+            const message = err instanceof Error ? err.message : String(err);
+            setError(message);
+          });
         return true;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         setError(message);
-        setHealthStatus("unhealthy");
         return false;
       }
     },
