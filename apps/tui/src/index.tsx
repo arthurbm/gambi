@@ -2,6 +2,7 @@ import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./app";
+import { useAppStore } from "./store/app-store";
 
 export interface StartTUIOptions {
   hubUrl: string;
@@ -18,10 +19,11 @@ const queryClient = new QueryClient({
 });
 
 export async function startTUI(options: StartTUIOptions) {
+  useAppStore.getState().setHubUrl(options.hubUrl);
   const renderer = await createCliRenderer();
   createRoot(renderer).render(
     <QueryClientProvider client={queryClient}>
-      <App hubUrl={options.hubUrl} />
+      <App />
     </QueryClientProvider>
   );
 }
