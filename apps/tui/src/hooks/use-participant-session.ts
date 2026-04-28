@@ -2,7 +2,7 @@ import {
   createParticipantSession,
   type ParticipantSession,
 } from "@gambi/core/participant-session";
-import { useCallback, useEffect } from "react";
+import { useCallback } from "react";
 import { useAppStore } from "../store/app-store";
 import { useSessionStore } from "../store/session-store";
 import type {
@@ -124,17 +124,6 @@ export function useParticipantSession(): UseParticipantSessionReturn {
 
     reset();
   }, [setLeaving, reset]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      const session = activeSession;
-      activeSession = null;
-      if (session) {
-        void session.close();
-      }
-    };
-  }, []);
 
   return {
     status,
