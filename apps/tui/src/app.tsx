@@ -1,5 +1,5 @@
 import { useKeyboard, useRenderer } from "@opentui/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { AddRoomModal } from "./components/add-room-modal";
 import { ConfirmModal } from "./components/confirm-modal";
 import { Footer } from "./components/footer";
@@ -15,12 +15,8 @@ import { ListRooms } from "./screens/list-rooms";
 import { MainMenu } from "./screens/main-menu";
 import { Monitor } from "./screens/monitor";
 import { ServeHub } from "./screens/serve-hub";
-import { useAppStore } from "./store/app-store";
 import { shutdownHub, useHubStore } from "./store/hub-store";
-
-interface AppProps {
-  hubUrl: string;
-}
+import { useSessionStore } from "./store/session-store";
 
 // Layout wrapper that includes sidebar and notifications
 function WithSidebar({ children }: { children: React.ReactNode }) {
@@ -39,19 +35,14 @@ function WithSidebar({ children }: { children: React.ReactNode }) {
 
 type ConfirmAction = "quit" | "leave" | null;
 
-export function App({ hubUrl: initialHubUrl }: AppProps) {
+export function App() {
   const renderer = useRenderer();
-  const setHubUrl = useAppStore((s) => s.setHubUrl);
   const hubStatus = useHubStore((s) => s.status);
   const session = useParticipantSession();
 
   // Confirmation modal state
   const [pendingConfirm, setPendingConfirm] = useState<ConfirmAction>(null);
-
-  // Initialize store with prop value
-  useEffect(() => {
-    setHubUrl(initialHubUrl);
-  }, [initialHubUrl, setHubUrl]);
+  const [isQuitting, setIsQuitting] = useState(false);
 
   // Run periodic health checks on the local hub
   useHubHealthQuery();
@@ -70,30 +61,49 @@ export function App({ hubUrl: initialHubUrl }: AppProps) {
   } = useRooms();
 
   // Check if confirmation is needed before quitting
-  const needsQuitConfirmation =
-    hubStatus === "running" || session.status === "joined";
+  const hasActiveSession =
+    session.status === "joining" ||
+    session.status === "joined" ||
+    session.status === "leaving";
+  const needsQuitConfirmation = hubStatus === "running" || hasActiveSession;
 
-  const doQuit = useCallback(() => {
+  const doQuit = useCallback(async () => {
+    if (isQuitting) {
+      return;
+    }
+    setIsQuitting(true);
+    const { status } = useSessionStore.getState();
+    const currentlyActive =
+      status === "joining" || status === "joined" || status === "leaving";
+    if (currentlyActive) {
+      await session.leave();
+    }
     shutdownHub();
     renderer.destroy();
-  }, [renderer]);
+  }, [renderer, session, isQuitting]);
 
   const handleQuit = useCallback(() => {
+    if (isQuitting) {
+      return;
+    }
     if (needsQuitConfirmation) {
       setPendingConfirm("quit");
     } else {
-      doQuit();
+      void doQuit();
     }
-  }, [needsQuitConfirmation, doQuit]);
+  }, [needsQuitConfirmation, doQuit, isQuitting]);
 
   const handleConfirm = useCallback(() => {
+    if (isQuitting) {
+      return;
+    }
     if (pendingConfirm === "quit") {
-      doQuit();
+      void doQuit();
     } else if (pendingConfirm === "leave") {
-      session.leave();
+      void session.leave();
     }
     setPendingConfirm(null);
-  }, [pendingConfirm, doQuit, session]);
+  }, [pendingConfirm, doQuit, session, isQuitting]);
 
   const handleCancelConfirm = useCallback(() => {
     setPendingConfirm(null);
@@ -144,12 +154,22 @@ export function App({ hubUrl: initialHubUrl }: AppProps) {
   );
 
   // Confirmation Modal
+  if (isQuitting) {
+    return (
+      <WithSidebar>
+        <box alignItems="center" flexGrow={1} justifyContent="center">
+          <text>Leaving participant session and shutting down...</text>
+        </box>
+      </WithSidebar>
+    );
+  }
+
   if (pendingConfirm === "quit") {
     const reasons: string[] = [];
     if (hubStatus === "running") {
       reasons.push("Hub is running");
     }
-    if (session.status === "joined") {
+    if (hasActiveSession) {
       reasons.push("You are joined in a room");
     }
     return (

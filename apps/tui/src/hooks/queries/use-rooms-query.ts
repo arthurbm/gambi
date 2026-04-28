@@ -1,6 +1,5 @@
 import {
   type MachineSpecs,
-  type ParticipantAuthHeaders,
   type ParticipantCapabilities,
   ParticipantInfo,
   RoomSummary,
@@ -50,7 +49,6 @@ export interface JoinParticipantData {
   specs?: z.infer<typeof MachineSpecs>;
   config?: RuntimeConfig;
   capabilities?: ParticipantCapabilities;
-  authHeaders?: ParticipantAuthHeaders;
 }
 
 export interface CreateRoomData {

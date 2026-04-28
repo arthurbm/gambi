@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { ActivityLogEntry, ActivityLogType, LogMetrics } from "./types";
+import {
+  ActivityLogEntry,
+  ActivityLogType,
+  LogMetrics,
+  SSEParticipantUpdatedEvent,
+} from "./types";
 
 describe("ActivityLogType", () => {
   test("accepts all valid log types", () => {
@@ -128,5 +133,35 @@ describe("ActivityLogEntry", () => {
 
     const result = ActivityLogEntry.safeParse(entry);
     expect(result.success).toBe(false);
+  });
+});
+
+describe("SSEParticipantUpdatedEvent", () => {
+  test("validates participant update payload with tunnel connection", () => {
+    const now = Date.now();
+    const result = SSEParticipantUpdatedEvent.safeParse({
+      id: "p1",
+      nickname: "Bot1",
+      model: "llama3",
+      endpoint: "http://localhost:11434",
+      status: "online",
+      joinedAt: now,
+      lastSeen: now,
+      updatedAt: now,
+      specs: {},
+      config: { hasInstructions: false },
+      capabilities: {
+        openResponses: "supported",
+        chatCompletions: "unknown",
+      },
+      connection: {
+        kind: "tunnel",
+        connected: true,
+        lastTunnelSeenAt: now,
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.connection.connected).toBe(true);
   });
 });

@@ -412,6 +412,7 @@ export function JoinRoom({
   // Get persisted endpoint from store
   const lastLlmEndpoint = useAppStore((s) => s.lastLlmEndpoint);
   const setLastLlmEndpoint = useAppStore((s) => s.setLastLlmEndpoint);
+  const participantId = useAppStore((s) => s.participantId);
 
   // React Hook Form with Zod validation
   const {
@@ -462,6 +463,14 @@ export function JoinRoom({
 
   // Form submission
   const handleJoin = useCallback(async () => {
+    if (session.status === "joining") {
+      return;
+    }
+
+    if (session.status === "joined") {
+      return;
+    }
+
     if (authHeaderResolution.error) {
       return;
     }
@@ -473,7 +482,7 @@ export function JoinRoom({
 
     const endpointTrimmed = formValues.endpoint.trim();
     const success = await session.join(formValues.roomCode.trim(), {
-      id: crypto.randomUUID(),
+      id: participantId,
       nickname: formValues.nickname.trim() || generateNickname(),
       model: formValues.model.trim(),
       endpoint: endpointTrimmed,
@@ -494,6 +503,7 @@ export function JoinRoom({
     authHeaderResolution.authHeaders,
     authHeaderResolution.error,
     formValues,
+    participantId,
     specs,
     session,
     onNavigate,
@@ -600,6 +610,9 @@ export function JoinRoom({
     (key) => {
       if (session.status === "joined") {
         handleJoinedKey(key.name ?? "");
+        return;
+      }
+      if (session.status === "joining") {
         return;
       }
       if (key.name === "escape") {
@@ -719,7 +732,7 @@ export function JoinRoom({
         )}
         {session.error && <text fg={colors.error}>Error: {session.error}</text>}
         {session.status === "joining" && (
-          <text fg={colors.muted}>Joining room...</text>
+          <text fg={colors.muted}>Joining room and opening tunnel...</text>
         )}
       </box>
 
@@ -737,7 +750,10 @@ export function JoinRoom({
                 { key: "d", description: "Remove last header" },
               ]
             : []),
-          { key: "Enter", description: "Join" },
+          {
+            key: "Enter",
+            description: session.status === "joining" ? "Joining..." : "Join",
+          },
         ]}
       />
     </box>

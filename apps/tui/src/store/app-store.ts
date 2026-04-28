@@ -10,6 +10,10 @@ interface AppState {
   hubUrl: string;
   setHubUrl: (url: string) => void;
 
+  // Stable participant ID for retry-safe tunnel registrations
+  participantId: string;
+  setParticipantId: (id: string) => void;
+
   // Last used LLM endpoint (for join form)
   lastLlmEndpoint: string;
   setLastLlmEndpoint: (endpoint: string) => void;
@@ -23,12 +27,23 @@ interface AppState {
 
 // Load initial values from config
 const initialConfig = loadConfig();
+const initialParticipantId =
+  initialConfig.participantId ?? crypto.randomUUID();
+if (!initialConfig.participantId) {
+  updateConfig({ participantId: initialParticipantId });
+}
 
 export const useAppStore = create<AppState>((set, get) => ({
   hubUrl: initialConfig.hubUrl ?? "http://localhost:3000",
   setHubUrl: (hubUrl) => {
     set({ hubUrl });
     updateConfig({ hubUrl });
+  },
+
+  participantId: initialParticipantId,
+  setParticipantId: (participantId) => {
+    set({ participantId });
+    updateConfig({ participantId });
   },
 
   lastLlmEndpoint: initialConfig.llmEndpoint ?? "http://localhost:11434",
