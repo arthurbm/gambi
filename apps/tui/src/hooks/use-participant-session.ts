@@ -54,7 +54,11 @@ export function useParticipantSession(): UseParticipantSessionReturn {
   const join = useCallback(
     async (code: string, data: JoinParticipantData): Promise<boolean> => {
       const currentStatus = useSessionStore.getState().status;
-      if (currentStatus === "joined" || currentStatus === "joining") {
+      if (
+        currentStatus === "joined" ||
+        currentStatus === "joining" ||
+        currentStatus === "leaving"
+      ) {
         setError("Leave the current participant session before joining again.");
         return false;
       }
@@ -132,7 +136,9 @@ export function useParticipantSession(): UseParticipantSessionReturn {
       }
     }
 
-    reset();
+    if (activeSession === null) {
+      reset();
+    }
   }, [setLeaving, reset]);
 
   return {

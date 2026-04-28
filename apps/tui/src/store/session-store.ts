@@ -12,7 +12,6 @@ interface SessionState {
   model: string | null;
   endpoint: string | null;
   error: string | null;
-  closeReason: string | null;
 
   // Health tracking
   healthStatus: HealthStatus;
@@ -26,11 +25,8 @@ interface SessionState {
     details?: { nickname?: string; model?: string; endpoint?: string }
   ) => void;
   setLeaving: () => void;
-  setError: (error: string, closeReason?: string) => void;
+  setError: (error: string) => void;
   reset: () => void;
-
-  // Health actions
-  setHealthStatus: (status: HealthStatus) => void;
 }
 
 export const useSessionStore = create<SessionState>((set, get) => ({
@@ -42,7 +38,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   model: null,
   endpoint: null,
   error: null,
-  closeReason: null,
 
   // Initial health state
   healthStatus: "healthy",
@@ -54,7 +49,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       status: "joining",
       roomCode,
       error: null,
-      closeReason: null,
       healthStatus: "degraded",
       lastHealthCheck: null,
     }),
@@ -68,18 +62,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       model: details?.model ?? null,
       endpoint: details?.endpoint ?? null,
       error: null,
-      closeReason: null,
       healthStatus: "healthy",
       lastHealthCheck: new Date(),
     }),
 
   setLeaving: () => set({ status: "leaving", healthStatus: "degraded" }),
 
-  setError: (error, closeReason) =>
+  setError: (error) =>
     set({
       status: "error",
       error,
-      closeReason: closeReason ?? null,
       healthStatus: "unhealthy",
     }),
 
@@ -92,11 +84,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       model: null,
       endpoint: null,
       error: null,
-      closeReason: null,
       healthStatus: "healthy",
       lastHealthCheck: null,
     }),
-
-  // Health actions
-  setHealthStatus: (healthStatus) => set({ healthStatus }),
 }));
