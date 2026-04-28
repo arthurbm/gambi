@@ -59,7 +59,6 @@ export function useParticipantSession(): UseParticipantSessionReturn {
         currentStatus === "joining" ||
         currentStatus === "leaving"
       ) {
-        setError("Leave the current participant session before joining again.");
         return false;
       }
 

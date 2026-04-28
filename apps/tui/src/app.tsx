@@ -16,6 +16,7 @@ import { MainMenu } from "./screens/main-menu";
 import { Monitor } from "./screens/monitor";
 import { ServeHub } from "./screens/serve-hub";
 import { shutdownHub, useHubStore } from "./store/hub-store";
+import { useSessionStore } from "./store/session-store";
 
 // Layout wrapper that includes sidebar and notifications
 function WithSidebar({ children }: { children: React.ReactNode }) {
@@ -71,12 +72,15 @@ export function App() {
       return;
     }
     setIsQuitting(true);
-    if (hasActiveSession) {
+    const { status } = useSessionStore.getState();
+    const currentlyActive =
+      status === "joining" || status === "joined" || status === "leaving";
+    if (currentlyActive) {
       await session.leave();
     }
     shutdownHub();
     renderer.destroy();
-  }, [renderer, session, hasActiveSession, isQuitting]);
+  }, [renderer, session, isQuitting]);
 
   const handleQuit = useCallback(() => {
     if (isQuitting) {
