@@ -1,6 +1,7 @@
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&family=Syne:wght@600;700;800&display=swap");
+
 /* ==========================================================================
    GAMBI Design System
-   Aesthetic: "Improvised Excellence" - Industrial/Raw + Playful
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
@@ -21,6 +22,7 @@
   --gambi-border-strong: hsl(30, 15%, 65%);
 
   /* Typography */
+  --font-display: "Syne", sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
   --font-sans: "Inter", "Source Sans Pro", system-ui, sans-serif;
 

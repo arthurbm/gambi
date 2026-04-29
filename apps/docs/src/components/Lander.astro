@@ -7,836 +7,1456 @@ const commands = {
   npm: "npm install -g gambi",
   bun: "bun add -g gambi",
 };
-
-const features = [
-  {
-    title: "Local-First",
-    description:
-      "Your data stays on your network. No cloud dependencies, no external APIs.",
-    icon: "laptop",
-  },
-  {
-    title: "Resource Sharing",
-    description:
-      "Pool LLM endpoints across your team. Share expensive GPU resources efficiently.",
-    icon: "share",
-  },
-  {
-    title: "Universal",
-    description:
-      "Works with Ollama, LM Studio, LocalAI, vLLM, and any endpoint exposing OpenResponses or chat/completions.",
-    icon: "plug",
-  },
-  {
-    title: "AI SDK Ready",
-    description:
-      "Drop-in replacement for Vercel AI SDK workflows. Same API, shared resources.",
-    icon: "code",
-  },
-];
-
-const useCases = [
-  {
-    title: "Dev Teams",
-    description: "Share expensive LLM endpoints across your team",
-  },
-  {
-    title: "Hackathons",
-    description: "Pool resources for AI projects in 24-48h events",
-  },
-  {
-    title: "Research Labs",
-    description: "Coordinate LLM access across workstations",
-  },
-  {
-    title: "Home Labs",
-    description: "Share your gaming PC's LLM with your laptop",
-  },
-  {
-    title: "Education",
-    description: "Classroom environments where students share compute",
-  },
-];
 ---
 
 <div class="lander">
-  <!-- Hero Section -->
-  <section class="hero">
-    <div class="hero-content">
-      <pre class="ascii-logo" aria-hidden="true">{`
- ██████╗  █████╗ ███╗   ███╗██████╗ ██╗
-██╔════╝ ██╔══██╗████╗ ████║██╔══██╗██║
-██║  ███╗███████║██╔████╔██║██████╔╝██║
-██║   ██║██╔══██║██║╚██╔╝██║██╔══██╗██║
-╚██████╔╝██║  ██║██║ ╚═╝ ██║██████╔╝██║
- ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝╚═════╝ ╚═╝`}</pre>
-      <h1 class="sr-only">Gambi</h1>
-      <p class="tagline">Share local LLMs across your network, effortlessly.</p>
-      <p class="tagline-note">
-        Pool Ollama, LM Studio, vLLM, or any OpenAI-compatible endpoint with your team. One hub, one room code, zero cloud dependencies.
-      </p>
-      <div class="cta-buttons">
-        <a href="/guides/quickstart/" class="btn btn-primary">Get Started</a>
-        <a href="/reference/api/" class="btn btn-secondary">API Reference</a>
-        <a href="/reference/sdk/" class="btn btn-secondary">SDK Reference</a>
-        <a href="https://github.com/arthurbm/gambi" class="btn btn-secondary" target="_blank" rel="noopener">
-          GitHub
-        </a>
-      </div>
-    </div>
-  </section>
+	<!-- Noise overlay for texture -->
+	<svg class="noise" aria-hidden="true">
+		<filter id="grain">
+			<feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
+			<feColorMatrix type="saturate" values="0" />
+		</filter>
+		<rect width="100%" height="100%" filter="url(#grain)" />
+	</svg>
 
-  <!-- Install Section -->
-  <section class="install">
-    <div class="install-header">
-      <span class="label">Install</span>
-    </div>
-    <div class="install-grid">
-      <div class="install-main">
-        <span class="method-label">curl (recommended)</span>
-        <button class="command" data-command={commands.curl}>
-          <code>
-            <span class="dim">curl -fsSL</span> <span class="highlight">https://...install.sh</span> <span class="dim">| bash</span>
-          </code>
-          <span class="copy-icon">
-            <CopyIcon />
-            <CheckIcon />
-          </span>
-        </button>
-      </div>
-      <div class="install-alt">
-        <div class="alt-method">
-          <span class="method-label">npm</span>
-          <button class="command" data-command={commands.npm}>
-            <code>
-              <span class="dim">npm install -g</span> <span class="highlight">gambi</span>
-            </code>
-            <span class="copy-icon">
-              <CopyIcon />
-              <CheckIcon />
-            </span>
-          </button>
-        </div>
-        <div class="alt-method">
-          <span class="method-label">bun</span>
-          <button class="command" data-command={commands.bun}>
-            <code>
-              <span class="dim">bun add -g</span> <span class="highlight">gambi</span>
-            </code>
-            <span class="copy-icon">
-              <CopyIcon />
-              <CheckIcon />
-            </span>
-          </button>
-        </div>
-      </div>
-    </div>
-  </section>
+	<!-- Hero -->
+	<section class="hero">
+		<div class="hero-bg" aria-hidden="true">
+			<div class="gradient-orb orb-1"></div>
+			<div class="gradient-orb orb-2"></div>
+		</div>
+		<div class="hero-inner">
+			<div class="hero-badge">
+				<span class="badge-dot"></span>
+				Open-source &middot; Local-first
+			</div>
+			<h1 class="hero-title">
+				<!-- SVG wordmark -->
+				<svg class="wordmark" viewBox="0 0 420 72" xmlns="http://www.w3.org/2000/svg" aria-label="Gambi">
+					<defs>
+						<linearGradient id="wm-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+							<stop offset="0%" stop-color="var(--lander-accent)" />
+							<stop offset="100%" stop-color="var(--lander-accent-alt)" />
+						</linearGradient>
+					</defs>
+					<text x="0" y="58" font-family="Syne, sans-serif" font-weight="800" font-size="68" fill="url(#wm-grad)" letter-spacing="-3">GAMBI</text>
+				</svg>
+			</h1>
+			<p class="hero-headline">
+				Your team has LLMs.<br />
+				<span class="highlight-text">Pool them together.</span>
+			</p>
+			<p class="hero-sub">
+				Share Ollama, LM Studio, vLLM or any OpenAI-compatible endpoint across your local network. One hub, one room code&mdash;everyone gets access.
+			</p>
+			<div class="hero-cta">
+				<a href="/guides/quickstart/" class="btn-primary">
+					Get started
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+				</a>
+				<a href="https://github.com/arthurbm/gambi" class="btn-ghost" target="_blank" rel="noopener">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+					GitHub
+				</a>
+			</div>
+		</div>
+	</section>
 
-  <!-- Features Section -->
-  <section class="features">
-    <div class="section-header">
-      <span class="label">Features</span>
-    </div>
-    <div class="features-grid">
-      {features.map((feature) => (
-        <div class="feature-card">
-          <div class="feature-icon" data-icon={feature.icon}>
-            {feature.icon === "laptop" && "[ ]"}
-            {feature.icon === "share" && "<->"}
-            {feature.icon === "plug" && "[+]"}
-            {feature.icon === "code" && "{;}"}
-          </div>
-          <h3>{feature.title}</h3>
-          <p>{feature.description}</p>
-        </div>
-      ))}
-    </div>
-  </section>
+	<!-- Terminal Demo -->
+	<section class="demo">
+		<div class="demo-inner">
+			<div class="terminal">
+				<div class="terminal-chrome">
+					<span class="terminal-dot" style="background: #ff5f57;"></span>
+					<span class="terminal-dot" style="background: #febc2e;"></span>
+					<span class="terminal-dot" style="background: #28c840;"></span>
+					<span class="terminal-title">terminal</span>
+				</div>
+				<div class="terminal-body">
+					<div class="term-line" style="--delay: 0;">
+						<span class="term-prompt">$</span>
+						<span class="term-cmd">gambi serve</span>
+					</div>
+					<div class="term-line term-output" style="--delay: 1;">
+						<span class="term-info">Hub running on http://localhost:3000</span>
+					</div>
+					<div class="term-line" style="--delay: 2;">
+						<span class="term-prompt">$</span>
+						<span class="term-cmd">gambi create <span class="term-flag">--name</span> "our-models"</span>
+					</div>
+					<div class="term-line term-output" style="--delay: 3;">
+						<span class="term-info">Room created → code: <span class="term-accent">K7X</span></span>
+					</div>
+					<div class="term-line" style="--delay: 4;">
+						<span class="term-prompt">$</span>
+						<span class="term-cmd">gambi join <span class="term-flag">--code</span> K7X</span>
+					</div>
+					<div class="term-line term-output" style="--delay: 5;">
+						<span class="term-info">Joined as <span class="term-accent">arthur</span> with model <span class="term-accent">llama3</span></span>
+					</div>
+					<div class="term-line" style="--delay: 6;">
+						<span class="term-cursor">_</span>
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
 
-  <!-- How It Works Section -->
-  <section class="how-it-works">
-    <div class="section-header">
-      <span class="label">How It Works</span>
-    </div>
-    <div class="architecture">
-      <pre class="diagram">{`
-┌─────────────────────────────────────────────────────────────┐
-│                       GAMBI HUB (HTTP)                  │
-│                                                             │
-│  Your LLM Pool:                                             │
-│  ┌────────────────────────────────────────────────────┐    │
-│  │ joao  → Ollama llama3    @ 192.168.1.50:11434      │    │
-│  │ maria → LM Studio mistral @ 192.168.1.51:1234      │    │
-│  │ pedro → vLLM qwen        @ 192.168.1.52:8000       │    │
-│  └────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
-       ▲                    ▲                      ▲
-       │ HTTP               │ HTTP                 │ SSE
-       │                    │                      │
-  ┌────┴────┐    ┌─────────┴────────┐      ┌──────┴─────┐
-  │   SDK   │    │  Participants    │      │    TUI     │
-  └─────────┘    └──────────────────┘      └────────────┘
-      `}</pre>
-      <div class="steps">
-        <div class="step">
-          <span class="step-num">1</span>
-          <span class="step-text">Start the hub with <code>gambi serve</code></span>
-        </div>
-        <div class="step">
-          <span class="step-num">2</span>
-          <span class="step-text">Create a room with <code>gambi create</code></span>
-        </div>
-        <div class="step">
-          <span class="step-num">3</span>
-          <span class="step-text">Join with your LLM endpoint</span>
-        </div>
-        <div class="step">
-          <span class="step-num">4</span>
-          <span class="step-text">Use the SDK in your apps</span>
-        </div>
-      </div>
-    </div>
-  </section>
+	<!-- Install -->
+	<section class="install">
+		<div class="install-inner">
+			<h2 class="section-label">Install in seconds</h2>
+			<div class="install-methods">
+				<div class="install-card install-card--main">
+					<span class="method-tag">Recommended</span>
+					<button class="command-btn" data-command={commands.curl}>
+						<code>
+							<span class="cmd-dim">curl -fsSL</span> https://...install.sh <span class="cmd-dim">| bash</span>
+						</code>
+						<span class="copy-icon">
+							<CopyIcon />
+							<CheckIcon />
+						</span>
+					</button>
+				</div>
+				<div class="install-row">
+					<div class="install-card">
+						<span class="method-tag">npm</span>
+						<button class="command-btn" data-command={commands.npm}>
+							<code>npm install -g <span class="cmd-hl">gambi</span></code>
+							<span class="copy-icon">
+								<CopyIcon />
+								<CheckIcon />
+							</span>
+						</button>
+					</div>
+					<div class="install-card">
+						<span class="method-tag">bun</span>
+						<button class="command-btn" data-command={commands.bun}>
+							<code>bun add -g <span class="cmd-hl">gambi</span></code>
+							<span class="copy-icon">
+								<CopyIcon />
+								<CheckIcon />
+							</span>
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
 
-  <!-- Use Cases Section -->
-  <section class="use-cases">
-    <div class="section-header">
-      <span class="label">Use Cases</span>
-    </div>
-    <div class="use-cases-grid">
-      {useCases.map((useCase) => (
-        <div class="use-case-card">
-          <h4>{useCase.title}</h4>
-          <p>{useCase.description}</p>
-        </div>
-      ))}
-    </div>
-  </section>
+	<!-- Problem / Solution -->
+	<section class="problem">
+		<div class="problem-inner">
+			<div class="problem-text">
+				<h2 class="section-title">You've got the hardware.<br />Why isn't it shared?</h2>
+				<p>
+					Your colleague has a beefy GPU running Llama 3. Someone else has Mistral on LM Studio. A third person just set up vLLM with Qwen. But everyone is using their own&mdash;isolated, underutilized.
+				</p>
+				<p>
+					<strong>Gambi turns your local network into a shared LLM pool.</strong> Start a hub, create a room, and everyone joins with what they have. Any app on the network can hit one endpoint and reach any model.
+				</p>
+			</div>
+			<div class="problem-visual">
+				<div class="network-diagram">
+					<div class="node node-hub">
+						<span class="node-label">Hub</span>
+						<span class="node-sub">:3000</span>
+					</div>
+					<div class="connections">
+						<div class="conn conn-1"></div>
+						<div class="conn conn-2"></div>
+						<div class="conn conn-3"></div>
+					</div>
+					<div class="node-ring">
+						<div class="node node-participant" style="--angle: 0deg;">
+							<span class="node-icon">🦙</span>
+							<span class="node-label">Ollama</span>
+						</div>
+						<div class="node node-participant" style="--angle: 120deg;">
+							<span class="node-icon">🔮</span>
+							<span class="node-label">LM Studio</span>
+						</div>
+						<div class="node node-participant" style="--angle: 240deg;">
+							<span class="node-icon">⚡</span>
+							<span class="node-label">vLLM</span>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
 
-  <!-- Code Example Section -->
-  <section class="code-example">
-    <div class="section-header">
-      <span class="label">SDK Example</span>
-    </div>
-    <div class="code-block">
-      <pre><code>{`import { createGambi } from "gambi-sdk";
-import { generateText } from "ai";
+	<!-- How It Works -->
+	<section class="steps-section">
+		<div class="steps-inner">
+			<h2 class="section-title centered">Up and running in 4 steps</h2>
+			<div class="steps-grid">
+				<div class="step-card">
+					<div class="step-number">01</div>
+					<h3>Start the hub</h3>
+					<p>Run <code>gambi serve</code> on any machine. It becomes the central router for your network.</p>
+				</div>
+				<div class="step-card">
+					<div class="step-number">02</div>
+					<h3>Create a room</h3>
+					<p>A room is a shared pool. <code>gambi create</code> gives you a short code anyone can use to join.</p>
+				</div>
+				<div class="step-card">
+					<div class="step-number">03</div>
+					<h3>Join with your LLM</h3>
+					<p>Everyone runs <code>gambi join</code> and picks their provider. Interactive prompts make it dead simple.</p>
+				</div>
+				<div class="step-card">
+					<div class="step-number">04</div>
+					<h3>Use from anywhere</h3>
+					<p>Hit the hub's OpenAI-compatible API from any tool, app, or the SDK. Route to any model or any participant.</p>
+				</div>
+			</div>
+		</div>
+	</section>
 
-const gambi = createGambi({
-  roomCode: "ABC123",
-  hubUrl: "http://localhost:3000",
-});
+	<!-- Features -->
+	<section class="features">
+		<div class="features-inner">
+			<h2 class="section-title centered">Built for the way you already work</h2>
+			<div class="features-grid">
+				<div class="feature-card">
+					<div class="feature-icon">
+						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+					</div>
+					<h3>Local-first, always</h3>
+					<p>Data stays on your network. No cloud, no external APIs, no surprises. Works offline, works everywhere.</p>
+				</div>
+				<div class="feature-card">
+					<div class="feature-icon">
+						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98"/><path d="M15.41 6.51l-6.82 3.98"/></svg>
+					</div>
+					<h3>Pool expensive resources</h3>
+					<p>One GPU running Llama, another with Mistral? Everyone benefits. No more duplicating compute across desks.</p>
+				</div>
+				<div class="feature-card">
+					<div class="feature-icon">
+						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/></svg>
+					</div>
+					<h3>Works with everything</h3>
+					<p>Ollama, LM Studio, vLLM, LocalAI, or any OpenAI-compatible endpoint. If it speaks the API, Gambi routes it.</p>
+				</div>
+				<div class="feature-card">
+					<div class="feature-icon">
+						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/></svg>
+					</div>
+					<h3>Drop-in SDK</h3>
+					<p>Vercel AI SDK compatible. Swap your provider for <code>createGambi()</code> and your app talks to the entire room.</p>
+				</div>
+			</div>
+		</div>
+	</section>
 
-// Route to any available participant
-const { text } = await generateText({
-  model: gambi.any(),
-  prompt: "Hello, Gambi!",
-});
+	<!-- Code -->
+	<section class="code-section">
+		<div class="code-inner">
+			<div class="code-text">
+				<h2 class="section-title">5 lines to shared AI</h2>
+				<p>
+					The SDK plugs into the <a href="https://sdk.vercel.ai" target="_blank" rel="noopener">Vercel AI SDK</a> you probably already use. Route to any available participant, a specific model, or a named peer.
+				</p>
+				<div class="code-links">
+					<a href="/reference/sdk/">SDK Reference</a>
+					<a href="/reference/api/">API Reference</a>
+				</div>
+			</div>
+			<div class="code-block">
+				<div class="code-chrome">
+					<span class="code-file">app.ts</span>
+				</div>
+				<pre><code><span class="tok-kw">import</span> {'{'} createGambi {'}'} <span class="tok-kw">from</span> <span class="tok-str">"gambi-sdk"</span>;
+<span class="tok-kw">import</span> {'{'} generateText {'}'} <span class="tok-kw">from</span> <span class="tok-str">"ai"</span>;
 
-// Or target a specific model
-const { text: code } = await generateText({
-  model: gambi.model("llama3"),
-  prompt: "Write a fibonacci function",
-});`}</code></pre>
-    </div>
-  </section>
+<span class="tok-kw">const</span> gambi = <span class="tok-fn">createGambi</span>({'{'} roomCode: <span class="tok-str">"K7X"</span> {'}'});
 
-  <!-- Footer -->
-  <section class="footer">
-    <div class="footer-links">
-      <a href="https://github.com/arthurbm/gambi" target="_blank" rel="noopener">GitHub</a>
-      <span class="separator">|</span>
-      <a href="/guides/quickstart/">Docs</a>
-      <span class="separator">|</span>
-      <a href="/explanation/why-gambi/">Why Gambi?</a>
-      <span class="separator">|</span>
-      <a href="/guides/migrate-from-gambiarra/">Migration Guide</a>
-    </div>
-    <div class="footer-copy">
-      <span>Made with gambi for the local LLM community</span>
-    </div>
-  </section>
+<span class="tok-kw">const</span> {'{'} text {'}'} = <span class="tok-kw">await</span> <span class="tok-fn">generateText</span>({'{'}
+  model: gambi.<span class="tok-fn">any</span>(),
+  prompt: <span class="tok-str">"Explain quantum computing"</span>,
+{'}'});</code></pre>
+			</div>
+		</div>
+	</section>
+
+	<!-- Use Cases -->
+	<section class="cases">
+		<div class="cases-inner">
+			<h2 class="section-title centered">Who uses this</h2>
+			<div class="cases-grid">
+				<div class="case-card">
+					<span class="case-emoji">👩‍💻</span>
+					<h3>Dev teams</h3>
+					<p>Share a single powerful GPU across the whole team instead of buying one per person.</p>
+				</div>
+				<div class="case-card">
+					<span class="case-emoji">🏁</span>
+					<h3>Hackathons</h3>
+					<p>Pool resources in 24h events. Everyone joins, everyone builds.</p>
+				</div>
+				<div class="case-card">
+					<span class="case-emoji">🔬</span>
+					<h3>Research labs</h3>
+					<p>Coordinate LLM access across workstations without complex infra.</p>
+				</div>
+				<div class="case-card">
+					<span class="case-emoji">🏠</span>
+					<h3>Home labs</h3>
+					<p>Your gaming PC runs Llama. Your laptop uses it from the couch.</p>
+				</div>
+				<div class="case-card">
+					<span class="case-emoji">🎓</span>
+					<h3>Education</h3>
+					<p>One lab machine with a GPU, 30 students with access.</p>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- CTA -->
+	<section class="cta-section">
+		<div class="cta-inner">
+			<h2>Ready to pool?</h2>
+			<p>Get started in under a minute. It's free, open-source, and runs on your network.</p>
+			<div class="cta-actions">
+				<a href="/guides/quickstart/" class="btn-primary btn-lg">
+					Quick Start Guide
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+				</a>
+				<a href="/explanation/why-gambi/" class="btn-ghost">Why Gambi?</a>
+			</div>
+		</div>
+	</section>
+
+	<!-- Footer -->
+	<footer class="lander-footer">
+		<div class="footer-inner">
+			<div class="footer-links">
+				<a href="https://github.com/arthurbm/gambi" target="_blank" rel="noopener">GitHub</a>
+				<a href="/guides/quickstart/">Docs</a>
+				<a href="/explanation/why-gambi/">Why Gambi?</a>
+				<a href="/guides/migrate-from-gambiarra/">Migration</a>
+			</div>
+			<span class="footer-copy">Made with gambiarra for the local LLM community.</span>
+		</div>
+	</footer>
 </div>
 
 <style>
-  /* Base styles */
-  .lander {
-    --section-padding: 2rem;
-    --border-style: 2px solid var(--gambi-border);
-
-    font-family: var(--font-sans, system-ui, sans-serif);
-    background: var(--gambi-bg);
-    color: var(--gambi-text);
-    min-height: 100vh;
-  }
-
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
-
-  .label {
-    display: inline-block;
-    font-family: var(--font-mono, monospace);
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--gambi-text-muted);
-    padding: 0.25rem 0.5rem;
-    border: 1px solid var(--gambi-border);
-    background: var(--gambi-bg-alt);
-  }
-
-  .section-header {
-    padding: 0.75rem var(--section-padding);
-    border-bottom: var(--border-style);
-  }
-
-  /* Hero Section */
-  .hero {
-    padding: var(--section-padding);
-    border-bottom: var(--border-style);
-    text-align: center;
-  }
-
-  .ascii-logo {
-    font-family: var(--font-mono, monospace);
-    font-size: clamp(0.35rem, 1.2vw, 0.7rem);
-    line-height: 1.2;
-    color: var(--gambi-accent);
-    margin: 0 auto 1.5rem;
-    overflow-x: auto;
-    white-space: pre;
-  }
-
-  .tagline {
-    font-size: 1.25rem;
-    color: var(--gambi-text-muted);
-    margin: 0 0 1.5rem;
-    max-width: 500px;
-    margin-left: auto;
-    margin-right: auto;
-  }
-
-  .tagline-note {
-    max-width: 44rem;
-    margin: 0 auto 1.5rem;
-    color: var(--gambi-text-muted);
-  }
-
-  .cta-buttons {
-    display: flex;
-    gap: 1rem;
-    justify-content: center;
-    flex-wrap: wrap;
-  }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.75rem 1.5rem;
-    font-family: var(--font-mono, monospace);
-    font-size: 0.875rem;
-    text-decoration: none;
-    border: 2px solid transparent;
-    transition: all 0.15s ease;
-  }
-
-  .btn-primary {
-    background: var(--gambi-accent);
-    color: white;
-    border-color: var(--gambi-accent);
-  }
-
-  .btn-primary:hover {
-    background: var(--gambi-accent-hover);
-    border-color: var(--gambi-accent-hover);
-    color: white;
-  }
-
-  .btn-secondary {
-    background: transparent;
-    color: var(--gambi-text);
-    border-color: var(--gambi-border-strong);
-  }
-
-  .btn-secondary:hover {
-    border-color: var(--gambi-accent);
-    color: var(--gambi-accent);
-  }
-
-  /* Install Section */
-  .install {
-    border-bottom: var(--border-style);
-  }
-
-  .install-header {
-    padding: 0.75rem var(--section-padding);
-    border-bottom: var(--border-style);
-  }
-
-  .install-grid {
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-  }
-
-  @media (max-width: 50rem) {
-    .install-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .install-main {
-    padding: var(--section-padding);
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .install-alt {
-    border-left: var(--border-style);
-    display: flex;
-    flex-direction: column;
-  }
-
-  @media (max-width: 50rem) {
-    .install-alt {
-      border-left: none;
-      border-top: var(--border-style);
-      flex-direction: row;
-    }
-  }
-
-  .alt-method {
-    padding: 1rem var(--section-padding);
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    flex: 1;
-  }
-
-  .alt-method + .alt-method {
-    border-top: var(--border-style);
-  }
-
-  @media (max-width: 50rem) {
-    .alt-method + .alt-method {
-      border-top: none;
-      border-left: var(--border-style);
-    }
-  }
-
-  .method-label {
-    font-family: var(--font-mono, monospace);
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--gambi-text-dimmed);
-  }
-
-  .command {
-    all: unset;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    cursor: pointer;
-    padding: 0.5rem 0;
-  }
-
-  .command code {
-    font-family: var(--font-mono, monospace);
-    font-size: 0.9rem;
-  }
-
-  .command .dim {
-    color: var(--gambi-text-dimmed);
-  }
-
-  .command .highlight {
-    color: var(--gambi-accent);
-    font-weight: 500;
-  }
-
-  .copy-icon {
-    display: flex;
-    align-items: center;
-    color: var(--gambi-text-dimmed);
-  }
-
-  .copy-icon :global(svg) {
-    width: 1rem;
-    height: 1rem;
-  }
-
-  .copy-icon :global(svg:last-child) {
-    display: none;
-    color: var(--gambi-accent-alt);
-  }
-
-  .command.success .copy-icon :global(svg:first-child) {
-    display: none;
-  }
-
-  .command.success .copy-icon :global(svg:last-child) {
-    display: block;
-  }
-
-  /* Features Section */
-  .features {
-    border-bottom: var(--border-style);
-  }
-
-  .features-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-  }
-
-  @media (max-width: 60rem) {
-    .features-grid {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-
-  @media (max-width: 30rem) {
-    .features-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .feature-card {
-    padding: var(--section-padding);
-    border-right: var(--border-style);
-  }
-
-  .feature-card:last-child {
-    border-right: none;
-  }
-
-  @media (max-width: 60rem) {
-    .feature-card:nth-child(2) {
-      border-right: none;
-    }
-    .feature-card:nth-child(3),
-    .feature-card:nth-child(4) {
-      border-top: var(--border-style);
-    }
-    .feature-card:nth-child(4) {
-      border-right: none;
-    }
-  }
-
-  @media (max-width: 30rem) {
-    .feature-card {
-      border-right: none;
-    }
-    .feature-card + .feature-card {
-      border-top: var(--border-style);
-    }
-  }
-
-  .feature-icon {
-    font-family: var(--font-mono, monospace);
-    font-size: 1.5rem;
-    color: var(--gambi-accent);
-    margin-bottom: 0.75rem;
-  }
-
-  .feature-card h3 {
-    font-size: 1rem;
-    font-weight: 600;
-    margin: 0 0 0.5rem;
-    color: var(--gambi-text);
-  }
-
-  .feature-card p {
-    font-size: 0.875rem;
-    color: var(--gambi-text-muted);
-    margin: 0;
-    line-height: 1.5;
-  }
-
-  /* How It Works Section */
-  .how-it-works {
-    border-bottom: var(--border-style);
-  }
-
-  .architecture {
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-  }
-
-  @media (max-width: 50rem) {
-    .architecture {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .diagram {
-    font-family: var(--font-mono, monospace);
-    font-size: clamp(0.5rem, 1.1vw, 0.75rem);
-    line-height: 1.3;
-    color: var(--gambi-text-muted);
-    padding: var(--section-padding);
-    margin: 0;
-    overflow-x: auto;
-    white-space: pre;
-  }
-
-  .steps {
-    border-left: var(--border-style);
-    display: flex;
-    flex-direction: column;
-  }
-
-  @media (max-width: 50rem) {
-    .steps {
-      border-left: none;
-      border-top: var(--border-style);
-      flex-direction: row;
-      flex-wrap: wrap;
-    }
-  }
-
-  .step {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1rem var(--section-padding);
-    border-bottom: var(--border-style);
-  }
-
-  .step:last-child {
-    border-bottom: none;
-  }
-
-  @media (max-width: 50rem) {
-    .step {
-      flex: 1 1 50%;
-      border-bottom: none;
-      border-right: var(--border-style);
-    }
-    .step:nth-child(2),
-    .step:nth-child(4) {
-      border-right: none;
-    }
-    .step:nth-child(3),
-    .step:nth-child(4) {
-      border-top: var(--border-style);
-    }
-  }
-
-  .step-num {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.75rem;
-    height: 1.75rem;
-    font-family: var(--font-mono, monospace);
-    font-size: 0.875rem;
-    font-weight: 600;
-    background: var(--gambi-accent);
-    color: white;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-
-  .step-text {
-    font-size: 0.875rem;
-    color: var(--gambi-text-muted);
-  }
-
-  .step-text code {
-    font-family: var(--font-mono, monospace);
-    color: var(--gambi-text);
-    background: var(--gambi-bg-alt);
-    padding: 0.125rem 0.375rem;
-    border-radius: 2px;
-  }
-
-  /* Use Cases Section */
-  .use-cases {
-    border-bottom: var(--border-style);
-  }
-
-  .use-cases-grid {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-  }
-
-  @media (max-width: 60rem) {
-    .use-cases-grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
-  }
-
-  @media (max-width: 40rem) {
-    .use-cases-grid {
-      grid-template-columns: 1fr 1fr;
-    }
-  }
-
-  @media (max-width: 25rem) {
-    .use-cases-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .use-case-card {
-    padding: 1.25rem var(--section-padding);
-    border-right: var(--border-style);
-  }
-
-  .use-case-card:last-child {
-    border-right: none;
-  }
-
-  @media (max-width: 60rem) {
-    .use-case-card:nth-child(3) {
-      border-right: none;
-    }
-    .use-case-card:nth-child(4),
-    .use-case-card:nth-child(5) {
-      border-top: var(--border-style);
-    }
-  }
-
-  @media (max-width: 40rem) {
-    .use-case-card:nth-child(2),
-    .use-case-card:nth-child(4) {
-      border-right: none;
-    }
-    .use-case-card:nth-child(3),
-    .use-case-card:nth-child(5) {
-      border-top: var(--border-style);
-      border-right: var(--border-style);
-    }
-    .use-case-card:nth-child(5) {
-      border-right: none;
-    }
-  }
-
-  @media (max-width: 25rem) {
-    .use-case-card {
-      border-right: none;
-    }
-    .use-case-card + .use-case-card {
-      border-top: var(--border-style);
-    }
-  }
-
-  .use-case-card h4 {
-    font-size: 0.875rem;
-    font-weight: 600;
-    margin: 0 0 0.375rem;
-    color: var(--gambi-accent);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
-
-  .use-case-card p {
-    font-size: 0.8125rem;
-    color: var(--gambi-text-muted);
-    margin: 0;
-    line-height: 1.4;
-  }
-
-  /* Code Example Section */
-  .code-example {
-    border-bottom: var(--border-style);
-  }
-
-  .code-block {
-    padding: var(--section-padding);
-    background: var(--gambi-bg-alt);
-    overflow-x: auto;
-  }
-
-  .code-block pre {
-    margin: 0;
-  }
-
-  .code-block code {
-    font-family: var(--font-mono, monospace);
-    font-size: 0.8125rem;
-    line-height: 1.6;
-    color: var(--gambi-text);
-  }
-
-  /* Footer */
-  .footer {
-    padding: var(--section-padding);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 1rem;
-  }
-
-  .footer-links {
-    display: flex;
-    gap: 0.75rem;
-    align-items: center;
-  }
-
-  .footer-links a {
-    font-family: var(--font-mono, monospace);
-    font-size: 0.875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: var(--gambi-text-muted);
-    text-decoration: none;
-    transition: color 0.15s ease;
-  }
-
-  .footer-links a:hover {
-    color: var(--gambi-accent);
-  }
-
-  .footer-links .separator {
-    color: var(--gambi-border);
-  }
-
-  .footer-copy {
-    font-size: 0.8125rem;
-    color: var(--gambi-text-dimmed);
-  }
-
-  /* Responsive adjustments */
-  @media (max-width: 30rem) {
-    .lander {
-      --section-padding: 1rem;
-    }
-
-    .footer {
-      flex-direction: column;
-      text-align: center;
-    }
-  }
+	/* ================================================================
+		 LANDER TOKENS
+		 ================================================================ */
+	.lander {
+		--lander-bg: hsl(220, 20%, 6%);
+		--lander-bg-alt: hsl(220, 18%, 9%);
+		--lander-bg-card: hsl(220, 16%, 12%);
+		--lander-text: hsl(220, 10%, 92%);
+		--lander-text-muted: hsl(220, 8%, 60%);
+		--lander-text-dimmed: hsl(220, 6%, 42%);
+		--lander-accent: hsl(25, 95%, 58%);
+		--lander-accent-hover: hsl(25, 95%, 48%);
+		--lander-accent-alt: hsl(35, 100%, 65%);
+		--lander-teal: hsl(160, 70%, 42%);
+		--lander-border: hsl(220, 12%, 18%);
+
+		position: relative;
+		font-family: "Outfit", system-ui, sans-serif;
+		background: var(--lander-bg);
+		color: var(--lander-text);
+		overflow: hidden;
+	}
+
+	:root[data-theme="light"] .lander {
+		--lander-bg: hsl(40, 25%, 96%);
+		--lander-bg-alt: hsl(38, 20%, 93%);
+		--lander-bg-card: hsl(38, 18%, 98%);
+		--lander-text: hsl(20, 12%, 18%);
+		--lander-text-muted: hsl(20, 8%, 42%);
+		--lander-text-dimmed: hsl(20, 6%, 58%);
+		--lander-accent: hsl(25, 95%, 50%);
+		--lander-accent-hover: hsl(25, 95%, 42%);
+		--lander-accent-alt: hsl(30, 90%, 48%);
+		--lander-teal: hsl(160, 65%, 32%);
+		--lander-border: hsl(30, 15%, 82%);
+	}
+
+	@media (prefers-color-scheme: light) {
+		:root:not([data-theme="dark"]) .lander {
+			--lander-bg: hsl(40, 25%, 96%);
+			--lander-bg-alt: hsl(38, 20%, 93%);
+			--lander-bg-card: hsl(38, 18%, 98%);
+			--lander-text: hsl(20, 12%, 18%);
+			--lander-text-muted: hsl(20, 8%, 42%);
+			--lander-text-dimmed: hsl(20, 6%, 58%);
+			--lander-accent: hsl(25, 95%, 50%);
+			--lander-accent-hover: hsl(25, 95%, 42%);
+			--lander-accent-alt: hsl(30, 90%, 48%);
+			--lander-teal: hsl(160, 65%, 32%);
+			--lander-border: hsl(30, 15%, 82%);
+		}
+	}
+
+	/* ================================================================
+		 NOISE OVERLAY
+		 ================================================================ */
+	.noise {
+		position: fixed;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		opacity: 0.03;
+		pointer-events: none;
+		z-index: 100;
+	}
+
+	/* ================================================================
+		 SHARED
+		 ================================================================ */
+	.section-label {
+		font-family: "JetBrains Mono", monospace;
+		font-size: 0.8rem;
+		font-weight: 500;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--lander-accent);
+		margin: 0 0 1rem;
+	}
+
+	.section-title {
+		font-family: "Syne", sans-serif;
+		font-weight: 700;
+		font-size: clamp(1.5rem, 3.5vw, 2.2rem);
+		line-height: 1.2;
+		letter-spacing: -0.03em;
+		color: var(--lander-text);
+		margin: 0 0 1rem;
+	}
+
+	.section-title.centered {
+		text-align: center;
+	}
+
+	/* ================================================================
+		 HERO
+		 ================================================================ */
+	.hero {
+		position: relative;
+		min-height: 100vh;
+		min-height: 100dvh;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 6rem 2rem 4rem;
+	}
+
+	.hero-bg {
+		position: absolute;
+		inset: 0;
+		overflow: hidden;
+	}
+
+	.gradient-orb {
+		position: absolute;
+		border-radius: 50%;
+		filter: blur(100px);
+		opacity: 0.25;
+	}
+
+	.orb-1 {
+		width: 600px;
+		height: 600px;
+		background: var(--lander-accent);
+		top: -20%;
+		left: -10%;
+		animation: drift 18s ease-in-out infinite alternate;
+	}
+
+	.orb-2 {
+		width: 500px;
+		height: 500px;
+		background: var(--lander-teal);
+		bottom: -15%;
+		right: -5%;
+		animation: drift 22s ease-in-out infinite alternate-reverse;
+	}
+
+	:root[data-theme="light"] .gradient-orb,
+	:root:not([data-theme="dark"]) .gradient-orb {
+		opacity: 0.12;
+	}
+
+	@media (prefers-color-scheme: light) {
+		:root:not([data-theme="dark"]) .gradient-orb {
+			opacity: 0.12;
+		}
+	}
+
+	@keyframes drift {
+		from { transform: translate(0, 0) scale(1); }
+		to { transform: translate(40px, 30px) scale(1.08); }
+	}
+
+	.hero-inner {
+		position: relative;
+		text-align: center;
+		max-width: 640px;
+	}
+
+	.hero-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-family: "JetBrains Mono", monospace;
+		font-size: 0.75rem;
+		letter-spacing: 0.04em;
+		color: var(--lander-text-muted);
+		border: 1px solid var(--lander-border);
+		border-radius: 100px;
+		padding: 0.35rem 1rem;
+		margin-bottom: 2rem;
+		animation: fade-up 0.6s ease-out both;
+	}
+
+	.badge-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--lander-teal);
+		animation: pulse-dot 2s ease-in-out infinite;
+	}
+
+	@keyframes pulse-dot {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.4; }
+	}
+
+	.wordmark {
+		width: min(380px, 85vw);
+		height: auto;
+		display: block;
+		margin: 0 auto 1.5rem;
+		animation: fade-up 0.6s 0.1s ease-out both;
+	}
+
+	.hero-headline {
+		font-family: "Syne", sans-serif;
+		font-size: clamp(1.4rem, 3.5vw, 2rem);
+		font-weight: 600;
+		line-height: 1.3;
+		color: var(--lander-text);
+		margin: 0 0 1rem;
+		letter-spacing: -0.02em;
+		animation: fade-up 0.6s 0.2s ease-out both;
+	}
+
+	.highlight-text {
+		background: linear-gradient(135deg, var(--lander-accent), var(--lander-accent-alt));
+		-webkit-background-clip: text;
+		-webkit-text-fill-color: transparent;
+		background-clip: text;
+	}
+
+	.hero-sub {
+		font-size: 1.05rem;
+		line-height: 1.6;
+		color: var(--lander-text-muted);
+		max-width: 520px;
+		margin: 0 auto 2rem;
+		animation: fade-up 0.6s 0.3s ease-out both;
+	}
+
+	.hero-cta {
+		display: flex;
+		gap: 0.75rem;
+		justify-content: center;
+		flex-wrap: wrap;
+		animation: fade-up 0.6s 0.4s ease-out both;
+	}
+
+	@keyframes fade-up {
+		from { opacity: 0; transform: translateY(16px); }
+		to { opacity: 1; transform: translateY(0); }
+	}
+
+	/* Buttons */
+	.btn-primary {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.75rem 1.75rem;
+		font-family: "Outfit", sans-serif;
+		font-weight: 600;
+		font-size: 0.95rem;
+		color: white;
+		background: var(--lander-accent);
+		border: none;
+		border-radius: 8px;
+		text-decoration: none;
+		transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+		box-shadow: 0 0 0 0 hsla(25, 95%, 55%, 0);
+	}
+
+	.btn-primary:hover {
+		background: var(--lander-accent-hover);
+		color: white;
+		transform: translateY(-1px);
+		box-shadow: 0 4px 20px hsla(25, 95%, 55%, 0.35);
+	}
+
+	.btn-primary.btn-lg {
+		padding: 1rem 2.25rem;
+		font-size: 1.05rem;
+	}
+
+	.btn-ghost {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.75rem 1.5rem;
+		font-family: "Outfit", sans-serif;
+		font-weight: 500;
+		font-size: 0.95rem;
+		color: var(--lander-text-muted);
+		background: transparent;
+		border: 1px solid var(--lander-border);
+		border-radius: 8px;
+		text-decoration: none;
+		transition: color 0.2s, border-color 0.2s;
+	}
+
+	.btn-ghost:hover {
+		color: var(--lander-text);
+		border-color: var(--lander-text-dimmed);
+	}
+
+	/* ================================================================
+		 TERMINAL DEMO
+		 ================================================================ */
+	.demo {
+		padding: 0 2rem 5rem;
+	}
+
+	.demo-inner {
+		max-width: 640px;
+		margin: 0 auto;
+		animation: fade-up 0.8s 0.6s ease-out both;
+	}
+
+	.terminal {
+		border-radius: 12px;
+		overflow: hidden;
+		border: 1px solid var(--lander-border);
+		background: var(--lander-bg-alt);
+		box-shadow:
+			0 4px 24px hsla(220, 40%, 4%, 0.4),
+			0 0 0 1px hsla(220, 20%, 20%, 0.1);
+	}
+
+	:root[data-theme="light"] .terminal,
+	:root:not([data-theme="dark"]) .terminal {
+		box-shadow:
+			0 4px 24px hsla(30, 20%, 30%, 0.1),
+			0 0 0 1px hsla(30, 15%, 80%, 0.5);
+	}
+
+	@media (prefers-color-scheme: light) {
+		:root:not([data-theme="dark"]) .terminal {
+			box-shadow:
+				0 4px 24px hsla(30, 20%, 30%, 0.1),
+				0 0 0 1px hsla(30, 15%, 80%, 0.5);
+		}
+	}
+
+	.terminal-chrome {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 0.75rem 1rem;
+		background: var(--lander-bg-card);
+		border-bottom: 1px solid var(--lander-border);
+	}
+
+	.terminal-dot {
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+	}
+
+	.terminal-title {
+		flex: 1;
+		text-align: center;
+		font-family: "JetBrains Mono", monospace;
+		font-size: 0.7rem;
+		color: var(--lander-text-dimmed);
+		margin-right: 30px;
+	}
+
+	.terminal-body {
+		padding: 1.25rem 1.5rem;
+		font-family: "JetBrains Mono", monospace;
+		font-size: 0.82rem;
+		line-height: 1.8;
+	}
+
+	.term-line {
+		opacity: 0;
+		animation: term-appear 0.3s ease-out forwards;
+		animation-delay: calc(0.8s + var(--delay) * 0.35s);
+	}
+
+	@keyframes term-appear {
+		from { opacity: 0; transform: translateX(-4px); }
+		to { opacity: 1; transform: translateX(0); }
+	}
+
+	.term-prompt {
+		color: var(--lander-teal);
+		margin-right: 0.75rem;
+		user-select: none;
+	}
+
+	.term-cmd {
+		color: var(--lander-text);
+	}
+
+	.term-flag {
+		color: var(--lander-accent);
+	}
+
+	.term-output {
+		padding-left: 1.5rem;
+	}
+
+	.term-info {
+		color: var(--lander-text-dimmed);
+	}
+
+	.term-accent {
+		color: var(--lander-accent);
+		font-weight: 500;
+	}
+
+	.term-cursor {
+		display: inline-block;
+		color: var(--lander-teal);
+		animation: blink 1s step-end infinite;
+		margin-left: 1.5rem;
+	}
+
+	@keyframes blink {
+		50% { opacity: 0; }
+	}
+
+	/* ================================================================
+		 INSTALL
+		 ================================================================ */
+	.install {
+		padding: 5rem 2rem;
+		background: var(--lander-bg-alt);
+		border-top: 1px solid var(--lander-border);
+		border-bottom: 1px solid var(--lander-border);
+	}
+
+	.install-inner {
+		max-width: 640px;
+		margin: 0 auto;
+	}
+
+	.install-methods {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.install-row {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.75rem;
+	}
+
+	@media (max-width: 30rem) {
+		.install-row {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	.install-card {
+		background: var(--lander-bg-card);
+		border: 1px solid var(--lander-border);
+		border-radius: 10px;
+		padding: 1rem 1.25rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.install-card--main {
+		padding: 1.25rem 1.5rem;
+	}
+
+	.method-tag {
+		font-family: "JetBrains Mono", monospace;
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--lander-text-dimmed);
+	}
+
+	.command-btn {
+		all: unset;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		cursor: pointer;
+		padding: 0.25rem 0;
+	}
+
+	.command-btn code {
+		font-family: "JetBrains Mono", monospace;
+		font-size: 0.82rem;
+		color: var(--lander-text);
+	}
+
+	.cmd-dim { color: var(--lander-text-dimmed); }
+
+	.cmd-hl {
+		color: var(--lander-accent);
+		font-weight: 500;
+	}
+
+	.copy-icon {
+		display: flex;
+		align-items: center;
+		color: var(--lander-text-dimmed);
+		flex-shrink: 0;
+	}
+
+	.copy-icon :global(svg) {
+		width: 14px;
+		height: 14px;
+	}
+
+	.copy-icon :global(svg:last-child) {
+		display: none;
+		color: var(--lander-teal);
+	}
+
+	.command-btn.success .copy-icon :global(svg:first-child) { display: none; }
+	.command-btn.success .copy-icon :global(svg:last-child) { display: block; }
+
+	/* ================================================================
+		 PROBLEM / SOLUTION
+		 ================================================================ */
+	.problem {
+		padding: 6rem 2rem;
+	}
+
+	.problem-inner {
+		max-width: 1000px;
+		margin: 0 auto;
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 4rem;
+		align-items: center;
+	}
+
+	@media (max-width: 50rem) {
+		.problem-inner {
+			grid-template-columns: 1fr;
+			gap: 3rem;
+		}
+	}
+
+	.problem-text p {
+		color: var(--lander-text-muted);
+		line-height: 1.7;
+		margin: 0 0 1rem;
+		font-size: 1rem;
+	}
+
+	.problem-text strong {
+		color: var(--lander-text);
+	}
+
+	/* Network Diagram */
+	.problem-visual {
+		display: flex;
+		justify-content: center;
+	}
+
+	.network-diagram {
+		position: relative;
+		width: 280px;
+		height: 280px;
+	}
+
+	.node-hub {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		width: 80px;
+		height: 80px;
+		border-radius: 50%;
+		background: linear-gradient(135deg, var(--lander-accent), var(--lander-accent-alt));
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		z-index: 2;
+		box-shadow: 0 0 30px hsla(25, 95%, 55%, 0.25);
+	}
+
+	.node-hub .node-label {
+		font-family: "Syne", sans-serif;
+		font-weight: 700;
+		font-size: 0.9rem;
+		color: white;
+	}
+
+	.node-hub .node-sub {
+		font-family: "JetBrains Mono", monospace;
+		font-size: 0.6rem;
+		color: hsla(0, 0%, 100%, 0.7);
+	}
+
+	.connections {
+		position: absolute;
+		inset: 0;
+	}
+
+	.conn {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		width: 85px;
+		height: 2px;
+		background: linear-gradient(90deg, var(--lander-accent), transparent);
+		transform-origin: left center;
+		opacity: 0.4;
+	}
+
+	.conn-1 { transform: rotate(90deg) translateX(0); top: 8%; left: 50%; }
+	.conn-2 { transform: rotate(210deg); top: 75%; left: 25%; }
+	.conn-3 { transform: rotate(330deg); top: 75%; left: 75%; }
+
+	.node-ring {
+		position: absolute;
+		inset: 0;
+	}
+
+	.node-participant {
+		position: absolute;
+		width: 72px;
+		height: 72px;
+		border-radius: 14px;
+		background: var(--lander-bg-card);
+		border: 1px solid var(--lander-border);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 2px;
+	}
+
+	.node-participant:nth-child(1) {
+		top: -5%;
+		left: 50%;
+		transform: translateX(-50%);
+	}
+
+	.node-participant:nth-child(2) {
+		bottom: 5%;
+		left: -2%;
+	}
+
+	.node-participant:nth-child(3) {
+		bottom: 5%;
+		right: -2%;
+	}
+
+	.node-icon {
+		font-size: 1.3rem;
+		line-height: 1;
+	}
+
+	.node-participant .node-label {
+		font-family: "JetBrains Mono", monospace;
+		font-size: 0.55rem;
+		color: var(--lander-text-dimmed);
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+	}
+
+	/* ================================================================
+		 STEPS
+		 ================================================================ */
+	.steps-section {
+		padding: 5rem 2rem;
+		background: var(--lander-bg-alt);
+		border-top: 1px solid var(--lander-border);
+		border-bottom: 1px solid var(--lander-border);
+	}
+
+	.steps-inner {
+		max-width: 900px;
+		margin: 0 auto;
+	}
+
+	.steps-grid {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 1.5rem;
+		margin-top: 2.5rem;
+	}
+
+	@media (max-width: 50rem) {
+		.steps-grid {
+			grid-template-columns: repeat(2, 1fr);
+		}
+	}
+
+	@media (max-width: 30rem) {
+		.steps-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	.step-card {
+		padding: 1.5rem;
+		background: var(--lander-bg-card);
+		border: 1px solid var(--lander-border);
+		border-radius: 12px;
+		transition: border-color 0.2s;
+	}
+
+	.step-card:hover {
+		border-color: var(--lander-accent);
+	}
+
+	.step-number {
+		font-family: "Syne", sans-serif;
+		font-size: 2rem;
+		font-weight: 800;
+		background: linear-gradient(135deg, var(--lander-accent), var(--lander-accent-alt));
+		-webkit-background-clip: text;
+		-webkit-text-fill-color: transparent;
+		background-clip: text;
+		margin-bottom: 0.75rem;
+	}
+
+	.step-card h3 {
+		font-family: "Outfit", sans-serif;
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--lander-text);
+		margin: 0 0 0.5rem;
+	}
+
+	.step-card p {
+		font-size: 0.875rem;
+		color: var(--lander-text-muted);
+		line-height: 1.5;
+		margin: 0;
+	}
+
+	.step-card code {
+		font-family: "JetBrains Mono", monospace;
+		font-size: 0.8rem;
+		color: var(--lander-accent);
+		background: hsla(25, 95%, 55%, 0.08);
+		padding: 0.1em 0.35em;
+		border-radius: 4px;
+	}
+
+	/* ================================================================
+		 FEATURES
+		 ================================================================ */
+	.features {
+		padding: 5rem 2rem;
+	}
+
+	.features-inner {
+		max-width: 900px;
+		margin: 0 auto;
+	}
+
+	.features-grid {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 1.5rem;
+		margin-top: 2.5rem;
+	}
+
+	@media (max-width: 40rem) {
+		.features-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	.feature-card {
+		padding: 1.75rem;
+		background: var(--lander-bg-card);
+		border: 1px solid var(--lander-border);
+		border-radius: 12px;
+		transition: border-color 0.2s, transform 0.2s;
+	}
+
+	.feature-card:hover {
+		border-color: var(--lander-accent);
+		transform: translateY(-2px);
+	}
+
+	.feature-icon {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 44px;
+		height: 44px;
+		border-radius: 10px;
+		background: hsla(25, 95%, 55%, 0.1);
+		color: var(--lander-accent);
+		margin-bottom: 1rem;
+	}
+
+	.feature-card h3 {
+		font-family: "Outfit", sans-serif;
+		font-size: 1.05rem;
+		font-weight: 600;
+		color: var(--lander-text);
+		margin: 0 0 0.5rem;
+	}
+
+	.feature-card p {
+		font-size: 0.9rem;
+		color: var(--lander-text-muted);
+		line-height: 1.6;
+		margin: 0;
+	}
+
+	.feature-card code {
+		font-family: "JetBrains Mono", monospace;
+		font-size: 0.8rem;
+		color: var(--lander-accent);
+		background: hsla(25, 95%, 55%, 0.08);
+		padding: 0.1em 0.35em;
+		border-radius: 4px;
+	}
+
+	/* ================================================================
+		 CODE SECTION
+		 ================================================================ */
+	.code-section {
+		padding: 5rem 2rem;
+		background: var(--lander-bg-alt);
+		border-top: 1px solid var(--lander-border);
+		border-bottom: 1px solid var(--lander-border);
+	}
+
+	.code-inner {
+		max-width: 900px;
+		margin: 0 auto;
+		display: grid;
+		grid-template-columns: 1fr 1.3fr;
+		gap: 3rem;
+		align-items: center;
+	}
+
+	@media (max-width: 50rem) {
+		.code-inner {
+			grid-template-columns: 1fr;
+			gap: 2rem;
+		}
+	}
+
+	.code-text p {
+		color: var(--lander-text-muted);
+		line-height: 1.7;
+		margin: 0 0 1.5rem;
+	}
+
+	.code-text a {
+		color: var(--lander-text);
+		text-decoration-color: var(--lander-accent);
+		text-underline-offset: 3px;
+	}
+
+	.code-text a:hover {
+		color: var(--lander-accent);
+	}
+
+	.code-links {
+		display: flex;
+		gap: 1.5rem;
+	}
+
+	.code-links a {
+		font-family: "JetBrains Mono", monospace;
+		font-size: 0.8rem;
+		color: var(--lander-accent);
+		text-decoration: none;
+		transition: opacity 0.2s;
+	}
+
+	.code-links a:hover {
+		opacity: 0.7;
+	}
+
+	.code-block {
+		border-radius: 12px;
+		overflow: hidden;
+		border: 1px solid var(--lander-border);
+		background: var(--lander-bg);
+	}
+
+	.code-chrome {
+		padding: 0.6rem 1rem;
+		border-bottom: 1px solid var(--lander-border);
+		background: var(--lander-bg-card);
+	}
+
+	.code-file {
+		font-family: "JetBrains Mono", monospace;
+		font-size: 0.7rem;
+		color: var(--lander-text-dimmed);
+	}
+
+	.code-block pre {
+		margin: 0;
+		padding: 1.25rem 1.5rem;
+		overflow-x: auto;
+	}
+
+	.code-block code {
+		font-family: "JetBrains Mono", monospace;
+		font-size: 0.8rem;
+		line-height: 1.7;
+		color: var(--lander-text-muted);
+	}
+
+	.tok-kw { color: var(--lander-accent); }
+	.tok-str { color: var(--lander-teal); }
+	.tok-fn { color: var(--lander-accent-alt); }
+
+	:root[data-theme="light"] .tok-fn,
+	:root:not([data-theme="dark"]) .tok-fn {
+		color: var(--lander-accent);
+	}
+
+	@media (prefers-color-scheme: light) {
+		:root:not([data-theme="dark"]) .tok-fn {
+			color: var(--lander-accent);
+		}
+	}
+
+	/* ================================================================
+		 USE CASES
+		 ================================================================ */
+	.cases {
+		padding: 5rem 2rem;
+	}
+
+	.cases-inner {
+		max-width: 900px;
+		margin: 0 auto;
+	}
+
+	.cases-grid {
+		display: grid;
+		grid-template-columns: repeat(5, 1fr);
+		gap: 1rem;
+		margin-top: 2.5rem;
+	}
+
+	@media (max-width: 60rem) {
+		.cases-grid {
+			grid-template-columns: repeat(3, 1fr);
+		}
+	}
+
+	@media (max-width: 35rem) {
+		.cases-grid {
+			grid-template-columns: repeat(2, 1fr);
+		}
+	}
+
+	.case-card {
+		padding: 1.5rem 1.25rem;
+		background: var(--lander-bg-card);
+		border: 1px solid var(--lander-border);
+		border-radius: 12px;
+		text-align: center;
+		transition: border-color 0.2s;
+	}
+
+	.case-card:hover {
+		border-color: var(--lander-accent);
+	}
+
+	.case-emoji {
+		font-size: 1.6rem;
+		display: block;
+		margin-bottom: 0.75rem;
+	}
+
+	.case-card h3 {
+		font-family: "Outfit", sans-serif;
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: var(--lander-text);
+		margin: 0 0 0.35rem;
+	}
+
+	.case-card p {
+		font-size: 0.8rem;
+		color: var(--lander-text-muted);
+		line-height: 1.45;
+		margin: 0;
+	}
+
+	/* ================================================================
+		 CTA
+		 ================================================================ */
+	.cta-section {
+		padding: 6rem 2rem;
+		text-align: center;
+		border-top: 1px solid var(--lander-border);
+		background:
+			radial-gradient(ellipse at 50% 120%, hsla(25, 95%, 55%, 0.08), transparent 60%),
+			var(--lander-bg-alt);
+	}
+
+	.cta-inner {
+		max-width: 500px;
+		margin: 0 auto;
+	}
+
+	.cta-inner h2 {
+		font-family: "Syne", sans-serif;
+		font-weight: 700;
+		font-size: clamp(1.5rem, 3vw, 2rem);
+		color: var(--lander-text);
+		margin: 0 0 0.75rem;
+	}
+
+	.cta-inner p {
+		color: var(--lander-text-muted);
+		margin: 0 0 2rem;
+		line-height: 1.6;
+	}
+
+	.cta-actions {
+		display: flex;
+		gap: 0.75rem;
+		justify-content: center;
+		flex-wrap: wrap;
+	}
+
+	/* ================================================================
+		 FOOTER
+		 ================================================================ */
+	.lander-footer {
+		padding: 2rem;
+		border-top: 1px solid var(--lander-border);
+	}
+
+	.footer-inner {
+		max-width: 900px;
+		margin: 0 auto;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		flex-wrap: wrap;
+		gap: 1rem;
+	}
+
+	.footer-links {
+		display: flex;
+		gap: 1.5rem;
+	}
+
+	.footer-links a {
+		font-family: "JetBrains Mono", monospace;
+		font-size: 0.75rem;
+		color: var(--lander-text-dimmed);
+		text-decoration: none;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		transition: color 0.2s;
+	}
+
+	.footer-links a:hover {
+		color: var(--lander-accent);
+	}
+
+	.footer-copy {
+		font-size: 0.75rem;
+		color: var(--lander-text-dimmed);
+	}
+
+	@media (max-width: 35rem) {
+		.footer-inner {
+			flex-direction: column;
+			text-align: center;
+		}
+	}
+
+	/* ================================================================
+		 SCROLL REVEAL (via IntersectionObserver)
+		 ================================================================ */
+	.reveal {
+		opacity: 0;
+		transform: translateY(20px);
+		transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+	}
+
+	.reveal.visible {
+		opacity: 1;
+		transform: translateY(0);
+	}
 </style>
 
 <script>
-  // Copy-to-clipboard functionality
-  const buttons = document.querySelectorAll("button.command") as NodeListOf<HTMLButtonElement>;
+	const buttons = document.querySelectorAll(
+		"button.command-btn",
+	) as NodeListOf<HTMLButtonElement>;
 
-  for (const button of buttons) {
-    button.addEventListener("click", async () => {
-      const command = button.dataset.command;
-      if (command) {
-        await navigator.clipboard.writeText(command);
-        button.classList.add("success");
-        setTimeout(() => {
-          button.classList.remove("success");
-        }, 1500);
-      }
-    });
-  }
+	for (const button of buttons) {
+		button.addEventListener("click", async () => {
+			const command = button.dataset.command;
+			if (command) {
+				await navigator.clipboard.writeText(command);
+				button.classList.add("success");
+				setTimeout(() => {
+					button.classList.remove("success");
+				}, 1500);
+			}
+		});
+	}
+
+	const reveals = document.querySelectorAll(
+		".install, .problem, .steps-section, .features, .code-section, .cases, .cta-section",
+	);
+
+	const observer = new IntersectionObserver(
+		(entries) => {
+			for (const entry of entries) {
+				if (entry.isIntersecting) {
+					entry.target.classList.add("visible");
+					observer.unobserve(entry.target);
+				}
+			}
+		},
+		{ threshold: 0.1 },
+	);
+
+	for (const el of reveals) {
+		el.classList.add("reveal");
+		observer.observe(el);
+	}
 </script>
