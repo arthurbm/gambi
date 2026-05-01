@@ -20,13 +20,13 @@ export default defineConfig({
             "Local-first LLM sharing hub. Pool Ollama, LM Studio, or any OpenAI-compatible endpoint with your team via rooms and an HTTP proxy. Expose a single OpenAI-compatible API that routes to any participant.",
           promote: [
             "guides/quickstart*",
+            "guides/patterns*",
             "reference/api*",
             "reference/sdk*",
             "guides/ai-tools*",
-            "guides/challenges*",
             "guides/remote-providers*",
           ],
-          demote: ["guides/homelab*", "architecture/*"],
+          demote: ["architecture/*"],
         }),
       ],
       title: "Gambi",
@@ -46,19 +46,17 @@ export default defineConfig({
           label: "Guides",
           items: [
             { label: "Quick Start", slug: "guides/quickstart" },
-            {
-              label: "Migrate from Gambiarra",
-              slug: "guides/migrate-from-gambiarra",
-            },
-            { label: "Challenges & Dynamics", slug: "guides/challenges" },
-            { label: "Hackathon Setup", slug: "guides/hackathon" },
+            { label: "Multi-LLM Patterns", slug: "guides/patterns" },
             { label: "Using with AI Tools", slug: "guides/ai-tools" },
             { label: "Remote Providers", slug: "guides/remote-providers" },
             {
               label: "Custom Participant Runtime",
               slug: "guides/custom-participant",
             },
-            { label: "Home Lab Setup", slug: "guides/homelab" },
+            {
+              label: "Migrate from Gambiarra",
+              slug: "guides/migrate-from-gambiarra",
+            },
           ],
         },
         {

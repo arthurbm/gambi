@@ -1,0 +1,231 @@
+---
+title: Multi-LLM Patterns
+description: Build arenas, juries, debates, NPC personas, and multi-step reasoning chains using the Gambi SDK.
+---
+
+Six patterns for building experiences where multiple LLMs collaborate. Each one is a few lines of TypeScript on top of the [Gambi SDK](/reference/sdk/) — the substrate (routing, observability, multi-source) is already there.
+
+All snippets below assume:
+
+```ts
+import { createGambi } from "gambi-sdk";
+import { generateText } from "ai";
+
+const gambi = createGambi({
+  roomCode: "ABC123",
+  hubUrl: "http://localhost:3000",
+});
+```
+
+## Model arena <a id="model-arena" />
+
+Same prompt, every model in the room. The cheapest way to feel the diversity of models you have on hand — useful for evals, A/B comparisons, or just picking the right model for a task before you commit.
+
+```ts
+const prompt = "Explain TLS handshakes in one sentence.";
+const runs = 6;
+
+const results = await Promise.all(
+  Array.from({ length: runs }, () =>
+    generateText({ model: gambi.any(), prompt })
+  )
+);
+
+results.forEach((r, i) => console.log(`Run ${i + 1}: ${r.text}`));
+```
+
+`gambi.any()` round-robins between every available participant. To force a specific lineup, swap with `gambi.participant("alice")` and a `for` loop over IDs.
+
+## Jury / judge panel <a id="jury-panel" />
+
+Generate the answer once. Fan it out to N other models with a judging prompt. Aggregate the verdicts. The g-eval pattern, without the orchestration tax.
+
+```ts
+const question = "Is this code thread-safe? <code>...</code>";
+
+const answer = await generateText({
+  model: gambi.model("llama3"),
+  prompt: question,
+});
+
+const judgePrompt = `
+Question: ${question}
+Answer: ${answer.text}
+
+Reply with YES or NO and one sentence why.
+`;
+
+const judges = ["gpt-4o-mini", "claude-haiku-4-5", "mistral"];
+
+const verdicts = await Promise.all(
+  judges.map((model) =>
+    generateText({ model: gambi.model(model), prompt: judgePrompt }),
+  ),
+);
+
+const yesVotes = verdicts.filter((v) => v.text.startsWith("YES")).length;
+console.log(`Verdict: ${yesVotes}/${judges.length} say yes`);
+```
+
+Mix providers freely — the answer can come from a local Ollama and the judges from cloud APIs, all behind the same room.
+
+## Draft → critique → polish <a id="draft-critique-polish" />
+
+Cheap-then-strong: a small fast model drafts, a bigger one critiques, a third polishes. Cuts cost on long-form content without sacrificing quality on the final pass.
+
+```ts
+const topic = "How to write a good incident report.";
+
+const draft = await generateText({
+  model: gambi.model("llama3"),
+  prompt: `Draft a 200-word essay: ${topic}`,
+});
+
+const critique = await generateText({
+  model: gambi.model("gpt-4o"),
+  prompt: `Critique this draft. List 3 specific improvements:\n\n${draft.text}`,
+});
+
+const polished = await generateText({
+  model: gambi.model("claude-haiku-4-5"),
+  prompt: `Apply these improvements to the draft.
+
+DRAFT:
+${draft.text}
+
+FEEDBACK:
+${critique.text}
+
+Return only the revised essay.`,
+});
+
+console.log(polished.text);
+```
+
+The same shape works for code review, translation polish, or any "rough draft + feedback + clean copy" loop.
+
+## Debate club <a id="debate-club" />
+
+Two models argue, a third moderates. Loop turns between participants with conflicting system prompts; pipe the moderator at the end; stream all of it through SSE for a live show.
+
+```ts
+const topic = "Is it OK to lie for a good cause?";
+const turns = 4;
+const transcript: Array<{ speaker: string; text: string }> = [];
+
+const personas = {
+  pro: { id: "pro", system: "You argue strongly FOR the proposition." },
+  con: { id: "con", system: "You argue strongly AGAINST the proposition." },
+};
+
+for (let i = 0; i < turns; i++) {
+  const persona = i % 2 === 0 ? personas.pro : personas.con;
+  const prior = transcript.map((t) => `${t.speaker}: ${t.text}`).join("\n");
+
+  const turn = await generateText({
+    model: gambi.participant(persona.id),
+    system: persona.system,
+    prompt: `TOPIC: ${topic}\nDEBATE SO FAR:\n${prior}\n\nYour turn (3 sentences max).`,
+  });
+
+  transcript.push({ speaker: persona.id, text: turn.text });
+}
+
+const verdict = await generateText({
+  model: gambi.participant("moderator"),
+  prompt: `As moderator, summarize who made the stronger case:\n${transcript
+    .map((t) => `${t.speaker}: ${t.text}`)
+    .join("\n")}`,
+});
+```
+
+Subscribe to the room's SSE feed (`gambi events watch --room ABC123 --format ndjson`) to broadcast each turn live.
+
+## Multi-persona NPCs <a id="multi-persona-npcs" />
+
+A game where each character has its own brain. Register one participant per persona, each pointing at whatever provider makes sense — a small fast model for guards, a heavier one for the oracle.
+
+```ts
+const SYSTEM_PROMPTS = {
+  merchant: "You are a greedy merchant. Always try to upsell.",
+  guard: "You are a tired city guard. You speak in 5 words or fewer.",
+  oracle: "You are an ancient oracle. Speak in cryptic verse.",
+};
+
+const npcs = {
+  merchant: gambi.participant("merchant"),
+  guard: gambi.participant("guard"),
+  oracle: gambi.participant("oracle"),
+};
+
+async function npcSays(npc: keyof typeof npcs, playerInput: string) {
+  const result = await generateText({
+    model: npcs[npc],
+    system: SYSTEM_PROMPTS[npc],
+    prompt: playerInput,
+  });
+  return result.text;
+}
+
+console.log(await npcSays("merchant", "Got any potions?"));
+console.log(await npcSays("guard", "Let me through."));
+console.log(await npcSays("oracle", "Will I survive?"));
+```
+
+Your game logic owns turn-taking and state; Gambi just makes "this character speaks now" a one-line operation.
+
+## LAN debate club / classroom arena <a id="lan-debate-club" />
+
+Bring friends — or students — and pool the room's LLMs. Each person joins with their own provider (Ollama, OpenRouter, OpenAI). You build the UI; the models stay theirs.
+
+Set up the hub and create a room:
+
+```bash
+gambi hub serve --mdns
+gambi room create --name "Class arena"
+# → Room code: ABC123
+```
+
+Each participant joins separately, with whatever provider they brought:
+
+```bash
+# alice
+gambi participant join --room ABC123 --participant-id alice --model llama3
+
+# bob
+gambi participant join --room ABC123 --participant-id bob --model mistral \
+  --endpoint http://localhost:1234
+
+# carol (using OpenRouter)
+gambi participant join --room ABC123 --participant-id carol \
+  --endpoint https://openrouter.ai/api \
+  --model meta-llama/llama-3.1-8b-instruct:free \
+  --header-env Authorization=OPENROUTER_AUTH
+```
+
+Then the app fans out the same prompt and renders responses side-by-side, votes, or runs blind comparisons:
+
+```ts
+import { createClient } from "gambi-sdk";
+
+const client = createClient({ hubUrl: "http://localhost:3000" });
+const participants = (await client.participants.list("ABC123")).data;
+
+const responses = await Promise.all(
+  participants.map((p) =>
+    generateText({
+      model: gambi.participant(p.id),
+      prompt: "Explain monads in one sentence.",
+    }),
+  ),
+);
+```
+
+The room is shared; every model stays on the machine that brought it.
+
+## Next steps
+
+- [SDK Reference](/reference/sdk/) — every routing helper and option
+- [How tunnels work](/explanation/tunnel-first/) — why the participant endpoint can stay on `localhost`
+- [Remote providers](/guides/remote-providers/) — joining with cloud APIs (OpenAI, OpenRouter, Together, Groq)
+- [Observability](/reference/observability/) — the SSE event shape and built-in metrics
