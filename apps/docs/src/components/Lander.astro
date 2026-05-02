@@ -8,219 +8,98 @@ const commands = {
   bun: "bun add -g gambi",
 };
 
-const features = [
-  {
-    title: "Local-First",
-    description:
-      "Your data stays on your network. No cloud dependencies, no external APIs.",
-    icon: "laptop",
-  },
-  {
-    title: "Resource Sharing",
-    description:
-      "Pool LLM endpoints across your team. Share expensive GPU resources efficiently.",
-    icon: "share",
-  },
-  {
-    title: "Universal",
-    description:
-      "Works with Ollama, LM Studio, LocalAI, vLLM, and any endpoint exposing OpenResponses or chat/completions.",
-    icon: "plug",
-  },
-  {
-    title: "AI SDK Ready",
-    description:
-      "Drop-in replacement for Vercel AI SDK workflows. Same API, shared resources.",
-    icon: "code",
-  },
-];
-
 const useCases = [
   {
-    title: "Dev Teams",
-    description: "Share expensive LLM endpoints across your team",
+    n: "01",
+    group: "A · build with many LLMs",
+    title: "Model arena",
+    body: "Same prompt, every model in the room. Spot differences in tone, accuracy, and speed at a glance.",
+    pattern: 'Round-robin via model:"*", N requests in parallel, render side by side.',
+    href: "/guides/patterns/#model-arena",
   },
   {
-    title: "Hackathons",
-    description: "Pool resources for AI projects in 24-48h events",
+    n: "02",
+    group: "A · build with many LLMs",
+    title: "Jury / judge panel",
+    body: "Generate the answer once. Fan it out to other models for verdicts and scoring. The g-eval pattern, off the shelf.",
+    pattern: "1 generator participant + N judge participants. Aggregate the votes.",
+    href: "/guides/patterns/#jury-panel",
   },
   {
-    title: "Research Labs",
-    description: "Coordinate LLM access across workstations",
+    n: "03",
+    group: "A · build with many LLMs",
+    title: "Draft → critique → polish",
+    body: "Cheap-then-strong. Small model drafts, bigger one critiques, third polishes. Quality without paying frontier prices end to end.",
+    pattern: "3 chained calls — output of step N feeds prompt N+1.",
+    href: "/guides/patterns/#draft-critique-polish",
   },
   {
-    title: "Home Labs",
-    description: "Share your gaming PC's LLM with your laptop",
+    n: "04",
+    group: "B · build experiences",
+    title: "Debate club",
+    body: "Two models argue, a third moderates. Stream every turn through SSE for a live show.",
+    pattern: "Loop between participant IDs with conflicting system prompts.",
+    href: "/guides/patterns/#debate-club",
   },
   {
-    title: "Education",
-    description: "Classroom environments where students share compute",
+    n: "05",
+    group: "B · build experiences",
+    title: "Multi-persona NPCs",
+    body: "A game where each character has its own brain. Different model, different system prompt, different attitude.",
+    pattern: "One participant per persona. Route by ID at the moment of speech.",
+    href: "/guides/patterns/#multi-persona-npcs",
+  },
+  {
+    n: "06",
+    group: "B · build experiences",
+    title: "LAN debate club",
+    body: "Bring friends or students. Each plugs their own LLM into the room. You build the UI; the models stay theirs.",
+    pattern: "Multi-person registration. App reads the participant list and fans out.",
+    href: "/guides/patterns/#lan-debate-club",
   },
 ];
----
 
-<div class="lander">
-  <!-- Hero Section -->
-  <section class="hero">
-    <div class="hero-content">
-      <pre class="ascii-logo" aria-hidden="true">{`
- ██████╗  █████╗ ███╗   ███╗██████╗ ██╗
-██╔════╝ ██╔══██╗████╗ ████║██╔══██╗██║
-██║  ███╗███████║██╔████╔██║██████╔╝██║
-██║   ██║██╔══██║██║╚██╔╝██║██╔══██╗██║
-╚██████╔╝██║  ██║██║ ╚═╝ ██║██████╔╝██║
- ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝╚═════╝ ╚═╝`}</pre>
-      <h1 class="sr-only">Gambi</h1>
-      <p class="tagline">Share local LLMs across your network, effortlessly.</p>
-      <p class="tagline-note">
-        Pool Ollama, LM Studio, vLLM, or any OpenAI-compatible endpoint with your team. One hub, one room code, zero cloud dependencies.
-      </p>
-      <div class="cta-buttons">
-        <a href="/guides/quickstart/" class="btn btn-primary">Get Started</a>
-        <a href="/reference/api/" class="btn btn-secondary">API Reference</a>
-        <a href="/reference/sdk/" class="btn btn-secondary">SDK Reference</a>
-        <a href="https://github.com/arthurbm/gambi" class="btn btn-secondary" target="_blank" rel="noopener">
-          GitHub
-        </a>
-      </div>
-    </div>
-  </section>
+const builderSpecs = [
+  {
+    n: "01",
+    title: "Bring any provider, mix freely",
+    body: "Local Ollama, vLLM, OpenRouter, OpenAI, Groq — all in the same room. Credentials and endpoints stay on the participant machine; the hub never sees them.",
+    spec: "byo · tunnel · multi-source",
+  },
+  {
+    n: "02",
+    title: "Real-time observability",
+    body: "Every inference emits an SSE event with TTFT, total duration, and token counts. Pipe it to a TUI, a dashboard, or your own tracer.",
+    spec: "llm.request · llm.complete · llm.error",
+  },
+  {
+    n: "03",
+    title: "OpenAI-compatible everywhere",
+    body: "One endpoint speaks Responses API and Chat Completions. AI SDK, OpenAI SDK, curl, any tool with a custom base URL — they all just work.",
+    spec: "/responses · /chat/completions",
+  },
+  {
+    n: "04",
+    title: "Many rooms, one hub",
+    body: "Run as many rooms as you want on a single hub — one per app, team, or experiment. Each room has its own participants, routing, and event stream.",
+    spec: "scoped routing · isolated state",
+  },
+];
 
-  <!-- Install Section -->
-  <section class="install">
-    <div class="install-header">
-      <span class="label">Install</span>
-    </div>
-    <div class="install-grid">
-      <div class="install-main">
-        <span class="method-label">curl (recommended)</span>
-        <button class="command" data-command={commands.curl}>
-          <code>
-            <span class="dim">curl -fsSL</span> <span class="highlight">https://...install.sh</span> <span class="dim">| bash</span>
-          </code>
-          <span class="copy-icon">
-            <CopyIcon />
-            <CheckIcon />
-          </span>
-        </button>
-      </div>
-      <div class="install-alt">
-        <div class="alt-method">
-          <span class="method-label">npm</span>
-          <button class="command" data-command={commands.npm}>
-            <code>
-              <span class="dim">npm install -g</span> <span class="highlight">gambi</span>
-            </code>
-            <span class="copy-icon">
-              <CopyIcon />
-              <CheckIcon />
-            </span>
-          </button>
-        </div>
-        <div class="alt-method">
-          <span class="method-label">bun</span>
-          <button class="command" data-command={commands.bun}>
-            <code>
-              <span class="dim">bun add -g</span> <span class="highlight">gambi</span>
-            </code>
-            <span class="copy-icon">
-              <CopyIcon />
-              <CheckIcon />
-            </span>
-          </button>
-        </div>
-      </div>
-    </div>
-  </section>
+const providers = [
+  "ollama",
+  "vllm",
+  "lm studio",
+  "openrouter",
+  "openai",
+  "anthropic",
+  "groq",
+  "fireworks",
+  "together ai",
+  "localai",
+];
 
-  <!-- Features Section -->
-  <section class="features">
-    <div class="section-header">
-      <span class="label">Features</span>
-    </div>
-    <div class="features-grid">
-      {features.map((feature) => (
-        <div class="feature-card">
-          <div class="feature-icon" data-icon={feature.icon}>
-            {feature.icon === "laptop" && "[ ]"}
-            {feature.icon === "share" && "<->"}
-            {feature.icon === "plug" && "[+]"}
-            {feature.icon === "code" && "{;}"}
-          </div>
-          <h3>{feature.title}</h3>
-          <p>{feature.description}</p>
-        </div>
-      ))}
-    </div>
-  </section>
-
-  <!-- How It Works Section -->
-  <section class="how-it-works">
-    <div class="section-header">
-      <span class="label">How It Works</span>
-    </div>
-    <div class="architecture">
-      <pre class="diagram">{`
-┌─────────────────────────────────────────────────────────────┐
-│                       GAMBI HUB (HTTP)                  │
-│                                                             │
-│  Your LLM Pool:                                             │
-│  ┌────────────────────────────────────────────────────┐    │
-│  │ joao  → Ollama llama3    @ 192.168.1.50:11434      │    │
-│  │ maria → LM Studio mistral @ 192.168.1.51:1234      │    │
-│  │ pedro → vLLM qwen        @ 192.168.1.52:8000       │    │
-│  └────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
-       ▲                    ▲                      ▲
-       │ HTTP               │ HTTP                 │ SSE
-       │                    │                      │
-  ┌────┴────┐    ┌─────────┴────────┐      ┌──────┴─────┐
-  │   SDK   │    │  Participants    │      │    TUI     │
-  └─────────┘    └──────────────────┘      └────────────┘
-      `}</pre>
-      <div class="steps">
-        <div class="step">
-          <span class="step-num">1</span>
-          <span class="step-text">Start the hub with <code>gambi serve</code></span>
-        </div>
-        <div class="step">
-          <span class="step-num">2</span>
-          <span class="step-text">Create a room with <code>gambi create</code></span>
-        </div>
-        <div class="step">
-          <span class="step-num">3</span>
-          <span class="step-text">Join with your LLM endpoint</span>
-        </div>
-        <div class="step">
-          <span class="step-num">4</span>
-          <span class="step-text">Use the SDK in your apps</span>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Use Cases Section -->
-  <section class="use-cases">
-    <div class="section-header">
-      <span class="label">Use Cases</span>
-    </div>
-    <div class="use-cases-grid">
-      {useCases.map((useCase) => (
-        <div class="use-case-card">
-          <h4>{useCase.title}</h4>
-          <p>{useCase.description}</p>
-        </div>
-      ))}
-    </div>
-  </section>
-
-  <!-- Code Example Section -->
-  <section class="code-example">
-    <div class="section-header">
-      <span class="label">SDK Example</span>
-    </div>
-    <div class="code-block">
-      <pre><code>{`import { createGambi } from "gambi-sdk";
+const sdkSnippet = `import { createGambi } from "gambi-sdk";
 import { generateText } from "ai";
 
 const gambi = createGambi({
@@ -228,614 +107,1341 @@ const gambi = createGambi({
   hubUrl: "http://localhost:3000",
 });
 
-// Route to any available participant
+// route to any participant
 const { text } = await generateText({
   model: gambi.any(),
-  prompt: "Hello, Gambi!",
+  prompt: "Explain TLS in one sentence.",
 });
 
-// Or target a specific model
-const { text: code } = await generateText({
-  model: gambi.model("llama3"),
-  prompt: "Write a fibonacci function",
-});`}</code></pre>
+// or to a specific model
+const judge = await generateText({
+  model: gambi.model("claude-haiku-4-5"),
+  prompt: \`Score this answer 1-10: \${text}\`,
+});`;
+
+// Evaluated once at build time (SSG) — shows deploy date, not current date.
+const deployDate = new Date().toISOString().slice(0, 10);
+---
+
+<div class="lander">
+  <!-- Hero — section 01 -->
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="hero-frame">
+      <span class="corner corner-tl" aria-hidden="true"></span>
+      <span class="corner corner-tr" aria-hidden="true"></span>
+      <span class="corner corner-bl" aria-hidden="true"></span>
+      <span class="corner corner-br" aria-hidden="true"></span>
+
+      <pre class="ascii-logo" aria-hidden="true">{` ██████╗  █████╗ ███╗   ███╗██████╗ ██╗
+██╔════╝ ██╔══██╗████╗ ████║██╔══██╗██║
+██║  ███╗███████║██╔████╔██║██████╔╝██║
+██║   ██║██╔══██║██║╚██╔╝██║██╔══██╗██║
+╚██████╔╝██║  ██║██║ ╚═╝ ██║██████╔╝██║
+ ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝╚═════╝ ╚═╝`}</pre>
+
+      <h1 id="hero-title" class="hero-title">
+        <span class="hero-title-line">A shared room</span>
+        <span class="hero-title-line accent">for every LLM<span class="cursor">_</span></span>
+        <span class="hero-title-line">you build with.</span>
+      </h1>
+
+      <p class="hero-sub">
+        Build apps where many models collaborate across people, machines and providers.
+      </p>
+
+      <p class="hero-tag">
+        <span class="hero-tag-strong">Gambi ships the gateway.</span>
+        <span class="hero-tag-soft">You ship the experience.</span>
+      </p>
+
+      <div class="cta-buttons">
+        <a href="/guides/quickstart/" class="btn btn-primary">
+          <span>Get started</span><span class="btn-arrow">↗</span>
+        </a>
+        <a href="/guides/patterns/" class="btn btn-secondary">See patterns</a>
+        <a
+          href="https://github.com/arthurbm/gambi"
+          class="btn btn-secondary"
+          target="_blank"
+          rel="noopener"
+        >GitHub</a>
+      </div>
+
+      <div class="provider-marquee" aria-hidden="true">
+        <div class="provider-track">
+          {[...providers, ...providers].map((p) => (
+            <span class="provider-chip">
+              <span class="provider-bullet">●</span>
+              <span class="provider-name">{p}</span>
+            </span>
+          ))}
+        </div>
+      </div>
     </div>
   </section>
 
-  <!-- Footer -->
-  <section class="footer">
-    <div class="footer-links">
-      <a href="https://github.com/arthurbm/gambi" target="_blank" rel="noopener">GitHub</a>
-      <span class="separator">|</span>
-      <a href="/guides/quickstart/">Docs</a>
-      <span class="separator">|</span>
-      <a href="/explanation/why-gambi/">Why Gambi?</a>
-      <span class="separator">|</span>
-      <a href="/guides/migrate-from-gambiarra/">Migration Guide</a>
-    </div>
-    <div class="footer-copy">
-      <span>Made with gambi for the local LLM community</span>
+  <!-- Use Cases — section 02 -->
+  <section class="patterns" aria-labelledby="patterns-title">
+    <header class="section-head">
+      <span class="section-num">02</span>
+      <span class="section-kicker">/ patterns</span>
+      <h2 id="patterns-title" class="section-title">What you can build</h2>
+      <p class="section-lead">
+        Six recipes that fit on a few lines of TypeScript. The substrate (routing, observability, multi-source) is already there.
+      </p>
+    </header>
+
+    <div class="patterns-grid">
+      {useCases.map((u, i) => (
+        <a class:list={["pattern-card", `card-${i}`]} href={u.href}>
+          <div class="pattern-num" aria-hidden="true">{u.n}</div>
+          <div class="pattern-meta" aria-hidden="true">{u.group}</div>
+          <h3 class="pattern-title">{u.title}</h3>
+          <p class="pattern-body">{u.body}</p>
+          <p class="pattern-impl">
+            <span class="impl-prefix">→ pattern:</span> {u.pattern}
+          </p>
+          <span class="pattern-cta">
+            see pattern <span class="pattern-cta-arrow">→</span>
+          </span>
+        </a>
+      ))}
     </div>
   </section>
+
+  <!-- How It Works — section 03 -->
+  <section class="how" aria-labelledby="how-title">
+    <header class="section-head">
+      <span class="section-num">03</span>
+      <span class="section-kicker">/ architecture</span>
+      <h2 id="how-title" class="section-title">How it sits in your stack</h2>
+      <p class="section-lead">
+        Your app talks to a single OpenAI-compatible URL. The hub routes inside the room. Every participant runs its own provider, in its own tunnel.
+      </p>
+    </header>
+
+    <div class="how-stage">
+      <div class="how-col how-col-app">
+        <div class="how-tag">01 · client</div>
+        <div class="how-box">
+          <div class="how-box-title">your app</div>
+          <ul class="how-box-list">
+            <li>SDK / OpenAI client / curl</li>
+            <li>tool that speaks OpenAI</li>
+            <li>your TUI, your dashboard</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="how-arrow how-arrow-1" aria-hidden="true">
+        <span class="how-arrow-label">HTTP · /rooms/:code/v1</span>
+        <span class="how-arrow-line"></span>
+        <span class="how-arrow-tip">▶</span>
+      </div>
+
+      <div class="how-col how-col-hub">
+        <div class="how-tag">02 · hub</div>
+        <div class="how-box hub-box">
+          <div class="how-box-title">gambi hub</div>
+          <ul class="how-box-list">
+            <li>room registry</li>
+            <li>routing: <code>*</code> · <code>model:&lt;name&gt;</code> · <code>&lt;id&gt;</code></li>
+            <li>SSE events: <code>llm.request</code> · <code>llm.complete</code></li>
+          </ul>
+          <div class="hub-occupancy" aria-hidden="true">
+            <span class="hub-occ-label">occupancy</span>
+            <span class="hub-occ-bar"><span class="hub-occ-fill"></span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="how-arrow how-arrow-2" aria-hidden="true">
+        <span class="how-arrow-label">WS · participant tunnel</span>
+        <span class="how-arrow-line"></span>
+        <span class="how-arrow-tip">▶</span>
+      </div>
+
+      <div class="how-col how-col-participants">
+        <div class="how-tag">03 · participants</div>
+        <div class="how-box participant-box">
+          <div class="how-box-title">your providers</div>
+          <ul class="participant-list">
+            <li><span class="dot ok"></span> ollama @ localhost:11434</li>
+            <li><span class="dot ok"></span> vllm @ 192.168.1.50:8000</li>
+            <li><span class="dot ok"></span> openrouter (cloud)</li>
+            <li><span class="dot warn"></span> openai (rate limited)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <p class="how-footnote">
+      Provider endpoints stay on <code>localhost</code>. The hub never reaches in — the participant runtime opens the tunnel.
+    </p>
+  </section>
+
+  <!-- Install + Quickstart — section 04 -->
+  <section class="install" aria-labelledby="install-title">
+    <header class="section-head">
+      <span class="section-num">04</span>
+      <span class="section-kicker">/ install</span>
+      <h2 id="install-title" class="section-title">Get the room running in 60 seconds</h2>
+      <p class="section-lead">
+        One binary on the hub machine, one SDK call from your app. No accounts, no cloud bill, no signup.
+      </p>
+    </header>
+
+    <div class="install-grid">
+      <div class="install-commands">
+        <div class="install-row install-row-main">
+          <div class="install-tag">curl <span class="install-recommended">recommended</span></div>
+          <button class="cmd" data-command={commands.curl} aria-label="copy curl install command">
+            <code>
+              <span class="dim">curl -fsSL</span>
+              {' '}
+              <span class="hi">gambi.sh/install</span>
+              {' '}
+              <span class="dim">| bash</span>
+            </code>
+            <span class="copy-icon">
+              <CopyIcon />
+              <CheckIcon />
+            </span>
+          </button>
+        </div>
+        <div class="install-row">
+          <div class="install-tag">npm</div>
+          <button class="cmd" data-command={commands.npm} aria-label="copy npm install command">
+            <code><span class="dim">npm install -g</span> <span class="hi">gambi</span></code>
+            <span class="copy-icon">
+              <CopyIcon />
+              <CheckIcon />
+            </span>
+          </button>
+        </div>
+        <div class="install-row">
+          <div class="install-tag">bun</div>
+          <button class="cmd" data-command={commands.bun} aria-label="copy bun install command">
+            <code><span class="dim">bun add -g</span> <span class="hi">gambi</span></code>
+            <span class="copy-icon">
+              <CopyIcon />
+              <CheckIcon />
+            </span>
+          </button>
+        </div>
+
+        <ol class="install-steps">
+          <li><span class="step-i">i.</span> <code>gambi hub serve</code></li>
+          <li><span class="step-i">ii.</span> <code>gambi room create --name "demo"</code></li>
+          <li><span class="step-i">iii.</span> <code>gambi participant join --room ABC123 --model llama3</code></li>
+        </ol>
+      </div>
+
+      <div class="install-snippet">
+        <div class="snippet-bar">
+          <span class="snippet-dot" aria-hidden="true"></span>
+          <span class="snippet-dot snippet-dot-2" aria-hidden="true"></span>
+          <span class="snippet-dot snippet-dot-3" aria-hidden="true"></span>
+          <span class="snippet-file">app.ts · gambi-sdk</span>
+        </div>
+        <pre class="snippet-code"><code>{sdkSnippet}</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- Built for Builders — section 05 -->
+  <section class="specs" aria-labelledby="specs-title">
+    <header class="section-head">
+      <span class="section-num">05</span>
+      <span class="section-kicker">/ specs</span>
+      <h2 id="specs-title" class="section-title">Built for builders</h2>
+      <p class="section-lead">
+        Going multi-model normally means re-wiring auth, routing and observability for every new provider. Gambi already did the boring parts — local-first, no signup, no cloud bill.
+      </p>
+    </header>
+
+    <div class="specs-grid">
+      {builderSpecs.map((s) => (
+        <article class="spec-card">
+          <div class="spec-head">
+            <span class="spec-num">{s.n}</span>
+            <h3 class="spec-title">{s.title}</h3>
+          </div>
+          <p class="spec-body">{s.body}</p>
+          <div class="spec-detail">{s.spec}</div>
+        </article>
+      ))}
+    </div>
+  </section>
+
+  <!-- Footer — section 06 -->
+  <footer class="lander-footer">
+    <div class="footer-grid">
+      <div class="footer-col footer-brand">
+        <div class="footer-mark">gambi</div>
+        <p class="footer-tag">A room where many LLMs collaborate.</p>
+      </div>
+
+      <div class="footer-col">
+        <span class="footer-label">docs</span>
+        <a href="/guides/quickstart/">Quick start</a>
+        <a href="/guides/patterns/">Patterns</a>
+        <a href="/reference/sdk/">SDK</a>
+        <a href="/reference/api/">API</a>
+        <a href="/reference/cli/">CLI</a>
+      </div>
+
+      <div class="footer-col">
+        <span class="footer-label">explanation</span>
+        <a href="/architecture/overview/">Architecture</a>
+        <a href="/explanation/tunnel-first/">How tunnels work</a>
+        <a href="/explanation/why-gambi/">Why "gambi"?</a>
+        <a href="/reference/observability/">Observability</a>
+      </div>
+
+      <div class="footer-col">
+        <span class="footer-label">project</span>
+        <a href="https://github.com/arthurbm/gambi" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://www.npmjs.com/package/gambi" target="_blank" rel="noopener">npm</a>
+        <a href="/guides/migrate-from-gambiarra/">Migrate from gambiarra</a>
+      </div>
+    </div>
+
+    <div class="footer-strip">
+      <span>made with gambiarra · for the local LLM community</span>
+      <span class="footer-strip-version">v0.3.x · {deployDate}</span>
+    </div>
+  </footer>
 </div>
 
 <style>
-  /* Base styles */
-  .lander {
-    --section-padding: 2rem;
-    --border-style: 2px solid var(--gambi-border);
+  /* ==========================================================================
+     LANDER · "engineer's blueprint meets terminal CRT"
+     ========================================================================== */
 
-    font-family: var(--font-sans, system-ui, sans-serif);
+  .lander {
+    --pad: clamp(1rem, 3.5vw, 2.5rem);
+    --rule: 2px solid var(--gambi-border);
+    --rule-strong: 2px solid var(--gambi-border-strong);
+    --hairline: 1px solid var(--gambi-border);
+    --grid-color: hsla(20, 10%, 35%, 0.08);
+
+    font-family: var(--font-sans);
     background: var(--gambi-bg);
     color: var(--gambi-text);
     min-height: 100vh;
+
+    /* dot grid background like engineer's paper */
+    background-image: radial-gradient(
+      var(--grid-color) 1px,
+      transparent 1px
+    );
+    background-size: 22px 22px;
+    background-position: -1px -1px;
   }
 
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
+  :root[data-theme="dark"] .lander,
+  :root:not([data-theme="light"]) .lander {
+    --grid-color: hsla(45, 20%, 60%, 0.05);
   }
 
-  .label {
-    display: inline-block;
-    font-family: var(--font-mono, monospace);
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--gambi-text-muted);
-    padding: 0.25rem 0.5rem;
-    border: 1px solid var(--gambi-border);
-    background: var(--gambi-bg-alt);
-  }
+  /* --------------------------------------------------------------------------
+     HERO
+     -------------------------------------------------------------------------- */
 
-  .section-header {
-    padding: 0.75rem var(--section-padding);
-    border-bottom: var(--border-style);
-  }
-
-  /* Hero Section */
   .hero {
-    padding: var(--section-padding);
-    border-bottom: var(--border-style);
+    border-bottom: var(--rule);
+    padding: clamp(1.5rem, 4vw, 3rem) var(--pad) clamp(1rem, 3vw, 2rem);
     text-align: center;
+    position: relative;
+    overflow: hidden;
   }
+
+  .hero-frame {
+    position: relative;
+    max-width: 64rem;
+    margin: 0 auto;
+    padding: clamp(1rem, 4vw, 2.25rem) clamp(0.5rem, 3vw, 1.75rem);
+  }
+
+  /* corner brackets like architectural drawings */
+  .corner {
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border-color: var(--gambi-accent);
+  }
+  .corner-tl { top: 0; left: 0; border-top: 2px solid; border-left: 2px solid; }
+  .corner-tr { top: 0; right: 0; border-top: 2px solid; border-right: 2px solid; }
+  .corner-bl { bottom: 0; left: 0; border-bottom: 2px solid; border-left: 2px solid; }
+  .corner-br { bottom: 0; right: 0; border-bottom: 2px solid; border-right: 2px solid; }
 
   .ascii-logo {
-    font-family: var(--font-mono, monospace);
-    font-size: clamp(0.35rem, 1.2vw, 0.7rem);
+    font-family: var(--font-mono);
+    font-size: clamp(0.32rem, 1.05vw, 0.62rem);
     line-height: 1.2;
     color: var(--gambi-accent);
     margin: 0 auto 1.5rem;
     overflow-x: auto;
     white-space: pre;
+    animation: ascii-fade 0.8s ease-out both;
+    text-shadow: 0 0 12px hsla(25, 95%, 55%, 0.18);
   }
 
-  .tagline {
-    font-size: 1.25rem;
-    color: var(--gambi-text-muted);
-    margin: 0 0 1.5rem;
-    max-width: 500px;
-    margin-left: auto;
-    margin-right: auto;
+  @keyframes ascii-fade {
+    from { opacity: 0; filter: blur(2px); transform: translateY(4px); }
+    to { opacity: 1; filter: blur(0); transform: none; }
   }
 
-  .tagline-note {
-    max-width: 44rem;
+  .hero-title {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: clamp(1.6rem, 4.4vw, 3rem);
+    line-height: 1.05;
+    letter-spacing: -0.04em;
     margin: 0 auto 1.5rem;
+    max-width: 40rem;
+    color: var(--gambi-text);
+  }
+
+  .hero-title-line {
+    display: block;
+    animation: hero-line-in 0.6s ease-out both;
+  }
+  .hero-title-line:nth-child(1) { animation-delay: 0.05s; }
+  .hero-title-line:nth-child(2) { animation-delay: 0.18s; }
+  .hero-title-line:nth-child(3) { animation-delay: 0.32s; }
+
+  @keyframes hero-line-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+  }
+
+  .hero-title-line.accent {
+    color: var(--gambi-accent);
+  }
+
+  .cursor {
+    display: inline-block;
+    color: var(--gambi-accent);
+    font-weight: 400;
+    margin-left: 0.05em;
+    animation: cursor-blink 1.05s steps(2, start) infinite;
+    transform: translateY(-0.08em);
+  }
+
+  @keyframes cursor-blink {
+    50% { opacity: 0; }
+  }
+
+  .hero-sub {
+    max-width: 44rem;
+    margin: 0 auto 1rem;
+    font-size: clamp(0.95rem, 1.3vw, 1.05rem);
+    line-height: 1.55;
     color: var(--gambi-text-muted);
   }
+
+  .hero-tag {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--gambi-text-dimmed);
+    margin: 0 0 1.75rem;
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.6ch;
+  }
+
+  .hero-tag-soft::before { content: "// "; opacity: 0.6; }
+  .hero-tag-strong {
+    color: var(--gambi-accent-alt);
+    font-weight: 600;
+  }
+  .hero-tag-strong::before { content: "// "; opacity: 0.6; }
 
   .cta-buttons {
     display: flex;
-    gap: 1rem;
+    gap: 0.65rem;
     justify-content: center;
     flex-wrap: wrap;
+    margin-bottom: 1.75rem;
   }
 
   .btn {
     display: inline-flex;
     align-items: center;
-    padding: 0.75rem 1.5rem;
-    font-family: var(--font-mono, monospace);
-    font-size: 0.875rem;
+    gap: 0.55ch;
+    padding: 0.7rem 1.15rem;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
     text-decoration: none;
     border: 2px solid transparent;
-    transition: all 0.15s ease;
+    border-radius: 0;
+    transition: transform 0.12s ease, background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .btn:hover {
+    transform: translate(-1px, -1px);
   }
 
   .btn-primary {
     background: var(--gambi-accent);
-    color: white;
+    color: var(--gambi-bg);
     border-color: var(--gambi-accent);
+    box-shadow: 4px 4px 0 0 var(--gambi-text);
   }
-
   .btn-primary:hover {
     background: var(--gambi-accent-hover);
-    border-color: var(--gambi-accent-hover);
-    color: white;
+    color: var(--gambi-bg);
+    box-shadow: 6px 6px 0 0 var(--gambi-text);
   }
 
   .btn-secondary {
-    background: transparent;
+    background: var(--gambi-bg);
     color: var(--gambi-text);
     border-color: var(--gambi-border-strong);
   }
-
   .btn-secondary:hover {
     border-color: var(--gambi-accent);
     color: var(--gambi-accent);
+    box-shadow: 4px 4px 0 0 var(--gambi-border);
   }
 
-  /* Install Section */
+  .btn-arrow {
+    transition: transform 0.15s ease;
+  }
+  .btn:hover .btn-arrow {
+    transform: translate(2px, -2px);
+  }
+
+  /* provider marquee */
+  .provider-marquee {
+    margin-top: 0.5rem;
+    padding: 0.55rem 0;
+    border-top: var(--hairline);
+    border-bottom: var(--hairline);
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent);
+            mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent);
+  }
+
+  .provider-track {
+    display: flex;
+    gap: 2.5rem;
+    width: max-content;
+    animation: marquee 38s linear infinite;
+  }
+
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+
+  .provider-chip {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--gambi-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6ch;
+  }
+
+  .provider-bullet {
+    color: var(--gambi-accent-alt);
+  }
+
+  .provider-name::before { content: "// "; opacity: 0.5; }
+
+  /* --------------------------------------------------------------------------
+     SECTION HEAD — shared across patterns/how/install/specs
+     -------------------------------------------------------------------------- */
+
+  .section-head {
+    padding: 1.25rem var(--pad) 1.25rem;
+    border-bottom: var(--rule);
+    display: grid;
+    grid-template-columns: auto auto 1fr;
+    grid-template-rows: auto auto;
+    gap: 0.25rem 0.75rem;
+    align-items: baseline;
+  }
+
+  .section-num {
+    grid-row: 1;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--gambi-accent);
+    background: var(--gambi-bg-alt);
+    padding: 0.15rem 0.45rem;
+    border: 1px solid var(--gambi-accent);
+    letter-spacing: 0.08em;
+  }
+
+  .section-kicker {
+    grid-row: 1;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--gambi-text-dimmed);
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+  }
+
+  .section-title {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: clamp(1.25rem, 2.4vw, 1.7rem);
+    letter-spacing: -0.025em;
+    margin: 0.4rem 0 0;
+    color: var(--gambi-text);
+  }
+
+  .section-lead {
+    grid-row: 3;
+    grid-column: 1 / -1;
+    font-size: 0.95rem;
+    color: var(--gambi-text-muted);
+    max-width: 44rem;
+    margin: 0.25rem 0 0;
+    line-height: 1.55;
+  }
+
+  /* --------------------------------------------------------------------------
+     PATTERNS — 6 cards, 3x2 grid
+     -------------------------------------------------------------------------- */
+
+  .patterns {
+    border-bottom: var(--rule);
+  }
+
+  .patterns-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  @media (max-width: 60rem) {
+    .patterns-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 38rem) {
+    .patterns-grid { grid-template-columns: 1fr; }
+  }
+
+  .pattern-card {
+    padding: 1.5rem var(--pad);
+    border-right: var(--rule);
+    border-bottom: var(--rule);
+    text-decoration: none;
+    color: var(--gambi-text);
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    position: relative;
+    background: var(--gambi-bg);
+    transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .pattern-card:hover {
+    background: var(--gambi-bg-alt);
+    transform: translate(-1px, -1px);
+    z-index: 1;
+    box-shadow:
+      inset 2px 2px 0 0 var(--gambi-accent),
+      4px 4px 0 0 var(--gambi-border);
+  }
+
+  .pattern-card:last-child,
+  .pattern-card:nth-child(3n) {
+    border-right: none;
+  }
+
+  .pattern-card:nth-last-child(-n+3) {
+    border-bottom: none;
+  }
+
+  @media (max-width: 60rem) {
+    .pattern-card { border-right: var(--rule); border-bottom: var(--rule); }
+    .pattern-card:nth-child(3n) { border-right: var(--rule); }
+    .pattern-card:nth-child(2n) { border-right: none; }
+    .pattern-card:nth-last-child(-n+3) { border-bottom: var(--rule); }
+    .pattern-card:nth-last-child(-n+2) { border-bottom: none; }
+  }
+  @media (max-width: 38rem) {
+    .pattern-card { border-right: none; }
+    .pattern-card + .pattern-card { border-top: var(--rule); }
+    .pattern-card { border-bottom: none; }
+  }
+
+  .pattern-num {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--gambi-accent);
+    letter-spacing: 0.08em;
+    border: 1px solid var(--gambi-accent);
+    padding: 0.1rem 0.35rem;
+    align-self: flex-start;
+  }
+
+  .pattern-meta {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--gambi-text-dimmed);
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+  }
+
+  .pattern-title {
+    font-family: var(--font-mono);
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    margin: 0.1rem 0 0;
+    color: var(--gambi-text);
+  }
+
+  .pattern-card:hover .pattern-title {
+    color: var(--gambi-accent);
+  }
+
+  .pattern-body {
+    font-size: 0.92rem;
+    line-height: 1.55;
+    margin: 0;
+    color: var(--gambi-text-muted);
+  }
+
+  .pattern-impl {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: var(--gambi-text-dimmed);
+    margin: 0;
+    padding-top: 0.55rem;
+    border-top: var(--hairline);
+  }
+
+  .impl-prefix {
+    color: var(--gambi-accent-alt);
+    margin-right: 0.4ch;
+  }
+
+  .pattern-cta {
+    margin-top: auto;
+    padding-top: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--gambi-text-dimmed);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    display: inline-flex;
+    gap: 0.6ch;
+    align-items: center;
+  }
+
+  .pattern-card:hover .pattern-cta {
+    color: var(--gambi-accent);
+  }
+
+  .pattern-cta-arrow {
+    transition: transform 0.15s ease;
+  }
+  .pattern-card:hover .pattern-cta-arrow {
+    transform: translateX(3px);
+  }
+
+  /* --------------------------------------------------------------------------
+     HOW IT WORKS — 3-pane horizontal architecture
+     -------------------------------------------------------------------------- */
+
+  .how {
+    border-bottom: var(--rule);
+  }
+
+  .how-stage {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr auto 1fr;
+    align-items: stretch;
+    gap: 0;
+    padding: clamp(1.5rem, 3vw, 2.25rem) var(--pad);
+  }
+
+  @media (max-width: 60rem) {
+    .how-stage {
+      grid-template-columns: 1fr;
+      gap: 0.5rem;
+    }
+  }
+
+  .how-col {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .how-tag {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--gambi-text-dimmed);
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    padding: 0.15rem 0.45rem;
+    align-self: flex-start;
+    border: 1px solid var(--gambi-border);
+    background: var(--gambi-bg-alt);
+  }
+
+  .how-box {
+    border: 2px solid var(--gambi-border-strong);
+    padding: 1rem 1.1rem;
+    background: var(--gambi-bg);
+    position: relative;
+    min-height: 9rem;
+  }
+
+  .hub-box {
+    border-color: var(--gambi-accent);
+    box-shadow: 4px 4px 0 0 var(--gambi-border);
+  }
+
+  .participant-box {
+    border-color: var(--gambi-accent-alt);
+  }
+
+  .how-box-title {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 0.95rem;
+    margin-bottom: 0.6rem;
+    color: var(--gambi-text);
+    text-transform: lowercase;
+    letter-spacing: -0.015em;
+  }
+
+  .how-box-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--gambi-text-muted);
+  }
+
+  .how-box-list li::before {
+    content: "› ";
+    color: var(--gambi-accent);
+  }
+
+  .how-box-list code {
+    color: var(--gambi-text);
+    font-size: 0.78rem;
+    background: var(--gambi-bg-alt);
+    padding: 0.05em 0.35em;
+    border-radius: 2px;
+  }
+
+  /* connecting arrows */
+  .how-arrow {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: 0.35rem;
+    padding: 0 0.65rem;
+    min-width: 8rem;
+  }
+
+  .how-arrow-label {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--gambi-text-dimmed);
+    background: var(--gambi-bg);
+    padding: 0 0.4rem;
+  }
+
+  .how-arrow-line {
+    width: 100%;
+    height: 0;
+    border-top: 2px dashed var(--gambi-border-strong);
+    position: relative;
+  }
+
+  .how-arrow-tip {
+    color: var(--gambi-accent);
+    font-size: 1rem;
+    line-height: 1;
+    margin-top: -0.7rem;
+  }
+
+  @media (max-width: 60rem) {
+    .how-arrow {
+      min-width: 0;
+      padding: 0.5rem 0;
+      transform: rotate(90deg);
+      width: 3rem;
+      justify-self: center;
+    }
+    .how-arrow-line { width: 4rem; }
+  }
+
+  /* participant list */
+  .participant-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--gambi-text-muted);
+  }
+
+  .participant-list .dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    margin-right: 0.5ch;
+    transform: translateY(-1px);
+  }
+  .participant-list .dot.ok {
+    background: var(--gambi-accent-alt);
+    box-shadow: 0 0 6px hsla(160, 70%, 40%, 0.55);
+  }
+  .participant-list .dot.warn {
+    background: var(--gambi-accent);
+    box-shadow: 0 0 6px hsla(25, 95%, 55%, 0.55);
+  }
+
+  /* hub occupancy mini-bar (just visual texture) */
+  .hub-occupancy {
+    margin-top: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6ch;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--gambi-text-dimmed);
+  }
+  .hub-occ-bar {
+    flex: 1;
+    height: 6px;
+    background:
+      repeating-linear-gradient(
+        45deg,
+        var(--gambi-border) 0 4px,
+        transparent 4px 8px
+      );
+    border: 1px solid var(--gambi-border-strong);
+    position: relative;
+    overflow: hidden;
+  }
+  .hub-occ-fill {
+    position: absolute;
+    inset: 0 30% 0 0;
+    background: var(--gambi-accent);
+  }
+
+  .how-footnote {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--gambi-text-dimmed);
+    text-align: center;
+    margin: 0;
+    padding: 0 var(--pad) 1.5rem;
+  }
+  .how-footnote code {
+    color: var(--gambi-text);
+    background: var(--gambi-bg-alt);
+    padding: 0.05em 0.4em;
+  }
+
+  /* --------------------------------------------------------------------------
+     INSTALL + QUICKSTART
+     -------------------------------------------------------------------------- */
+
   .install {
-    border-bottom: var(--border-style);
-  }
-
-  .install-header {
-    padding: 0.75rem var(--section-padding);
-    border-bottom: var(--border-style);
+    border-bottom: var(--rule);
   }
 
   .install-grid {
     display: grid;
-    grid-template-columns: 2fr 1fr;
+    grid-template-columns: 1.05fr 1fr;
   }
 
-  @media (max-width: 50rem) {
-    .install-grid {
-      grid-template-columns: 1fr;
-    }
+  @media (max-width: 56rem) {
+    .install-grid { grid-template-columns: 1fr; }
   }
 
-  .install-main {
-    padding: var(--section-padding);
+  .install-commands {
+    padding: 1.25rem var(--pad);
+    border-right: var(--rule);
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0.85rem;
   }
 
-  .install-alt {
-    border-left: var(--border-style);
-    display: flex;
-    flex-direction: column;
+  @media (max-width: 56rem) {
+    .install-commands { border-right: none; border-bottom: var(--rule); }
   }
 
-  @media (max-width: 50rem) {
-    .install-alt {
-      border-left: none;
-      border-top: var(--border-style);
-      flex-direction: row;
-    }
-  }
-
-  .alt-method {
-    padding: 1rem var(--section-padding);
-    display: flex;
-    flex-direction: column;
+  .install-row {
+    display: grid;
+    grid-template-columns: 9rem 1fr;
+    align-items: center;
     gap: 0.5rem;
-    flex: 1;
   }
 
-  .alt-method + .alt-method {
-    border-top: var(--border-style);
+  @media (max-width: 32rem) {
+    .install-row { grid-template-columns: 1fr; gap: 0.25rem; }
   }
 
-  @media (max-width: 50rem) {
-    .alt-method + .alt-method {
-      border-top: none;
-      border-left: var(--border-style);
-    }
-  }
-
-  .method-label {
-    font-family: var(--font-mono, monospace);
-    font-size: 0.75rem;
+  .install-tag {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.14em;
     color: var(--gambi-text-dimmed);
+    display: inline-flex;
+    gap: 0.5ch;
+    align-items: center;
   }
 
-  .command {
+  .install-recommended {
+    color: var(--gambi-accent);
+    font-size: 0.6rem;
+    border: 1px solid var(--gambi-accent);
+    padding: 0.05em 0.4em;
+  }
+
+  .cmd {
     all: unset;
+    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    cursor: pointer;
-    padding: 0.5rem 0;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid var(--gambi-border);
+    background: var(--gambi-bg-alt);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .cmd:hover {
+    border-color: var(--gambi-accent);
   }
 
-  .command code {
-    font-family: var(--font-mono, monospace);
-    font-size: 0.9rem;
-  }
-
-  .command .dim {
-    color: var(--gambi-text-dimmed);
-  }
-
-  .command .highlight {
-    color: var(--gambi-accent);
-    font-weight: 500;
-  }
+  .cmd .dim { color: var(--gambi-text-dimmed); }
+  .cmd .hi { color: var(--gambi-accent); font-weight: 500; }
 
   .copy-icon {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     color: var(--gambi-text-dimmed);
   }
-
-  .copy-icon :global(svg) {
-    width: 1rem;
-    height: 1rem;
-  }
-
+  .copy-icon :global(svg) { width: 0.95rem; height: 0.95rem; }
   .copy-icon :global(svg:last-child) {
     display: none;
     color: var(--gambi-accent-alt);
   }
+  .cmd.success .copy-icon :global(svg:first-child) { display: none; }
+  .cmd.success .copy-icon :global(svg:last-child) { display: block; }
 
-  .command.success .copy-icon :global(svg:first-child) {
-    display: none;
+  .install-steps {
+    list-style: none;
+    padding: 0.85rem 0 0;
+    margin: 0;
+    border-top: var(--hairline);
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    color: var(--gambi-text-muted);
+    counter-reset: install-step;
   }
 
-  .command.success .copy-icon :global(svg:last-child) {
-    display: block;
+  .install-steps li {
+    display: flex;
+    gap: 0.6ch;
+    align-items: baseline;
   }
 
-  /* Features Section */
-  .features {
-    border-bottom: var(--border-style);
-  }
-
-  .features-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-  }
-
-  @media (max-width: 60rem) {
-    .features-grid {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-
-  @media (max-width: 30rem) {
-    .features-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .feature-card {
-    padding: var(--section-padding);
-    border-right: var(--border-style);
-  }
-
-  .feature-card:last-child {
-    border-right: none;
-  }
-
-  @media (max-width: 60rem) {
-    .feature-card:nth-child(2) {
-      border-right: none;
-    }
-    .feature-card:nth-child(3),
-    .feature-card:nth-child(4) {
-      border-top: var(--border-style);
-    }
-    .feature-card:nth-child(4) {
-      border-right: none;
-    }
-  }
-
-  @media (max-width: 30rem) {
-    .feature-card {
-      border-right: none;
-    }
-    .feature-card + .feature-card {
-      border-top: var(--border-style);
-    }
-  }
-
-  .feature-icon {
-    font-family: var(--font-mono, monospace);
-    font-size: 1.5rem;
+  .step-i {
     color: var(--gambi-accent);
-    margin-bottom: 0.75rem;
+    min-width: 2ch;
   }
 
-  .feature-card h3 {
-    font-size: 1rem;
-    font-weight: 600;
-    margin: 0 0 0.5rem;
+  .install-steps code {
     color: var(--gambi-text);
+    background: var(--gambi-bg-alt);
+    padding: 0.05em 0.45em;
+    font-size: 0.82rem;
   }
 
-  .feature-card p {
-    font-size: 0.875rem;
-    color: var(--gambi-text-muted);
-    margin: 0;
-    line-height: 1.5;
-  }
-
-  /* How It Works Section */
-  .how-it-works {
-    border-bottom: var(--border-style);
-  }
-
-  .architecture {
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-  }
-
-  @media (max-width: 50rem) {
-    .architecture {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .diagram {
-    font-family: var(--font-mono, monospace);
-    font-size: clamp(0.5rem, 1.1vw, 0.75rem);
-    line-height: 1.3;
-    color: var(--gambi-text-muted);
-    padding: var(--section-padding);
-    margin: 0;
-    overflow-x: auto;
-    white-space: pre;
-  }
-
-  .steps {
-    border-left: var(--border-style);
+  .install-snippet {
+    background: var(--gambi-bg-alt);
     display: flex;
     flex-direction: column;
   }
 
-  @media (max-width: 50rem) {
-    .steps {
-      border-left: none;
-      border-top: var(--border-style);
-      flex-direction: row;
-      flex-wrap: wrap;
-    }
-  }
-
-  .step {
+  .snippet-bar {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    padding: 1rem var(--section-padding);
-    border-bottom: var(--border-style);
-  }
-
-  .step:last-child {
-    border-bottom: none;
-  }
-
-  @media (max-width: 50rem) {
-    .step {
-      flex: 1 1 50%;
-      border-bottom: none;
-      border-right: var(--border-style);
-    }
-    .step:nth-child(2),
-    .step:nth-child(4) {
-      border-right: none;
-    }
-    .step:nth-child(3),
-    .step:nth-child(4) {
-      border-top: var(--border-style);
-    }
-  }
-
-  .step-num {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.75rem;
-    height: 1.75rem;
-    font-family: var(--font-mono, monospace);
-    font-size: 0.875rem;
-    font-weight: 600;
-    background: var(--gambi-accent);
-    color: white;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-
-  .step-text {
-    font-size: 0.875rem;
-    color: var(--gambi-text-muted);
-  }
-
-  .step-text code {
-    font-family: var(--font-mono, monospace);
-    color: var(--gambi-text);
-    background: var(--gambi-bg-alt);
-    padding: 0.125rem 0.375rem;
-    border-radius: 2px;
-  }
-
-  /* Use Cases Section */
-  .use-cases {
-    border-bottom: var(--border-style);
-  }
-
-  .use-cases-grid {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-  }
-
-  @media (max-width: 60rem) {
-    .use-cases-grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
-  }
-
-  @media (max-width: 40rem) {
-    .use-cases-grid {
-      grid-template-columns: 1fr 1fr;
-    }
-  }
-
-  @media (max-width: 25rem) {
-    .use-cases-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .use-case-card {
-    padding: 1.25rem var(--section-padding);
-    border-right: var(--border-style);
-  }
-
-  .use-case-card:last-child {
-    border-right: none;
-  }
-
-  @media (max-width: 60rem) {
-    .use-case-card:nth-child(3) {
-      border-right: none;
-    }
-    .use-case-card:nth-child(4),
-    .use-case-card:nth-child(5) {
-      border-top: var(--border-style);
-    }
-  }
-
-  @media (max-width: 40rem) {
-    .use-case-card:nth-child(2),
-    .use-case-card:nth-child(4) {
-      border-right: none;
-    }
-    .use-case-card:nth-child(3),
-    .use-case-card:nth-child(5) {
-      border-top: var(--border-style);
-      border-right: var(--border-style);
-    }
-    .use-case-card:nth-child(5) {
-      border-right: none;
-    }
-  }
-
-  @media (max-width: 25rem) {
-    .use-case-card {
-      border-right: none;
-    }
-    .use-case-card + .use-case-card {
-      border-top: var(--border-style);
-    }
-  }
-
-  .use-case-card h4 {
-    font-size: 0.875rem;
-    font-weight: 600;
-    margin: 0 0 0.375rem;
-    color: var(--gambi-accent);
+    gap: 0.5ch;
+    padding: 0.5rem 0.85rem;
+    border-bottom: var(--hairline);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--gambi-text-dimmed);
     text-transform: uppercase;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.12em;
   }
 
-  .use-case-card p {
-    font-size: 0.8125rem;
-    color: var(--gambi-text-muted);
+  .snippet-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--gambi-accent);
+  }
+  .snippet-dot-2 { background: var(--gambi-accent-alt); }
+  .snippet-dot-3 { background: var(--gambi-border-strong); }
+
+  .snippet-file {
+    margin-left: auto;
+  }
+
+  .snippet-code {
+    flex: 1;
     margin: 0;
-    line-height: 1.4;
-  }
-
-  /* Code Example Section */
-  .code-example {
-    border-bottom: var(--border-style);
-  }
-
-  .code-block {
-    padding: var(--section-padding);
-    background: var(--gambi-bg-alt);
-    overflow-x: auto;
-  }
-
-  .code-block pre {
-    margin: 0;
-  }
-
-  .code-block code {
-    font-family: var(--font-mono, monospace);
-    font-size: 0.8125rem;
+    padding: 1rem 1.1rem;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
     line-height: 1.6;
     color: var(--gambi-text);
+    overflow-x: auto;
+    white-space: pre;
   }
 
-  /* Footer */
-  .footer {
-    padding: var(--section-padding);
+  /* --------------------------------------------------------------------------
+     SPECS — 4 cards, 4 columns
+     -------------------------------------------------------------------------- */
+
+  .specs {
+    border-bottom: var(--rule);
+  }
+
+  .specs-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  @media (max-width: 64rem) {
+    .specs-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 32rem) {
+    .specs-grid { grid-template-columns: 1fr; }
+  }
+
+  .spec-card {
+    padding: 1.25rem var(--pad) 1.5rem;
+    border-right: var(--rule);
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 1rem;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .spec-card:last-child { border-right: none; }
+
+  @media (max-width: 64rem) {
+    .spec-card { border-right: var(--rule); border-bottom: var(--rule); }
+    .spec-card:nth-child(2n) { border-right: none; }
+    .spec-card:nth-last-child(-n+2) { border-bottom: none; }
+  }
+  @media (max-width: 32rem) {
+    .spec-card { border-right: none; border-bottom: var(--rule); }
+    .spec-card:last-child { border-bottom: none; }
   }
 
-  .footer-links {
+  .spec-head {
     display: flex;
-    gap: 0.75rem;
-    align-items: center;
+    align-items: baseline;
+    gap: 0.65rem;
   }
 
-  .footer-links a {
-    font-family: var(--font-mono, monospace);
-    font-size: 0.875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+  .spec-num {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--gambi-accent);
+    letter-spacing: 0.08em;
+    border: 1px solid var(--gambi-accent);
+    padding: 0.1rem 0.35rem;
+  }
+
+  .spec-title {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 1rem;
+    letter-spacing: -0.01em;
+    color: var(--gambi-text);
+    margin: 0;
+    line-height: 1.2;
+  }
+
+  .spec-body {
+    font-size: 0.9rem;
+    line-height: 1.55;
     color: var(--gambi-text-muted);
+    margin: 0;
+  }
+
+  .spec-detail {
+    margin-top: auto;
+    padding-top: 0.55rem;
+    border-top: var(--hairline);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--gambi-text-dimmed);
+    text-transform: lowercase;
+    letter-spacing: 0.06em;
+  }
+
+  /* --------------------------------------------------------------------------
+     FOOTER
+     -------------------------------------------------------------------------- */
+
+  .lander-footer {
+    background: var(--gambi-bg-alt);
+  }
+
+  .footer-grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr 1fr;
+    padding: clamp(1.25rem, 3vw, 2rem) var(--pad);
+    gap: 2rem;
+    border-bottom: var(--rule);
+  }
+
+  @media (max-width: 56rem) {
+    .footer-grid { grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+  }
+  @media (max-width: 30rem) {
+    .footer-grid { grid-template-columns: 1fr; gap: 1.25rem; }
+  }
+
+  .footer-col {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .footer-mark {
+    font-family: var(--font-mono);
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    color: var(--gambi-accent);
+  }
+  .footer-tag {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--gambi-text-muted);
+    margin: 0;
+    max-width: 16rem;
+  }
+
+  .footer-label {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--gambi-text-dimmed);
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    margin-bottom: 0.3rem;
+  }
+
+  .footer-col a {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--gambi-text);
     text-decoration: none;
     transition: color 0.15s ease;
   }
-
-  .footer-links a:hover {
+  .footer-col a:hover {
     color: var(--gambi-accent);
   }
 
-  .footer-links .separator {
-    color: var(--gambi-border);
-  }
-
-  .footer-copy {
-    font-size: 0.8125rem;
+  .footer-strip {
+    padding: 0.75rem var(--pad);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
     color: var(--gambi-text-dimmed);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
 
-  /* Responsive adjustments */
-  @media (max-width: 30rem) {
-    .lander {
-      --section-padding: 1rem;
-    }
+  /* --------------------------------------------------------------------------
+     Scanline texture (dark mode only)
+     -------------------------------------------------------------------------- */
 
-    .footer {
-      flex-direction: column;
-      text-align: center;
+  :root[data-theme="dark"] .lander::before,
+  :root:not([data-theme="light"]) .lander::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      hsla(45, 20%, 80%, 0.018) 0,
+      hsla(45, 20%, 80%, 0.018) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    z-index: 999;
+  }
+
+  /* --------------------------------------------------------------------------
+     Reduced motion
+     -------------------------------------------------------------------------- */
+
+  @media (prefers-reduced-motion: reduce) {
+    .ascii-logo,
+    .hero-title-line,
+    .cursor,
+    .provider-track {
+      animation: none !important;
     }
+    .pattern-card:hover,
+    .btn:hover { transform: none; }
   }
 </style>
 
 <script>
-  // Copy-to-clipboard functionality
-  const buttons = document.querySelectorAll("button.command") as NodeListOf<HTMLButtonElement>;
-
+  const buttons = document.querySelectorAll(
+    "button.cmd",
+  ) as NodeListOf<HTMLButtonElement>;
   for (const button of buttons) {
     button.addEventListener("click", async () => {
       const command = button.dataset.command;
       if (command) {
         await navigator.clipboard.writeText(command);
         button.classList.add("success");
-        setTimeout(() => {
-          button.classList.remove("success");
-        }, 1500);
+        setTimeout(() => button.classList.remove("success"), 1500);
       }
     });
   }
