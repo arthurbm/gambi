@@ -206,6 +206,8 @@ gambi participant join --room ABC123 --participant-id carol \
 Then the app fans out the same prompt and renders responses side-by-side, votes, or runs blind comparisons:
 
 ```ts
+// createClient handles management operations (listing participants, rooms, etc.)
+// createGambi (preamble) handles inference routing — both are needed here.
 import { createClient } from "gambi-sdk";
 
 const client = createClient({ hubUrl: "http://localhost:3000" });

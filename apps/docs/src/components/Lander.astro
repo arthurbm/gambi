@@ -54,7 +54,7 @@ const useCases = [
     group: "B · build experiences",
     title: "LAN debate club",
     body: "Bring friends or students. Each plugs their own LLM into the room. You build the UI; the models stay theirs.",
-    pattern: "Multi-pessoa registration. App reads the participant list and fans out.",
+    pattern: "Multi-person registration. App reads the participant list and fans out.",
     href: "/guides/patterns/#lan-debate-club",
   },
 ];
@@ -119,7 +119,8 @@ const judge = await generateText({
   prompt: \`Score this answer 1-10: \${text}\`,
 });`;
 
-const today = new Date().toISOString().slice(0, 10);
+// Evaluated once at build time (SSG) — shows deploy date, not current date.
+const deployDate = new Date().toISOString().slice(0, 10);
 ---
 
 <div class="lander">
@@ -408,7 +409,7 @@ const today = new Date().toISOString().slice(0, 10);
 
     <div class="footer-strip">
       <span>made with gambiarra · for the local LLM community</span>
-      <span class="footer-strip-version">v0.3.x · {today}</span>
+      <span class="footer-strip-version">v0.3.x · {deployDate}</span>
     </div>
   </footer>
 </div>
