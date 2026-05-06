@@ -14,7 +14,8 @@
     "dev:monitor": "bun run --cwd apps/tui dev",
     "dev:docs": "turbo -F docs dev",
     "build": "turbo build",
-    "check-types": "turbo check-types"
+    "check-types": "turbo check-types",
+    "clean-deps": "bun run scripts/clean-deps.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.2",

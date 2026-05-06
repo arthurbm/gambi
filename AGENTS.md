@@ -381,3 +381,17 @@ Rode `bun x ultracite fix` antes de commitar para garantir compliance. Em EPICs 
 
 - Nenhum Docker, banco ou serviço externo é necessário — todo estado é em memória.
 - Se `bun` não estiver no `PATH` (Cursor Cloud e ambientes similares): `export BUN_INSTALL="$HOME/.bun" && export PATH="$BUN_INSTALL/bin:$PATH"`.
+
+## 16) Agent skills
+
+### Issue tracker
+
+Issues vivem no GitHub (`arthurbm/gambi`); use o `gh` CLI. Veja `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Vocabulário canônico (defaults: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). Veja `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` na raiz, criados sob demanda. Veja `docs/agents/domain.md`.
