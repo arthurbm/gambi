@@ -46,6 +46,24 @@ For the full command catalog and the per-area validation matrix, see [`docs/agen
 | Triage labels | `docs/agents/triage-labels.md` |
 | Domain language (`CONTEXT.md` is created lazily at the repo root) | `docs/agents/domain.md` |
 
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked in GitHub Issues via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The repo uses the default five-label triage vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
+
 ## Code style
 
 This project uses **Ultracite** (zero-config preset on top of Biome). Run `bun x ultracite fix` before committing. Biome covers formatting and most lint automatically; review business correctness, naming, and edge cases manually.
+
+## Commit style
+
+Every commit in this repo must use Conventional Commits: `type(scope): subject`. Use a scope when the affected area is clear, for example `feat(skills): install prototype and handoff skills`.
