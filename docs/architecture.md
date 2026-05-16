@@ -1,47 +1,26 @@
 # Gambi Architecture
 
-This document explains the current architecture of Gambi after the agent-first redesign of the operational surface.
+This document explains the conceptual architecture of Gambi after the agent-first redesign of the operational surface. For exact endpoints, error codes, event payloads, tunnel messages, and runtime constants, see [`docs/contracts.md`](./contracts.md).
 
 ## Overview
 
 Gambi is a local-first hub for sharing OpenAI-compatible LLM endpoints across a trusted network. It has two explicit planes:
 
-- Management plane: Gambi-native operations for rooms, participants, heartbeats, and room events.
-- Inference plane: OpenAI-compatible room-scoped endpoints for responses, chat completions, and model listing.
+- **Management plane** (`/v1/*`): Gambi-native operations for rooms, participants, heartbeats, and room events.
+- **Inference plane** (`/rooms/:code/v1/*`): OpenAI-compatible room-scoped endpoints for responses, chat completions, and model listing.
 
-Participants connect to the hub through a participant tunnel. The public inference surface remains HTTP, but hub-to-participant forwarding is now tunnel-backed instead of requiring the participant endpoint to be directly reachable from the hub.
+Participants connect to the hub through a participant tunnel. The public inference surface remains HTTP, but hub-to-participant forwarding is tunnel-backed instead of requiring the participant endpoint to be directly reachable from the hub.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                           GAMBI HUB                                │
+│                            GAMBI HUB                                │
 │                                                                     │
-│  Management plane (`/v1`)                                          │
-│  ┌───────────────────────────────────────────────────────────────┐  │
-│  │ GET    /v1/health                                            │  │
-│  │ GET    /v1/rooms                                             │  │
-│  │ POST   /v1/rooms                                             │  │
-│  │ GET    /v1/rooms/:code                                       │  │
-│  │ GET    /v1/rooms/:code/participants                          │  │
-│  │ PUT    /v1/rooms/:code/participants/:id                      │  │
-│  │ DELETE /v1/rooms/:code/participants/:id                      │  │
-│  │ POST   /v1/rooms/:code/participants/:id/heartbeat            │  │
-│  │ GET    /v1/rooms/:code/participants/:id/tunnel              │  │
-│  │ GET    /v1/rooms/:code/events                                │  │
-│  └───────────────────────────────────────────────────────────────┘  │
+│   Management plane (/v1/*)        Inference plane (/rooms/.../v1)   │
+│   rooms · participants · events   OpenAI-compatible (Responses,     │
+│                                    Chat Completions, models)        │
 │                                                                     │
-│  Inference plane (`/rooms/:code/v1/*`)                             │
-│  ┌───────────────────────────────────────────────────────────────┐  │
-│  │ GET    /rooms/:code/v1/models                                 │  │
-│  │ POST   /rooms/:code/v1/responses                              │  │
-│  │ GET    /rooms/:code/v1/responses/:id                          │  │
-│  │ DELETE /rooms/:code/v1/responses/:id                          │  │
-│  │ POST   /rooms/:code/v1/responses/:id/cancel                   │  │
-│  │ GET    /rooms/:code/v1/responses/:id/input_items              │  │
-│  │ POST   /rooms/:code/v1/chat/completions                       │  │
-│  └───────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
              ▲                      ▲                      ▲
-             │                      │                      │
              │ management           │ inference            │ live ops
              │                      │                      │
       ┌─────────────┐        ┌───────────────┐      ┌─────────────┐
@@ -79,22 +58,22 @@ Key responsibilities:
 - room and participant registry
 - management HTTP handlers
 - inference proxying
-- participant tunnel runtime
+- participant tunnel runtime (canonical `createParticipantSession()`)
 - SSE room events
 - mDNS discovery support
-- shared transport and domain schemas
+- shared transport and domain schemas (Zod)
 
 Important files:
 
-- `packages/core/src/hub.ts`
-- `packages/core/src/room.ts`
-- `packages/core/src/participant.ts`
-- `packages/core/src/sse.ts`
-- `packages/core/src/types.ts`
+- `packages/core/src/hub.ts` — HTTP server, tunnel upgrade, routing
+- `packages/core/src/room.ts` — room and participant state
+- `packages/core/src/participant-session.ts` — participant runtime
+- `packages/core/src/tunnel-protocol.ts` — tunnel messages
+- `packages/core/src/types.ts` — public Zod schemas and runtime constants
 
 ### `packages/cli`
 
-Operational CLI for both humans and agents.
+Operational CLI for both humans and agents. Workspace is `private`; the published `gambi` wrapper and `gambi-<os>-<arch>` binaries are generated under `packages/cli/dist`.
 
 The CLI is resource-oriented:
 
@@ -110,64 +89,20 @@ The CLI is a renderer over the management plane. Human mode uses compact text. S
 
 Split by audience:
 
-- `createGambi()` for inference through the OpenAI-compatible room endpoints
-- `createClient()` for operational control over rooms, participants, and room events
+- `createGambi()` — inference through the OpenAI-compatible room endpoints
+- `createClient()` — operational control over rooms, participants, and room events
+- `createParticipantSession()` — participant runtime with tunnel (re-exported from `packages/core`)
+- discovery helpers (`discoverHubs`, `discoverRooms`, `resolveGambiTarget`) — explicit; never invoked implicitly inside `createGambi()` or `createClient()`
 
 The management client maps directly to `/v1` instead of inventing a parallel contract.
 
 ### `apps/tui`
 
-Human-first monitoring interface. It consumes the management plane and room event stream, but remains a separate package from `gambi`.
+Human-first monitoring interface (OpenTUI + React). It consumes the management plane and the room event stream, but remains a separate package from `gambi`. Published as `gambi-tui` on npm.
 
-## Management plane
+## Participant lifecycle
 
-### Envelope contract
-
-Every management response is structured:
-
-```json
-{
-  "data": {},
-  "meta": {
-    "requestId": "req_123"
-  }
-}
-```
-
-Errors are also structured:
-
-```json
-{
-  "error": {
-    "code": "INVALID_REQUEST",
-    "message": "Participant identifier is required.",
-    "hint": "Pass --participant-id or provide it in the request path."
-  },
-  "meta": {
-    "requestId": "req_456"
-  }
-}
-```
-
-`meta.requestId` is part of the public contract and should be preserved by CLI and SDK callers.
-
-### Room lifecycle
-
-- Room creation is intentionally non-idempotent.
-- `GET /v1/rooms/:code` exists so clients do not need to list and filter locally.
-- Public room summaries include:
-  - `id`
-  - `code`
-  - `name`
-  - `hostId`
-  - `createdAt`
-  - `participantCount`
-  - `passwordProtected`
-  - `defaults`
-
-### Participant lifecycle
-
-Participant registration uses idempotent upsert semantics:
+Participant registration is an idempotent upsert:
 
 - `PUT /v1/rooms/:code/participants/:id`
 
@@ -177,119 +112,20 @@ Behavior:
 - return a stable `200` or `201` path for retries
 - update the existing participant when the payload changes
 
-This is the foundation for retry-safe automation and the CLI’s `participant join --participant-id`.
+The registration response also returns the tunnel bootstrap data (`participant`, `roomId`, `tunnel`). The participant then opens the bootstrap WebSocket route, after which the hub dispatches inference into the tunnel.
 
-The registration response also returns tunnel bootstrap data:
+This idempotent shape is the foundation for retry-safe automation and the CLI's `participant join --participant-id`.
 
-- `participant`
-- `roomId`
-- `tunnel`
+## Heartbeats and liveness
 
-The participant then opens:
+Two independent liveness signals run in parallel:
 
-- `GET /v1/rooms/:code/participants/:id/tunnel?token=<token>`
+- **Management heartbeat** — `POST /v1/rooms/:code/participants/:id/heartbeat`. Drives the offline timeout.
+- **Tunnel ping/pong** — drives `participant.connection.connected`.
 
-This route is an internal bootstrap route for participant runtimes, not the public inference surface consumed by apps.
+`status` and `connection.connected` are orthogonal. A participant can be registered and heartbeating but have no active tunnel; routing requires *both* an online status and a connected tunnel.
 
-### Heartbeats and liveness
-
-Participants stay online by sending:
-
-- `POST /v1/rooms/:code/participants/:id/heartbeat`
-
-Constants:
-
-- `HEALTH_CHECK_INTERVAL = 10_000`
-- `PARTICIPANT_TIMEOUT = 30_000`
-
-The hub marks inactive participants offline when the timeout window is exceeded.
-
-Tunnel liveness is tracked separately through `participant.connection`:
-
-- `kind = "tunnel"`
-- `connected`
-- `lastTunnelSeenAt`
-
-Operationally, a participant is only routable when the tunnel is connected and the participant is not offline.
-
-## Event model
-
-Room events are emitted as SSE with typed JSON payloads.
-
-Each event object contains:
-
-- `type`
-- `timestamp`
-- `roomCode`
-- `data`
-
-Current event types:
-
-- `connected`
-- `room.created`
-- `participant.joined`
-- `participant.updated`
-- `participant.left`
-- `participant.offline`
-- `llm.request`
-- `llm.complete`
-- `llm.error`
-
-The CLI converts these directly into NDJSON for `gambi events watch --format ndjson`. The SDK exposes the same shape through `client.events.watchRoom()`.
-
-`llm.request` carries:
-
-- `requestId`
-- `participantId`
-- `model`
-- `protocol`
-
-`llm.complete` carries:
-
-- `requestId`
-- `participantId`
-- `model`
-- `protocol`
-- `metrics`
-
-`llm.error` carries:
-
-- `requestId`
-- `participantId`
-- `nickname`
-- `endpoint`
-- `model`
-- `protocol`
-- `stage`
-- `error`
-
-## Inference plane
-
-The inference plane remains OpenAI-compatible and room-scoped:
-
-- `GET /rooms/:code/v1/models`
-- `POST /rooms/:code/v1/responses`
-- `GET /rooms/:code/v1/responses/:id`
-- `DELETE /rooms/:code/v1/responses/:id`
-- `POST /rooms/:code/v1/responses/:id/cancel`
-- `GET /rooms/:code/v1/responses/:id/input_items`
-- `POST /rooms/:code/v1/chat/completions`
-
-Model routing rules:
-
-- `model = <participant-id>` routes to a specific participant
-- `model = model:<name>` routes to the first online participant matching that model
-- `model = *` or `any` routes to a random online participant
-
-The hub prefers the Responses API first and keeps Chat Completions available explicitly for compatibility.
-
-Routing only considers participants that:
-
-- have a connected tunnel
-- are not offline
-- are not already handling another request
-
-Specific participant targeting returns explicit errors when the participant is busy or its tunnel is disconnected.
+For exact constants and payload shapes, see `docs/contracts.md`.
 
 ## Tunnel transport
 
@@ -298,7 +134,7 @@ The participant tunnel exists to remove the requirement that participant endpoin
 Transport properties:
 
 - the participant may keep its provider on `localhost`
-- provider auth headers stay local to the participant runtime
+- provider auth headers stay local to the participant runtime — they are never uploaded to the hub
 - the hub forwards inference operations across a WebSocket tunnel
 - the public client-facing API remains HTTP + SSE
 
@@ -308,59 +144,31 @@ This split is intentional:
 - WebSocket is used only for the hub-to-participant control path
 - participant count does not change the app-facing protocol
 
-The tunnel protocol currently includes:
+For the tunnel message catalog, see `docs/contracts.md`.
 
-- `tunnel.request`
-- `tunnel.response.start`
-- `tunnel.response.chunk`
-- `tunnel.response.end`
-- `tunnel.response.error`
-- `tunnel.ping`
-- `tunnel.pong`
+## Model routing
 
-## Runtime defaults
+Routing happens on the `model` field at request time:
 
-Rooms and participants can both contribute runtime defaults. At proxy time, the hub merges them in this order:
+- `<participant-id>` routes to a specific participant
+- `model:<name>` routes to the first available participant matching that model
+- `*` or `any` routes to a random available participant
 
-1. room defaults
-2. participant defaults
-3. request-time overrides
-
-Sensitive config is not exposed raw in public management responses. Public responses expose redacted or summarized values where needed.
-
-Provider auth headers are no longer uploaded to the hub as participant registration state. They remain on the participant runtime and are applied locally when the runtime serves tunnel requests to the real provider endpoint.
+Specific participant targeting returns explicit errors when the participant is busy or its tunnel is disconnected. Routing only considers participants whose tunnel is connected, whose status is not offline, and which are not already handling another request.
 
 ## Discovery
 
-Discovery remains useful for local-network applications. The SDK discovery helpers now resolve hubs and rooms against the management plane under `/v1`.
-
-Helpers:
-
-- `discoverHubs()`
-- `discoverRooms()`
-- `resolveGambiTarget()`
-
-These helpers remain explicit. `createGambi()` and `createClient()` do not perform implicit discovery.
+Discovery is useful for local-network applications. The SDK helpers resolve hubs and rooms against the management plane under `/v1`. Discovery is always explicit — `createGambi()` and `createClient()` do not perform implicit discovery.
 
 ## Operational surfaces
 
 ### CLI
 
-Optimized for human-readable text and machine-readable JSON/NDJSON.
-
-Important traits:
-
-- flag-first
-- pipe-friendly
-- `--interactive` and `--no-interactive`
-- XDG config support
-- NDJSON on streaming commands when stdout is piped
+Optimized for human-readable text and machine-readable JSON / NDJSON. Flag-first, pipe-friendly, with `--interactive` / `--no-interactive`, XDG config support, and NDJSON on streaming commands when stdout is piped.
 
 ### SDK management client
 
-Optimized for code-driven operational workflows.
-
-Namespaces:
+Optimized for code-driven operational workflows. Namespaces:
 
 - `client.rooms.*`
 - `client.participants.*`
@@ -368,19 +176,20 @@ Namespaces:
 
 ### TUI
 
-Optimized for human monitoring. It is not the canonical operational contract.
+Optimized for human monitoring. It is not the canonical operational contract — automation should target the management plane (`/v1`) directly via CLI or SDK.
 
 ## Repository map
 
-- `packages/core`: hub runtime and contracts
-- `packages/cli`: operational CLI
-- `packages/sdk`: inference provider and management client
-- `apps/tui`: monitoring interface
-- `apps/docs`: documentation site
+- `packages/core` — hub runtime and contracts
+- `packages/cli` — operational CLI source
+- `packages/sdk` — inference provider and management client
+- `apps/tui` — monitoring interface
+- `apps/docs` — documentation site (Astro Starlight)
+- `packages/config` — shared TypeScript configs
 
 ## Security model
 
-Gambi is designed for trusted local networks. The hub does not include native authentication. Do not expose it publicly without an external auth and proxy layer.
+Gambi is designed for trusted local networks. The hub does not include native authentication. Do not expose it publicly without an external auth and proxy layer. Provider auth headers (`ParticipantAuthHeaders`) never leave the participant runtime — they are applied only when the runtime calls its local provider, never transmitted to the hub or surfaced through the management API.
 
 ## Forward path
 
@@ -388,5 +197,7 @@ The current architecture is meant to stay narrow: transport, routing, and operab
 
 Related internal docs:
 
-- `docs/observability.md`
-- `docs/gambi-agents.md`
+- [`docs/contracts.md`](./contracts.md) — exact contract reference
+- [`docs/observability.md`](./observability.md) — metrics and event detail
+- [`docs/release-architecture.md`](./release-architecture.md) — distribution and publishing
+- [`docs/versioning.md`](./versioning.md) — versioning policy
