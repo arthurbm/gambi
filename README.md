@@ -411,6 +411,6 @@ Gambi is designed for trusted local networks. The hub does not provide built-in 
 
 For longer-term product direction, see:
 
-- `docs/architecture.md` for the current transport and proxy model
-- `docs/observability.md` for baseline metrics and future observability work
-- `docs/gambi-agents.md` for the future `gambi agents` direction above the current hub
+- `docs/reference/architecture.md` for the current transport and proxy model
+- `docs/reference/observability.md` for baseline metrics and future observability work
+- `docs/product/vision.md` for the future `gambi agents` direction above the current hub

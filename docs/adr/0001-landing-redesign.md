@@ -3,7 +3,9 @@
 **Status:** Aceito
 **Data:** 2026-04-29
 **Escopo:** `apps/docs` (landing + docs de use cases)
-**Substitui parcialmente:** `docs/PLAN-landing-docs.md` (plano original do design system; remanescente segue válido pra estrutura de pastas e tooling)
+**Substitui parcialmente:** `docs/PLAN-landing-docs.md` (plano removido na reorg de docs em 2026-05-17; conteúdo histórico no git log)
+
+> **Nota editorial (2026-05-17):** durante a reorganização da pasta `docs/`, paths citados nesta ADR foram atualizados in-place para refletir a nova estrutura (`docs/reference/`, `docs/adr/`, `docs/product/`). O conteúdo decisório do documento não foi alterado.
 
 ---
 
@@ -13,7 +15,7 @@ A landing atual (`apps/docs/src/components/Lander.astro` + `apps/docs/src/conten
 
 Restrições e contexto que moldaram esta decisão:
 
-- **O produto atual entrega substrato, não orquestração.** Hub HTTP + túnel WebSocket + roteamento OpenAI-compatible + SSE. Fim. `docs/gambi-agents.md` é explícito que orquestração de agentes está fora de escopo agora.
+- **O produto atual entrega substrato, não orquestração.** Hub HTTP + túnel WebSocket + roteamento OpenAI-compatible + SSE. Fim. `docs/product/vision.md` é explícito que orquestração de agentes está fora de escopo agora.
 - **A direção futura é umbrella, modelo LangChain.** O dono pretende, no longo prazo, transformar `gambi.sh` numa página de marca com vários produtos-irmãos (sendo "Gambi Agents" um dos próximos). O produto atual será renomeado em outra iteração.
 - **Os use cases atuais são fracos.** "Dev Teams", "Hackathons", "Research Labs", "Home Labs", "Education" são genéricos e não dão visão. Em particular:
   - **Hackathon é teatral.** Em hackathon real cada dev usa frontier model em harness (Claude Code, Codex), não pluga seu Ollama na sala dos amigos.
@@ -146,7 +148,7 @@ O `challenges.md` original é **deletado** (conteúdo é absorvido e melhorado �
 
 **Sem teaser explícito na landing.** A direção futura fica embedada na linguagem da hero ("You write the experience. Gambi is the room." sugere que a sala pode ganhar maestro depois sem reaprender vocabulário).
 
-**Caminho discreto:** link no footer pra `/explanation/why-gambi/` (que pode ganhar um parágrafo de "what's next" referenciando `docs/gambi-agents.md`) **ou** criar `apps/docs/src/content/docs/explanation/whats-next.mdx` puxando conteúdo de `docs/gambi-agents.md`. Decisão entre as duas variantes fica pra fase de implementação.
+**Caminho discreto:** link no footer pra `/explanation/why-gambi/` (que pode ganhar um parágrafo de "what's next" referenciando `docs/product/vision.md`) **ou** criar `apps/docs/src/content/docs/explanation/whats-next.mdx` puxando conteúdo de `docs/product/vision.md`. Decisão entre as duas variantes fica pra fase de implementação.
 
 ### D11 — Naming do produto atual: intacto
 
@@ -201,7 +203,7 @@ O produto continua sendo "Gambi" nesta iteração. CLI binary, npm packages (`ga
 - **`/explanation/why-gambi.mdx` vs `/explanation/whats-next.mdx`** (D10) — depende de quanto contexto adicional cabe lá sem virar texto-frankenstein.
 - **Links internos espalhados** podem referenciar `homelab.md`/`hackathon.md`/`challenges.md` em outros guias, no `README.md` raiz, ou em READMEs de workspace. Grep antes de deletar.
 - **Conteúdo de `apps/tui/README.md` e similares** pode citar use cases descartados — fora de escopo desta ADR, mas vale grep pra catar referências quebradas.
-- **`docs/PLAN-landing-docs.md`** segue parcialmente válido (estrutura de pastas, design system, copy-to-clipboard). Não deletar; sobrescrever só o que esta ADR diverge.
+- ~~**`docs/PLAN-landing-docs.md`** segue parcialmente válido (estrutura de pastas, design system, copy-to-clipboard). Não deletar; sobrescrever só o que esta ADR diverge.~~ — **superado em 2026-05-17:** o plano foi removido na reorg de docs; consultar git log se precisar do conteúdo histórico.
 
 ---
 

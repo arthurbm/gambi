@@ -1,6 +1,6 @@
 # Gambi Architecture
 
-This document explains the conceptual architecture of Gambi after the agent-first redesign of the operational surface. For exact endpoints, error codes, event payloads, tunnel messages, and runtime constants, see [`docs/contracts.md`](./contracts.md).
+This document explains the conceptual architecture of Gambi after the agent-first redesign of the operational surface. For exact endpoints, error codes, event payloads, tunnel messages, and runtime constants, see [`docs/reference/contracts.md`](./contracts.md).
 
 ## Overview
 
@@ -125,7 +125,7 @@ Two independent liveness signals run in parallel:
 
 `status` and `connection.connected` are orthogonal. A participant can be registered and heartbeating but have no active tunnel; routing requires *both* an online status and a connected tunnel.
 
-For exact constants and payload shapes, see `docs/contracts.md`.
+For exact constants and payload shapes, see `docs/reference/contracts.md`.
 
 ## Tunnel transport
 
@@ -144,7 +144,7 @@ This split is intentional:
 - WebSocket is used only for the hub-to-participant control path
 - participant count does not change the app-facing protocol
 
-For the tunnel message catalog, see `docs/contracts.md`.
+For the tunnel message catalog, see `docs/reference/contracts.md`.
 
 ## Model routing
 
@@ -197,7 +197,7 @@ The current architecture is meant to stay narrow: transport, routing, and operab
 
 Related internal docs:
 
-- [`docs/contracts.md`](./contracts.md) — exact contract reference
-- [`docs/observability.md`](./observability.md) — metrics and event detail
-- [`docs/release-architecture.md`](./release-architecture.md) — distribution and publishing
-- [`docs/versioning.md`](./versioning.md) — versioning policy
+- [`docs/reference/contracts.md`](./contracts.md) — exact contract reference
+- [`docs/reference/observability.md`](./observability.md) — metrics and event detail
+- [`docs/reference/release-architecture.md`](./release-architecture.md) — distribution and publishing
+- [`docs/reference/versioning.md`](./versioning.md) — versioning policy

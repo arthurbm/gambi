@@ -85,7 +85,7 @@ npm pack --dry-run --cache /tmp/npm-cache ./packages/cli/dist/npm/gambi
 node ./packages/cli/dist/npm/gambi/bin/gambi --version
 ```
 
-Ver `docs/release-architecture.md` e seção 11.1 do AGENTS.md da raiz para o fluxo de release completo.
+Ver `docs/reference/release-architecture.md` e seção 11.1 do AGENTS.md da raiz para o fluxo de release completo.
 
 ## Regras do Bun
 
