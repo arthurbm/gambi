@@ -17,7 +17,7 @@ Core do hub: servidor HTTP, estado de sala/participante, protocolo do túnel, SS
 
 ## Contratos que este package define
 
-Qualquer mudança nesses contratos é breaking change pública e precisa atualizar `apps/docs/src/content/docs/reference/api.md`, `reference/sdk.md`, `reference/observability.md` e `docs/architecture.md`:
+Qualquer mudança nesses contratos é breaking change pública e precisa atualizar `apps/docs/src/content/docs/reference/api.md`, `reference/sdk.md`, `reference/observability.md` e `docs/reference/architecture.md`:
 
 - Shape do envelope de management (`{ data, meta }`, `{ error, meta }`).
 - Shape de `ParticipantInfo` público (inclui `connection`, `capabilities`, `status`, `config` já redigido).
@@ -45,7 +45,7 @@ Se for alterar qualquer uma, atualizar:
 - `apps/docs/src/content/docs/reference/api.md`
 - `apps/docs/src/content/docs/reference/sdk.md`
 - `apps/docs/src/content/docs/architecture/overview.md`
-- `docs/architecture.md`
+- `docs/reference/architecture.md`
 
 ## Validação
 

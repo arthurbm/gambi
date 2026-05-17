@@ -57,7 +57,7 @@ Run this after touching each area:
 | `packages/core` | `bun test packages/core/src` and `bun run --cwd packages/core check-types` |
 | `packages/cli` | run the affected subcommand, validate `--help`, `bun run --cwd packages/cli check-types`. If you touched distribution or build, also `bun run --cwd packages/cli build`. |
 | `packages/sdk` | `bun test packages/sdk/src` and `bun run --cwd packages/sdk check-types` |
-| SDK discovery helpers | review `apps/docs/src/content/docs/reference/sdk.md`, `apps/docs/src/content/docs/guides/ai-tools.md`, `README.md`, `docs/architecture.md` |
+| SDK discovery helpers | review `apps/docs/src/content/docs/reference/sdk.md`, `apps/docs/src/content/docs/guides/ai-tools.md`, `README.md`, `docs/reference/architecture.md` |
 | `apps/tui` | `bun run --cwd apps/tui test` |
 | HTTP contracts or public types | quick test of affected endpoint(s); see `docs/agents/docs-update.md` for required doc updates |
 | Tunnel protocol | `bun test packages/core/src` (tunnel tests); see `docs/agents/docs-update.md` |

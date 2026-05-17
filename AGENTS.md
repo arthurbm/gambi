@@ -35,13 +35,15 @@ For the full command catalog and the per-area validation matrix, see [`docs/agen
 
 | Topic | Path |
 |---|---|
-| Architecture concepts (planes, components, lifecycles, security model) | `docs/architecture.md` |
-| Contract reference (envelope, error codes, endpoints, events, tunnel protocol, runtime constants, CLI flags / exit codes / env vars) | `docs/contracts.md` |
+| Architecture concepts (planes, components, lifecycles, security model) | `docs/reference/architecture.md` |
+| Contract reference (envelope, error codes, endpoints, events, tunnel protocol, runtime constants, CLI flags / exit codes / env vars) | `docs/reference/contracts.md` |
+| Observability detail (metrics, signals, phase 2 plan) | `docs/reference/observability.md` |
+| Release process and npm authentication | `docs/reference/release-architecture.md` |
+| Versioning policy | `docs/reference/versioning.md` |
+| Architecture decision records (numbered, accepted decisions) | `docs/adr/` |
+| Product direction (future of `gambi agents`, umbrella positioning) | `docs/product/vision.md` |
 | Full command reference + validation matrix per area | `docs/agents/commands.md` |
 | Doc-update checklist when changing public contracts | `docs/agents/docs-update.md` |
-| Observability detail (metrics, signals, phase 2 plan) | `docs/observability.md` |
-| Release process and npm authentication | `docs/release-architecture.md` |
-| Versioning policy | `docs/versioning.md` |
 | Issue tracker conventions | `docs/agents/issue-tracker.md` |
 | Triage labels | `docs/agents/triage-labels.md` |
 | Domain language (`CONTEXT.md` is created lazily at the repo root) | `docs/agents/domain.md` |

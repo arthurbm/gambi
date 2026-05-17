@@ -1,6 +1,6 @@
 # Gambi Contracts
 
-Reference for the public contracts of the Gambi hub: HTTP endpoints, response envelopes, error codes, SSE events, tunnel protocol messages, runtime constants, and CLI surfaces. For the conceptual model behind these contracts, see [`docs/architecture.md`](./architecture.md).
+Reference for the public contracts of the Gambi hub: HTTP endpoints, response envelopes, error codes, SSE events, tunnel protocol messages, runtime constants, and CLI surfaces. For the conceptual model behind these contracts, see [`docs/reference/architecture.md`](./architecture.md).
 
 ## Response envelopes
 
@@ -137,7 +137,7 @@ Current types:
 
 - `requestId`, `participantId`, `model`, `protocol`, `metrics`
 
-`metrics` includes: `ttftMs`, `durationMs`, `inputTokens`, `outputTokens`, `totalTokens`, `tokensPerSecond`. Token counts may be missing when the upstream provider does not expose `usage` in streaming. See [`docs/observability.md`](./observability.md) for the full metrics model.
+`metrics` includes: `ttftMs`, `durationMs`, `inputTokens`, `outputTokens`, `totalTokens`, `tokensPerSecond`. Token counts may be missing when the upstream provider does not expose `usage` in streaming. See [`docs/reference/observability.md`](./observability.md) for the full metrics model.
 
 ### `llm.error` payload
 
