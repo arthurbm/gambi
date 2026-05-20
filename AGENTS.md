@@ -48,7 +48,7 @@ For the per-area validation matrix and test gotchas, see [`docs/reference/valida
 | Doc-update checklist when changing public contracts | `docs/reference/docs-update.md` |
 | Issue tracker conventions | `docs/agents/issue-tracker.md` |
 | Triage labels | `docs/agents/triage-labels.md` |
-| Domain language (`CONTEXT.md` is created lazily at the repo root) | `docs/agents/domain.md` |
+| Domain glossary (canonical vocabulary, flagged ambiguities) | `CONTEXT.md` |
 
 ## Agent skills
 

@@ -86,7 +86,7 @@ Sem isso, falhas parciais (registro rejeitou um pacote, asset corrompeu no uploa
 
 ### Aceitas
 
-- **6 pacotes npm publicados por release** (`gambi` + 5 plataformas + `gambi-sdk` + `gambi-tui`). Cada um precisa ter granular access token autorizado com 2FA bypass em `npmjs.com`. Ver [`docs/reference/release-architecture.md`](../reference/release-architecture.md#authentication) para o checklist quando adicionar novo pacote.
+- **Oito pacotes npm publicados por release** (`gambi` + 5 plataformas + `gambi-sdk` + `gambi-tui`). Cada um precisa ter granular access token autorizado com 2FA bypass em `npmjs.com`. Ver [`docs/reference/release-architecture.md`](../reference/release-architecture.md#authentication) para o checklist quando adicionar novo pacote.
 - **Modelo só faz sentido publicando o set inteiro junto.** Versionamento independente por pacote é incompatível — isso ancora ADR-0005 (synchronized versions).
 - **Setup-fee uma vez:** scripts de install (`scripts/install.sh`, `scripts/install.ps1`) precisam ser mantidos junto. Aceito por consistência com OpenCode.
 
