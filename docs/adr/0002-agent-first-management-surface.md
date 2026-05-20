@@ -98,8 +98,8 @@ A regra documentada: use `createGambi()` para mandar requests de modelo; use o m
 - A superfície pública dobra em "obrigações de estabilidade" (envelope, error codes, tipos de evento, exit codes) — qualquer mudança incompatível agora precisa de versionamento explícito.
 
 **Guardrails operacionais:**
-- Não reintroduzir comandos flat (`serve`, `create`, `join`, `list`, `update`, `monitor`) sem namespace de recurso. Esta proibição está registrada em [`docs/agents/commands.md`](../agents/commands.md).
-- Doc updates obrigatórias quando esta superfície muda: ver [`docs/agents/docs-update.md`](../agents/docs-update.md).
+- Não reintroduzir comandos flat (`serve`, `create`, `join`, `list`, `update`, `monitor`) sem namespace de recurso. Esta proibição está registrada em [`packages/cli/AGENTS.md`](../../packages/cli/AGENTS.md) ("Não reintroduzir aliases flat").
+- Doc updates obrigatórias quando esta superfície muda: ver [`docs/reference/docs-update.md`](../reference/docs-update.md).
 
 ---
 

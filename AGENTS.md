@@ -1,5 +1,7 @@
 # AGENTS.md
 
+> `CLAUDE.md` at the repo root is a symlink to this file. Edit `AGENTS.md` only — never `CLAUDE.md` directly.
+
 Gambi is a local-first hub for sharing OpenAI-compatible LLM endpoints across a trusted local network. The transport is **tunnel-first**: each participant opens a WebSocket to the hub and the hub dispatches inference requests through that tunnel, so participant providers never need to be reachable from the hub.
 
 ## Source of truth
@@ -29,7 +31,7 @@ If `bun` is not on `PATH` (Cursor Cloud and similar environments):
 export BUN_INSTALL="$HOME/.bun" && export PATH="$BUN_INSTALL/bin:$PATH"
 ```
 
-For the full command catalog and the per-area validation matrix, see [`docs/agents/commands.md`](docs/agents/commands.md).
+For the per-area validation matrix and test gotchas, see [`docs/reference/validation.md`](docs/reference/validation.md).
 
 ## Where to look
 
@@ -42,11 +44,11 @@ For the full command catalog and the per-area validation matrix, see [`docs/agen
 | Versioning policy | `docs/reference/versioning.md` |
 | Architecture decision records (numbered, accepted decisions) | `docs/adr/` |
 | Product direction (future of `gambi agents`, umbrella positioning) | `docs/product/vision.md` |
-| Full command reference + validation matrix per area | `docs/agents/commands.md` |
-| Doc-update checklist when changing public contracts | `docs/agents/docs-update.md` |
+| Validation matrix per area + test gotchas | `docs/reference/validation.md` |
+| Doc-update checklist when changing public contracts | `docs/reference/docs-update.md` |
 | Issue tracker conventions | `docs/agents/issue-tracker.md` |
 | Triage labels | `docs/agents/triage-labels.md` |
-| Domain language (`CONTEXT.md` is created lazily at the repo root) | `docs/agents/domain.md` |
+| Domain glossary (canonical vocabulary, flagged ambiguities) | `CONTEXT.md` |
 
 ## Agent skills
 
