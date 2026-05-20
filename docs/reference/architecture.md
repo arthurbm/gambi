@@ -129,22 +129,14 @@ For exact constants and payload shapes, see `docs/reference/contracts.md`.
 
 ## Tunnel transport
 
-The participant tunnel exists to remove the requirement that participant endpoints be published on the network.
-
-Transport properties:
+The participant tunnel is the canonical (and only) hub↔participant transport. Properties:
 
 - the participant may keep its provider on `localhost`
 - provider auth headers stay local to the participant runtime — they are never uploaded to the hub
-- the hub forwards inference operations across a WebSocket tunnel
-- the public client-facing API remains HTTP + SSE
+- the hub dispatches inference operations across a WebSocket tunnel opened by the participant
+- the public client-facing API remains HTTP + SSE; tunnel is internal control path
 
-This split is intentional:
-
-- HTTP remains the compatibility surface for applications
-- WebSocket is used only for the hub-to-participant control path
-- participant count does not change the app-facing protocol
-
-For the tunnel message catalog, see `docs/reference/contracts.md`.
+For the rationale and rejected alternatives behind this inversion of connection direction, see [`docs/adr/0003-tunnel-first-transport.md`](../adr/0003-tunnel-first-transport.md). For the tunnel message catalog, see [`docs/reference/contracts.md`](./contracts.md).
 
 ## Model routing
 
