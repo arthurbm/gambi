@@ -51,3 +51,6 @@ temp
 
 # Scratch / personal files
 scratch/
+
+# Beads (local issue tracker metadata)
+.beads/
