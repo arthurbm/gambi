@@ -1,17 +1,27 @@
+import react from "@astrojs/react";
 import starlight from "@astrojs/starlight";
+import tailwindcss from "@tailwindcss/vite";
 // @ts-check
 import { defineConfig } from "astro/config";
+import { fileURLToPath } from "node:url";
 import starlightLlmsTxt from "starlight-llms-txt";
 
 // https://astro.build/config
 export default defineConfig({
   site: "https://gambi.sh",
   vite: {
+    plugins: [tailwindcss()],
+    resolve: {
+      alias: {
+        "@": fileURLToPath(new URL("./src", import.meta.url)),
+      },
+    },
     ssr: {
       noExternal: ["zod"],
     },
   },
   integrations: [
+    react(),
     starlight({
       plugins: [
         starlightLlmsTxt({
@@ -31,9 +41,6 @@ export default defineConfig({
       ],
       title: "Gambi",
       customCss: ["./src/styles/custom.css"],
-      components: {
-        Hero: "./src/components/Hero.astro",
-      },
       social: [
         {
           icon: "github",

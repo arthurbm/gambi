@@ -1,0 +1,33 @@
+---
+import LandingShell from "@/components/landing/LandingShell.astro";
+import {
+  landingLocales,
+  type LandingLocale,
+} from "@/lib/landing-locales";
+import "@/styles/landing.css";
+
+interface Props {
+  locale: LandingLocale;
+}
+
+const { locale } = Astro.props;
+const copy = landingLocales[locale];
+const site = Astro.site ?? Astro.url;
+const canonicalUrl = new URL(copy.localePath, site);
+---
+
+<!doctype html>
+<html lang={copy.htmlLang}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content={copy.description} />
+    <link rel="canonical" href={canonicalUrl} />
+    <link rel="alternate" hreflang="en" href={new URL("/", site)} />
+    <link rel="alternate" hreflang="pt-BR" href={new URL("/pt", site)} />
+    <title>{copy.title}</title>
+  </head>
+  <body class="bg-background text-foreground antialiased">
+    <LandingShell {copy} />
+  </body>
+</html>
