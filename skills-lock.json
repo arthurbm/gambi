@@ -96,6 +96,12 @@
       "sourceType": "github",
       "computedHash": "5a34aa69919e740257743aa6f4dad96916a371dbfe566326161b81ae103599c6"
     },
+    "migrate-radix-to-base": {
+      "source": "shadcn/ui",
+      "sourceType": "github",
+      "skillPath": "skills/migrate-radix-to-base/SKILL.md",
+      "computedHash": "e1f2030ee5059be3dff0812ca0e4b995ee9fa3132176f049ebe6c90346a6755e"
+    },
     "prototype": {
       "source": "mattpocock/skills",
       "sourceType": "github",
