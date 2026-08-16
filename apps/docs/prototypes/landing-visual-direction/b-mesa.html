@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gambi — direção B · Mesa de som</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600&family=JetBrains+Mono:wght@300;400;500;700;800&display=swap" rel="stylesheet" />
+<style>
+/* ═══ direção B — mesa de som ao vivo ═══════════════════════════════════ */
+:root {
+  --chassis:   #1b1b1d;  /* chassi da mesa: grafite morno, nunca preto */
+  --chassis-lo:#141416;
+  --strip:     #26262a;  /* face do canal */
+  --strip-hi:  #2e2e33;
+  --groove:    #101012;  /* sulco entre canais */
+  --silk:      #d8d5cc;  /* silkscreen */
+  --silk-dim:  #8e8b83;
+  --dim:       #6d6a64;
+  --led-off:   #2f3033;
+  --green:     #4fd07a;
+  --amber:     #ffb020;
+  --red:       #ff4d3d;
+  --cap:       #b6b2a9;  /* cap do fader */
+  --master:    #d8442e;  /* o master bus é a única cor saturada em área */
+  --tape:      #d9c04a;  /* fita crepe — a única rebeldia */
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+  --body: "Barlow Semi Condensed", system-ui, sans-serif;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; color: var(--silk); font-family: var(--body); font-size: 17px;
+  background:
+    linear-gradient(180deg, var(--chassis) 0%, var(--chassis-lo) 100%);
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 26px; }
+.silk {
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  letter-spacing: 0.2em; text-transform: uppercase; color: var(--silk-dim);
+}
+
+/* parafuso — o chassi é aparafusado, não desenhado */
+.screw {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #4a4a50, #232327 70%);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.55), 0 1px 0 rgb(255 255 255 / 0.05);
+  position: relative;
+}
+.screw::after {
+  content: ""; position: absolute; inset: 3px 1px; border-top: 1px solid rgb(0 0 0 / 0.65);
+  transform: rotate(28deg);
+}
+
+/* ── topo ─────────────────────────────────────────────────────────────── */
+header { border-bottom: 1px solid var(--groove); }
+.header-inner {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 0;
+}
+.mark { font-family: var(--mono); font-weight: 800; letter-spacing: 0.34em; font-size: 14px; }
+header nav { display: flex; gap: 24px; }
+header a { color: var(--silk-dim); text-decoration: none; font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; }
+header a:hover { color: var(--silk); }
+
+/* ── hero: ponte de medidores acima da mesa ───────────────────────────── */
+.hero { padding: 72px 0 0; }
+h1 {
+  font-family: var(--mono); font-weight: 800; margin: 18px 0 0;
+  font-size: clamp(32px, 5.4vw, 62px); line-height: 1.04; letter-spacing: -0.035em;
+  max-width: 17ch;
+}
+.hero-sub { max-width: 58ch; margin: 26px 0 0; font-size: 19px; line-height: 1.55; color: #b4b1a9; }
+.hero-tag { margin: 20px 0 0; font-family: var(--mono); font-size: 13px; }
+.hero-tag span { color: var(--silk-dim); }
+.cta { display: flex; gap: 12px; flex-wrap: wrap; margin: 30px 0 0; }
+.btn {
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;
+  text-decoration: none; padding: 13px 22px; border-radius: 2px;
+  transition: transform 160ms var(--ease-out), background-color 160ms ease, border-color 160ms ease;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--master); color: #fff; font-weight: 700; }
+.btn-secondary { color: var(--silk); border: 1px solid #3a3a40; }
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary:hover { background: #e8523c; }
+  .btn-secondary:hover { border-color: #55555d; background: rgb(255 255 255 / 0.03); }
+}
+
+/* ── a mesa: a prova da primeira dobra ────────────────────────────────── */
+.desk-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin: 54px 0 56px;
+}
+.desk {
+  display: grid; grid-template-columns: repeat(5, 1fr) 1.25fr;
+  gap: 2px; background: var(--groove); padding: 2px;
+  border-radius: 4px;
+  box-shadow: 0 18px 44px rgb(0 0 0 / 0.42), inset 0 1px 0 rgb(255 255 255 / 0.04);
+  position: relative;
+}
+.ch {
+  background: linear-gradient(180deg, var(--strip-hi), var(--strip) 22%, #202024 100%);
+  padding: 14px 12px 16px; display: flex; flex-direction: column; gap: 12px;
+  position: relative; min-width: 0;
+}
+.ch-top { display: flex; justify-content: space-between; align-items: center; }
+.ch-name {
+  font-family: var(--mono); font-size: 12px; font-weight: 700;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ch-model {
+  font-family: var(--mono); font-size: 10.5px; color: var(--silk-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ch-origin { font-size: 13px; color: var(--dim); line-height: 1.25; min-height: 2.4em; }
+
+/* knob de trim — indicador branco, chanfro real */
+.knob {
+  width: 40px; height: 40px; border-radius: 50%; align-self: center; position: relative;
+  background:
+    radial-gradient(circle at 50% 22%, #4b4b52, #2a2a2f 62%, #1d1d21 100%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1), 0 2px 5px rgb(0 0 0 / 0.5);
+}
+.knob::after {
+  content: ""; position: absolute; left: 50%; top: 5px; width: 2px; height: 12px;
+  background: var(--silk); border-radius: 1px; transform-origin: 50% 15px;
+  transform: translateX(-50%) rotate(var(--rot, -32deg));
+}
+
+/* medidor de LEDs — a observabilidade vira medidor honesto */
+.meter { display: flex; flex-direction: column-reverse; gap: 2px; }
+.led { height: 4px; border-radius: 1px; background: var(--led-off); transition: background-color 90ms linear; }
+.led.on.g { background: var(--green); box-shadow: 0 0 5px rgb(79 208 122 / 0.5); }
+.led.on.a { background: var(--amber); box-shadow: 0 0 5px rgb(255 176 32 / 0.5); }
+.led.on.r { background: var(--red);   box-shadow: 0 0 6px rgb(255 77 61 / 0.6); }
+
+/* fader — trilho fresado e cap com relevo */
+.fader { height: 116px; position: relative; align-self: center; width: 26px; }
+.fader-track {
+  position: absolute; left: 50%; top: 0; bottom: 0; width: 5px; transform: translateX(-50%);
+  background: linear-gradient(90deg, #0d0d0f, #1b1b1f 50%, #0d0d0f);
+  border-radius: 3px; box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.9);
+}
+.fader-cap {
+  position: absolute; left: 50%; width: 26px; height: 13px; border-radius: 2px;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(180deg, #cfcbc2, var(--cap) 45%, #86837c);
+  box-shadow: 0 2px 4px rgb(0 0 0 / 0.6), inset 0 1px 0 rgb(255 255 255 / 0.5);
+}
+.fader-cap::after {
+  content: ""; position: absolute; left: 3px; right: 3px; top: 50%; height: 1px;
+  background: rgb(0 0 0 / 0.45);
+}
+.ch-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.pill {
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 4px 7px; border-radius: 2px; background: #1a1a1e; color: var(--dim);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.05);
+}
+.pill.live { color: #0e1a12; background: var(--green); }
+.pill.hot  { color: #1a1204; background: var(--amber); }
+.ttft { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+
+/* master — o único campo saturado da mesa */
+.ch.master {
+  background: linear-gradient(180deg, #322320, #291c1a 30%, #1f1614 100%);
+  box-shadow: inset 1px 0 0 rgb(255 255 255 / 0.06);
+}
+.ch.master .ch-name { color: #ffd9d2; }
+.ch.master .fader-cap { background: linear-gradient(180deg, #ff8c78, var(--master) 45%, #8f2a1b); }
+.ch.master .endpoint {
+  font-family: var(--mono); font-size: 10px; color: #e0a99f; word-break: break-all; line-height: 1.5;
+}
+
+/* ▸ A ÚNICA REBELDIA DA PÁGINA ◂
+   um jumper atravessa a matriz por fora, colado com fita crepe e escrito à mão.
+   é o canal que está carregando o sinal. */
+.patch { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.patch svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.patch path { stroke: #c9c5bb; stroke-width: 3; fill: none; opacity: 0.9; filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.6)); }
+.patch-label {
+  position: absolute; right: 30%; top: -44px;
+  background: var(--tape); color: #2a2410; opacity: 0.94;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.04em;
+  padding: 4px 9px; transform: rotate(-1.6deg);
+  clip-path: polygon(0 8%, 98% 0, 100% 92%, 2% 100%);
+  box-shadow: 0 2px 5px rgb(0 0 0 / 0.45);
+}
+
+/* ── seções ───────────────────────────────────────────────────────────── */
+section { padding: 100px 0 0; }
+.sec-head { display: flex; gap: 16px; align-items: baseline; }
+.sec-num { font-family: var(--mono); font-size: 11px; font-weight: 800; color: var(--master); letter-spacing: 0.2em; }
+h2 { font-family: var(--mono); font-weight: 800; font-size: clamp(26px, 3.4vw, 40px); letter-spacing: -0.025em; margin: 14px 0 0; }
+.lead { max-width: 60ch; margin: 16px 0 0; color: #aeaba3; line-height: 1.55; font-size: 18px; }
+
+/* use cases — cenas recuperáveis da mesa */
+.scenes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; margin: 38px 0 0; background: var(--groove); padding: 2px; border-radius: 4px; }
+.scene {
+  background: linear-gradient(180deg, var(--strip-hi), var(--strip) 18%, #202024 100%);
+  padding: 20px 20px 22px; text-decoration: none; color: inherit; position: relative;
+  transition: background-color 160ms ease;
+  display: flex; flex-direction: column; gap: 10px;
+}
+@media (hover: hover) and (pointer: fine) { .scene:hover { background: #2d2d32; } }
+.scene:active { transform: scale(0.996); }
+.scene-num { position: absolute; right: 16px; top: 16px; }
+.scene h3 { font-family: var(--mono); font-size: 14px; font-weight: 700; margin: 0; max-width: 20ch; }
+.scene p { margin: 0; font-size: 16px; line-height: 1.5; color: #a6a39c; }
+.scene .impl { font-family: var(--mono); font-size: 11px; color: var(--dim); line-height: 1.5; margin-top: auto; }
+
+/* ── 04 camadas: o rack de 19 polegadas ───────────────────────────────── */
+.rack { margin: 40px 0 0; display: flex; flex-direction: column; gap: 3px; }
+.ru {
+  display: grid; grid-template-columns: 26px 1fr 168px 26px;
+  align-items: center; gap: 0;
+  background: linear-gradient(180deg, #2c2c31, #232327 40%, #1c1c20);
+  border-radius: 3px; padding: 20px 14px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 2px 6px rgb(0 0 0 / 0.4);
+}
+.ru .ear { display: flex; justify-content: center; }
+.ru-title { font-family: var(--mono); font-size: 15px; font-weight: 700; margin: 0; }
+.ru-list { margin: 8px 0 0; font-size: 16px; color: #a6a39c; }
+.ru-power { display: flex; align-items: center; gap: 9px; justify-content: flex-end; }
+.lamp { width: 9px; height: 9px; border-radius: 50%; background: var(--led-off); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.6); }
+.lamp.on { background: var(--green); box-shadow: 0 0 9px rgb(79 208 122 / 0.75); }
+.lamp.wait { background: var(--amber); box-shadow: 0 0 9px rgb(255 176 32 / 0.6); }
+.ru-power .silk { letter-spacing: 0.18em; }
+/* a unidade de cima não está no rack: o espaço é seu */
+.ru.empty {
+  background:
+    repeating-linear-gradient(135deg, #1a1a1d 0 9px, #17171a 9px 18px);
+  box-shadow: inset 0 0 0 1px #2a2a2f;
+}
+.ru.empty .ru-title, .ru.empty .ru-list { color: var(--dim); }
+
+.layers-note { margin: 28px 0 0; max-width: 60ch; color: #aeaba3; line-height: 1.55; font-size: 18px; }
+.layers-link {
+  display: inline-block; margin: 20px 0 0; color: var(--master);
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; text-decoration: none;
+}
+.layers-link:hover { text-decoration: underline; text-underline-offset: 4px; }
+
+.stub { margin: 100px 0 0; padding-top: 30px; border-top: 1px solid var(--groove); }
+.stub p { color: var(--dim); font-size: 15px; margin: 10px 0 0; }
+footer {
+  margin: 66px 0 0; padding: 26px 0 118px; border-top: 1px solid var(--groove);
+  display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap;
+}
+
+.desk-head { flex-wrap: wrap; gap: 4px 16px; }
+
+@media (max-width: 980px) {
+  /* a mesa vira uma pilha de canais: nome à esquerda, medidor e estado à
+     direita. fader e knob saem — não são o que se lê num canal de relance. */
+  .desk { grid-template-columns: 1fr; }
+  .ch {
+    display: grid; grid-template-columns: 1fr auto auto;
+    align-items: center; gap: 14px; padding: 14px 14px;
+  }
+  .ch-top, .knob, .fader, .ch-origin { display: none; }
+  .ch-head-group { min-width: 0; }
+  .ch-name { font-size: 13px; }
+  .meter { flex-direction: row; width: 88px; }
+  .led { width: 4px; height: 20px; }
+  .ch-foot { display: contents; }
+  .scenes { grid-template-columns: 1fr; }
+  .patch { display: none; }
+  .ch.master .endpoint { font-size: 11px; }
+}
+@media (max-width: 520px) {
+  .wrap { padding: 0 18px; }
+  .meter { width: 56px; }
+  .led { width: 3px; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .led { transition: none; } }
+</style>
+</head>
+<body>
+<!--
+THESIS: a sala é uma mesa de som — N entradas independentes somadas num master, com
+  medidor por canal. Recusa o card-grid + diagrama hub-and-spoke da categoria e transforma
+  a observabilidade (TTFT, tokens/s) num medidor de verdade em vez de um badge.
+OWN-WORLD: chassi de grafite morno (nunca preto), sulcos entre canais, silkscreen osso,
+  LEDs verde/âmbar/vermelho, caps de fader com relevo, e o master como único campo saturado.
+  JetBrains Mono no silkscreen, Barlow Semi Condensed na prosa.
+STORY: o visitante vê cinco canais medindo ao vivo e um master só, entende que qualquer
+  provider entra por um canal, e instala.
+FIRST VIEWPORT: manchete de três linhas à esquerda, a mesa inteira ocupando a largura
+  logo abaixo, com o master vermelho na direita carregando a URL única.
+FORM: mesa de som — candidato 1 da minha lista fundamentada (MY PICK), apresentado ao lado
+  da direção sorteada. Risco honesto: é o que eu escolheria em qualquer run, então é a
+  direção mais provável de já ter sido feita.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review,
+  the verdict, and DESIGN.md
+-->
+
+<header>
+  <div class="wrap header-inner">
+    <span class="mark">GAMBI</span>
+    <nav><a href="#">Docs</a><a href="#">Patterns</a><a href="#">GitHub</a></nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <p class="silk">01 / the desk</p>
+    <h1>Point one URL at everyone's models.</h1>
+    <p class="hero-sub">
+      Ollama on your laptop, vLLM on the box under the desk, OpenRouter, OpenAI — each one
+      opens its own tunnel and lands on its own channel. Your app calls a single
+      OpenAI-compatible endpoint and reaches all of them.
+    </p>
+    <p class="hero-tag">Gambi connects the models. <span>You write what happens between them.</span></p>
+    <div class="cta">
+      <a class="btn btn-primary" href="#">Get started</a>
+      <a class="btn btn-secondary" href="#">See patterns</a>
+      <a class="btn btn-secondary" href="#">GitHub</a>
+    </div>
+
+    <div class="desk-head">
+      <span class="silk">Sala ABC123 · canais no ar</span>
+      <span class="silk">dados de demonstração</span>
+    </div>
+    <div class="desk" id="desk"></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><span class="silk">/ patterns</span></div>
+    <h2>What you can build</h2>
+    <p class="lead">Six recipes that fit on a few lines of TypeScript. The routing, the multi-source dispatch and the event stream are already there.</p>
+    <div class="scenes" id="scenes"></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><span class="silk">/ architecture</span></div>
+    <h2>How it sits in your stack</h2>
+    <p class="lead">Your app talks to one OpenAI-compatible URL. The hub routes inside the room. Every participant runs its own provider, inside its own tunnel — the hub never reaches in.</p>
+    <p class="lead" style="color:var(--dim);font-family:var(--mono);font-size:13px">[ esboçado no protótipo — o diagrama herda o vocabulário de sulco, silkscreen e LED ]</p>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><span class="silk">/ layers</span></div>
+    <h2>What Gambi handles — and what still lands on you</h2>
+    <p class="lead">Gambi moves the messages between models. Everything about how the conversation actually runs is still your code.</p>
+
+    <div class="rack">
+      <div class="ru empty">
+        <span class="ear"><span class="screw"></span></span>
+        <span>
+          <p class="ru-title">What you build</p>
+          <p class="ru-list">arenas · debates · juries · multi-persona NPCs</p>
+        </span>
+        <span class="ru-power"><span class="silk">rack space</span></span>
+        <span class="ear"><span class="screw"></span></span>
+      </div>
+      <div class="ru">
+        <span class="ear"><span class="screw"></span></span>
+        <span>
+          <p class="ru-title">Turn-taking · shared context · models talking to models</p>
+          <p class="ru-list">whose turn it is · what everyone has heard · who said what to whom</p>
+        </span>
+        <span class="ru-power"><span class="silk">coming soon</span><span class="lamp wait"></span></span>
+        <span class="ear"><span class="screw"></span></span>
+      </div>
+      <div class="ru">
+        <span class="ear"><span class="screw"></span></span>
+        <span>
+          <p class="ru-title">One endpoint. Many models, many machines, many people.</p>
+          <p class="ru-list">tunnels · routing · presence · events</p>
+        </span>
+        <span class="ru-power"><span class="silk">today</span><span class="lamp on"></span></span>
+        <span class="ear"><span class="screw"></span></span>
+      </div>
+    </div>
+
+    <p class="layers-note">
+      The turn-taking is your code. The shared context is your code. Keeping track of who
+      said what to whom is your code. Gambi does not help you there — yet.
+    </p>
+    <a class="layers-link" href="#">Where this is going →</a>
+  </section>
+
+  <div class="stub">
+    <div class="sec-head"><span class="sec-num">05</span><span class="silk">/ install</span></div>
+    <p>curl · npm · bun + um snippet do SDK. Esboçado neste protótipo.</p>
+  </div>
+  <div class="stub">
+    <div class="sec-head"><span class="sec-num">06</span><span class="silk">/ built for builders</span></div>
+    <p>Quatro cards do D7. Esboçado neste protótipo.</p>
+  </div>
+
+  <footer>
+    <span class="silk">Gambi · protótipo B · mesa de som</span>
+    <span class="silk">ticket #60 · mapa #58</span>
+  </footer>
+</main>
+
+<script>
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* canais — dados sintéticos */
+const CHANNELS = [
+  { name: "ollama",     model: "qwen3:14b",     origin: "macbook do arthur", level: 0.62, state: "live", label: "streaming", ttft: "340 ms", rot: "-18deg" },
+  { name: "vllm",       model: "llama-3.3-70b", origin: "torre da sala",     level: 0.88, state: "hot",  label: "streaming", ttft: "210 ms", rot: "22deg" },
+  { name: "lm studio",  model: "gemma-3-12b",   origin: "notebook da bia",   level: 0.34, state: "live", label: "connected", ttft: "520 ms", rot: "-40deg" },
+  { name: "openrouter", model: "deepseek-r1",   origin: "cloud",             level: 0.05, state: "",     label: "idle",      ttft: "—",      rot: "-52deg" },
+  { name: "openai",     model: "claude-haiku-4-5", origin: "cloud",          level: 0.71, state: "live", label: "streaming", ttft: "180 ms", rot: "8deg" },
+];
+
+const LEDS = 14;
+const ledClass = (i) => (i > LEDS - 3 ? "r" : i > LEDS - 6 ? "a" : "g");
+
+const desk = document.getElementById("desk");
+CHANNELS.forEach((c, n) => {
+  const el = document.createElement("div");
+  el.className = "ch";
+  el.innerHTML = `
+    <div class="ch-top"><span class="silk">ch ${n + 1}</span><span class="silk">${c.ttft}</span></div>
+    <div class="ch-head-group">
+      <p class="ch-name">${c.name}</p>
+      <p class="ch-model">${c.model}</p>
+      <p class="ch-origin">${c.origin}</p>
+    </div>
+    <div class="knob" style="--rot:${c.rot}"></div>
+    <div class="meter" data-level="${c.level}">
+      ${Array.from({ length: LEDS }, (_, i) => `<span class="led ${ledClass(i)}"></span>`).join("")}
+    </div>
+    <div class="fader"><div class="fader-track"></div><div class="fader-cap" style="top:${100 - c.level * 84}%"></div></div>
+    <div class="ch-foot">
+      <span class="pill ${c.state}">${c.label}</span>
+    </div>
+  `;
+  desk.appendChild(el);
+});
+
+const master = document.createElement("div");
+master.className = "ch master";
+master.innerHTML = `
+  <div class="ch-top"><span class="silk">master</span><span class="silk">out</span></div>
+  <div class="ch-head-group">
+    <p class="ch-name">one endpoint</p>
+    <p class="endpoint">http://hub.local:3000<br/>/rooms/ABC123/v1</p>
+    <p class="ch-origin">o que seu app chama</p>
+  </div>
+  <div class="knob" style="--rot:30deg"></div>
+  <div class="meter" data-level="0.9">
+    ${Array.from({ length: LEDS }, (_, i) => `<span class="led ${ledClass(i)}"></span>`).join("")}
+  </div>
+  <div class="fader"><div class="fader-track"></div><div class="fader-cap" style="top:12%"></div></div>
+  <div class="ch-foot"><span class="pill live">on air</span></div>
+`;
+desk.appendChild(master);
+
+/* ▸ A ÚNICA REBELDIA ◂ jumper por fora da matriz, colado com fita e escrito à mão */
+const patch = document.createElement("div");
+patch.className = "patch";
+patch.innerHTML = `
+  <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M 74 8 C 74 -6, 96 -6, 96 10" vector-effect="non-scaling-stroke" />
+  </svg>
+  <span class="patch-label">ch5 → master direto. não mexe.</span>
+`;
+desk.appendChild(patch);
+
+/* medidores — movimento constante, portanto linear e contido */
+if (!reduced) {
+  setInterval(() => {
+    for (const meter of document.querySelectorAll(".meter")) {
+      const base = Number(meter.dataset.level);
+      if (base < 0.1) { for (const l of meter.children) l.classList.remove("on"); continue; }
+      const lit = Math.round(LEDS * Math.min(1, base + (Math.random() - 0.5) * 0.22));
+      [...meter.children].forEach((led, i) => led.classList.toggle("on", i < lit));
+    }
+  }, 110);
+}
+
+/* use cases — copy do D4/D6 */
+const CASES = [
+  ["Model arena", "Same prompt, every model in the room. Spot differences in tone, accuracy, and speed at a glance.", 'Round-robin via model:"*", N requests in parallel, render side by side.'],
+  ["Jury / judge panel", "Generate the answer once. Fan it out to other models for verdicts and scoring. The g-eval pattern, off the shelf.", "1 generator participant + N judge participants. Aggregate the votes."],
+  ["Draft → critique → polish", "Cheap-then-strong. Small model drafts, bigger one critiques, third polishes. Quality without paying frontier prices end to end.", "3 chained calls — output of step N feeds prompt N+1."],
+  ["Debate club", "Two models argue, a third moderates. Stream every turn through SSE for a live show.", "Loop between participant IDs with conflicting system prompts."],
+  ["Multi-persona NPCs", "A game where each character has its own brain. Different model, different system prompt, different attitude.", "One participant per persona. Route by ID at the moment of speech."],
+  ["LAN debate club", "Bring friends or students. Each plugs their own LLM into the room. You build the UI; the models stay theirs.", "Multi-person registration. App reads the participant list and fans out."],
+];
+const scenes = document.getElementById("scenes");
+CASES.forEach(([title, body, impl], n) => {
+  const a = document.createElement("a");
+  a.className = "scene";
+  a.href = "#";
+  a.innerHTML = `
+    <span class="silk scene-num">scene ${String(n + 1).padStart(2, "0")}</span>
+    <h3>${title}</h3>
+    <p>${body}</p>
+    <p class="impl">→ ${impl}</p>
+  `;
+  scenes.appendChild(a);
+});
+</script>
+<script src="switcher.js"></script>
+</body>
+</html>

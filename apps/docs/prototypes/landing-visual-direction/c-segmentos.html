@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gambi — direção C · Mostrador de segmentos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700;800&display=swap" rel="stylesheet" />
+<style>
+/* ═══ direção C — mostrador de segmentos ════════════════════════════════
+   um alfabeto só na página inteira. o segmento apagado é desenhado com o
+   mesmo cuidado do aceso — é isso que separa um mostrador de verdade de
+   um brilho neon sobre preto.                                            */
+:root {
+  --panel:  #0a0a0b;   /* chapa fosca */
+  --case:   #121214;   /* bezel de plástico */
+  --case-hi:#1a1a1d;
+  --ghost:  #1e1f22;   /* segmento apagado — presente, não ausente */
+  --red:    #ff3b2f;   /* registro noturno */
+  --amber:  #ffa41c;
+  --green:  #35e07f;
+  --label:  #83858c;
+  --dim:    #5a5c62;
+  --paper:  #e6e0cf;   /* o dígito de papel — a única rebeldia */
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--panel); color: #d5d7db;
+  font-family: var(--mono); font-size: 15px; line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1160px; margin: 0 auto; padding: 0 26px; }
+.label { font-size: 10px; letter-spacing: 0.26em; text-transform: uppercase; color: var(--label); }
+
+/* ── o glifo ──────────────────────────────────────────────────────────── */
+/* --w vem do .readout pai; declarar --w aqui quebraria a herança e todo
+   mostrador da página sairia do mesmo tamanho */
+.seg {
+  --t: calc(var(--w, 30px) * 0.17);
+  position: relative; width: var(--w, 30px); height: calc(var(--w, 30px) * 1.86);
+  flex: none;
+}
+.seg i { position: absolute; background: var(--ghost); display: block; }
+.seg i.on { background: var(--lit, var(--amber)); box-shadow: 0 0 calc(var(--w, 30px) * 0.34) color-mix(in srgb, var(--lit, var(--amber)) 55%, transparent); }
+.seg .a, .seg .g, .seg .d {
+  left: var(--t); right: var(--t); height: var(--t);
+  clip-path: polygon(0 50%, 13% 0, 87% 0, 100% 50%, 87% 100%, 13% 100%);
+}
+.seg .a { top: 0; }
+.seg .g { top: calc(50% - var(--t) / 2); }
+.seg .d { bottom: 0; }
+.seg .f, .seg .b, .seg .e, .seg .c {
+  width: var(--t); height: calc(50% - var(--t) * 1.5);
+  clip-path: polygon(50% 0, 100% 13%, 100% 87%, 50% 100%, 0 87%, 0 13%);
+}
+.seg .f { left: 0; top: var(--t); }
+.seg .b { right: 0; top: var(--t); }
+.seg .e { left: 0; bottom: var(--t); }
+.seg .c { right: 0; bottom: var(--t); }
+.readout {
+  --t: calc(var(--w, 30px) * 0.17);
+  display: flex; gap: calc(var(--w, 30px) * 0.2); align-items: flex-start;
+}
+.readout .colon { align-self: center; display: flex; flex-direction: column; gap: 40%; height: 46%; }
+.readout .colon span { width: var(--t, 5px); aspect-ratio: 1; background: var(--ghost); border-radius: 1px; }
+.readout .colon.on span { background: var(--lit, var(--amber)); box-shadow: 0 0 12px color-mix(in srgb, var(--lit, var(--amber)) 55%, transparent); }
+.blink { animation: blink 1s steps(1, end) infinite; }
+@keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0.14; } }
+
+/* ── topo ─────────────────────────────────────────────────────────────── */
+header { border-bottom: 1px solid #17181b; }
+.header-inner { display: flex; align-items: center; justify-content: space-between; padding: 18px 0; }
+.mark { font-weight: 800; letter-spacing: 0.34em; font-size: 14px; color: #e8eaee; }
+header nav { display: flex; gap: 24px; }
+header a { color: var(--label); text-decoration: none; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; }
+header a:hover { color: #e8eaee; }
+
+/* ── hero ─────────────────────────────────────────────────────────────── */
+.hero { padding: 66px 0 0; }
+h1 {
+  font-weight: 800; font-size: clamp(30px, 5vw, 58px); line-height: 1.06;
+  letter-spacing: -0.035em; margin: 16px 0 0; max-width: 18ch; color: #eceef2;
+}
+.hero-sub { max-width: 58ch; margin: 24px 0 0; color: #a4a7ae; font-size: 16px; line-height: 1.65; }
+.hero-tag { margin: 18px 0 0; font-size: 13px; color: #eceef2; }
+.hero-tag span { color: var(--label); }
+.cta { display: flex; gap: 10px; flex-wrap: wrap; margin: 28px 0 0; }
+.btn {
+  font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; text-decoration: none;
+  padding: 13px 22px; border-radius: 2px;
+  transition: transform 160ms var(--ease-out), background-color 160ms ease, border-color 160ms ease;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--amber); color: #171003; font-weight: 700; }
+.btn-secondary { color: #eceef2; border: 1px solid #2a2c31; }
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary:hover { background: #ffb544; }
+  .btn-secondary:hover { border-color: #43464d; background: rgb(255 255 255 / 0.03); }
+}
+
+/* ── o totem: a prova da primeira dobra ───────────────────────────────── */
+.totem {
+  margin: 52px 0 0; background: var(--case); border-radius: 6px; padding: 26px;
+  box-shadow: inset 0 0 0 1px #202126, inset 0 2px 0 rgb(255 255 255 / 0.035), 0 20px 50px rgb(0 0 0 / 0.5);
+}
+.totem-head { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 22px; }
+.count { display: flex; align-items: center; gap: 22px; margin: 0 0 26px; position: relative; }
+.count .readout { --w: 56px; }
+.count-label { line-height: 1.35; }
+.count-label b { display: block; color: #eceef2; font-size: 15px; font-weight: 700; letter-spacing: 0.02em; }
+
+/* ▸ A ÚNICA REBELDIA DA PÁGINA ◂
+   uma célula queimou. imprimiram o dígito num pedaço de papel e colaram por cima.
+   é a única coisa da página que não é feita de segmentos. */
+.paper {
+  position: absolute; left: 0; top: 0;
+  width: 56px; height: calc(56px * 1.86);
+  background: var(--paper); color: #16150f;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 62px; line-height: 1;
+  transform: rotate(-1.4deg);
+  clip-path: polygon(2% 3%, 99% 0, 100% 97%, 0 100%);
+  box-shadow: 0 3px 10px rgb(0 0 0 / 0.6);
+}
+.paper::after {
+  content: ""; position: absolute; left: -8px; right: -8px; top: 6px; height: 13px;
+  background: rgb(232 226 210 / 0.35); box-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  clip-path: polygon(0 14%, 97% 0, 100% 86%, 3% 100%);
+}
+
+/* placar de participantes */
+.scoreboard { display: grid; gap: 2px; background: #0d0e10; border-radius: 3px; padding: 2px; }
+.sb-row {
+  display: grid; grid-template-columns: 52px 1.1fr 1.4fr 1.2fr 118px 96px;
+  align-items: center; gap: 14px; padding: 12px 16px; background: var(--case-hi);
+  font-size: 13px;
+}
+.sb-row.head { background: transparent; padding: 6px 16px 8px; }
+.sb-row .slot { --w: 13px; }
+.sb-row .name { color: #eceef2; font-weight: 700; }
+.sb-row .model, .sb-row .origin { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-row .state { font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; }
+.sb-row .state.on { color: var(--green); }
+.sb-row .state.go { color: var(--amber); }
+.sb-row .state.off { color: var(--dim); }
+.sb-row .ttft { --w: 15px; justify-content: flex-end; }
+
+/* ── seções ───────────────────────────────────────────────────────────── */
+section { padding: 98px 0 0; }
+.sec-head { display: flex; gap: 16px; align-items: center; }
+.sec-head .readout { --w: 15px; }
+h2 { font-weight: 800; font-size: clamp(25px, 3.3vw, 38px); letter-spacing: -0.028em; margin: 14px 0 0; color: #eceef2; }
+.lead { max-width: 60ch; margin: 15px 0 0; color: #a4a7ae; font-size: 16px; line-height: 1.65; }
+
+.cases { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px; margin: 36px 0 0; background: #0d0e10; padding: 2px; border-radius: 3px; }
+.case {
+  background: var(--case); padding: 22px 22px 24px; text-decoration: none; color: inherit;
+  display: flex; flex-direction: column; gap: 10px; position: relative;
+  transition: background-color 160ms ease;
+}
+@media (hover: hover) and (pointer: fine) { .case:hover { background: #1a1b1e; } }
+.case-head { display: flex; align-items: center; gap: 12px; }
+.case-head .readout { --w: 12px; }
+.case h3 { font-size: 14px; font-weight: 700; margin: 0; color: #eceef2; }
+.case p { margin: 0; color: #9a9da4; font-size: 14px; line-height: 1.62; }
+.case .impl { color: var(--dim); font-size: 11.5px; margin-top: auto; }
+
+/* ── 04 camadas: o totem de posto, três faixas ────────────────────────── */
+.grades { margin: 38px 0 0; display: grid; gap: 2px; background: #0d0e10; padding: 2px; border-radius: 4px; }
+.grade {
+  display: grid; grid-template-columns: 1fr auto; gap: 26px; align-items: center;
+  padding: 24px 24px; background: var(--case);
+}
+.grade-title { font-size: 15px; font-weight: 700; margin: 0; color: #eceef2; }
+.grade-list { margin: 7px 0 0; color: #9a9da4; font-size: 14px; }
+.grade-read { display: flex; align-items: center; gap: 16px; }
+.grade-read .readout { --w: 20px; }
+.grade-tag { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; }
+.grade-tag.today { color: var(--green); }
+.grade-tag.soon  { color: var(--amber); }
+.grade-tag.yours { color: var(--dim); }
+.grade.yours .grade-title, .grade.yours .grade-list { color: var(--dim); }
+
+.layers-note { margin: 26px 0 0; max-width: 60ch; color: #a4a7ae; font-size: 16px; line-height: 1.65; }
+.layers-link { display: inline-block; margin: 20px 0 0; color: var(--amber); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; text-decoration: none; }
+.layers-link:hover { text-decoration: underline; text-underline-offset: 4px; }
+
+.stub { margin: 98px 0 0; padding-top: 28px; border-top: 1px solid #17181b; }
+.stub p { color: var(--dim); font-size: 14px; margin: 10px 0 0; }
+footer { margin: 64px 0 0; padding: 26px 0 118px; border-top: 1px solid #17181b; display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+
+.totem-head { flex-wrap: wrap; gap: 4px 16px; }
+
+@media (max-width: 900px) {
+  .wrap { padding: 0 18px; }
+  .totem { padding: 18px; }
+  .cases { grid-template-columns: 1fr; }
+  .sb-row { grid-template-columns: 40px 1fr 96px; }
+  .sb-row .model, .sb-row .origin, .sb-row .ttft { display: none; }
+  .grade { grid-template-columns: 1fr; gap: 16px; }
+  .count .readout { --w: 40px; }
+  .paper { width: 40px; height: calc(40px * 1.86); font-size: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .blink { animation: none; opacity: 1; }
+  html { scroll-behavior: auto; }
+}
+</style>
+</head>
+<body>
+<!--
+THESIS: a sala é um mostrador — placar, totem de posto, relógio de cabeceira: um alfabeto
+  de oito células onde a célula apagada é desenhada com o mesmo cuidado da acesa. Recusa o
+  preto-com-neon da categoria justamente ao desenhar o apagado, que o neon nunca faz.
+OWN-WORLD: chapa fosca, bezel de plástico, segmentos fantasma sempre visíveis, âmbar e verde
+  de placar sobre o registro noturno vermelho. JetBrains Mono e nada mais — um painel de
+  instrumento tem um alfabeto só.
+STORY: o visitante lê a contagem de participantes acesa, percorre o placar linha a linha,
+  e entende que o roadmap é a faixa que ainda não acendeu.
+FIRST VIEWPORT: manchete curta, o totem ocupando dois terços com a contagem em dígitos de
+  56px e o placar de cinco participantes abaixo.
+FORM: sete segmentos — desafiante do catálogo (signals-instruments-seven-segment-alarm-clock),
+  veredito competitivo: ganha em clareza de produto, perde em distância da direção A.
+  Fundido com o produto: o "12:00 piscando" do relógio sem hora acertada vira o coming soon.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review,
+  the verdict, and DESIGN.md
+-->
+
+<header>
+  <div class="wrap header-inner">
+    <span class="mark">GAMBI</span>
+    <nav><a href="#">Docs</a><a href="#">Patterns</a><a href="#">GitHub</a></nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <p class="label">01 / on air</p>
+    <h1>Point one URL at everyone's models.</h1>
+    <p class="hero-sub">
+      Ollama on your laptop, vLLM on the box under the desk, OpenRouter, OpenAI — each one
+      opens its own tunnel and lights up a slot. Your app calls a single OpenAI-compatible
+      endpoint and reaches all of them.
+    </p>
+    <p class="hero-tag">Gambi connects the models. <span>You write what happens between them.</span></p>
+    <div class="cta">
+      <a class="btn btn-primary" href="#">Get started</a>
+      <a class="btn btn-secondary" href="#">See patterns</a>
+      <a class="btn btn-secondary" href="#">GitHub</a>
+    </div>
+
+    <div class="totem">
+      <div class="totem-head">
+        <span class="label">Sala ABC123</span>
+        <span class="label">dados de demonstração</span>
+      </div>
+      <div class="count">
+        <div class="readout" id="count" style="--lit: var(--green)"></div>
+        <!-- ▸ a única rebeldia: célula queimada, dígito de papel colado por cima ◂ -->
+        <div class="paper" aria-hidden="true">0</div>
+        <div class="count-label">
+          <b>models on air</b>
+          <span class="label">behind one endpoint</span>
+        </div>
+      </div>
+      <div class="scoreboard" id="scoreboard"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="readout" data-num="02" style="--lit: var(--amber)"></span><span class="label">/ patterns</span></div>
+    <h2>What you can build</h2>
+    <p class="lead">Six recipes that fit on a few lines of TypeScript. The routing, the multi-source dispatch and the event stream are already there.</p>
+    <div class="cases" id="cases"></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="readout" data-num="03" style="--lit: var(--amber)"></span><span class="label">/ architecture</span></div>
+    <h2>How it sits in your stack</h2>
+    <p class="lead">Your app talks to one OpenAI-compatible URL. The hub routes inside the room. Every participant runs its own provider, inside its own tunnel — the hub never reaches in.</p>
+    <p class="lead" style="color:var(--dim);font-size:13px">[ esboçado no protótipo — o diagrama herda a máscara de células e o segmento fantasma ]</p>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="readout" data-num="04" style="--lit: var(--amber)"></span><span class="label">/ layers</span></div>
+    <h2>What Gambi handles — and what still lands on you</h2>
+    <p class="lead">Gambi moves the messages between models. Everything about how the conversation actually runs is still your code.</p>
+
+    <div class="grades">
+      <div class="grade yours">
+        <span>
+          <p class="grade-title">What you build</p>
+          <p class="grade-list">arenas · debates · juries · multi-persona NPCs</p>
+        </span>
+        <span class="grade-read">
+          <span class="grade-tag yours">your code</span>
+          <span class="readout" data-num="--" style="--lit: var(--dim)"></span>
+        </span>
+      </div>
+      <div class="grade">
+        <span>
+          <p class="grade-title">Turn-taking · shared context · models talking to models</p>
+          <p class="grade-list">whose turn it is · what everyone has heard · who said what to whom</p>
+        </span>
+        <span class="grade-read">
+          <span class="grade-tag soon">coming soon</span>
+          <!-- o 12:00 piscando do relógio sem hora acertada: o idioma que este mundo
+               já tem para "ainda não foi ajustado" -->
+          <span class="readout blink" data-num="--:--" style="--lit: var(--amber)"></span>
+        </span>
+      </div>
+      <div class="grade">
+        <span>
+          <p class="grade-title">One endpoint. Many models, many machines, many people.</p>
+          <p class="grade-list">tunnels · routing · presence · events</p>
+        </span>
+        <span class="grade-read">
+          <span class="grade-tag today">today</span>
+          <span class="readout" data-num="24:00" style="--lit: var(--green)"></span>
+        </span>
+      </div>
+    </div>
+
+    <p class="layers-note">
+      The turn-taking is your code. The shared context is your code. Keeping track of who
+      said what to whom is your code. Gambi does not help you there — yet.
+    </p>
+    <a class="layers-link" href="#">Where this is going →</a>
+  </section>
+
+  <div class="stub">
+    <div class="sec-head"><span class="readout" data-num="05" style="--lit: var(--dim)"></span><span class="label">/ install</span></div>
+    <p>curl · npm · bun + um snippet do SDK. Esboçado neste protótipo.</p>
+  </div>
+  <div class="stub">
+    <div class="sec-head"><span class="readout" data-num="06" style="--lit: var(--dim)"></span><span class="label">/ built for builders</span></div>
+    <p>Quatro cards do D7. Esboçado neste protótipo.</p>
+  </div>
+
+  <footer>
+    <span class="label">Gambi · protótipo C · mostrador de segmentos</span>
+    <span class="label">ticket #60 · mapa #58</span>
+  </footer>
+</main>
+
+<script>
+/* o alfabeto de oito células — um mapa, e nada mais */
+const MASK = {
+  "0": "abcdef", "1": "bc", "2": "abdeg", "3": "abcdg", "4": "bcfg",
+  "5": "acdfg", "6": "acdefg", "7": "abc", "8": "abcdefg", "9": "abcdfg",
+  "-": "g", " ": "",
+};
+
+function digit(ch) {
+  const on = MASK[ch] ?? "";
+  const el = document.createElement("span");
+  el.className = "seg";
+  el.innerHTML = ["a", "b", "c", "d", "e", "f", "g"]
+    .map((s) => `<i class="${s}${on.includes(s) ? " on" : ""}"></i>`)
+    .join("");
+  return el;
+}
+
+function paint(el, text) {
+  el.textContent = "";
+  for (const ch of String(text)) {
+    if (ch === ":") {
+      const colon = document.createElement("span");
+      colon.className = "colon on";
+      colon.innerHTML = "<span></span><span></span>";
+      el.appendChild(colon);
+    } else {
+      el.appendChild(digit(ch));
+    }
+  }
+}
+
+for (const el of document.querySelectorAll(".readout[data-num]")) paint(el, el.dataset.num);
+/* a contagem: dois dígitos, e o da esquerda é o que queimou (coberto de papel) */
+paint(document.getElementById("count"), "05");
+
+/* placar — dados sintéticos */
+const PARTICIPANTS = [
+  { name: "ollama",     model: "qwen3:14b",        origin: "macbook do arthur", state: "connected", cls: "on",  ttft: "340" },
+  { name: "vllm",       model: "llama-3.3-70b",    origin: "torre da sala",     state: "streaming", cls: "go",  ttft: "210" },
+  { name: "lm studio",  model: "gemma-3-12b",      origin: "notebook da bia",   state: "connected", cls: "on",  ttft: "520" },
+  { name: "openrouter", model: "deepseek-r1",      origin: "cloud",             state: "idle",      cls: "off", ttft: "---" },
+  { name: "openai",     model: "claude-haiku-4-5", origin: "cloud",             state: "streaming", cls: "go",  ttft: "180" },
+];
+
+const sb = document.getElementById("scoreboard");
+const head = document.createElement("div");
+head.className = "sb-row head";
+head.innerHTML = `<span class="label">slot</span><span class="label">provider</span><span class="label">model</span><span class="label">origin</span><span class="label">status</span><span class="label" style="text-align:right">ttft ms</span>`;
+sb.appendChild(head);
+
+PARTICIPANTS.forEach((p, n) => {
+  const row = document.createElement("div");
+  row.className = "sb-row";
+  row.innerHTML = `
+    <span class="readout slot" style="--lit: var(--red)"></span>
+    <span class="name">${p.name}</span>
+    <span class="model">${p.model}</span>
+    <span class="origin">${p.origin}</span>
+    <span class="state ${p.cls}">${p.state}</span>
+    <span class="readout ttft" style="--lit: var(--${p.cls === "off" ? "dim" : "amber"})"></span>
+  `;
+  paint(row.querySelector(".slot"), String(n + 1).padStart(2, "0"));
+  paint(row.querySelector(".ttft"), p.ttft);
+  sb.appendChild(row);
+});
+
+/* use cases — copy do D4/D6 */
+const CASES = [
+  ["Model arena", "Same prompt, every model in the room. Spot differences in tone, accuracy, and speed at a glance.", 'Round-robin via model:"*", N requests in parallel, render side by side.'],
+  ["Jury / judge panel", "Generate the answer once. Fan it out to other models for verdicts and scoring. The g-eval pattern, off the shelf.", "1 generator participant + N judge participants. Aggregate the votes."],
+  ["Draft → critique → polish", "Cheap-then-strong. Small model drafts, bigger one critiques, third polishes. Quality without paying frontier prices end to end.", "3 chained calls — output of step N feeds prompt N+1."],
+  ["Debate club", "Two models argue, a third moderates. Stream every turn through SSE for a live show.", "Loop between participant IDs with conflicting system prompts."],
+  ["Multi-persona NPCs", "A game where each character has its own brain. Different model, different system prompt, different attitude.", "One participant per persona. Route by ID at the moment of speech."],
+  ["LAN debate club", "Bring friends or students. Each plugs their own LLM into the room. You build the UI; the models stay theirs.", "Multi-person registration. App reads the participant list and fans out."],
+];
+const cases = document.getElementById("cases");
+CASES.forEach(([title, body, impl], n) => {
+  const a = document.createElement("a");
+  a.className = "case";
+  a.href = "#";
+  a.innerHTML = `
+    <span class="case-head"><span class="readout" style="--lit: var(--red)"></span><h3>${title}</h3></span>
+    <p>${body}</p>
+    <p class="impl">→ ${impl}</p>
+  `;
+  paint(a.querySelector(".readout"), String(n + 1).padStart(2, "0"));
+  cases.appendChild(a);
+});
+</script>
+<script src="switcher.js"></script>
+</body>
+</html>

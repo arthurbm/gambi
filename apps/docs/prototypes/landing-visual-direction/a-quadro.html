@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gambi — direção A · Quadro de partidas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=JetBrains+Mono:wght@300;400;500;700;800&display=swap" rel="stylesheet" />
+<style>
+/* ═══ direção A — quadro de partidas (split-flap) ═══════════════════════ */
+:root {
+  --board:      #0e0f10;   /* chapa fosca do quadro */
+  --deck:       #141618;   /* fundo de um deck */
+  --flap:       #1c1f23;   /* face da aba */
+  --flap-lo:    #16181b;   /* metade de baixo da aba */
+  --seam:       #08090a;   /* vinco entre as duas metades */
+  --rail:       #383e46;   /* trilho de alumínio escovado */
+  --rail-hi:    #5b636d;
+  --glyph:      #edeae1;   /* tinta das abas */
+  --dim:        #757c86;
+  --dimmer:     #4b525b;
+  --amber:      #f2a413;   /* só a coluna de status */
+  --green:      #55c07d;
+  --tape:       #3f6fa8;   /* fita isolante azul — a única rebeldia */
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+  --body: "Archivo", system-ui, sans-serif;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --cell: 46px;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--board);
+  color: var(--glyph);
+  font-family: var(--body);
+  -webkit-font-smoothing: antialiased;
+  /* a chapa tem granulação: o quadro é um objeto, não uma cor */
+  background-image:
+    repeating-linear-gradient(0deg, rgb(255 255 255 / 0.012) 0 1px, transparent 1px 3px);
+}
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 28px; }
+
+/* trilhos — a grade construtiva fica visível como parte do desenho */
+.rail {
+  height: 3px; border-radius: 2px;
+  background: linear-gradient(180deg, var(--rail-hi), var(--rail) 45%, #23272c);
+  box-shadow: 0 1px 0 rgb(0 0 0 / 0.6);
+}
+
+/* ── abas ─────────────────────────────────────────────────────────────── */
+.flap {
+  display: inline-flex; align-items: center; justify-content: center;
+  position: relative;
+  font-family: var(--mono);
+  background:
+    linear-gradient(180deg, var(--flap) 0 50%, var(--flap-lo) 50% 100%);
+  border-radius: 3px;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.05),
+    inset 0 -1px 0 rgb(0 0 0 / 0.5),
+    0 1px 2px rgb(0 0 0 / 0.55);
+}
+.flap::after { /* o vinco: prova de que a aba é duas metades */
+  content: ""; position: absolute; left: 0; right: 0; top: 50%;
+  height: 1px; background: var(--seam); z-index: 0;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.06);
+}
+/* o glifo é impresso na aba, então passa por cima do vinco — sem isso o
+   vinco come os hifens dos nomes de modelo */
+.flap > span, .flap > .t { position: relative; z-index: 1; }
+
+/* ── topo ─────────────────────────────────────────────────────────────── */
+.topbar { padding: 20px 0 0; }
+.topbar-inner {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 0; font-family: var(--mono); font-size: 12px;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim);
+}
+.mark { color: var(--glyph); font-weight: 800; letter-spacing: 0.3em; }
+.topbar nav { display: flex; gap: 26px; }
+.topbar a { color: var(--dim); text-decoration: none; transition: color 140ms ease; }
+.topbar a:hover { color: var(--glyph); }
+
+/* ── hero ─────────────────────────────────────────────────────────────── */
+.hero { padding: 74px 0 20px; }
+.eyebrow {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.34em;
+  text-transform: uppercase; color: var(--dimmer); margin: 0 0 26px;
+}
+/* a manchete é uma fileira do quadro: abas coladas num trilho, não teclas soltas */
+h1 {
+  margin: 0; display: flex; flex-direction: column; gap: 5px;
+  perspective: 1100px; align-items: flex-start;
+}
+h1 .line {
+  display: flex; gap: 1px; padding: 5px; border-radius: 4px;
+  background: var(--deck);
+  box-shadow: inset 0 0 0 1px #202429, 0 3px 10px rgb(0 0 0 / 0.45);
+}
+h1 .flap {
+  width: var(--cell); height: calc(var(--cell) * 1.34);
+  font-size: calc(var(--cell) * 0.66); font-weight: 800; line-height: 1;
+  color: var(--glyph); border-radius: 1px;
+  transform-origin: 50% 50%;
+  animation: drop 380ms var(--ease-out) both;
+}
+h1 .flap.sp { background: #131518; box-shadow: none; }
+h1 .flap.sp::after { opacity: 0.5; }
+@keyframes drop {
+  from { transform: rotateX(-92deg); opacity: 0; }
+  to   { transform: rotateX(0deg);   opacity: 1; }
+}
+.hero-sub {
+  max-width: 60ch; margin: 34px 0 0;
+  font-size: 17px; line-height: 1.62; color: #b9bec6;
+}
+.hero-tag {
+  margin: 22px 0 0; font-family: var(--mono); font-size: 13px;
+  letter-spacing: 0.02em; color: var(--glyph);
+}
+.hero-tag span { color: var(--dim); }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; margin: 34px 0 0; }
+.btn {
+  font-family: var(--mono); font-size: 13px; letter-spacing: 0.08em;
+  text-transform: uppercase; text-decoration: none;
+  padding: 13px 22px; border-radius: 3px;
+  transition: transform 160ms var(--ease-out), background-color 160ms ease, border-color 160ms ease;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--amber); color: #17120a; font-weight: 700; }
+.btn-secondary { color: var(--glyph); border: 1px solid var(--rail); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary:hover { background: #ffb62a; }
+  .btn-secondary:hover { border-color: var(--rail-hi); background: rgb(255 255 255 / 0.03); }
+}
+
+/* ── o quadro vivo: a prova da primeira dobra ─────────────────────────── */
+.board { margin: 58px 0 0; }
+.board-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.24em;
+  text-transform: uppercase; color: var(--dimmer); padding: 0 0 10px;
+}
+.synthetic { color: var(--dimmer); text-transform: none; letter-spacing: 0.06em; }
+.deck { background: var(--deck); border-radius: 4px; padding: 4px; margin: 8px 0 0; }
+.row {
+  display: grid; align-items: center; gap: 4px;
+  grid-template-columns: 26px 1.1fr 1.5fr 1.3fr 168px 92px;
+  padding: 3px;
+}
+.row.head {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em;
+  text-transform: uppercase; color: var(--dimmer); padding: 8px 3px 10px;
+}
+.cell {
+  font-family: var(--mono); font-size: 13px; height: 40px; padding: 0 12px;
+  justify-content: flex-start; white-space: nowrap; overflow: hidden;
+}
+.cell.num { justify-content: center; color: var(--dimmer); font-size: 11px; }
+.cell.status { justify-content: center; letter-spacing: 0.12em; font-size: 11px; font-weight: 700; }
+.cell.status.on  { color: var(--green); }
+.cell.status.go  { color: var(--amber); }
+.cell.status.off { color: var(--dimmer); }
+.cell.ttft { justify-content: flex-end; color: var(--dim); font-size: 12px; }
+.cell .muted { color: var(--dim); }
+
+/* rotação de status — prova que a sala está viva, sem virar carrossel */
+.cell.status .roll { display: block; animation: roll 340ms var(--ease-out) both; }
+@keyframes roll {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+
+/* ▸ A ÚNICA REBELDIA DA PÁGINA ◂
+   uma aba travada no meio do giro, remendada com fita isolante.
+   o sistema é impecável; exatamente uma peça foi consertada na mão. */
+.jam { position: relative; overflow: visible; }
+.jam .half-top, .jam .half-bot {
+  position: absolute; left: 0; right: 0; height: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.12em;
+  overflow: hidden;
+}
+.jam .half-top {
+  top: 0; color: var(--amber); font-size: 10px;
+  background: linear-gradient(180deg, #24272c, var(--flap-lo));
+  transform: rotateX(-38deg); transform-origin: 50% 100%;
+  box-shadow: 0 4px 10px rgb(0 0 0 / 0.65);
+}
+.jam .half-bot { bottom: 0; color: var(--green); font-size: 10px; }
+/* a fita fica na borda do quadro, à esquerda da linha travada — nunca por
+   cima do glifo, senão o remendo vira defeito de renderização */
+.row.jammed { position: relative; }
+.tape {
+  position: absolute; left: -30px; top: 50%; width: 50px; height: 15px; z-index: 3;
+  background: var(--tape); opacity: 0.82;
+  transform: translateY(-50%) rotate(-7deg);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.5);
+  /* bordas rasgadas, não retas */
+  clip-path: polygon(0 12%, 96% 0, 100% 88%, 4% 100%);
+}
+.tape::after {
+  content: "arrumei"; position: absolute; inset: 0;
+  font-family: var(--mono); font-size: 8px; letter-spacing: 0.06em;
+  color: rgb(255 255 255 / 0.72); display: flex; align-items: center; justify-content: center;
+}
+
+/* ── seções ───────────────────────────────────────────────────────────── */
+section { padding: 96px 0 0; }
+.sec-head { display: flex; gap: 18px; align-items: baseline; margin: 0 0 8px; }
+.sec-num {
+  font-family: var(--mono); font-size: 11px; font-weight: 800;
+  letter-spacing: 0.2em; color: var(--amber);
+}
+.sec-kicker {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.24em;
+  text-transform: uppercase; color: var(--dimmer);
+}
+h2 {
+  font-family: var(--mono); font-weight: 800; font-size: clamp(26px, 3.4vw, 40px);
+  letter-spacing: -0.02em; margin: 14px 0 0;
+}
+.lead { max-width: 62ch; margin: 16px 0 0; color: #aeb4bc; line-height: 1.62; font-size: 16px; }
+
+/* use cases — cada um é uma linha de destino no quadro */
+.cases { margin: 40px 0 0; display: grid; gap: 4px; }
+.case {
+  display: grid; grid-template-columns: 58px 1fr; gap: 4px;
+  text-decoration: none; color: inherit;
+}
+.case-num {
+  font-size: 13px; font-weight: 800; color: var(--dimmer);
+  justify-content: center;
+}
+.case-body {
+  background: linear-gradient(180deg, var(--flap) 0 50%, var(--flap-lo) 50% 100%);
+  border-radius: 3px; padding: 20px 22px; position: relative;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 1px 2px rgb(0 0 0 / 0.5);
+  transition: background-color 160ms ease, transform 160ms var(--ease-out);
+}
+.case-body::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px;
+  background: var(--seam); box-shadow: 0 1px 0 rgb(255 255 255 / 0.04);
+}
+@media (hover: hover) and (pointer: fine) {
+  .case:hover .case-body { background: #232629; }
+}
+.case:active .case-body { transform: scale(0.995); }
+.case h3 {
+  font-family: var(--mono); font-size: 15px; font-weight: 700; margin: 0;
+  letter-spacing: 0.01em;
+}
+.case p { margin: 9px 0 0; font-size: 14px; line-height: 1.6; color: #a9afb8; max-width: 74ch; }
+.case .impl {
+  margin: 12px 0 0; font-family: var(--mono); font-size: 11.5px;
+  color: var(--dimmer); letter-spacing: 0.01em;
+}
+.case .gate {
+  position: absolute; right: 22px; top: 20px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--dimmer);
+}
+
+/* ── 04 camadas: três decks do mesmo quadro ───────────────────────────── */
+.layers { margin: 44px 0 0; }
+.layer {
+  display: grid; grid-template-columns: 1fr 210px; gap: 4px;
+  margin: 4px 0 0;
+}
+.layer-face {
+  background: linear-gradient(180deg, var(--flap) 0 50%, var(--flap-lo) 50% 100%);
+  border-radius: 3px; padding: 24px 26px; position: relative;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 1px 2px rgb(0 0 0 / 0.5);
+}
+.layer-face::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px;
+  background: var(--seam);
+}
+.layer-title {
+  font-family: var(--mono); font-size: 16px; font-weight: 700; margin: 0;
+}
+.layer-list {
+  margin: 10px 0 0; font-size: 14px; color: #a9afb8; font-family: var(--mono);
+  letter-spacing: 0.01em;
+}
+.layer-status {
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 3px; font-family: var(--mono); font-size: 11px;
+  font-weight: 800; letter-spacing: 0.22em; text-transform: uppercase;
+  background: linear-gradient(180deg, var(--flap) 0 50%, var(--flap-lo) 50% 100%);
+  position: relative;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 1px 2px rgb(0 0 0 / 0.5);
+}
+.layer-status::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--seam);
+}
+.layer-status.today  { color: var(--green); }
+.layer-status.soon   { color: var(--amber); }
+.layer-status.yours  { color: var(--dimmer); }
+/* o deck de cima é o que você constrói: mais claro, fora do domínio do produto */
+.layer.you .layer-face { background: linear-gradient(180deg, #101214 0 50%, #0d0f11 50% 100%); }
+.layer.you .layer-title, .layer.you .layer-list { color: var(--dim); }
+
+.layers-note { margin: 26px 0 0; max-width: 62ch; color: #aeb4bc; line-height: 1.62; font-size: 16px; }
+.layers-link {
+  display: inline-flex; align-items: center; gap: 10px; margin: 22px 0 0;
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--amber); text-decoration: none;
+}
+.layers-link:hover { text-decoration: underline; text-underline-offset: 4px; }
+
+/* ── seções esboçadas ─────────────────────────────────────────────────── */
+.stub { margin: 96px 0 0; padding: 34px 0 40px; border-top: 1px dashed #262a2f; }
+.stub .sec-head { margin-bottom: 12px; }
+.stub p { color: var(--dimmer); font-size: 14px; max-width: 60ch; line-height: 1.6; margin: 0; }
+footer {
+  margin: 70px 0 0; padding: 30px 0 120px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--dimmer);
+  display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap;
+}
+
+.board-head { flex-wrap: wrap; gap: 4px 16px; }
+
+@media (max-width: 900px) {
+  :root { --cell: 30px; }
+  .wrap { padding: 0 18px; }
+  .row { grid-template-columns: 20px 1fr 1fr 96px; }
+  .row .col-origin, .row .col-ttft { display: none; }
+  .layer { grid-template-columns: 1fr; }
+  .layer-status { padding: 12px; }
+  .case { grid-template-columns: 40px 1fr; }
+  .case .gate { display: none; }
+}
+/* 16 células numa linha só: abaixo disso o trilho da manchete estoura a tela */
+@media (max-width: 560px) {
+  :root { --cell: 19px; }
+  .row { grid-template-columns: 18px 1fr 88px; }
+  .row > *:nth-child(3) { display: none; }
+  header .mark, .topbar-inner { font-size: 11px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  h1 .flap, .cell.status .roll { animation: none; opacity: 1; transform: none; }
+  html { scroll-behavior: auto; }
+}
+</style>
+</head>
+<body>
+<!--
+THESIS: uma sala de LLMs é um quadro de partidas — muitas origens independentes convergindo
+  num lugar só, ao vivo, com status por linha. Recusa o hero de terminal + diagrama hub-and-spoke
+  que esta categoria inteira entrega.
+OWN-WORLD: chapa preta fosca granulada, abas de duas metades com vinco visível, trilhos de
+  alumínio escovado, glifo osso, âmbar reservado à coluna de status. JetBrains Mono nas abas
+  (slot fixo pede largura fixa), Archivo na prosa.
+STORY: o visitante vê a sala enchendo sozinha, entende que são máquinas e pessoas diferentes
+  atrás de uma URL só, e copia o comando de instalação.
+FIRST VIEWPORT: manchete em abas grandes virando no load, sub de três linhas, âncora âmbar,
+  e o quadro de participantes ocupando o terço inferior com status girando.
+FORM: quadro de partidas — candidato 4 da lista fundamentada, sorteado (chave gambiland).
+  Elevado pela disciplina do Crouwel (grade visível, uma rebeldia só) e pelo estado material
+  do console CD-ROM (o controle mostra seu estado no próprio material).
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review,
+  the verdict, and DESIGN.md
+-->
+
+<div class="wrap topbar">
+  <div class="rail"></div>
+  <div class="topbar-inner">
+    <span class="mark">GAMBI</span>
+    <nav>
+      <a href="#">Docs</a><a href="#">Patterns</a><a href="#">GitHub</a>
+    </nav>
+  </div>
+  <div class="rail"></div>
+</div>
+
+<main class="wrap">
+  <section class="hero">
+    <p class="eyebrow">01 / arrivals</p>
+    <h1 id="headline" aria-label="Point one URL at everyone's models."></h1>
+    <p class="hero-sub">
+      Ollama on your laptop, vLLM on the box under the desk, OpenRouter, OpenAI — each
+      one opens its own tunnel and shows up here. Your app calls a single
+      OpenAI-compatible endpoint and reaches all of them.
+    </p>
+    <p class="hero-tag">
+      Gambi connects the models. <span>You write what happens between them.</span>
+    </p>
+    <div class="cta">
+      <a class="btn btn-primary" href="#">Get started</a>
+      <a class="btn btn-secondary" href="#">See patterns</a>
+      <a class="btn btn-secondary" href="#">GitHub</a>
+    </div>
+
+    <div class="board">
+      <div class="board-head">
+        <span>Sala ABC123 · quem está no ar agora</span>
+        <span class="synthetic">dados de demonstração</span>
+      </div>
+      <div class="rail"></div>
+      <div class="deck">
+        <div class="row head">
+          <span></span><span>provider</span><span>model</span>
+          <span class="col-origin">origin</span><span style="text-align:center">status</span>
+          <span class="col-ttft" style="text-align:right">ttft</span>
+        </div>
+        <div id="roster"></div>
+      </div>
+      <div class="rail"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><span class="sec-kicker">/ patterns</span></div>
+    <h2>What you can build</h2>
+    <p class="lead">
+      Six recipes that fit on a few lines of TypeScript. The routing, the multi-source
+      dispatch and the event stream are already there.
+    </p>
+    <div class="cases" id="cases"></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><span class="sec-kicker">/ architecture</span></div>
+    <h2>How it sits in your stack</h2>
+    <p class="lead">
+      Your app talks to one OpenAI-compatible URL. The hub routes inside the room. Every
+      participant runs its own provider, inside its own tunnel — the hub never reaches in.
+    </p>
+    <p class="lead" style="color:var(--dimmer);font-family:var(--mono);font-size:13px;margin-top:18px">
+      [ esboçado no protótipo — o diagrama desta seção herda o mesmo vocabulário de trilho e aba ]
+    </p>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><span class="sec-kicker">/ layers</span></div>
+    <h2>What Gambi handles — and what still lands on you</h2>
+    <p class="lead">
+      Gambi moves the messages between models. Everything about how the conversation
+      actually runs is still your code.
+    </p>
+
+    <div class="layers">
+      <div class="rail"></div>
+      <div class="layer you">
+        <div class="layer-face">
+          <p class="layer-title">What you build</p>
+          <p class="layer-list">arenas · debates · juries · multi-persona NPCs</p>
+        </div>
+        <div class="layer-status yours">Your code</div>
+      </div>
+      <div class="layer">
+        <div class="layer-face">
+          <p class="layer-title">Turn-taking · shared context · models talking to models</p>
+          <p class="layer-list">whose turn it is · what everyone has heard · who said what to whom</p>
+        </div>
+        <div class="layer-status soon">Coming soon</div>
+      </div>
+      <div class="layer">
+        <div class="layer-face">
+          <p class="layer-title">One endpoint. Many models, many machines, many people.</p>
+          <p class="layer-list">tunnels · routing · presence · events</p>
+        </div>
+        <div class="layer-status today">Today</div>
+      </div>
+      <div class="rail"></div>
+    </div>
+
+    <p class="layers-note">
+      The turn-taking is your code. The shared context is your code. Keeping track of who
+      said what to whom is your code. Gambi does not help you there — yet.
+    </p>
+    <a class="layers-link" href="#">Where this is going →</a>
+  </section>
+
+  <div class="stub">
+    <div class="sec-head"><span class="sec-num">05</span><span class="sec-kicker">/ install</span></div>
+    <p>curl · npm · bun + um snippet do SDK. Esboçado neste protótipo.</p>
+  </div>
+  <div class="stub">
+    <div class="sec-head"><span class="sec-num">06</span><span class="sec-kicker">/ built for builders</span></div>
+    <p>Quatro cards do D7. Esboçado neste protótipo.</p>
+  </div>
+
+  <footer>
+    <span>Gambi · protótipo A · quadro de partidas</span>
+    <span>ticket #60 · mapa #58</span>
+  </footer>
+</main>
+
+<script>
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* manchete em abas — a única animação de entrada da página */
+const HEADLINE = ["POINT ONE URL AT", "EVERYONE'S MODELS"];
+const h1 = document.getElementById("headline");
+let i = 0;
+for (const text of HEADLINE) {
+  const line = document.createElement("span");
+  line.className = "line";
+  for (const ch of text) {
+    const f = document.createElement("span");
+    f.className = ch === " " ? "flap sp" : "flap";
+    f.innerHTML = `<span class="t">${ch === " " ? "" : ch}</span>`;
+    f.style.animationDelay = reduced ? "0ms" : `${80 + i * 20}ms`;
+    line.appendChild(f);
+    i++;
+  }
+  h1.appendChild(line);
+}
+
+/* roster — dados sintéticos, marcados como tal na interface */
+const PARTICIPANTS = [
+  { provider: "ollama",     model: "qwen3:14b",        origin: "macbook do arthur",   status: "connected", cls: "on",  ttft: "340 ms" },
+  { provider: "vllm",       model: "llama-3.3-70b",    origin: "torre da sala",       status: "streaming", cls: "go",  ttft: "210 ms" },
+  { provider: "lm studio",  model: "gemma-3-12b",      origin: "notebook da bia",     status: "connected", cls: "on",  ttft: "520 ms" },
+  { provider: "openrouter", model: "deepseek-r1",      origin: "cloud",               status: "idle",      cls: "off", ttft: "—" },
+  { provider: "openai",     model: "claude-haiku-4-5", origin: "cloud",               status: "JAM",       cls: "go",  ttft: "180 ms" },
+];
+
+const roster = document.getElementById("roster");
+PARTICIPANTS.forEach((p, n) => {
+  const jam = p.status === "JAM";
+  const row = document.createElement("div");
+  row.className = jam ? "row jammed" : "row";
+  row.innerHTML = `
+    <span class="flap cell num"><span class="t">${String(n + 1).padStart(2, "0")}</span></span>
+    <span class="flap cell"><span class="t">${p.provider}</span></span>
+    <span class="flap cell"><span class="t">${p.model}</span></span>
+    <span class="flap cell col-origin"><span class="t muted">${p.origin}</span></span>
+    <span class="flap cell status ${p.cls} ${jam ? "jam" : ""}" data-live="${jam ? "0" : "1"}">
+      ${jam
+        ? `<span class="half-top"><span>rate limited</span></span>
+           <span class="half-bot"><span>connected</span></span>`
+        : `<span class="roll">${p.status}</span>`}
+    </span>
+    <span class="flap cell ttft col-ttft"><span class="t">${p.ttft}</span></span>
+  `;
+  if (jam) {
+    const tape = document.createElement("span");
+    tape.className = "tape";
+    tape.setAttribute("aria-hidden", "true");
+    row.appendChild(tape);
+  }
+  roster.appendChild(row);
+});
+
+/* use cases — copy do D4/D6, verbatim do Lander atual */
+const CASES = [
+  ["Model arena", "Same prompt, every model in the room. Spot differences in tone, accuracy, and speed at a glance.", 'Round-robin via model:"*", N requests in parallel, render side by side.'],
+  ["Jury / judge panel", "Generate the answer once. Fan it out to other models for verdicts and scoring. The g-eval pattern, off the shelf.", "1 generator participant + N judge participants. Aggregate the votes."],
+  ["Draft → critique → polish", "Cheap-then-strong. Small model drafts, bigger one critiques, third polishes. Quality without paying frontier prices end to end.", "3 chained calls — output of step N feeds prompt N+1."],
+  ["Debate club", "Two models argue, a third moderates. Stream every turn through SSE for a live show.", "Loop between participant IDs with conflicting system prompts."],
+  ["Multi-persona NPCs", "A game where each character has its own brain. Different model, different system prompt, different attitude.", "One participant per persona. Route by ID at the moment of speech."],
+  ["LAN debate club", "Bring friends or students. Each plugs their own LLM into the room. You build the UI; the models stay theirs.", "Multi-person registration. App reads the participant list and fans out."],
+];
+
+const cases = document.getElementById("cases");
+CASES.forEach(([title, body, impl], n) => {
+  const a = document.createElement("a");
+  a.className = "case";
+  a.href = "#";
+  a.innerHTML = `
+    <span class="flap case-num">${String(n + 1).padStart(2, "0")}</span>
+    <span class="case-body">
+      <span class="gate">${n < 3 ? "build with many llms" : "build experiences"}</span>
+      <h3>${title}</h3>
+      <p>${body}</p>
+      <p class="impl">→ ${impl}</p>
+    </span>
+  `;
+  cases.appendChild(a);
+});
+
+/* uma linha gira de status a cada 3.2s — a sala está viva, e só isso se move */
+if (!reduced) {
+  const CYCLE = ["idle", "streaming", "connected"];
+  const CLS = { idle: "off", streaming: "go", connected: "on" };
+  let tick = 0;
+  setInterval(() => {
+    const cells = [...document.querySelectorAll('.cell.status[data-live="1"]')];
+    const cell = cells[tick % cells.length];
+    const next = CYCLE[Math.floor(tick / cells.length) % CYCLE.length];
+    cell.className = `flap cell status ${CLS[next]}`;
+    cell.innerHTML = `<span class="roll">${next}</span>`;
+    tick++;
+  }, 3200);
+}
+</script>
+<script src="switcher.js"></script>
+</body>
+</html>

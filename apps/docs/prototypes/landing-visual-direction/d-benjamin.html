@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gambi — direção D · Gambiarra elétrica</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Karla:wght@400;500;600&family=JetBrains+Mono:wght@300;400;500;700;800&display=swap" rel="stylesheet" />
+<style>
+/* ═══ direção D — gambiarra elétrica ════════════════════════════════════
+   a leitura literal do nome. o antídoto do amador é a grade: tudo encaixa
+   com precisão de projeto elétrico, e exatamente UM cabo sai da ordem.   */
+:root {
+  --concrete:    #22221e;  /* poste de concreto na sombra — morno, nunca preto */
+  --concrete-lo: #191916;
+  --box:         #2b2b26;  /* caixa de passagem */
+  --box-hi:      #33332d;
+  --cable:       #0d0d0c;
+  --sleeve:      #46463f;
+  --chalk:       #e6e2d6;  /* tinta sobre concreto */
+  --chalk-dim:   #98948a;
+  --dim:         #6b675e;
+  --blue:        #3169b8;  /* fita isolante */
+  --crepe:       #d3b96a;  /* fita crepe / etiqueta */
+  --copper:      #c4763a;  /* condutor vivo */
+  --live:        #7ac96c;  /* terra: está funcionando */
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+  --body: "Karla", system-ui, sans-serif;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; color: var(--chalk); font-family: var(--body); font-size: 16px;
+  background: var(--concrete);
+  /* concreto: granulação fina e uma banda de sombra vertical */
+  background-image:
+    radial-gradient(ellipse 120% 60% at 50% 0%, rgb(255 255 255 / 0.035), transparent 70%),
+    repeating-linear-gradient(90deg, rgb(0 0 0 / 0.05) 0 2px, transparent 2px 5px);
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1160px; margin: 0 auto; padding: 0 26px; }
+.stencil {
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.28em; text-transform: uppercase; color: var(--dim);
+}
+
+/* etiqueta de rotulador — o vocabulário de nomear coisas neste mundo */
+.tag {
+  display: inline-block; background: var(--crepe); color: #2b2410;
+  font-family: var(--mono); font-size: 10.5px; font-weight: 500; letter-spacing: 0.02em;
+  padding: 4px 9px; transform: rotate(-0.6deg);
+  clip-path: polygon(0 7%, 99% 0, 100% 93%, 1% 100%);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
+}
+
+/* ── topo ─────────────────────────────────────────────────────────────── */
+header { border-bottom: 1px solid #2e2e28; }
+.header-inner { display: flex; align-items: center; justify-content: space-between; padding: 18px 0; }
+.mark { font-family: var(--mono); font-weight: 800; letter-spacing: 0.34em; font-size: 14px; }
+header nav { display: flex; gap: 24px; }
+header a { color: var(--chalk-dim); text-decoration: none; font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; }
+header a:hover { color: var(--chalk); }
+
+/* ── hero ─────────────────────────────────────────────────────────────── */
+.hero { padding: 68px 0 0; }
+h1 {
+  font-family: var(--mono); font-weight: 800; margin: 16px 0 0;
+  font-size: clamp(31px, 5.2vw, 60px); line-height: 1.05; letter-spacing: -0.037em;
+  max-width: 17ch;
+}
+.hero-sub { max-width: 58ch; margin: 24px 0 0; font-size: 18px; line-height: 1.6; color: #b0aca1; }
+.hero-tag { margin: 18px 0 0; font-family: var(--mono); font-size: 13px; }
+.hero-tag span { color: var(--chalk-dim); }
+.cta { display: flex; gap: 10px; flex-wrap: wrap; margin: 28px 0 0; }
+.btn {
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;
+  text-decoration: none; padding: 13px 22px; border-radius: 2px;
+  transition: transform 160ms var(--ease-out), background-color 160ms ease, border-color 160ms ease;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--copper); color: #17100a; font-weight: 700; }
+.btn-secondary { color: var(--chalk); border: 1px solid #3d3d36; }
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary:hover { background: #d4854a; }
+  .btn-secondary:hover { border-color: #56564d; background: rgb(255 255 255 / 0.03); }
+}
+
+/* ── a caixa de passagem: a prova da primeira dobra ───────────────────── */
+.panel-head { display: flex; justify-content: space-between; align-items: baseline; margin: 52px 0 12px; }
+.panel {
+  position: relative; height: 420px;
+  display: grid; grid-template-columns: 320px 1fr 260px; align-items: stretch;
+}
+.feeds { display: grid; grid-template-rows: repeat(5, 1fr); }
+.feed { display: flex; flex-direction: column; justify-content: center; gap: 5px; padding-right: 18px; }
+.feed-name { font-family: var(--mono); font-size: 13px; font-weight: 700; margin: 0; }
+.feed-name em { font-style: normal; color: var(--dim); font-weight: 400; }
+.feed .tag { align-self: flex-start; }
+
+.cables { position: absolute; inset: 0; pointer-events: none; }
+.cables svg { width: 100%; height: 100%; overflow: visible; }
+.cables path { fill: none; stroke: var(--cable); stroke-width: 9; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.cables path.sleeve { stroke: #3a3a33; stroke-width: 14; }
+.cables .core { stroke: var(--copper); stroke-width: 2.5; opacity: 0.7; vector-effect: non-scaling-stroke; }
+.cables .core.off { stroke: var(--dim); opacity: 0.35; }
+
+/* ▸ A ÚNICA REBELDIA DA PÁGINA ◂
+   um cabo sai da ordem do chicote, dá a volta por baixo e volta.
+   tudo o mais encaixa na grade com precisão de projeto. */
+.cables path.rebel { stroke: var(--cable); }
+.patch-tape {
+  position: absolute; left: 34%; bottom: 26px; z-index: 2;
+  background: var(--blue); opacity: 0.9; color: rgb(255 255 255 / 0.82);
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.04em;
+  padding: 5px 10px; transform: rotate(-3deg);
+  clip-path: polygon(0 12%, 97% 0, 100% 88%, 3% 100%);
+  box-shadow: 0 2px 5px rgb(0 0 0 / 0.45);
+}
+
+/* .cables é absoluto e sai do fluxo do grid, então a caixa precisa dizer
+   explicitamente que mora na terceira coluna */
+.junction {
+  grid-column: 3; align-self: center;
+  background: linear-gradient(180deg, var(--box-hi), var(--box) 40%, #24241f);
+  border-radius: 3px; padding: 22px 20px; position: relative;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 8px 22px rgb(0 0 0 / 0.45);
+}
+.junction::before, .junction::after {
+  content: ""; position: absolute; width: 8px; height: 8px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #6a6a60, #34342e 70%);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.5);
+}
+.junction::before { left: 9px; top: 9px; }
+.junction::after { right: 9px; bottom: 9px; }
+.junction h3 { font-family: var(--mono); font-size: 12px; margin: 0 0 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--chalk-dim); }
+.junction .url { font-family: var(--mono); font-size: 13px; color: var(--chalk); line-height: 1.6; word-break: break-all; }
+.junction .state { display: flex; align-items: center; gap: 8px; margin: 14px 0 0; }
+.lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--live); box-shadow: 0 0 9px rgb(122 201 108 / 0.8); }
+
+/* ── seções ───────────────────────────────────────────────────────────── */
+section { padding: 100px 0 0; }
+.sec-head { display: flex; gap: 16px; align-items: baseline; }
+.sec-num { font-family: var(--mono); font-size: 11px; font-weight: 800; letter-spacing: 0.2em; color: var(--copper); }
+h2 { font-family: var(--mono); font-weight: 800; font-size: clamp(26px, 3.4vw, 40px); letter-spacing: -0.03em; margin: 14px 0 0; }
+.lead { max-width: 60ch; margin: 15px 0 0; color: #aaa69b; font-size: 17px; line-height: 1.6; }
+
+/* use cases — circuitos etiquetados */
+.circuits { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin: 40px 0 0; }
+.circuit {
+  background: linear-gradient(180deg, #262621, #202019); border-radius: 3px;
+  padding: 20px 20px 22px; text-decoration: none; color: inherit;
+  display: flex; flex-direction: column; gap: 11px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05), inset 0 0 0 1px #2d2d27;
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .circuit:hover {
+    background: linear-gradient(180deg, #2c2c26, #24241d);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.07), inset 0 0 0 1px #3d3a31;
+  }
+}
+.circuit h3 { font-family: var(--mono); font-size: 14px; font-weight: 700; margin: 0; }
+.circuit p { margin: 0; font-size: 15px; line-height: 1.55; color: #a09c92; }
+.circuit .impl { font-family: var(--mono); font-size: 11px; color: var(--dim); line-height: 1.55; margin-top: auto; }
+
+/* ── 04 camadas: três lances do poste ─────────────────────────────────── */
+.pole { margin: 40px 0 0; display: grid; gap: 4px; }
+.tier {
+  display: grid; grid-template-columns: 62px 1fr 170px; align-items: center; gap: 20px;
+  padding: 24px 22px; border-radius: 3px;
+  background: linear-gradient(180deg, #262621, #1f1f1a);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
+}
+.tier-icon { height: 54px; position: relative; }
+.tier-icon svg { width: 100%; height: 100%; overflow: visible; }
+.tier-icon path { fill: none; stroke-width: 5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.tier-title { font-family: var(--mono); font-size: 15px; font-weight: 700; margin: 0; }
+.tier-list { margin: 8px 0 0; color: #a09c92; font-size: 15px; }
+.tier-mark { display: flex; align-items: center; gap: 10px; justify-content: flex-end; }
+/* o lance de cima: os cabos saem de quadro. não é o produto, é o bairro. */
+.tier.yours { background: linear-gradient(180deg, #1f1f1b, #1b1b17); }
+.tier.yours .tier-title, .tier.yours .tier-list { color: var(--dim); }
+/* o lance do meio: o eletroduto está instalado e vazio. */
+.tier.soon .tier-icon path { stroke: var(--sleeve); stroke-dasharray: 3 7; }
+
+.layers-note { margin: 28px 0 0; max-width: 60ch; color: #aaa69b; font-size: 17px; line-height: 1.6; }
+.layers-link { display: inline-block; margin: 20px 0 0; color: var(--copper); font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; text-decoration: none; }
+.layers-link:hover { text-decoration: underline; text-underline-offset: 4px; }
+
+.stub { margin: 100px 0 0; padding-top: 28px; border-top: 1px solid #2e2e28; }
+.stub p { color: var(--dim); font-size: 15px; margin: 10px 0 0; }
+footer { margin: 66px 0 0; padding: 26px 0 118px; border-top: 1px solid #2e2e28; display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+
+.panel-head { flex-wrap: wrap; gap: 4px 16px; }
+
+@media (max-width: 940px) {
+  .wrap { padding: 0 18px; }
+  .panel { grid-template-columns: 1fr; height: auto; gap: 22px; }
+  .junction { grid-column: 1; }
+  .feeds { grid-template-rows: none; gap: 14px; }
+  .feed { padding: 12px 14px; background: #262621; border-radius: 2px; box-shadow: inset 0 0 0 1px #33332d; }
+  .cables, .patch-tape { display: none; }
+  .circuits { grid-template-columns: 1fr; }
+  .tier { grid-template-columns: 44px 1fr; }
+  .tier-mark { grid-column: 2; justify-content: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<!--
+THESIS: o nome do produto lido ao pé da letra — um benjamin: várias fontes entrando numa
+  tomada só, cada uma etiquetada à mão. O antídoto do amador não é abrandar o mundo, é a
+  grade: projeto elétrico exato, com exatamente um cabo fora da ordem.
+OWN-WORLD: concreto morno granulado (nunca preto), cabo preto com capa cinza, condutor de
+  cobre, fita isolante azul e etiqueta de rotulador amarelada, lâmpada verde de terra.
+  JetBrains Mono na estrutura, Karla na prosa.
+STORY: o visitante vê cinco cabos etiquetados entrando numa caixa de passagem e um só
+  saindo com a URL, entende o mecanismo sem ler uma linha, e instala.
+FIRST VIEWPORT: manchete curta à esquerda, o chicote de cinco alimentações ocupando a
+  largura logo abaixo, caixa de passagem à direita com a lâmpada verde acesa.
+FORM: gambiarra elétrica — candidato 3 da lista fundamentada, a leitura literal do nome,
+  por isso gastei só um candidato nela. Risco honesto: é a direção que mais facilmente
+  escorrega para o amador.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review,
+  the verdict, and DESIGN.md
+-->
+
+<header>
+  <div class="wrap header-inner">
+    <span class="mark">GAMBI</span>
+    <nav><a href="#">Docs</a><a href="#">Patterns</a><a href="#">GitHub</a></nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <p class="stencil">01 / o chicote</p>
+    <h1>Point one URL at everyone's models.</h1>
+    <p class="hero-sub">
+      Ollama on your laptop, vLLM on the box under the desk, OpenRouter, OpenAI — each one
+      opens its own tunnel and lands on its own terminal. Your app calls a single
+      OpenAI-compatible endpoint and reaches all of them.
+    </p>
+    <p class="hero-tag">Gambi connects the models. <span>You write what happens between them.</span></p>
+    <div class="cta">
+      <a class="btn btn-primary" href="#">Get started</a>
+      <a class="btn btn-secondary" href="#">See patterns</a>
+      <a class="btn btn-secondary" href="#">GitHub</a>
+    </div>
+
+    <div class="panel-head">
+      <span class="stencil">Sala ABC123 · alimentações no ar</span>
+      <span class="stencil">dados de demonstração</span>
+    </div>
+    <div class="panel">
+      <div class="feeds" id="feeds"></div>
+      <div class="cables" aria-hidden="true">
+        <!-- as cinco alimentações partem de x=290 nas alturas exatas das linhas da
+             grade (42 · 126 · 210 · 294 · 378) e convergem em 755,210: a borda
+             esquerda da caixa de passagem. nada aqui é solto. -->
+        <svg viewBox="0 0 1000 420" preserveAspectRatio="none">
+          <path class="sleeve" d="M 290 42  C 480 42,  560 210, 762 210" />
+          <path              d="M 290 42  C 480 42,  560 210, 762 210" />
+          <path class="core" d="M 290 42  C 480 42,  560 210, 762 210" />
+
+          <path class="sleeve" d="M 290 210 C 480 210, 560 210, 762 210" />
+          <path              d="M 290 210 C 480 210, 560 210, 762 210" />
+          <path class="core" d="M 290 210 C 480 210, 560 210, 762 210" />
+
+          <path class="sleeve" d="M 290 294 C 480 294, 560 210, 762 210" />
+          <path              d="M 290 294 C 480 294, 560 210, 762 210" />
+          <path class="core off" d="M 290 294 C 480 294, 560 210, 762 210" />
+
+          <path class="sleeve" d="M 290 378 C 480 378, 560 210, 762 210" />
+          <path              d="M 290 378 C 480 378, 560 210, 762 210" />
+          <path class="core" d="M 290 378 C 480 378, 560 210, 762 210" />
+
+          <!-- ▸ a única rebeldia: o cabo 02 sai da ordem, dá a volta por baixo
+               e cruza o chicote inteiro antes de chegar na caixa ◂ -->
+          <path class="sleeve" d="M 290 126 C 350 126, 330 414, 540 408 C 700 402, 706 250, 762 210" />
+          <path              d="M 290 126 C 350 126, 330 414, 540 408 C 700 402, 706 250, 762 210" />
+          <path class="core" d="M 290 126 C 350 126, 330 414, 540 408 C 700 402, 706 250, 762 210" />
+        </svg>
+        <span class="patch-tape">cabo 02 passa por fora. tá certo assim.</span>
+      </div>
+      <div class="junction">
+        <h3>caixa de passagem</h3>
+        <p class="url">http://hub.local:3000<br />/rooms/ABC123/v1</p>
+        <p class="stencil" style="margin:10px 0 0">o que seu app chama</p>
+        <div class="state"><span class="lamp"></span><span class="stencil" style="color:var(--live)">energizado</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><span class="stencil">/ patterns</span></div>
+    <h2>What you can build</h2>
+    <p class="lead">Six recipes that fit on a few lines of TypeScript. The routing, the multi-source dispatch and the event stream are already there.</p>
+    <div class="circuits" id="circuits"></div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><span class="stencil">/ architecture</span></div>
+    <h2>How it sits in your stack</h2>
+    <p class="lead">Your app talks to one OpenAI-compatible URL. The hub routes inside the room. Every participant runs its own provider, inside its own tunnel — the hub never reaches in.</p>
+    <p class="lead" style="color:var(--dim);font-family:var(--mono);font-size:13px">[ esboçado no protótipo — o diagrama herda cabo, capa e etiqueta ]</p>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><span class="stencil">/ layers</span></div>
+    <h2>What Gambi handles — and what still lands on you</h2>
+    <p class="lead">Gambi moves the messages between models. Everything about how the conversation actually runs is still your code.</p>
+
+    <div class="pole">
+      <div class="tier yours">
+        <span class="tier-icon">
+          <svg viewBox="0 0 60 54" preserveAspectRatio="none">
+            <path d="M 4 46 C 20 46, 26 6, 56 4"  stroke="#4a4a42" />
+            <path d="M 4 46 C 24 46, 34 24, 56 22" stroke="#4a4a42" />
+            <path d="M 4 46 C 26 46, 40 44, 56 40" stroke="#4a4a42" />
+          </svg>
+        </span>
+        <span>
+          <p class="tier-title">What you build</p>
+          <p class="tier-list">arenas · debates · juries · multi-persona NPCs</p>
+        </span>
+        <span class="tier-mark"><span class="tag">seu código</span></span>
+      </div>
+
+      <div class="tier soon">
+        <span class="tier-icon">
+          <svg viewBox="0 0 60 54" preserveAspectRatio="none">
+            <path d="M 4 27 L 56 27" />
+            <path d="M 4 12 L 56 12" />
+            <path d="M 4 42 L 56 42" />
+          </svg>
+        </span>
+        <span>
+          <p class="tier-title">Turn-taking · shared context · models talking to models</p>
+          <p class="tier-list">whose turn it is · what everyone has heard · who said what to whom</p>
+        </span>
+        <!-- o eletroduto está instalado e vazio: o idioma deste mundo para "ainda não" -->
+        <span class="tier-mark"><span class="tag">coming soon</span></span>
+      </div>
+
+      <div class="tier">
+        <span class="tier-icon">
+          <svg viewBox="0 0 60 54" preserveAspectRatio="none">
+            <path d="M 4 8  C 26 8,  34 27, 56 27" stroke="#0d0d0c" />
+            <path d="M 4 27 C 26 27, 34 27, 56 27" stroke="#0d0d0c" />
+            <path d="M 4 46 C 26 46, 34 27, 56 27" stroke="#0d0d0c" />
+            <path d="M 4 8  C 26 8,  34 27, 56 27" stroke="#c4763a" stroke-width="1.5" />
+            <path d="M 4 27 C 26 27, 34 27, 56 27" stroke="#c4763a" stroke-width="1.5" />
+            <path d="M 4 46 C 26 46, 34 27, 56 27" stroke="#c4763a" stroke-width="1.5" />
+          </svg>
+        </span>
+        <span>
+          <p class="tier-title">One endpoint. Many models, many machines, many people.</p>
+          <p class="tier-list">tunnels · routing · presence · events</p>
+        </span>
+        <span class="tier-mark"><span class="lamp"></span><span class="stencil" style="color:var(--live)">today</span></span>
+      </div>
+    </div>
+
+    <p class="layers-note">
+      The turn-taking is your code. The shared context is your code. Keeping track of who
+      said what to whom is your code. Gambi does not help you there — yet.
+    </p>
+    <a class="layers-link" href="#">Where this is going →</a>
+  </section>
+
+  <div class="stub">
+    <div class="sec-head"><span class="sec-num">05</span><span class="stencil">/ install</span></div>
+    <p>curl · npm · bun + um snippet do SDK. Esboçado neste protótipo.</p>
+  </div>
+  <div class="stub">
+    <div class="sec-head"><span class="sec-num">06</span><span class="stencil">/ built for builders</span></div>
+    <p>Quatro cards do D7. Esboçado neste protótipo.</p>
+  </div>
+
+  <footer>
+    <span class="stencil">Gambi · protótipo D · gambiarra elétrica</span>
+    <span class="stencil">ticket #60 · mapa #58</span>
+  </footer>
+</main>
+
+<script>
+/* alimentações — dados sintéticos */
+const FEEDS = [
+  { name: "ollama",     model: "qwen3:14b",        origin: "macbook do arthur", state: "connected · 340 ms" },
+  { name: "vllm",       model: "llama-3.3-70b",    origin: "torre da sala",     state: "streaming · 210 ms" },
+  { name: "lm studio",  model: "gemma-3-12b",      origin: "notebook da bia",   state: "connected · 520 ms" },
+  { name: "openrouter", model: "deepseek-r1",      origin: "cloud",             state: "idle" },
+  { name: "openai",     model: "claude-haiku-4-5", origin: "cloud",             state: "streaming · 180 ms" },
+];
+
+const feeds = document.getElementById("feeds");
+FEEDS.forEach((f, n) => {
+  const el = document.createElement("div");
+  el.className = "feed";
+  el.innerHTML = `
+    <p class="feed-name">${String(n + 1).padStart(2, "0")} · ${f.name} <em>${f.model}</em></p>
+    <span class="tag">${f.origin} — ${f.state}</span>
+  `;
+  feeds.appendChild(el);
+});
+
+/* use cases — copy do D4/D6 */
+const CASES = [
+  ["Model arena", "Same prompt, every model in the room. Spot differences in tone, accuracy, and speed at a glance.", 'Round-robin via model:"*", N requests in parallel, render side by side.'],
+  ["Jury / judge panel", "Generate the answer once. Fan it out to other models for verdicts and scoring. The g-eval pattern, off the shelf.", "1 generator participant + N judge participants. Aggregate the votes."],
+  ["Draft → critique → polish", "Cheap-then-strong. Small model drafts, bigger one critiques, third polishes. Quality without paying frontier prices end to end.", "3 chained calls — output of step N feeds prompt N+1."],
+  ["Debate club", "Two models argue, a third moderates. Stream every turn through SSE for a live show.", "Loop between participant IDs with conflicting system prompts."],
+  ["Multi-persona NPCs", "A game where each character has its own brain. Different model, different system prompt, different attitude.", "One participant per persona. Route by ID at the moment of speech."],
+  ["LAN debate club", "Bring friends or students. Each plugs their own LLM into the room. You build the UI; the models stay theirs.", "Multi-person registration. App reads the participant list and fans out."],
+];
+const circuits = document.getElementById("circuits");
+CASES.forEach(([title, body, impl], n) => {
+  const a = document.createElement("a");
+  a.className = "circuit";
+  a.href = "#";
+  a.innerHTML = `
+    <span class="tag">circuito ${String(n + 1).padStart(2, "0")}</span>
+    <h3>${title}</h3>
+    <p>${body}</p>
+    <p class="impl">→ ${impl}</p>
+  `;
+  circuits.appendChild(a);
+});
+</script>
+<script src="switcher.js"></script>
+</body>
+</html>

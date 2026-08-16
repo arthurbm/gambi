@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gambi — quatro direções visuais para a landing (#60)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700;800&display=swap" rel="stylesheet" />
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: #101012; color: #e6e5e0;
+  font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 14px; line-height: 1.65;
+}
+.wrap { max-width: 940px; margin: 0 auto; padding: 68px 26px 140px; }
+h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
+.sub { color: #8d8f95; margin: 12px 0 0; max-width: 66ch; }
+.meta { color: #5f6167; font-size: 12px; margin: 8px 0 0; }
+ul.list { margin: 44px 0 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+a.card {
+  display: grid; grid-template-columns: 46px 1fr 120px; gap: 20px; align-items: center;
+  padding: 22px 22px; background: #17181a; text-decoration: none; color: inherit;
+  border-radius: 3px; transition: background-color 150ms ease, transform 150ms cubic-bezier(0.23,1,0.32,1);
+}
+a.card:hover { background: #1e2023; }
+a.card:active { transform: scale(0.997); }
+.key { font-size: 22px; font-weight: 800; color: #4d5057; }
+.name { font-size: 15px; font-weight: 700; margin: 0; }
+.desc { margin: 6px 0 0; color: #9a9ca2; font-size: 13px; }
+.chips { display: flex; gap: 5px; justify-content: flex-end; }
+.chip { width: 15px; height: 15px; border-radius: 3px; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.09); }
+.note { margin: 46px 0 0; padding: 22px; background: #17181a; border-radius: 3px; color: #9a9ca2; }
+.note b { color: #e6e5e0; }
+.note p { margin: 0 0 12px; }
+.note p:last-child { margin-bottom: 0; }
+kbd { background: #24262a; padding: 2px 6px; border-radius: 3px; color: #cfd1d6; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Quatro direções visuais para a landing</h1>
+  <p class="sub">
+    Protótipo descartável do ticket #60 (mapa #58). Cada direção vai até a seção 04
+    (hero com roster ao vivo → use cases → camadas); install, built-for-builders e footer
+    ficam esboçados de propósito. Setas <kbd>←</kbd> <kbd>→</kbd> trocam de direção dentro
+    de qualquer uma delas.
+  </p>
+  <p class="meta">Dados de participantes são sintéticos e estão marcados como tal em cada página.</p>
+
+  <ul class="list">
+    <li><a class="card" href="a-quadro.html">
+      <span class="key">A</span>
+      <span>
+        <p class="name">Quadro de partidas</p>
+        <p class="desc">A direção sorteada. Abas de duas metades em slots fixos, trilhos de alumínio, âmbar só na coluna de status. A cebola vira três decks e o [today]/[coming soon] vira a coluna STATUS. <b>Rebeldia:</b> uma aba travada no meio do giro, remendada com fita.</p>
+      </span>
+      <span class="chips">
+        <span class="chip" style="background:#0e0f10"></span><span class="chip" style="background:#1c1f23"></span>
+        <span class="chip" style="background:#edeae1"></span><span class="chip" style="background:#f2a413"></span>
+        <span class="chip" style="background:#3f6fa8"></span>
+      </span>
+    </a></li>
+
+    <li><a class="card" href="b-mesa.html">
+      <span class="key">B</span>
+      <span>
+        <p class="name">Mesa de som</p>
+        <p class="desc">Minha aposta, com o risco da familiaridade. Um canal por participante, medidor de LED de verdade no lugar do badge de observabilidade, um master saturado. A cebola vira um rack de 19″ com a unidade de cima vazia. <b>Rebeldia:</b> um jumper por fora da matriz, com etiqueta escrita à mão.</p>
+      </span>
+      <span class="chips">
+        <span class="chip" style="background:#1b1b1d"></span><span class="chip" style="background:#26262a"></span>
+        <span class="chip" style="background:#d8d5cc"></span><span class="chip" style="background:#d8442e"></span>
+        <span class="chip" style="background:#4fd07a"></span>
+      </span>
+    </a></li>
+
+    <li><a class="card" href="c-segmentos.html">
+      <span class="key">C</span>
+      <span>
+        <p class="name">Mostrador de segmentos</p>
+        <p class="desc">Desafiante do catálogo. Um alfabeto só na página inteira, e o segmento apagado desenhado com o mesmo cuidado do aceso. O coming soon é o 12:00 piscando do relógio sem hora acertada. <b>Rebeldia:</b> uma célula queimou e colaram um dígito de papel por cima.</p>
+      </span>
+      <span class="chips">
+        <span class="chip" style="background:#0a0a0b"></span><span class="chip" style="background:#1e1f22"></span>
+        <span class="chip" style="background:#ffa41c"></span><span class="chip" style="background:#35e07f"></span>
+        <span class="chip" style="background:#e6e0cf"></span>
+      </span>
+    </a></li>
+
+    <li><a class="card" href="d-benjamin.html">
+      <span class="key">D</span>
+      <span>
+        <p class="name">Gambiarra elétrica</p>
+        <p class="desc">A leitura literal do nome. Concreto morno, cabo com capa, condutor de cobre, etiqueta de rotulador. O coming soon é o eletroduto instalado e vazio. <b>Rebeldia:</b> um cabo sai da ordem do chicote e dá a volta por baixo.</p>
+      </span>
+      <span class="chips">
+        <span class="chip" style="background:#22221e"></span><span class="chip" style="background:#0d0d0c"></span>
+        <span class="chip" style="background:#c4763a"></span><span class="chip" style="background:#3169b8"></span>
+        <span class="chip" style="background:#d3b96a"></span>
+      </span>
+    </a></li>
+  </ul>
+
+  <div class="note">
+    <p><b>O que julgar aqui.</b> Não é a copy (ela vem do ADR-0001 e da emenda E1/E4, verbatim onde existe). É onde a personalidade mora: como o mundo escolhido carrega o mecanismo do produto, e se a única rebeldia de cada página é boa ou é tique.</p>
+    <p><b>A reação útil</b> costuma ser mista — "o hero do B com a seção de camadas do C". Diga isso, não escolha uma letra por educação.</p>
+    <p><b>A manchete é provisória.</b> A E4 tirou "gateway" e "room" da primeira tela, e a hero implementada hoje ainda diz "room". "Point one URL at everyone's models." é proposta minha, igual nas quatro para não contaminar a comparação — ratifique ou troque.</p>
+  </div>
+</div>
+</body>
+</html>
