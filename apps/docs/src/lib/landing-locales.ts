@@ -33,7 +33,8 @@ export const landingLocales = {
   },
   "pt-BR": {
     brandLabel: "Gambi",
-    description: "A landing independente em português da documentação do Gambi.",
+    description:
+      "A landing independente em português da documentação do Gambi.",
     eyebrow: "Scaffold da landing",
     heading: "Documentação do Gambi",
     htmlLang: "pt-BR",

@@ -1,9 +1,9 @@
+import { fileURLToPath } from "node:url";
 import react from "@astrojs/react";
 import starlight from "@astrojs/starlight";
 import tailwindcss from "@tailwindcss/vite";
 // @ts-check
 import { defineConfig } from "astro/config";
-import { fileURLToPath } from "node:url";
 import starlightLlmsTxt from "starlight-llms-txt";
 
 // https://astro.build/config
