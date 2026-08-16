@@ -10,7 +10,7 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/react": "^6.0.2",
+    "@astrojs/react": "^4.4.2",
     "@astrojs/starlight": "^0.37.1",
     "@base-ui/react": "^1.7.0",
     "@fontsource-variable/geist": "^5.3.0",
