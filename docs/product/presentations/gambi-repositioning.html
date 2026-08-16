@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gambi — diagnóstico & reposicionamento a partir dos feedbacks</title>
+<style>
+  :root{
+    --paper:#F3ECDF; --paper-2:#ECE2D1; --card:#FBF6EC;
+    --ink:#191510; --ink-soft:#544A3D; --ink-faint:#8B7E6B;
+    --accent:#C8401F; --accent-2:#1B6E5B; --gold:#B0822F;
+    --line:rgba(25,21,16,.16); --line-2:rgba(25,21,16,.08);
+    --font-display:"Hoefler Text","Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+    --font-body:"Charter","Iowan Old Style",Georgia,"Times New Roman",serif;
+    --font-mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --font-label:"Avenir Next","Helvetica Neue",ui-sans-serif,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0; background:var(--paper); color:var(--ink); font-family:var(--font-body); font-size:19px; line-height:1.62; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; overflow-x:hidden;}
+  body::before{content:""; position:fixed; inset:0; z-index:9999; pointer-events:none; opacity:.05; background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>"); mix-blend-mode:multiply;}
+  ::selection{background:var(--accent); color:var(--paper);}
+  #progress{position:fixed; top:0; left:0; height:3px; width:0; background:linear-gradient(90deg,var(--accent-2),var(--gold)); z-index:10000;}
+  .wrap{max-width:1080px; margin:0 auto; padding:0 32px;}
+  section{padding:64px 0; border-top:1px solid var(--line-2);}
+  header.hero{padding:92px 0 56px;}
+  .eyebrow{font-family:var(--font-label); font-size:13px; letter-spacing:.28em; text-transform:uppercase; color:var(--accent-2); font-weight:600;}
+  .hero h1{font-family:var(--font-display); font-weight:700; font-size:clamp(42px,7vw,86px); line-height:.99; letter-spacing:-.02em; margin:.34em 0 .28em;}
+  .hero h1 em{font-style:italic; color:var(--accent);}
+  .hero .lede{font-size:clamp(20px,2.5vw,27px); line-height:1.42; color:var(--ink-soft); max-width:50ch;}
+  .hero .meta{margin-top:34px; font-family:var(--font-mono); font-size:13.5px; color:var(--ink-faint);}
+  .hero .meta b{color:var(--ink); font-weight:600;}
+  .rule{height:1px; background:var(--line);}
+  .sec-grid{display:grid; grid-template-columns:84px 1fr; gap:26px;}
+  .sec-num{font-family:var(--font-mono); font-size:15px; color:var(--accent-2); font-weight:600; padding-top:9px; letter-spacing:.06em;}
+  h2{font-family:var(--font-display); font-weight:700; font-size:clamp(28px,4vw,42px); line-height:1.05; letter-spacing:-.015em; margin:0 0 .5em;}
+  h3{font-family:var(--font-display); font-weight:700; font-size:23px; margin:1.6em 0 .3em;}
+  p{margin:0 0 1.05em; max-width:64ch;}
+  p.big{font-size:23px; line-height:1.5;}
+  strong{font-weight:700;}
+  em.term{font-style:normal; background:linear-gradient(transparent 62%, rgba(176,130,47,.32) 62%); padding:0 .05em;}
+  .mono{font-family:var(--font-mono); font-size:.82em; background:var(--paper-2); padding:.08em .38em; border-radius:4px; border:1px solid var(--line-2);}
+  a{color:var(--accent); text-underline-offset:2px;}
+  .pull{border-left:3px solid var(--accent); padding:6px 0 6px 22px; margin:1.4em 0; font-family:var(--font-display); font-style:italic; font-size:25px; line-height:1.34;}
+  .pull.q{border-color:var(--accent); font-size:28px;}
+  details.more{margin:14px 0 22px; background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden;}
+  details.more>summary{cursor:pointer; list-style:none; padding:15px 20px; font-family:var(--font-label); font-weight:600; font-size:14px; color:var(--accent-2); display:flex; align-items:center; gap:10px; user-select:none;}
+  details.more>summary::-webkit-details-marker{display:none;}
+  details.more>summary .chev{display:inline-block; transition:transform .25s ease; font-family:var(--font-mono);}
+  details.more[open]>summary .chev{transform:rotate(90deg);}
+  details.more>summary:hover{background:var(--paper-2);}
+  .more-body{padding:4px 22px 20px; border-top:1px solid var(--line-2); font-size:17.5px; line-height:1.6; color:var(--ink-soft);}
+  .more-body p{max-width:none;} .more-body strong{color:var(--ink);}
+  ul.clean{list-style:none; padding:0; margin:1em 0; max-width:64ch;}
+  ul.clean li{position:relative; padding:7px 0 7px 28px; border-bottom:1px solid var(--line-2);}
+  ul.clean li::before{content:"→"; position:absolute; left:0; color:var(--accent-2); font-family:var(--font-mono);}
+  figure{margin:30px 0; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:26px 24px 18px; box-shadow:0 1px 0 rgba(255,255,255,.6) inset, 0 18px 40px -30px rgba(25,21,16,.5);}
+  figure svg{width:100%; height:auto; display:block;}
+  figcaption{font-family:var(--font-label); font-size:13px; color:var(--ink-faint); margin-top:14px;}
+  .dlabel{font-family:var(--font-label); font-weight:600;}
+  .callout{background:linear-gradient(180deg,var(--card),var(--paper-2)); border:1px solid var(--line); border-left:4px solid var(--gold); border-radius:12px; padding:20px 22px; margin:22px 0;}
+  .callout .tag{font-family:var(--font-label); font-weight:700; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--gold); display:block; margin-bottom:6px;}
+  /* issue cards */
+  .issues{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin:22px 0;}
+  .issue{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px;}
+  .issue .id{font-family:var(--font-mono); font-size:13px; color:var(--accent); font-weight:600;}
+  .issue .t{font-family:var(--font-display); font-weight:700; font-size:18px; margin:4px 0 6px; line-height:1.18;}
+  .issue .d{font-size:14.5px; color:var(--ink-soft); line-height:1.45;}
+  .issue .lab{margin-top:10px; font-family:var(--font-mono); font-size:11px; color:var(--ink-faint);}
+  footer{padding:70px 0 90px; border-top:2px solid var(--ink);}
+  footer .q{font-family:var(--font-display); font-style:italic; font-size:24px; margin-bottom:8px;}
+  footer .sig{font-family:var(--font-mono); font-size:13px; color:var(--ink-faint); margin-top:30px;}
+  .reveal{opacity:0; transform:translateY(22px); transition:opacity .7s cubic-bezier(.2,.7,.2,1), transform .7s cubic-bezier(.2,.7,.2,1);}
+  .reveal.in{opacity:1; transform:none;}
+  @media (prefers-reduced-motion:reduce){.reveal{opacity:1; transform:none; transition:none;}}
+  @media (max-width:720px){ body{font-size:18px;} .sec-grid{grid-template-columns:1fr; gap:6px;} .sec-num{padding-top:0;} .wrap{padding:0 22px;} }
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<div class="wrap">
+
+  <header class="hero reveal">
+    <div class="eyebrow">Diagnóstico · a partir dos feedbacks do evento</div>
+    <h1>Por que o Gambi <em>não foi usado</em> — e onde isso aponta.</h1>
+    <p class="lede">Um membro do clube tentou construir a dinâmica do evento sobre o Gambi, e desistiu. A causa não foi arquitetura. Foi adotabilidade.</p>
+    <div class="meta"><b>Gambi</b> &nbsp;·&nbsp; caso: <b>gambiarra-arena</b> &nbsp;·&nbsp; fonte: sessão de feedback exportada &nbsp;·&nbsp; 2026</div>
+  </header>
+  <div class="rule"></div>
+
+  <!-- 01 — O CASO -->
+  <section class="reveal">
+    <div class="sec-grid">
+      <div class="sec-num">01</div>
+      <div>
+        <h2>O caso</h2>
+        <p>Um membro do clube quis montar a plataforma do evento <strong>sobre o Gambi</strong>, usando-o como plano de inferência distribuída. Um agente de IA chegou a construir o app consumidor sobre o SDK — <strong>compilou, passou nos testes, rodou em modo mock</strong>. Mesmo assim, ele abandonou o Gambi e <strong>reconstruiu o stack inteiro do zero</strong> (transporte, registro de participante, presença, roteamento e até uma arena 2D) num projeto standalone.</p>
+        <p class="pull q">"Tá muuuuuito confuso como eu consigo testar!"</p>
+        <p>Essa foi a única fala de dor real na sessão. Não foi "a arquitetura não encaixa" — o app encaixou bem no roteamento por participante. Foi <strong>não conseguir ver a coisa funcionando</strong>.</p>
+        <details class="more">
+          <summary><span class="chev">›</span> Aprofundar: o que aconteceu na sessão, passo a passo</summary>
+          <div class="more-body">
+            <p>O brief era excelente e o agente entregou duas fases (arena 2D multiagente sobre o Gambi). Mas o critério de "pronto" exigia <strong>3 pessoas com Ollama, em 3 máquinas</strong>, se movendo no telão. Sem modelos locais e sem gente, o agente caiu em mock + testes unitários e ficou repetindo "verified!" — enquanto a realidade do usuário era "não consigo nem testar".</p>
+            <p>Quando foi escrever um guia de validação, descobriu que o hub <strong>nem tinha subido</strong>: a porta 3000 estava ocupada por outro app, o hub falhou em silêncio, e o <span class="mono">room create</span> devolveu um <span class="mono">Error: undefined</span> sem sentido. Um problema ambiental trivial virou um pântano.</p>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 — CAUSA-RAIZ -->
+  <section class="reveal">
+    <div class="sec-grid">
+      <div class="sec-num">02</div>
+      <div>
+        <h2>A causa-raiz: a parede de adotabilidade</h2>
+        <p>Entre o builder e o valor do Gambi ("muitos modelos de muita gente numa sala") existe uma parede de quatro tijolos.</p>
+
+        <figure aria-label="Diagrama da parede de adotabilidade">
+          <svg viewBox="0 0 760 300" role="img">
+            <g font-family="Avenir Next, sans-serif">
+              <!-- builder -->
+              <circle cx="70" cy="160" r="26" fill="#FBF6EC" stroke="#191510" stroke-width="2"/>
+              <circle cx="70" cy="152" r="7" fill="#191510"/><path d="M56 174 q14 -16 28 0" fill="#191510"/>
+              <text x="70" y="210" text-anchor="middle" font-size="12.5" fill="#191510" font-weight="600">builder</text>
+
+              <!-- parede -->
+              <g>
+                <rect x="300" y="60" width="200" height="46" rx="6" fill="#FBF6EC" stroke="#C8401F" stroke-width="2"/>
+                <text x="400" y="82" text-anchor="middle" font-size="13.5" fill="#C8401F" font-weight="600">não dá pra validar sozinho</text>
+                <text x="400" y="98" text-anchor="middle" font-size="11" fill="#8B7E6B">precisa de N pessoas + N máquinas</text>
+
+                <rect x="270" y="112" width="200" height="46" rx="6" fill="#FBF6EC" stroke="#C8401F" stroke-width="2"/>
+                <text x="370" y="134" text-anchor="middle" font-size="13.5" fill="#C8401F" font-weight="600">onboarding pesado</text>
+                <text x="370" y="150" text-anchor="middle" font-size="11" fill="#8B7E6B">binário CLI + ~12 flags</text>
+
+                <rect x="330" y="164" width="200" height="46" rx="6" fill="#FBF6EC" stroke="#C8401F" stroke-width="2"/>
+                <text x="430" y="186" text-anchor="middle" font-size="13.5" fill="#C8401F" font-weight="600">sem história "construa sobre"</text>
+                <text x="430" y="202" text-anchor="middle" font-size="11" fill="#8B7E6B">SDK via engenharia reversa</text>
+
+                <rect x="290" y="216" width="200" height="46" rx="6" fill="#FBF6EC" stroke="#C8401F" stroke-width="2"/>
+                <text x="390" y="238" text-anchor="middle" font-size="13.5" fill="#C8401F" font-weight="600">falhas silenciosas</text>
+                <text x="390" y="254" text-anchor="middle" font-size="11" fill="#8B7E6B">porta ocupada · Error: undefined</text>
+              </g>
+
+              <!-- valor -->
+              <rect x="600" y="120" width="130" height="80" rx="14" fill="#1B6E5B"/>
+              <text x="665" y="156" text-anchor="middle" font-size="15" font-weight="700" fill="#F3ECDF">valor</text>
+              <text x="665" y="176" text-anchor="middle" font-size="11" fill="#CDE6DF">muitos LLMs,</text>
+              <text x="665" y="190" text-anchor="middle" font-size="11" fill="#CDE6DF">de muita gente</text>
+
+              <path d="M98 160 H250" stroke="#191510" stroke-width="1.6" stroke-dasharray="5 5"/>
+              <path d="M530 160 H600" stroke="#1B6E5B" stroke-width="1.6" stroke-dasharray="5 5" opacity=".5"/>
+              <text x="565" y="152" text-anchor="middle" font-size="22" fill="#C8401F">✕</text>
+            </g>
+          </svg>
+          <figcaption>O valor exige adoção; a parede impede a adoção. Foi nela — não na arquitetura — que o caso bateu.</figcaption>
+        </figure>
+
+        <div class="callout">
+          <span class="tag">A leitura central</span>
+          Ele construiu <strong>6 jogos sociais sozinho</strong>. O gap nunca foi falta de "features sociais" — foi a <strong>adotabilidade do substrato</strong>. Construir o vertical inteiro venceu "aprender o transporte + construir por cima".
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 — REFRAME -->
+  <section class="reveal">
+    <div class="sec-grid">
+      <div class="sec-num">03</div>
+      <div>
+        <h2>O reframe: núcleo lean, baterias de adoção</h2>
+        <p>O eixo "lean × baterias" estava sendo lido errado. O Gambi <strong>não</strong> perdeu por ser lean em <em>features de aplicação</em> (votação, rounds, jogos — isso é da app, e a visão está certa em manter fora). Perdeu por ser lean nas coisas que tornam um substrato <strong>adotável</strong> — e essas são responsabilidade dele.</p>
+
+        <figure aria-label="Diagrama núcleo lean + três levers">
+          <svg viewBox="0 0 760 240" role="img">
+            <g font-family="Avenir Next, sans-serif">
+              <rect x="300" y="86" width="160" height="68" rx="14" fill="#191510"/>
+              <text x="380" y="116" text-anchor="middle" font-size="15" font-weight="700" fill="#F3ECDF">núcleo lean</text>
+              <text x="380" y="135" text-anchor="middle" font-size="11" fill="#C9BCA6">transporte · roteamento</text>
+
+              <g>
+                <rect x="60" y="40" width="180" height="60" rx="12" fill="#FBF6EC" stroke="#1B6E5B" stroke-width="2"/>
+                <text x="150" y="66" text-anchor="middle" font-size="14" font-weight="700" fill="#1B6E5B">1 · onboarding</text>
+                <text x="150" y="84" text-anchor="middle" font-size="11" fill="#8B7E6B">join via browser, sem fricção</text>
+
+                <rect x="60" y="140" width="180" height="60" rx="12" fill="#FBF6EC" stroke="#1B6E5B" stroke-width="2"/>
+                <text x="150" y="166" text-anchor="middle" font-size="14" font-weight="700" fill="#1B6E5B">2 · dev mode</text>
+                <text x="150" y="184" text-anchor="middle" font-size="11" fill="#8B7E6B">loop inteiro numa máquina</text>
+
+                <rect x="520" y="90" width="180" height="60" rx="12" fill="#FBF6EC" stroke="#1B6E5B" stroke-width="2"/>
+                <text x="610" y="116" text-anchor="middle" font-size="14" font-weight="700" fill="#1B6E5B">3 · build-on</text>
+                <text x="610" y="134" text-anchor="middle" font-size="11" fill="#8B7E6B">exemplo + skill + guia</text>
+              </g>
+
+              <g stroke="#1B6E5B" stroke-width="1.6" fill="none">
+                <path d="M240 78 C 280 90, 285 100, 300 106"/>
+                <path d="M240 162 C 280 150, 285 140, 300 134"/>
+                <path d="M520 120 H460"/>
+              </g>
+            </g>
+          </svg>
+          <figcaption>Três baterias que servem aos dois públicos — o dev solo e o organizador de evento.</figcaption>
+        </figure>
+        <ul class="clean">
+          <li><strong>1 · Onboarding sem fricção</strong> — join via URL/browser, escolher modelo, em segundos.</li>
+          <li><strong>2 · Modo dev local</strong> — participante fake/loopback pra rodar o loop inteiro sem Ollama.</li>
+          <li><strong>3 · Build-on</strong> — app-exemplo canônico, skill pra devs, guia do padrão consumidor.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 — REPOSICIONAMENTO -->
+  <section class="reveal">
+    <div class="sec-grid">
+      <div class="sec-num">04</div>
+      <div>
+        <h2>O reposicionamento</h2>
+        <p>A landing (ADR-0001) tomou uma aposta que <strong>contradiz o caso que bateu na porta</strong>: rebaixou multi-pessoa a <strong>1 card entre 6</strong>, chamando "junte os LLMs da galera" de <em>gambiarra retórica</em>, e ancorou em "um dev misturando provedores".</p>
+        <p>Mas o professor <strong>é exatamente</strong> a persona rebaixada — o "classroom arena, cada um pluga seu LLM". E é a moldura que gateways como OpenRouter <strong>não conseguem copiar</strong>.</p>
+        <p class="pull">O ADR-0001 confundiu "nossa execução de multi-pessoa é fraca" com "multi-pessoa é uso fraco". O caso refuta a demoção.</p>
+        <p>Decisão: <strong>re-elevar experiências sociais multi-pessoa a herói</strong>, sob o reframe "núcleo lean + baterias". As baterias servem aos dois públicos — não é pivô que abandona o dev solo.</p>
+        <details class="more">
+          <summary><span class="chev">›</span> Aprofundar: por que a landing fica para depois</summary>
+          <div class="more-body">
+            <p>A decisão de re-elevar já está tomada, mas a <strong>cópia do herói depende da tese de "experiências sociais"</strong> (o TCC). Escrever o ADR/landing antes disso é prematuro. Por isso o item de landing nasce <strong>bloqueado</strong>: re-mensagem primeiro (emenda ao ADR-0001), depois passe visual de <span class="mono">/frontend-design</span>. Não pintar a parede antes de decidir onde fica a porta.</p>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- 05 — CADASTRADO -->
+  <section class="reveal">
+    <div class="sec-grid">
+      <div class="sec-num">05</div>
+      <div>
+        <h2>O que já virou trabalho</h2>
+        <p>O diagnóstico saiu desta análise em itens acionáveis no tracker:</p>
+        <div class="issues">
+          <div class="issue">
+            <div class="id">#54 · bug</div>
+            <div class="t">Hub não trata porta ocupada</div>
+            <div class="d">Sobe "otimista" mesmo quando o bind falha. Precisa de erro acionável + saída clara.</div>
+            <div class="lab">bug · needs-triage</div>
+          </div>
+          <div class="issue">
+            <div class="id">#55 · bug</div>
+            <div class="t">CLI surfaceia "Error: undefined"</div>
+            <div class="d">Resposta não-Gambi vira mensagem vazia. Nunca deveria dizer "undefined".</div>
+            <div class="lab">bug · needs-triage</div>
+          </div>
+          <div class="issue">
+            <div class="id">#56 · PRD</div>
+            <div class="t">Adotabilidade</div>
+            <div class="d">Os 3 levers (onboarding, dev mode, build-on) + módulos + decisões de teste.</div>
+            <div class="lab">ready-for-agent</div>
+          </div>
+          <div class="issue">
+            <div class="id">#57 · épico</div>
+            <div class="t">Reposicionar a landing</div>
+            <div class="d">Re-elevar multi-pessoa (emenda ADR-0001) → passe visual. Bloqueado na tese.</div>
+            <div class="lab">needs-triage · enhancement</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 06 — IMPACTO -->
+  <section class="reveal">
+    <div class="sec-grid">
+      <div class="sec-num">06</div>
+      <div>
+        <h2>Impacto na dinâmica e no professor</h2>
+        <p>O efeito prático foi duplo. Na <strong>dinâmica do evento</strong>: a plataforma acabou sendo um vertical reconstruído do zero — funcional, mas desconectado do Gambi, sem reaproveitar transporte, presença nem observabilidade. No <strong>professor</strong>: a fricção de validação consumiu tempo e confiança, e a experiência ficou registrada como "o Gambi é confuso de testar" — quando o código de fato funcionava.</p>
+        <p>O lado bom: esse caso é a <strong>evidência qualificada</strong> que orienta as três frentes acima — e é também o ponto de partida do TCC, onde o clube vira campo de validação em vez de só palco.</p>
+        <div class="callout">
+          <span class="tag">Conexão com o TCC</span>
+          A adotabilidade (este documento) é pré-requisito de produto: sem ela, a camada social (o TCC) não tem público. Primeiro o substrato fica adotável; depois a experiência social tem onde acontecer.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="reveal">
+    <div class="q">"O código funcionava. A pessoa não conseguia testar. Esse é o bug que importa."</div>
+    <p style="max-width:60ch;color:var(--ink-soft)">Adotabilidade não é polimento — é a diferença entre o Gambi ser usado ou ser reconstruído.</p>
+    <div class="sig">Gambi · diagnóstico a partir dos feedbacks · 2026 · fonte viva: research-direction.md · issues #54–#57</div>
+  </footer>
+
+</div>
+<script>
+  var prog=document.getElementById('progress');
+  function onScroll(){var h=document.documentElement;var max=h.scrollHeight-h.clientHeight;prog.style.width=(max>0?(h.scrollTop/max*100):0)+'%';}
+  document.addEventListener('scroll',onScroll,{passive:true}); onScroll();
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{threshold:.12});
+  document.querySelectorAll('.reveal').forEach(function(el){io.observe(el);});
+  requestAnimationFrame(function(){document.querySelector('.hero').classList.add('in');});
+</script>
+</body>
+</html>

@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Camada social para agentes — Proposta de TCC · Arthur Brito</title>
+<style>
+  :root{
+    --paper:#F3ECDF; --paper-2:#ECE2D1; --card:#FBF6EC;
+    --ink:#191510; --ink-soft:#544A3D; --ink-faint:#8B7E6B;
+    --accent:#C8401F; --accent-2:#1B6E5B; --gold:#B0822F;
+    --line:rgba(25,21,16,.16); --line-2:rgba(25,21,16,.08);
+    --font-display:"Hoefler Text","Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+    --font-body:"Charter","Iowan Old Style",Georgia,"Times New Roman",serif;
+    --font-mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --font-label:"Avenir Next","Helvetica Neue",ui-sans-serif,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0; background:var(--paper); color:var(--ink); font-family:var(--font-body); font-size:19px; line-height:1.62; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; overflow-x:hidden;}
+  body::before{content:""; position:fixed; inset:0; z-index:9999; pointer-events:none; opacity:.05; background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>"); mix-blend-mode:multiply;}
+  ::selection{background:var(--accent); color:var(--paper);}
+  #progress{position:fixed; top:0; left:0; height:3px; width:0; background:linear-gradient(90deg,var(--accent),var(--gold)); z-index:10000;}
+  /* nav de seções */
+  nav.toc{position:fixed; right:18px; top:50%; transform:translateY(-50%); z-index:50; display:flex; flex-direction:column; gap:9px;}
+  nav.toc a{width:9px; height:9px; border-radius:50%; border:1.5px solid var(--ink-faint); opacity:.5; transition:all .2s;}
+  nav.toc a:hover,nav.toc a.active{background:var(--accent); border-color:var(--accent); opacity:1; transform:scale(1.25);}
+  @media (max-width:980px){nav.toc{display:none;}}
+  .wrap{max-width:1080px; margin:0 auto; padding:0 32px;}
+  section{padding:62px 0; border-top:1px solid var(--line-2);}
+  header.hero{padding:92px 0 40px;}
+  .eyebrow{font-family:var(--font-label); font-size:13px; letter-spacing:.28em; text-transform:uppercase; color:var(--accent); font-weight:600;}
+  .hero h1{font-family:var(--font-display); font-weight:700; font-size:clamp(44px,7.4vw,92px); line-height:.98; letter-spacing:-.02em; margin:.34em 0 .28em;}
+  .hero h1 em{font-style:italic; color:var(--accent);}
+  .hero .lede{font-size:clamp(20px,2.5vw,27px); line-height:1.42; color:var(--ink-soft); max-width:50ch;}
+  .hero .meta{margin-top:34px; font-family:var(--font-mono); font-size:13.5px; color:var(--ink-faint);}
+  .hero .meta b{color:var(--ink); font-weight:600;}
+  .rule{height:1px; background:var(--line);}
+  /* resumo */
+  .tldr{background:var(--ink); color:var(--paper); border-radius:18px; padding:30px 34px; margin:14px 0 8px; box-shadow:0 24px 50px -34px rgba(25,21,16,.8);}
+  .tldr .k{font-family:var(--font-label); font-size:12px; letter-spacing:.2em; text-transform:uppercase; color:var(--gold); font-weight:700;}
+  .tldr p{color:#E8DFD0; max-width:70ch; margin:.7em 0 0; font-size:19px;}
+  .tldr strong{color:#fff;}
+  .tldr .em{color:var(--accent); font-style:italic; font-family:var(--font-display);}
+  .sec-grid{display:grid; grid-template-columns:84px 1fr; gap:26px;}
+  .sec-num{font-family:var(--font-mono); font-size:15px; color:var(--accent); font-weight:600; padding-top:9px; letter-spacing:.06em;}
+  h2{font-family:var(--font-display); font-weight:700; font-size:clamp(28px,4vw,42px); line-height:1.05; letter-spacing:-.015em; margin:0 0 .5em;}
+  h3{font-family:var(--font-display); font-weight:700; font-size:23px; margin:1.6em 0 .3em;}
+  p{margin:0 0 1.05em; max-width:64ch;}
+  p.big{font-size:23px; line-height:1.5;}
+  strong{font-weight:700;}
+  em.term{font-style:normal; background:linear-gradient(transparent 62%, rgba(176,130,47,.32) 62%); padding:0 .05em;}
+  .mono{font-family:var(--font-mono); font-size:.82em; background:var(--paper-2); padding:.08em .38em; border-radius:4px; border:1px solid var(--line-2);}
+  a{color:var(--accent); text-underline-offset:2px;}
+  .pull{border-left:3px solid var(--accent); padding:6px 0 6px 22px; margin:1.4em 0; font-family:var(--font-display); font-style:italic; font-size:25px; line-height:1.34;}
+  details.more{margin:14px 0 22px; background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden;}
+  details.more>summary{cursor:pointer; list-style:none; padding:15px 20px; font-family:var(--font-label); font-weight:600; font-size:14px; color:var(--accent); display:flex; align-items:center; gap:10px; user-select:none;}
+  details.more>summary::-webkit-details-marker{display:none;}
+  details.more>summary .chev{display:inline-block; transition:transform .25s ease; font-family:var(--font-mono);}
+  details.more[open]>summary .chev{transform:rotate(90deg);}
+  details.more>summary:hover{background:var(--paper-2);}
+  .more-body{padding:6px 22px 20px; border-top:1px solid var(--line-2); font-size:17.5px; line-height:1.6; color:var(--ink-soft);}
+  .more-body p{max-width:none;} .more-body strong{color:var(--ink);}
+  ul.clean{list-style:none; padding:0; margin:1em 0; max-width:66ch;}
+  ul.clean li{position:relative; padding:7px 0 7px 28px; border-bottom:1px solid var(--line-2);}
+  ul.clean li::before{content:"→"; position:absolute; left:0; color:var(--accent); font-family:var(--font-mono);}
+  .chips{display:flex; flex-wrap:wrap; gap:9px; margin:1.1em 0;}
+  .chip{font-family:var(--font-mono); font-size:12.5px; padding:5px 11px; border:1px solid var(--line); border-radius:999px; background:var(--card); color:var(--ink-soft);}
+  .chip.h{border-color:var(--accent); color:var(--accent);}
+  .chip.a{border-color:var(--accent-2); color:var(--accent-2);}
+  figure{margin:30px 0; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:26px 24px 18px; box-shadow:0 1px 0 rgba(255,255,255,.6) inset, 0 18px 40px -30px rgba(25,21,16,.5);}
+  figure svg{width:100%; height:auto; display:block;}
+  figcaption{font-family:var(--font-label); font-size:13px; color:var(--ink-faint); margin-top:14px;}
+  .dlabel{font-family:var(--font-label); font-weight:600;}
+  .tablewrap{overflow-x:auto; margin:24px 0;}
+  table{border-collapse:collapse; width:100%; font-size:16px; min-width:640px;}
+  th,td{text-align:left; padding:13px 14px; border-bottom:1px solid var(--line); vertical-align:top;}
+  thead th{font-family:var(--font-label); font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-faint); border-bottom:2px solid var(--ink);}
+  tbody tr:hover{background:var(--paper-2);}
+  td.you{color:var(--accent-2); font-weight:600;}
+  td .mono{font-size:13px;}
+  .callout{background:linear-gradient(180deg,var(--card),var(--paper-2)); border:1px solid var(--line); border-left:4px solid var(--gold); border-radius:12px; padding:20px 22px; margin:22px 0;}
+  .callout .tag{font-family:var(--font-label); font-weight:700; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--gold); display:block; margin-bottom:6px;}
+  .callout.r{border-left-color:var(--accent);} .callout.r .tag{color:var(--accent);}
+  /* timeline */
+  .tl{margin:1.4em 0; border-left:2px solid var(--line); padding-left:0;}
+  .tl .step{position:relative; padding:0 0 22px 30px;}
+  .tl .step::before{content:""; position:absolute; left:-7px; top:6px; width:12px; height:12px; border-radius:50%; background:var(--accent); border:2px solid var(--paper);}
+  .tl .step h4{margin:0 0 3px; font-family:var(--font-label); font-size:13px; letter-spacing:.04em; text-transform:uppercase; color:var(--accent);}
+  .tl .step p{margin:0; font-size:17.5px; color:var(--ink-soft); max-width:62ch;}
+  footer{padding:70px 0 90px; border-top:2px solid var(--ink);}
+  footer .q{font-family:var(--font-display); font-style:italic; font-size:24px; margin-bottom:8px;}
+  footer .sig{font-family:var(--font-mono); font-size:13px; color:var(--ink-faint); margin-top:30px;}
+  .reveal{opacity:0; transform:translateY(22px); transition:opacity .7s cubic-bezier(.2,.7,.2,1), transform .7s cubic-bezier(.2,.7,.2,1);}
+  .reveal.in{opacity:1; transform:none;}
+  @media (prefers-reduced-motion:reduce){.reveal{opacity:1; transform:none; transition:none;}}
+  @media (max-width:720px){ body{font-size:18px;} .sec-grid{grid-template-columns:1fr; gap:6px;} .sec-num{padding-top:0;} .wrap{padding:0 22px;} .tldr{padding:24px;} }
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<nav class="toc" aria-label="Seções">
+  <a href="#s0" title="Resumo"></a><a href="#s1" title="De onde veio"></a><a href="#s2" title="Como o Gambi se relaciona"></a><a href="#s3" title="A tese"></a><a href="#s4" title="O gap"></a><a href="#s5" title="Desiderata"></a><a href="#s6" title="Humano no loop"></a><a href="#s7" title="Contribuição"></a><a href="#s8" title="Artefato e campo"></a><a href="#s9" title="Recorte"></a><a href="#s10" title="Vizinhos"></a><a href="#s11" title="Conversar hoje"></a>
+</nav>
+
+<div class="wrap">
+
+  <header class="hero reveal">
+    <div class="eyebrow">Proposta de TCC · Criatividade Computacional · documento de contexto</div>
+    <h1>Uma camada <em>social</em> para agentes — e humanos.</h1>
+    <p class="lede">Como muitos agentes pessoais (autônomos) e pessoas (no loop) co-participam de uma mesma experiência social — dentro de uma plataforma, ou entre plataformas.</p>
+    <div class="meta"><b>Arthur Brito</b> &nbsp;·&nbsp; campo: <b>Gambiarra&nbsp;LLM&nbsp;Club</b> &nbsp;·&nbsp; instrumento: <b>Gambi</b> &nbsp;·&nbsp; 2026</div>
+  </header>
+
+  <section id="s0" class="reveal" style="border-top:none; padding-top:18px;">
+    <div class="tldr">
+      <div class="k">Resumo de uma tela</div>
+      <p>O TCC nasce de um problema real do <strong>Gambiarra LLM Club</strong>: ao montar a dinâmica de um evento, percebeu-se que existe uma camada que <strong>ninguém construiu</strong> — o <span class="em">espaço social compartilhado</span> onde muitos agentes pessoais (e as pessoas com eles) fazem experiência <strong>junto</strong>. Os runtimes de agente pessoal ("Claws") cuidam do <em>seu</em> agente; o A2A faz <em>dois</em> agentes se falarem; <strong>ninguém dona a experiência de muitos.</strong> A contribuição é dupla, no formato de criatividade computacional: <strong>(E)</strong> um modelo de como essa experiência social funciona + <strong>(P)</strong> uma implementação de referência sobre o <strong>Gambi</strong>, validada no clube. O humano entra <strong>ativo</strong>, não como plateia.</p>
+    </div>
+  </section>
+
+  <!-- 01 — DE ONDE VEIO -->
+  <section id="s1" class="reveal">
+    <div class="sec-grid"><div class="sec-num">01</div><div>
+      <h2>De onde veio esta ideia</h2>
+      <p>A pesquisa não caiu do céu — ela emergiu de um diagnóstico concreto. Um membro do clube tentou usar o <em class="term">Gambi</em> (o hub local-first que compartilha endpoints de LLM numa rede) como plano de inferência pra uma dinâmica de evento. Um agente de IA chegou a construir o app sobre o SDK; compilou e rodou em mock. Mesmo assim, ele <strong>desistiu e reconstruiu tudo do zero</strong>.</p>
+      <p>Investigando o porquê, a causa-raiz <strong>não</strong> foi falta de recurso social — ele construiu 6 jogos sociais sozinho. Foi a <strong>adotabilidade do substrato</strong>. Mas no meio dessa investigação apareceu uma pergunta maior, que é a semente do TCC:</p>
+      <p class="pull">Se construir "muitos LLMs/agentes de gente diferente, fazendo algo junto" é tão recorrente que vale reconstruir do zero — por que não existe uma <strong>camada</strong> que resolva isso de uma vez, como infraestrutura?</p>
+      <div class="tl">
+        <div class="step"><h4>Ponto de partida</h4><p>O caso gambiarra-arena: a dinâmica social entre LLMs foi reimplementada do zero em vez de reusar infraestrutura.</p></div>
+        <div class="step"><h4>Primeira virada</h4><p>De "modelos" para <strong>agentes</strong> — e de "uma sala" para coordenação <strong>dentro e entre plataformas</strong>.</p></div>
+        <div class="step"><h4>Segunda virada</h4><p>O <strong>humano</strong> entra na equação como participante ativo, não plateia — o que ancora o trabalho em criatividade computacional.</p></div>
+        <div class="step"><h4>Recorte</h4><p>Contribuição dupla (modelo + artefato), escopo travado pra não virar moonshot, clube como campo.</p></div>
+      </div>
+      <p style="font-size:15px;color:var(--ink-faint)">Para o diagnóstico completo do lado do produto, ver o documento-irmão <span class="mono">gambi-repositioning.html</span>.</p>
+    </div></div>
+  </section>
+
+  <!-- 02 — COMO O GAMBI SE RELACIONA -->
+  <section id="s2" class="reveal">
+    <div class="sec-grid"><div class="sec-num">02</div><div>
+      <h2>Como o Gambi se relaciona</h2>
+      <p>O Gambi não é a tese — é o <strong>instrumento e o campo de prova</strong>. Mas a relação é mais profunda do que "usei uma ferramenta": o Gambi e a pesquisa estão em <strong>duas camadas que se sustentam</strong>.</p>
+
+      <figure aria-label="Diagrama das duas camadas e a relação produto-pesquisa">
+        <svg viewBox="0 0 760 372" role="img">
+          <g font-family="Avenir Next, sans-serif">
+            <!-- camada ii (pesquisa) -->
+            <rect x="120" y="40" width="520" height="92" rx="14" fill="#FBF6EC" stroke="#C8401F" stroke-width="2.2"/>
+            <text x="380" y="72" text-anchor="middle" font-size="17" font-weight="700" fill="#C8401F">(ii) Camada social multi-parte — PESQUISA / TCC</text>
+            <text x="380" y="94" text-anchor="middle" font-size="13" fill="#7a3a26">experiência de muitos agentes + humanos · estado compartilhado · turnos</text>
+            <text x="380" y="113" text-anchor="middle" font-size="12.5" fill="#8B7E6B">("Gambi Agents" — parkado pro produto, fronteira de pesquisa)</text>
+
+            <!-- camada i (produto) -->
+            <rect x="120" y="186" width="520" height="92" rx="14" fill="#FBF6EC" stroke="#1B6E5B" stroke-width="2.2"/>
+            <text x="380" y="218" text-anchor="middle" font-size="17" font-weight="700" fill="#1B6E5B">(i) Substrato social-ready — PRODUTO (Gambi hoje)</text>
+            <text x="380" y="240" text-anchor="middle" font-size="13" fill="#33685c">hub · túnel · roteamento · presença · observabilidade</text>
+            <text x="380" y="259" text-anchor="middle" font-size="12.5" fill="#8B7E6B">tunnel-first · local-first · OpenAI-compatible</text>
+
+            <!-- base -->
+            <rect x="200" y="316" width="360" height="40" rx="9" fill="#191510"/>
+            <text x="380" y="341" text-anchor="middle" font-size="13" fill="#E8DFD0">agentes/modelos locais das pessoas (Ollama, Claws, …)</text>
+            <path d="M380 316 V278" stroke="#191510" stroke-width="1.6"/>
+
+            <!-- relação bidirecional -->
+            <path d="M150 186 V132" stroke="#B0822F" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+            <path d="M610 132 V186" stroke="#B0822F" stroke-width="2" fill="none" marker-end="url(#ar2)"/>
+            <defs>
+              <marker id="ar" markerWidth="9" markerHeight="9" refX="4.5" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 z" fill="#B0822F"/></marker>
+              <marker id="ar2" markerWidth="9" markerHeight="9" refX="4.5" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 z" fill="#B0822F"/></marker>
+            </defs>
+            <text x="96" y="162" text-anchor="middle" font-size="10.5" fill="#8B7674" transform="rotate(-90 96 162)">adoção habilita pesquisa</text>
+            <text x="664" y="160" text-anchor="middle" font-size="10.5" fill="#8B7674" transform="rotate(90 664 160)">pesquisa dá alma ao produto</text>
+          </g>
+        </svg>
+        <figcaption>Duas camadas que se sustentam: o produto precisa ficar adotável pra pesquisa ter público; a pesquisa dá ao produto o diferencial que ninguém copia.</figcaption>
+      </figure>
+
+      <h3>Por que o Gambi é o substrato certo (não incidental)</h3>
+      <p>A camada social precisa, por baixo, exatamente do que o Gambi já entrega: <strong>identidade</strong> de cada participante, <strong>provedores heterogêneos</strong>, <strong>presença/disponibilidade</strong>, <strong>roteamento</strong> e <strong>observabilidade</strong> (eventos em tempo real). E o design <em class="term">tunnel-first / local-first</em> do Gambi é o que viabiliza o cenário-alvo: agentes na máquina das pessoas, não publicamente alcançáveis, contribuídos por uma comunidade.</p>
+      <ul class="clean">
+        <li><strong>Identidade</strong> — cada agente é um participante estável, com nome e dono.</li>
+        <li><strong>Heterogeneidade</strong> — cada um traz seu modelo/config, atrás do seu túnel.</li>
+        <li><strong>Presença</strong> — quem está disponível agora, pra entrar/sair da experiência ao vivo.</li>
+        <li><strong>Observabilidade</strong> — eventos em tempo real = a matéria-prima da evidência de campo.</li>
+      </ul>
+
+      <details class="more">
+        <summary><span class="chev">›</span> Aprofundar: o que é o Gambi hoje, e a regra "lean × baterias"</summary>
+        <div class="more-body">
+          <p><strong>Gambi hoje</strong> é transporte: um hub central guarda salas e participantes e despacha inferência pelos <em>túneis</em> que cada participante abre (o hub nunca liga de volta — <em>tunnel-first</em>). Expõe uma API OpenAI-compatible por sala e eventos por SSE. As credenciais do provedor ficam na máquina do participante.</p>
+          <p>A regra que separa produto de pesquisa: o Gambi fica <strong>lean na semântica de aplicação</strong> (não embute votação, rounds, turnos, jogos — isso é da app) e investe em <strong>baterias de adotabilidade</strong> (onboarding, dev mode, build-on). A camada social do TCC vive <strong>acima</strong> disso. Se o Gambi começasse a embutir "modo experiência social", viraria o produto errado — e por isso essa camada é pesquisa, construída <em>sobre</em> o Gambi, não <em>dentro</em> dele.</p>
+        </div>
+      </details>
+    </div></div>
+  </section>
+
+  <!-- 03 — TESE -->
+  <section id="s3" class="reveal">
+    <div class="sec-grid"><div class="sec-num">03</div><div>
+      <h2>A tese</h2>
+      <p class="big">Existe um novo tecido emergindo — runtimes de <em class="term">agente pessoal</em> ("Claws") e protocolos de <em class="term">agente↔agente</em> (A2A). Mas ninguém dona a peça do meio: <strong>o espaço social compartilhado onde muitos agentes pessoais — e os humanos por trás deles — fazem experiência junto.</strong></p>
+      <p>O TCC propõe e valida essa camada: o <strong>modelo</strong> de como ela funciona, e uma <strong>implementação de referência</strong> rodada no mundo real, no clube. A pergunta de pesquisa, em uma linha:</p>
+      <p class="pull">Como projetar e sustentar uma experiência social coerente quando os participantes são uma mistura de pessoas e de agentes heterogêneos, com configs próprias, contribuídos por uma comunidade e usados sob demanda — na mesma plataforma ou entre plataformas?</p>
+    </div></div>
+  </section>
+
+  <!-- 04 — O GAP -->
+  <section id="s4" class="reveal">
+    <div class="sec-grid"><div class="sec-num">04</div><div>
+      <h2>O buraco na pilha</h2>
+      <p>A cada camada que sobe, a anterior vira commodity. Agentes de LLM viraram camada sobre LLMs; Claws estão virando camada sobre agentes. Mas a coordenação que existe é <strong>individual</strong> (seu agente) ou <strong>ponto-a-ponto</strong> (um chama outro). A experiência de <strong>muitos, junto</strong>, não tem dono.</p>
+      <figure aria-label="Diagrama da pilha de camadas">
+        <svg viewBox="0 0 760 360" role="img">
+          <defs><pattern id="hatch" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="0" y2="7" stroke="#C8401F" stroke-width="2" opacity=".5"/></pattern></defs>
+          <g font-family="Avenir Next, sans-serif">
+            <rect x="120" y="280" width="520" height="52" rx="9" fill="#FBF6EC" stroke="#191510" stroke-width="1.5"/>
+            <text x="380" y="312" text-anchor="middle" font-size="17" font-weight="600" fill="#191510">LLM — o modelo</text>
+            <rect x="120" y="214" width="520" height="52" rx="9" fill="#FBF6EC" stroke="#191510" stroke-width="1.5"/>
+            <text x="380" y="246" text-anchor="middle" font-size="17" font-weight="600" fill="#191510">Agente de LLM — raciocínio + ferramentas</text>
+            <rect x="120" y="148" width="520" height="52" rx="9" fill="#FBF6EC" stroke="#1B6E5B" stroke-width="1.7"/>
+            <text x="380" y="173" text-anchor="middle" font-size="17" font-weight="600" fill="#1B6E5B">Claw — runtime de agente pessoal</text>
+            <text x="380" y="190" text-anchor="middle" font-size="12.5" fill="#8B7E6B">orquestração · persistência · contexto · single-user</text>
+            <text x="690" y="178" text-anchor="middle" font-size="12.5" fill="#8B7E6B" transform="rotate(90 690 178)">A2A · ponto-a-ponto</text>
+            <path d="M70 150 q-16 24 0 48" stroke="#8B7E6B" stroke-width="1.4" fill="none" stroke-dasharray="4 4"/>
+            <rect x="120" y="64" width="520" height="60" rx="11" fill="url(#hatch)" stroke="#C8401F" stroke-width="2.4" stroke-dasharray="9 6"/>
+            <text x="380" y="90" text-anchor="middle" font-size="18.5" font-weight="700" fill="#C8401F">Camada social multi-parte ⟵ o gap</text>
+            <text x="380" y="110" text-anchor="middle" font-size="12.5" fill="#7a3a26">muitos agentes + humanos, estado compartilhado, turnos, observabilidade</text>
+            <path d="M380 148 V124" stroke="#C8401F" stroke-width="2"/><path d="M374 130 l6 -8 l6 8" fill="#C8401F"/>
+          </g>
+        </svg>
+        <figcaption>Cada camada vira base da próxima. O topo — a experiência social de <em>muitos</em> — está vazio.</figcaption>
+      </figure>
+      <details class="more">
+        <summary><span class="chev">›</span> Aprofundar: Claws, A2A e MCP — e por que não preenchem o gap</summary>
+        <div class="more-body">
+          <p><strong>Claws</strong> (termo trazido por Andrej Karpathy, fev/2026): camada acima dos agentes que eleva orquestração, escalonamento, contexto, tool-calls e persistência — o "duende doméstico digital" pessoal. Ex.: NanoClaw (~4k linhas, configurável via <em>skills</em>, roda em containers). <strong>São single-user</strong> — cuidam do <em>seu</em> agente.</p>
+          <p><strong>A2A (Google, 2025):</strong> protocolo pra agentes se descobrirem e colaborarem entre frameworks. <strong>Ponto-a-ponto, orientado a tarefa</strong> — A delega pra B. Sem espaço compartilhado de muitos, sem dinâmica social, sem humano no loop.</p>
+          <p><strong>MCP (Anthropic):</strong> conecta agentes a <em>ferramentas/dados</em> (vertical). Não é agente↔agente.</p>
+          <p><strong>Conclusão:</strong> o protocolo de chamada dá pra herdar/estender desses vizinhos. O que <em>nenhum</em> modela é a <strong>experiência social de muitos agentes pessoais coabitando</strong> — onde está a contribuição.</p>
+        </div>
+      </details>
+    </div></div>
+  </section>
+
+  <!-- 05 — DESIDERATA -->
+  <section id="s5" class="reveal">
+    <div class="sec-grid"><div class="sec-num">05</div><div>
+      <h2>O que "uso conjunto" abrange</h2>
+      <p>O recorte não é "vários modelos numa API". É uma <strong>comunidade</strong> de mentes, com tudo o que isso traz de bagunça e riqueza:</p>
+      <ul class="clean">
+        <li><strong>Heterogêneos</strong> — modelos diferentes, capacidades diferentes.</li>
+        <li><strong>Configs diferentes</strong> — cada um com seu prompt, sua persona, seus parâmetros.</li>
+        <li><strong>Sob demanda</strong> — entram e saem da experiência ao vivo; disponibilidade é dinâmica.</li>
+        <li><strong>Contribuídos por pessoas</strong> — não é um operador único orquestrando modelos próprios; é gente plugando o seu.</li>
+      </ul>
+      <p>Isso é o oposto do mundo dos frameworks multiagente (onde <em>você</em> possui e configura todos os agentes) e dos gateways (onde tudo está numa conta só). A "comunidade de agentes" é o que torna a experiência genuinamente <strong>social</strong> — e o que o Gambi, por ser local-first e contribuído, sustenta naturalmente.</p>
+      <div class="callout">
+        <span class="tag">Local-first: um sabor, não a prisão</span>
+        Local é a proposta do clube e um sabor forte — mas o modelo não se amarra nele. O foco é a <strong>experiência social</strong>; local é como ela se realiza no clube, não a tese.
+      </div>
+    </div></div>
+  </section>
+
+  <!-- 06 — HUMANO NO LOOP -->
+  <section id="s6" class="reveal">
+    <div class="sec-grid"><div class="sec-num">06</div><div>
+      <h2>O humano não é plateia</h2>
+      <p>O diferencial que torna isto <em class="term">criatividade computacional</em>, e não só sistemas multiagente: o humano entra como <strong>participante ativo</strong>, lado a lado com agentes autônomos. Ele controla agentes, faz <em>steering</em>, intervém, participa direto. A experiência é <strong>mista — humano + agente</strong>.</p>
+      <div class="chips">
+        <span class="chip h">humano · controla</span><span class="chip h">humano · faz steering</span><span class="chip h">humano · participa direto</span>
+        <span class="chip a">agente · autônomo</span><span class="chip a">agente · heterogêneo</span><span class="chip a">agente · config própria</span>
+      </div>
+      <p>Isso reposiciona a pergunta de "como N modelos se coordenam" para <strong>"como projetar uma experiência social coerente quando os participantes misturam pessoas e mentes artificiais diferentes"</strong> — território de design de interação, não só de engenharia distribuída.</p>
+      <div class="callout">
+        <span class="tag">Dimensão a explorar</span>
+        A fundo, o humano-no-loop é matéria de pesquisa própria (formas de controle, autoridade, autoria compartilhada). No TCC entra como dimensão de primeira classe do modelo — quanto dela vira escopo vs. trabalho futuro é item da conversa com o orientador.
+      </div>
+    </div></div>
+  </section>
+
+  <!-- 07 — CONTRIBUIÇÃO -->
+  <section id="s7" class="reveal">
+    <div class="sec-grid"><div class="sec-num">07</div><div>
+      <h2>A contribuição: modelo <span style="color:var(--accent)">+</span> artefato</h2>
+      <p>Houve uma tentação de escolher entre "estudo" e "ferramenta". A resolução veio do encaixe com a disciplina: <strong>criatividade computacional pede os dois juntos</strong> — construir um sistema <em>e</em> estudar a experiência/o artefato que ele produz. Então o TCC é tripé:</p>
+      <h3>(E) O modelo de experiência <span style="font-family:var(--font-mono);font-size:14px;color:var(--ink-faint)">— centro da novidade</span></h3>
+      <p>O que faz uma experiência social multi-agente ser coerente e engajante: dinâmica de participação e turnos, estado compartilhado, identidade/capacidade dos participantes, e o lugar do humano. É a contribuição que sobrevive a Claws/A2A — eles não a têm.</p>
+      <h3>(P) A implementação de referência <span style="font-family:var(--font-mono);font-size:14px;color:var(--ink-faint)">— a prova</span></h3>
+      <p>A camada social construída sobre o Gambi, que instancia o modelo. É o artefato real, e onde mora a parte de "como fazer na prática" — que você fez questão de manter no escopo.</p>
+      <h3>(b) A avaliação de campo <span style="font-family:var(--font-mono);font-size:14px;color:var(--ink-faint)">— a evidência</span></h3>
+      <p>Rodar com agentes reais de pessoas reais, no clube, e usar a evidência (experiência + comportamento) pra validar e refinar o modelo.</p>
+      <details class="more">
+        <summary><span class="chev">›</span> Aprofundar: por que esse formato casa com o orientador</summary>
+        <div class="more-body">
+          <p>O orientador é de <strong>computação</strong>, forte em agentes/IA, e costuma conduzir projetos de <strong>criatividade computacional</strong> — que combinam construir um sistema com estudar a experiência criativa que ele gera. O par (E)+(P)+(b) é o esqueleto canônico desse tipo de trabalho: não há tensão entre "fazer engenharia" e "ter contribuição intelectual". Um segundo professor, de eng. de software, é estrategicamente relevante — candidato a co-orientar o lado de artefato/sistemas.</p>
+        </div>
+      </details>
+    </div></div>
+  </section>
+
+  <!-- 08 — ARTEFATO + CAMPO -->
+  <section id="s8" class="reveal">
+    <div class="sec-grid"><div class="sec-num">08</div><div>
+      <h2>O artefato e o campo</h2>
+      <p>O <strong>Gambi</strong> é o instrumento; o <strong>clube é onde a camada é vivida</strong>. Pessoas e agentes heterogêneos co-participam de uma experiência compartilhada, com um agente externo provando a generalidade.</p>
+      <figure aria-label="Diagrama da arquitetura da experiência">
+        <svg viewBox="0 0 760 420" role="img">
+          <g font-family="Avenir Next, sans-serif">
+            <rect x="250" y="150" width="260" height="120" rx="18" fill="#FBF6EC" stroke="#191510" stroke-width="2"/>
+            <text x="380" y="200" text-anchor="middle" font-size="18" font-weight="700" fill="#191510">Camada social</text>
+            <text x="380" y="222" text-anchor="middle" font-size="13" fill="#8B7E6B">estado compartilhado · turnos</text>
+            <text x="380" y="240" text-anchor="middle" font-size="13" fill="#8B7E6B">Gambi como referência</text>
+            <g>
+              <circle cx="80" cy="120" r="26" fill="#FBF6EC" stroke="#C8401F" stroke-width="2"/><circle cx="80" cy="113" r="7" fill="#C8401F"/><path d="M66 134 q14 -16 28 0" fill="#C8401F"/>
+              <circle cx="80" cy="230" r="26" fill="#FBF6EC" stroke="#C8401F" stroke-width="2"/><circle cx="80" cy="223" r="7" fill="#C8401F"/><path d="M66 244 q14 -16 28 0" fill="#C8401F"/>
+            </g>
+            <text x="80" y="284" text-anchor="middle" font-size="12.5" fill="#C8401F" font-weight="600">humanos (no loop)</text>
+            <g>
+              <rect x="600" y="96" width="60" height="48" rx="10" fill="#FBF6EC" stroke="#1B6E5B" stroke-width="2"/><text x="630" y="125" text-anchor="middle" font-size="12" fill="#1B6E5B" font-family="monospace">llama3</text>
+              <rect x="600" y="166" width="60" height="48" rx="10" fill="#FBF6EC" stroke="#1B6E5B" stroke-width="2"/><text x="630" y="195" text-anchor="middle" font-size="12" fill="#1B6E5B" font-family="monospace">mistral</text>
+              <rect x="600" y="236" width="60" height="48" rx="10" fill="#FBF6EC" stroke="#1B6E5B" stroke-width="2"/><text x="630" y="262" text-anchor="middle" font-size="11.5" fill="#1B6E5B" font-family="monospace">Claw</text>
+            </g>
+            <text x="630" y="306" text-anchor="middle" font-size="12.5" fill="#1B6E5B" font-weight="600">agentes pessoais</text>
+            <g stroke-width="1.6" fill="none">
+              <path d="M106 120 C 180 130, 210 175, 250 185" stroke="#C8401F"/><path d="M106 230 C 180 225, 210 215, 250 225" stroke="#C8401F"/>
+              <path d="M600 120 C 560 150, 540 180, 510 190" stroke="#1B6E5B"/><path d="M600 190 C 565 195, 545 205, 510 210" stroke="#1B6E5B"/><path d="M600 260 C 560 245, 540 235, 510 228" stroke="#1B6E5B"/>
+            </g>
+            <rect x="556" y="330" width="120" height="44" rx="10" fill="#FBF6EC" stroke="#B0822F" stroke-width="2" stroke-dasharray="6 5"/>
+            <text x="616" y="350" text-anchor="middle" font-size="12" fill="#B0822F" font-weight="700">bridge β</text>
+            <text x="616" y="366" text-anchor="middle" font-size="10.5" fill="#B0822F">agente de outra plataforma</text>
+            <path d="M556 352 C 520 320, 510 280, 505 244" stroke="#B0822F" stroke-width="1.6" fill="none" stroke-dasharray="5 5"/>
+            <rect x="250" y="320" width="260" height="56" rx="12" fill="#191510"/>
+            <text x="380" y="346" text-anchor="middle" font-size="15" font-weight="700" fill="#F3ECDF">Experiência compartilhada</text>
+            <text x="380" y="364" text-anchor="middle" font-size="12" fill="#C9BCA6">telão · observabilidade · evidência</text>
+            <path d="M380 270 V320" stroke="#191510" stroke-width="2"/><path d="M374 314 l6 8 l6 -8" fill="#191510"/>
+          </g>
+        </svg>
+        <figcaption>Pessoas (vermelho) e agentes heterogêneos (verde) co-participam; o <span class="dlabel" style="color:var(--gold)">bridge β</span> traz um agente de fora para provar a generalidade.</figcaption>
+      </figure>
+      <h3>Experiências-âncora (1 a 3, não um catálogo)</h3>
+      <ul class="clean">
+        <li><strong>Debate</strong> — agentes (e humanos guiando-os) discutem com moderação.</li>
+        <li><strong>Criação colaborativa</strong> — construção conjunta de um artefato (texto, imagem, ideia).</li>
+        <li><strong>Jogo / arena</strong> — competição ou cooperação com objetivo e placar.</li>
+      </ul>
+    </div></div>
+  </section>
+
+  <!-- 09 — RECORTE -->
+  <section id="s9" class="reveal">
+    <div class="sec-grid"><div class="sec-num">09</div><div>
+      <h2>O recorte — para não virar moonshot</h2>
+      <p>Ambição grande exige disciplina de escopo. A maior armadilha é tentar "inventar a camada social universal de agentes" — competindo com padrões financiados. Três regras coladas na parede:</p>
+      <ul class="clean">
+        <li><strong>Cross-platform mora no modelo, não no build.</strong> O modelo é agnóstico de plataforma; a implementação fica no Gambi <strong>+ um único bridge</strong>.</li>
+        <li><strong>1–3 experiências.</strong> Poucas, fundas — não um catálogo.</li>
+        <li><strong>Não inventar protocolo universal.</strong> Estender o Gambi, encostar em A2A/MCP. Não competir com a Google.</li>
+      </ul>
+      <div class="callout r">
+        <span class="tag">Decisão de escopo · cross-platform = β</span>
+        <strong>Modelo + um bridge mínimo.</strong> Implementa tudo no Gambi e faz <em>um</em> agente externo participar de <em>uma</em> experiência: prova que "entre plataformas" não é só conversa, sem o custo de várias pontes.
+      </div>
+      <details class="more">
+        <summary><span class="chev">›</span> Aprofundar: as alternativas rejeitadas (α e γ)</summary>
+        <div class="more-body">
+          <p><strong>α — só argumentar a generalidade</strong> (zero bridge): seguro, mas o "entre plataformas" fica frágil, é só promessa.</p>
+          <p><strong>γ — cross-platform de verdade como núcleo</strong> (várias plataformas, pontes múltiplas): projeto de anos, compete com padrões financiados. <strong>Moonshot — descartado para o TCC.</strong></p>
+          <p>β é o ponto onde ambição encontra tratabilidade — e um ótimo cartão pra mostrar ("o modelo é geral, e aqui está um bridge provando").</p>
+        </div>
+      </details>
+    </div></div>
+  </section>
+
+  <!-- 10 — VIZINHOS -->
+  <section id="s10" class="reveal">
+    <div class="sec-grid"><div class="sec-num">10</div><div>
+      <h2>Por que sobrevive aos vizinhos</h2>
+      <p>A novidade só vale se resistir ao que já existe. O recorte defensável é a <strong>combinação</strong> que nenhum deles centra.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Abordagem</th><th>Muitos juntos?</th><th>Humano no loop?</th><th>Comunidade / heterog.?</th><th>Social (não-tarefa)?</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Frameworks multiagente</strong><br><span class="mono">AutoGen, CrewAI</span></td><td>sim (operador único)</td><td>fraco</td><td>não — você possui todos</td><td>não — orientado a tarefa</td></tr>
+          <tr><td><strong>Gateways</strong><br><span class="mono">OpenRouter</span></td><td>pool, não "junto"</td><td>não</td><td>conta de um operador</td><td>não</td></tr>
+          <tr><td><strong>A2A</strong><br><span class="mono">Google</span></td><td>ponto-a-ponto</td><td>não</td><td>agentes-serviço</td><td>não — delegação</td></tr>
+          <tr><td><strong>Claws</strong><br><span class="mono">NanoClaw…</span></td><td>single-user</td><td>o dono do agente</td><td>não — seu agente</td><td>parcial</td></tr>
+          <tr><td class="you"><strong>Este TCC</strong></td><td class="you">sim, multi-parte</td><td class="you">ativo, de 1ª classe</td><td class="you">comunidade, heterog.</td><td class="you">sim — experiência social</td></tr>
+        </tbody>
+      </table></div>
+    </div></div>
+  </section>
+
+  <!-- 11 — CONVERSAR HOJE -->
+  <section id="s11" class="reveal">
+    <div class="sec-grid"><div class="sec-num">11</div><div>
+      <h2>Para conversar hoje</h2>
+      <ul class="clean">
+        <li><strong>Pegada.</strong> Centro em (E) experiência, com (P) implementação como prova — encaixa em criatividade computacional?</li>
+        <li><strong>Co-orientação.</strong> Topa co-orientar com o professor de eng. de software (estratégico), cobrindo o lado de artefato/sistemas?</li>
+        <li><strong>Recorte β.</strong> O bridge único sustenta a generalidade, ou ele prefere α (só argumento)?</li>
+        <li><strong>Humano no loop.</strong> Quanto disso entra no escopo do TCC vs. fica como trabalho futuro?</li>
+        <li><strong>Experiências-âncora.</strong> Quais 1–3 fazem mais sentido para o clube?</li>
+        <li><strong>Relação com o Gambi.</strong> Confortável com o Gambi como instrumento/campo (não a tese), e o clube como validação?</li>
+      </ul>
+      <div class="callout">
+        <span class="tag">Onde isto vive</span>
+        Documento vivo: <span class="mono">docs/product/research-direction.md</span>. Diagnóstico do produto: <span class="mono">gambi-repositioning.html</span>. Trabalho de adotabilidade já no tracker: issues #54–#57.
+      </div>
+    </div></div>
+  </section>
+
+  <footer class="reveal">
+    <div class="q">"Os agentes de LLM foram uma nova camada sobre os LLMs. Os Claws são uma nova camada sobre os agentes."</div>
+    <p style="max-width:60ch;color:var(--ink-soft)">A próxima camada não é vertical. É <strong>horizontal e social</strong>: o espaço onde muitas dessas mentes — e as pessoas com elas — se encontram.</p>
+    <div class="sig">Arthur Brito · Gambiarra LLM Club · proposta de TCC · 2026 · fonte viva: research-direction.md</div>
+  </footer>
+
+</div>
+<script>
+  var prog=document.getElementById('progress');
+  function onScroll(){var h=document.documentElement;var max=h.scrollHeight-h.clientHeight;prog.style.width=(max>0?(h.scrollTop/max*100):0)+'%';}
+  document.addEventListener('scroll',onScroll,{passive:true}); onScroll();
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{threshold:.1});
+  document.querySelectorAll('.reveal').forEach(function(el){io.observe(el);});
+  requestAnimationFrame(function(){document.querySelector('.hero').classList.add('in');});
+  // nav ativo
+  var secs=[].slice.call(document.querySelectorAll('section[id]'));
+  var dots=[].slice.call(document.querySelectorAll('nav.toc a'));
+  var sio=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){var i=secs.indexOf(e.target);dots.forEach(function(d,j){d.classList.toggle('active',j===i);});}});},{rootMargin:"-45% 0px -45% 0px"});
+  secs.forEach(function(s){sio.observe(s);});
+</script>
+</body>
+</html>

@@ -69,3 +69,7 @@ Near-term decisions should preserve a clean path upward:
 Gambi today is a local-first shared inference fabric.
 
 `gambi agents` could become the orchestration fabric built on top of that base.
+
+## Related
+
+- [`research-direction.md`](./research-direction.md) — exploratory research/TCC framing that builds on the `gambi agents` layer: Gambi as the practical substrate for social experiences between LLMs, validated through the Gambiarra LLM Club.
