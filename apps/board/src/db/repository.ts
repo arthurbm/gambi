@@ -11,10 +11,14 @@ import type { BoardDatabase } from "./client";
 import {
   boardConfig,
   events,
+  harnessParticipants,
+  harnessSessions,
   memberships,
   people,
+  roundHarnessAssignments,
   rounds,
   squads,
+  steerers,
 } from "./schema";
 
 const DEFAULT_THEME = "Cidade das inteligências mistas";
@@ -49,6 +53,7 @@ export interface BoardState {
     squadCount: number;
     hostedHarnessCount: number;
     currentPhase: BoardPhase;
+    roomCode: string | null;
   };
   squads: Array<{
     id: string;
@@ -64,7 +69,36 @@ export interface BoardState {
     status: string;
   }>;
   events: AuditEvent[];
+  harnesses: HarnessView[];
   revision: number;
+}
+
+export interface HarnessView {
+  participantId: string;
+  nickname: string;
+  harnessId: string;
+  model: string | null;
+  hosted: boolean;
+  ownerPersonId: string | null;
+  ownerName: string | null;
+  connected: boolean;
+  lastSeenAt: string | null;
+}
+
+export interface SquadHarnessView {
+  squadId: string;
+  roundId: string;
+  assignment: HarnessView | null;
+  steerer: { personId: string; personName: string } | null;
+  session: { sessionId: string; status: string } | null;
+}
+
+export interface HubHarnessParticipant {
+  id: string;
+  nickname: string;
+  model: string;
+  harness: { id: string; model?: string; hosted?: boolean };
+  connection: { connected: boolean; lastTunnelSeenAt?: number | null };
 }
 
 interface Actor {
@@ -136,7 +170,24 @@ export class BoardRepository {
       squadCount: config.squadCount,
       hostedHarnessCount: config.hostedHarnessCount,
       currentPhase: parsePhase(config.currentPhase),
+      roomCode: config.roomCode,
     };
+  }
+
+  async setRoomCode(roomCode: string) {
+    const normalized = roomCode.trim();
+    const config = await this.getConfig();
+    if (config.roomCode && config.roomCode !== normalized) {
+      throw new Error(
+        `This board belongs to room ${config.roomCode}; refusing to switch it to ${normalized}.`
+      );
+    }
+    if (!config.roomCode) {
+      await this.db
+        .update(boardConfig)
+        .set({ roomCode: normalized, updatedAt: new Date().toISOString() })
+        .where(eq(boardConfig.id, 1));
+    }
   }
 
   async getRevision() {
@@ -190,13 +241,14 @@ export class BoardRepository {
   }
 
   async getState(): Promise<BoardState> {
-    const [config, squadList, roundRows, eventRows, revision] =
+    const [config, squadList, roundRows, eventRows, revision, harnesses] =
       await Promise.all([
         this.getConfig(),
         this.listSquads(),
         this.db.select().from(rounds).orderBy(asc(rounds.number)),
         this.getEvents(),
         this.getRevision(),
+        this.listHarnesses(),
       ]);
     return {
       config,
@@ -209,8 +261,417 @@ export class BoardRepository {
         status: round.status,
       })),
       events: eventRows,
+      harnesses,
       revision,
     };
+  }
+
+  async listHarnesses(): Promise<HarnessView[]> {
+    const rows = await this.db
+      .select({
+        participantId: harnessParticipants.participantId,
+        nickname: harnessParticipants.nickname,
+        harnessId: harnessParticipants.harnessId,
+        model: harnessParticipants.model,
+        hosted: harnessParticipants.hosted,
+        ownerPersonId: harnessParticipants.ownerPersonId,
+        ownerName: people.name,
+        connected: harnessParticipants.connected,
+        lastSeenAt: harnessParticipants.lastSeenAt,
+      })
+      .from(harnessParticipants)
+      .leftJoin(people, eq(people.id, harnessParticipants.ownerPersonId))
+      .orderBy(asc(harnessParticipants.participantId));
+    return rows;
+  }
+
+  async reconcileHarnessParticipants(participants: HubHarnessParticipant[]) {
+    const now = new Date().toISOString();
+    const activeIds = participants.map((participant) => participant.id);
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: reconciliation keeps the authoritative participant merge atomic.
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(harnessParticipants)
+        .set({ connected: false, updatedAt: now });
+      for (const participant of participants) {
+        const personId = participant.id.startsWith("board-person-")
+          ? participant.id.slice("board-person-".length)
+          : undefined;
+        const [person] = personId
+          ? await tx.select().from(people).where(eq(people.id, personId))
+          : [];
+        if (person) {
+          await tx
+            .update(harnessParticipants)
+            .set({ ownerPersonId: null, updatedAt: now })
+            .where(
+              and(
+                eq(harnessParticipants.ownerPersonId, person.id),
+                sql`${harnessParticipants.participantId} <> ${participant.id}`
+              )
+            );
+        }
+        await tx
+          .insert(harnessParticipants)
+          .values({
+            participantId: participant.id,
+            nickname: participant.nickname,
+            harnessId: participant.harness.id,
+            model: participant.harness.model ?? participant.model,
+            hosted: participant.harness.hosted ?? false,
+            ownerPersonId: person?.id,
+            connected: participant.connection.connected,
+            lastSeenAt: participant.connection.connected ? now : null,
+          })
+          .onConflictDoUpdate({
+            target: harnessParticipants.participantId,
+            set: {
+              nickname: participant.nickname,
+              harnessId: participant.harness.id,
+              model: participant.harness.model ?? participant.model,
+              hosted: participant.harness.hosted ?? false,
+              ...(person ? { ownerPersonId: person.id } : {}),
+              connected: participant.connection.connected,
+              lastSeenAt: participant.connection.connected ? now : null,
+              updatedAt: now,
+            },
+          });
+      }
+      if (activeIds.length > 0) {
+        await tx
+          .update(harnessParticipants)
+          .set({ connected: false, updatedAt: now })
+          .where(sql`${harnessParticipants.participantId} NOT IN ${activeIds}`);
+      }
+    });
+  }
+
+  async claimHostedHarness(input: { personId: string; participantId: string }) {
+    const actor = await this.requirePerson(input.personId);
+    const revision = await this.db.transaction(async (tx) => {
+      const [harness] = await tx
+        .select()
+        .from(harnessParticipants)
+        .where(eq(harnessParticipants.participantId, input.participantId));
+      if (!harness?.hosted) {
+        throw new Error("Este harness não é um hospedado disponível.");
+      }
+      if (harness.ownerPersonId && harness.ownerPersonId !== actor.id) {
+        throw new Error("Este harness hospedado já pertence a outra pessoa.");
+      }
+      const [owned] = await tx
+        .select()
+        .from(harnessParticipants)
+        .where(eq(harnessParticipants.ownerPersonId, actor.id));
+      if (owned && owned.participantId !== harness.participantId) {
+        throw new Error("Você já reivindicou outro harness.");
+      }
+      await tx
+        .update(harnessParticipants)
+        .set({ ownerPersonId: actor.id, updatedAt: new Date().toISOString() })
+        .where(eq(harnessParticipants.participantId, harness.participantId));
+      return this.appendEvent(
+        tx,
+        "harness.claimed",
+        { participantId: harness.participantId },
+        { personId: actor.id, name: actor.name }
+      );
+    });
+    return { participantId: input.participantId, revision };
+  }
+
+  async assignHarness(input: {
+    actorPersonId: string;
+    squadId: string;
+    participantId: string;
+  }) {
+    const { actor, roundId } = await this.requireSquadActorAndRound(
+      input.actorPersonId,
+      input.squadId
+    );
+    const [harness] = await this.db
+      .select()
+      .from(harnessParticipants)
+      .where(eq(harnessParticipants.participantId, input.participantId));
+    if (!harness?.ownerPersonId) {
+      throw new Error("Reivindique o harness antes de designá-lo.");
+    }
+    const [ownerMembership] = await this.db
+      .select()
+      .from(memberships)
+      .where(
+        and(
+          eq(memberships.personId, harness.ownerPersonId),
+          eq(memberships.squadId, input.squadId)
+        )
+      );
+    if (!ownerMembership) {
+      throw new Error("O dono do harness precisa fazer parte deste squad.");
+    }
+    const [openedSession] = await this.db
+      .select()
+      .from(harnessSessions)
+      .where(
+        and(
+          eq(harnessSessions.squadId, input.squadId),
+          eq(harnessSessions.roundId, roundId)
+        )
+      );
+    if (openedSession && openedSession.participantId !== input.participantId) {
+      throw new Error(
+        "A sessão desta rodada já começou. Feche a rodada antes de trocar o harness."
+      );
+    }
+    const revision = await this.db.transaction(async (tx) => {
+      await tx
+        .insert(roundHarnessAssignments)
+        .values({
+          squadId: input.squadId,
+          roundId,
+          participantId: input.participantId,
+          assignedByPersonId: actor.id,
+          assignedByName: actor.name,
+        })
+        .onConflictDoUpdate({
+          target: [
+            roundHarnessAssignments.squadId,
+            roundHarnessAssignments.roundId,
+          ],
+          set: {
+            participantId: input.participantId,
+            assignedByPersonId: actor.id,
+            assignedByName: actor.name,
+            assignedAt: new Date().toISOString(),
+          },
+        });
+      return this.appendEvent(
+        tx,
+        "harness.assigned",
+        { squadId: input.squadId, roundId, participantId: input.participantId },
+        { personId: actor.id, name: actor.name }
+      );
+    });
+    return { squadId: input.squadId, roundId, revision };
+  }
+
+  async electSteerer(input: {
+    actorPersonId: string;
+    squadId: string;
+    personId: string;
+  }) {
+    const { actor, roundId } = await this.requireSquadActorAndRound(
+      input.actorPersonId,
+      input.squadId
+    );
+    const target = await this.requireSquadMember(input.personId, input.squadId);
+    const revision = await this.db.transaction(async (tx) => {
+      await tx
+        .insert(steerers)
+        .values({
+          squadId: input.squadId,
+          roundId,
+          personId: target.id,
+          personName: target.name,
+          electedByPersonId: actor.id,
+        })
+        .onConflictDoUpdate({
+          target: [steerers.squadId, steerers.roundId],
+          set: {
+            personId: target.id,
+            personName: target.name,
+            electedByPersonId: actor.id,
+            electedAt: new Date().toISOString(),
+          },
+        });
+      return this.appendEvent(
+        tx,
+        "steerer.elected",
+        {
+          squadId: input.squadId,
+          roundId,
+          personId: target.id,
+          personName: target.name,
+        },
+        { personId: actor.id, name: actor.name }
+      );
+    });
+    return { squadId: input.squadId, roundId, revision };
+  }
+
+  async getSquadHarness(squadId: string): Promise<SquadHarnessView> {
+    const config = await this.getConfig();
+    const roundNumber = roundNumberForPhase(config.currentPhase);
+    const roundId = roundNumber ? `round-${roundNumber}` : "round-1";
+    const [assignment] = await this.db
+      .select()
+      .from(roundHarnessAssignments)
+      .where(
+        and(
+          eq(roundHarnessAssignments.squadId, squadId),
+          eq(roundHarnessAssignments.roundId, roundId)
+        )
+      );
+    const harness = assignment
+      ? ((await this.listHarnesses()).find(
+          (item) => item.participantId === assignment.participantId
+        ) ?? null)
+      : null;
+    const [steerer] = await this.db
+      .select()
+      .from(steerers)
+      .where(and(eq(steerers.squadId, squadId), eq(steerers.roundId, roundId)));
+    const [session] = await this.db
+      .select()
+      .from(harnessSessions)
+      .where(
+        and(
+          eq(harnessSessions.squadId, squadId),
+          eq(harnessSessions.roundId, roundId)
+        )
+      );
+    return {
+      squadId,
+      roundId,
+      assignment: harness,
+      steerer: steerer
+        ? { personId: steerer.personId, personName: steerer.personName }
+        : null,
+      session: session
+        ? { sessionId: session.sessionId, status: session.status }
+        : null,
+    };
+  }
+
+  async requirePromptBinding(input: {
+    actorPersonId: string;
+    squadId: string;
+  }) {
+    const view = await this.getSquadHarness(input.squadId);
+    if (!view.assignment) {
+      throw new Error("Designe um harness para esta rodada primeiro.");
+    }
+    if (view.steerer?.personId !== input.actorPersonId) {
+      throw new Error(
+        view.steerer
+          ? `Somente ${view.steerer.personName}, steerer desta rodada, pode escrever no harness.`
+          : "Eleja o steerer desta rodada antes de enviar prompts."
+      );
+    }
+    await this.requireSquadMember(input.actorPersonId, input.squadId);
+    return { ...view, assignment: view.assignment };
+  }
+
+  async ensureHarnessSession(input: {
+    squadId: string;
+    roundId: string;
+    participantId: string;
+  }) {
+    const [existing] = await this.db
+      .select()
+      .from(harnessSessions)
+      .where(
+        and(
+          eq(harnessSessions.squadId, input.squadId),
+          eq(harnessSessions.roundId, input.roundId)
+        )
+      );
+    if (existing) {
+      if (existing.participantId !== input.participantId) {
+        throw new Error(
+          "This round already opened a session with another harness. Change it before prompting."
+        );
+      }
+      return existing;
+    }
+    const sessionId = crypto.randomUUID();
+    await this.db.insert(harnessSessions).values({ ...input, sessionId });
+    return { ...input, sessionId, status: "pending", openedAt: null };
+  }
+
+  async setHarnessSessionStatus(sessionId: string, status: string) {
+    const now = new Date().toISOString();
+    await this.db
+      .update(harnessSessions)
+      .set({
+        status,
+        ...(status === "open" ? { openedAt: now } : {}),
+        updatedAt: now,
+      })
+      .where(eq(harnessSessions.sessionId, sessionId));
+  }
+
+  async recordHarnessPrompt(input: {
+    actorPersonId: string;
+    squadId: string;
+    roundId: string;
+    participantId: string;
+    sessionId: string;
+    prompt: string;
+  }) {
+    const actor = await this.requireSquadMember(
+      input.actorPersonId,
+      input.squadId
+    );
+    return this.db.transaction((tx) =>
+      this.appendEvent(
+        tx,
+        "harness.prompted",
+        {
+          squadId: input.squadId,
+          roundId: input.roundId,
+          participantId: input.participantId,
+          sessionId: input.sessionId,
+          prompt: input.prompt,
+        },
+        { personId: actor.id, name: actor.name }
+      )
+    );
+  }
+
+  async getHarnessSessionById(sessionId: string) {
+    const [session] = await this.db
+      .select()
+      .from(harnessSessions)
+      .where(eq(harnessSessions.sessionId, sessionId));
+    return session;
+  }
+
+  listHarnessSessions() {
+    return this.db.select().from(harnessSessions);
+  }
+
+  async assertHostedScaleDownAllowed(nextCount: number) {
+    const removedIds = await this.db
+      .select({ participantId: harnessParticipants.participantId })
+      .from(harnessParticipants)
+      .where(
+        and(
+          eq(harnessParticipants.hosted, true),
+          sql`${harnessParticipants.participantId} > ${`board-hosted-${String(nextCount).padStart(2, "0")}`}`
+        )
+      );
+    if (removedIds.length === 0) {
+      return;
+    }
+    const ids = removedIds.map((row) => row.participantId);
+    const [claimed] = await this.db
+      .select()
+      .from(harnessParticipants)
+      .where(
+        and(
+          inArray(harnessParticipants.participantId, ids),
+          sql`${harnessParticipants.ownerPersonId} IS NOT NULL`
+        )
+      );
+    const [assigned] = await this.db
+      .select()
+      .from(roundHarnessAssignments)
+      .where(inArray(roundHarnessAssignments.participantId, ids));
+    if (claimed || assigned) {
+      throw new Error(
+        "Libere ou redesigne os harnesses hospedados de maior número antes de reduzir a quantidade."
+      );
+    }
   }
 
   async configure(input: {
@@ -371,6 +832,47 @@ export class BoardRepository {
     }
     const revision = await this.setPhase(config.currentPhase, next, true);
     return { currentPhase: next, revision };
+  }
+
+  private async requirePerson(personId: string) {
+    const [person] = await this.db
+      .select()
+      .from(people)
+      .where(eq(people.id, personId));
+    if (!person) {
+      throw new Error("Registre seu nome antes desta ação.");
+    }
+    return person;
+  }
+
+  private async requireSquadMember(personId: string, squadId: string) {
+    const person = await this.requirePerson(personId);
+    const [membership] = await this.db
+      .select()
+      .from(memberships)
+      .where(
+        and(
+          eq(memberships.personId, personId),
+          eq(memberships.squadId, squadId)
+        )
+      );
+    if (!membership) {
+      throw new Error("A pessoa precisa fazer parte deste squad.");
+    }
+    return person;
+  }
+
+  private async requireSquadActorAndRound(
+    actorPersonId: string,
+    squadId: string
+  ) {
+    const actor = await this.requireSquadMember(actorPersonId, squadId);
+    const config = await this.getConfig();
+    const roundNumber = roundNumberForPhase(config.currentPhase);
+    if (!roundNumber) {
+      throw new Error("Esta ação só fica disponível durante uma rodada.");
+    }
+    return { actor, roundId: `round-${roundNumber}` };
   }
 
   private async ensureSquads(count: number) {

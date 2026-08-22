@@ -229,7 +229,7 @@ function AdminPage() {
                     value={hostedHarnessCount}
                   />
                   <FieldDescription>
-                    O número fica persistido agora. O spawn entra no ticket #74.
+                    O board reconcilia processos locais com este número.
                   </FieldDescription>
                 </Field>
                 <Button

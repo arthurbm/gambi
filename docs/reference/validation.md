@@ -84,6 +84,31 @@ unmodified binary with their own local authentication. For Codex, confirm that
 the registered participant and the board `/me` response contain
 `harness.id: "codex"` (and the optional model label when supplied).
 
+## Board harness route with fake ACP
+
+Use this route before an event. It exercises personal join copy, hosted claims,
+round assignment, steerer enforcement, the server-owned SDK attachment, browser
+SSE, restart recovery, and child cleanup without calling a model.
+
+1. Start the hub and create one room. Keep its code.
+2. Start the board with `GAMBI_ROOM_CODE=<ROOM_CODE>
+   BOARD_HOSTED_HARNESS=fake bun run --cwd apps/board dev:fake` and start
+   `apps/board-web` in another terminal.
+3. Open `/admin?token=<BOARD_ADMIN_TOKEN>`, set two hosted harnesses, save, and
+   advance to round 1.
+4. In two browser profiles, register two people in the same squad. On `/me`,
+   confirm the personal command includes the room, stable participant ID, name,
+   and selected harness. Claim one hosted harness.
+5. Open `/squad/squad-1`, designate the claimed harness, and elect the other
+   person as steerer. The first person's prompt control must stay disabled.
+6. As the steerer, send a prompt. Confirm text, tool calls, and touched files
+   appear in both profiles. Browser `/events` must contain artifact paths and a
+   version, never file contents.
+7. Stop and restart only the board with the same database and room code.
+   Confirm the claim, assignment, steerer, and stable outer session remain, and
+   `board-hosted-01` and `board-hosted-02` reconnect.
+8. Stop the board cleanly and confirm no fake ACP child remains.
+
 ## Harness dispatch demo
 
 This command starts a real hub and two deterministic fake ACP processes. It

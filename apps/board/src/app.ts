@@ -12,6 +12,11 @@ import { createBoardDatabase } from "./db/client";
 import { migrateBoardDatabase } from "./db/migrate";
 import { BoardRepository } from "./db/repository";
 import { DEFAULT_BOARD_DATABASE_URL } from "./env";
+import {
+  type BoardHarnessRuntime,
+  type BoardHarnessRuntimeOptions,
+  createBoardHarnessRuntime,
+} from "./harness-runtime";
 import { createContext } from "./orpc/context";
 import { createAppRouter } from "./orpc/routers";
 import { BoardEventBus } from "./sse";
@@ -21,6 +26,7 @@ export interface CreateBoardAppOptions {
   databaseUrl?: string;
   eventBus?: BoardEventBus;
   onError?: (error: unknown) => void;
+  harness?: false | Omit<BoardHarnessRuntimeOptions, "events" | "repository">;
 }
 
 export interface BoardRuntime {
@@ -28,7 +34,8 @@ export interface BoardRuntime {
   client: Client;
   repository: BoardRepository;
   events: BoardEventBus;
-  close: () => void;
+  harness?: BoardHarnessRuntime;
+  close: () => Promise<void>;
 }
 
 export async function createBoardApp(
@@ -50,6 +57,28 @@ export async function createBoardApp(
   const appRouter = createAppRouter();
   const reportError = options.onError ?? console.error;
   const app = new Hono();
+  const harnessOptions =
+    options.harness === false
+      ? undefined
+      : (options.harness ??
+        (process.env.GAMBI_ROOM_CODE
+          ? {
+              roomCode: process.env.GAMBI_ROOM_CODE,
+              hubUrl: process.env.GAMBI_HUB_URL ?? "http://localhost:3000",
+              hostedHarnessId:
+                process.env.BOARD_HOSTED_HARNESS === "fake"
+                  ? "fake"
+                  : "opencode",
+            }
+          : undefined));
+  const harness = harnessOptions
+    ? await createBoardHarnessRuntime({
+        ...harnessOptions,
+        events,
+        repository,
+        onError: harnessOptions.onError ?? reportError,
+      })
+    : undefined;
 
   app.use(
     "/*",
@@ -73,7 +102,9 @@ export async function createBoardApp(
         await stream.writeSSE({
           event: event.type,
           data: JSON.stringify(event),
-          id: String(event.revision),
+          ...(event.type === "harness.stream"
+            ? {}
+            : { id: String(event.revision) }),
         });
       });
       stream.onAbort(() => {
@@ -108,6 +139,7 @@ export async function createBoardApp(
       repository,
       events,
       adminToken,
+      harness,
     });
     const rpcResult = await rpcHandler.handle(context.req.raw, {
       prefix: "/rpc",
@@ -136,6 +168,10 @@ export async function createBoardApp(
     client,
     repository,
     events,
-    close: () => client.close(),
+    harness,
+    close: async () => {
+      await harness?.close();
+      client.close();
+    },
   };
 }

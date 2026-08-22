@@ -34,7 +34,11 @@ export function createAppRouter() {
         .handler(async ({ context, input }) => {
           assertAdmin(context);
           try {
+            await context.repository.assertHostedScaleDownAllowed(
+              input.hostedHarnessCount
+            );
             const result = await context.repository.configure(input);
+            await context.harness?.reconcileHosted(input.hostedHarnessCount);
             await publish(context, "admin.configured", result.revision);
             return result;
           } catch (error) {
@@ -67,6 +71,88 @@ export function createAppRouter() {
           try {
             const result = await context.repository.joinSquad(input);
             await publish(context, "squad.joined", result.revision);
+            return result;
+          } catch (error) {
+            return badRequest(error);
+          }
+        }),
+    },
+    harnesses: {
+      list: publicProcedure.handler(({ context }) =>
+        context.repository.listHarnesses()
+      ),
+      claimHosted: publicProcedure
+        .input(
+          z.object({
+            personId,
+            participantId: z.string().trim().min(1).max(128),
+          })
+        )
+        .handler(async ({ context, input }) => {
+          try {
+            const result = await context.repository.claimHostedHarness(input);
+            await publish(context, "harness.claimed", result.revision);
+            return result;
+          } catch (error) {
+            return badRequest(error);
+          }
+        }),
+      squad: publicProcedure
+        .input(z.object({ squadId: z.string().trim().min(1).max(128) }))
+        .handler(({ context, input }) =>
+          context.repository.getSquadHarness(input.squadId)
+        ),
+      assign: publicProcedure
+        .input(
+          z.object({
+            actorPersonId: personId,
+            squadId: z.string().trim().min(1).max(128),
+            participantId: z.string().trim().min(1).max(128),
+          })
+        )
+        .handler(async ({ context, input }) => {
+          try {
+            const result = await context.repository.assignHarness(input);
+            await publish(context, "harness.assigned", result.revision);
+            return result;
+          } catch (error) {
+            return badRequest(error);
+          }
+        }),
+      electSteerer: publicProcedure
+        .input(
+          z.object({
+            actorPersonId: personId,
+            squadId: z.string().trim().min(1).max(128),
+            personId,
+          })
+        )
+        .handler(async ({ context, input }) => {
+          try {
+            const result = await context.repository.electSteerer(input);
+            await publish(context, "steerer.elected", result.revision);
+            return result;
+          } catch (error) {
+            return badRequest(error);
+          }
+        }),
+      prompt: publicProcedure
+        .input(
+          z.object({
+            actorPersonId: personId,
+            squadId: z.string().trim().min(1).max(128),
+            prompt: z.string().trim().min(1).max(20_000),
+          })
+        )
+        .handler(async ({ context, input }) => {
+          try {
+            if (!context.harness) {
+              throw new Error(
+                "O runtime de harness está desativado. Configure GAMBI_ROOM_CODE no board."
+              );
+            }
+            const result = await context.harness.prompt(input);
+            await publish(context, "harness.prompted", result.revision);
             return result;
           } catch (error) {
             return badRequest(error);

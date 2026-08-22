@@ -1,10 +1,13 @@
 {
   "extends": "@gambi/config/tsconfig.base.json",
   "compilerOptions": {
-    "composite": true,
+    "allowImportingTsExtensions": true,
+    "composite": false,
     "outDir": "dist",
+    "rootDir": "../..",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "gambi-sdk": ["../../packages/sdk/src/index.ts"]
     },
     "jsx": "react-jsx",
     "jsxImportSource": "hono/jsx",

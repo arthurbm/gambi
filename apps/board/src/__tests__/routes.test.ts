@@ -150,4 +150,83 @@ describe.serial("board routes", () => {
     controller.abort();
     await reader?.cancel();
   });
+
+  test("claims one hosted harness and records round assignment and steerer rotation", async () => {
+    const runtime = await createRuntime();
+    const client = rpcClient(runtime);
+    const admin = rpcClient(runtime, "test-admin-token");
+    await client.people.join({ personId: "person-harness-a", name: "Bia" });
+    await client.people.join({ personId: "person-harness-b", name: "Lia" });
+    await client.squads.join({
+      personId: "person-harness-a",
+      squadId: "squad-1",
+    });
+    await client.squads.join({
+      personId: "person-harness-b",
+      squadId: "squad-1",
+    });
+    await runtime.repository.reconcileHarnessParticipants([
+      {
+        id: "board-hosted-01",
+        nickname: "Hospedado 01",
+        model: "fake-event",
+        harness: { id: "fake", hosted: true, model: "fake-event" },
+        connection: { connected: true },
+      },
+    ]);
+    await client.harnesses.claimHosted({
+      personId: "person-harness-a",
+      participantId: "board-hosted-01",
+    });
+    await expect(
+      client.harnesses.claimHosted({
+        personId: "person-harness-b",
+        participantId: "board-hosted-01",
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    await admin.phase.advance();
+    await client.harnesses.assign({
+      actorPersonId: "person-harness-a",
+      squadId: "squad-1",
+      participantId: "board-hosted-01",
+    });
+    await client.harnesses.electSteerer({
+      actorPersonId: "person-harness-a",
+      squadId: "squad-1",
+      personId: "person-harness-b",
+    });
+
+    const view = await client.harnesses.squad({ squadId: "squad-1" });
+    expect(view.assignment).toMatchObject({
+      participantId: "board-hosted-01",
+      ownerName: "Bia",
+      connected: true,
+    });
+    expect(view.steerer).toEqual({
+      personId: "person-harness-b",
+      personName: "Lia",
+    });
+    await expect(
+      runtime.repository.requirePromptBinding({
+        actorPersonId: "person-harness-a",
+        squadId: "squad-1",
+      })
+    ).rejects.toThrow("Somente Lia");
+    expect(
+      await runtime.repository.requirePromptBinding({
+        actorPersonId: "person-harness-b",
+        squadId: "squad-1",
+      })
+    ).toMatchObject({ roundId: view.roundId });
+    expect(
+      (await client.board.state()).events
+        .map((event) => event.type)
+        .filter((type) =>
+          ["harness.claimed", "harness.assigned", "steerer.elected"].includes(
+            type
+          )
+        )
+    ).toEqual(["harness.claimed", "harness.assigned", "steerer.elected"]);
+  });
 });
