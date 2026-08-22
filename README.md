@@ -435,9 +435,17 @@ bun run check-types
 Root dev workflow:
 
 - `bun run dev` and `bun run dev:hub` start the hub with `gambi hub serve`
+- `bun run event` supervises the hub, event board, web UI, and the hosted harnesses saved in the board database
+- `bun run board:e2e` starts the same stack with an isolated database, deterministic model participants, and fake ACP harnesses; it never calls a paid model
 - `bun run dev:cli -- <subcommand...>` forwards any CLI command from the repo root
 - `bun run dev:monitor` is a TUI alias for human-first monitoring
 - Prefer `bun run dev:cli -- room create --help` and `bun run dev:cli -- participant join --help` for CLI discovery during development
+
+Both event commands bind ports `3000`, `3001`, and `3002`. They print the room,
+admin, projector, and database details after every child reports ready. Press
+Ctrl+C once to stop the stack in reverse order. See the
+[event validation route](docs/reference/validation.md#full-event-board-rehearsal)
+before using it with a room.
 
 Workspace-specific:
 
