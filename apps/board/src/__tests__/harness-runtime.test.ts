@@ -6,6 +6,7 @@ import type { HarnessParticipantSession } from "@gambi/core/harness-participant-
 import type { GambiClient } from "gambi-sdk";
 
 import { createBoardApp } from "../app";
+import type { BoardHarnessRuntime } from "../harness-runtime";
 
 interface FakeSession extends HarnessParticipantSession {
   disconnect: () => void;
@@ -124,5 +125,95 @@ test("spawns, recreates, restores, and cleans up hosted harness sessions", async
     await second.close();
   } finally {
     await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test("routes orchestrator dispatches through the assigned board harness", async () => {
+  const prompts: Array<{ sessionId: string; prompt: string }> = [];
+  const harness: BoardHarnessRuntime = {
+    close: () => Promise.resolve(),
+    prompt: async () => ({ sessionId: "unused", revision: 0 }),
+    promptSession: (input) => {
+      prompts.push({ sessionId: input.sessionId, prompt: input.prompt });
+      return Promise.resolve("Harness completed the dispatch");
+    },
+    reconcileHosted: () => Promise.resolve(),
+    subscribeArtifacts: () => () => undefined,
+  };
+  const runtime = await createBoardApp({
+    adminToken: "test-admin-token",
+    databaseUrl: ":memory:",
+    harness: {
+      hostedHarnessId: "fake",
+      hubUrl: "http://hub.test",
+      roomCode: "ROOM74",
+    },
+    harnessRuntime: harness,
+    onError: () => undefined,
+  });
+
+  try {
+    await runtime.repository.joinPerson({
+      personId: "person-orchestrator",
+      name: "Bia",
+    });
+    await runtime.repository.joinSquad({
+      personId: "person-orchestrator",
+      squadId: "squad-1",
+    });
+    await runtime.repository.reconcileHarnessParticipants([
+      {
+        id: "board-hosted-orchestrator",
+        nickname: "Hospedado orquestrador",
+        model: "fake-event",
+        harness: { id: "fake", hosted: true, model: "fake-event" },
+        connection: { connected: true },
+      },
+    ]);
+    await runtime.repository.claimHostedHarness({
+      personId: "person-orchestrator",
+      participantId: "board-hosted-orchestrator",
+    });
+    await runtime.repository.advancePhase();
+    await runtime.repository.assignHarness({
+      actorPersonId: "person-orchestrator",
+      squadId: "squad-1",
+      participantId: "board-hosted-orchestrator",
+    });
+
+    const orchestrator = runtime.orchestrator;
+    expect(orchestrator).toBeDefined();
+    const challenge = orchestrator?.createChallenge({
+      squadId: "squad-1",
+      roundId: "round-1",
+      objective: "Build an accessible square",
+      seededDrafts: [
+        { content: "Add a ramp" },
+        { content: "Keep a wide entrance" },
+      ],
+    });
+    orchestrator?.recordDecision({
+      challengeId: challenge?.id ?? "",
+      build: "A shaded accessible square",
+      cut: "Raised stage",
+      reason: "Keep the public route open",
+      consideredDraftIds: challenge?.seededDraftIds ?? [],
+      steererName: "Bia",
+    });
+
+    const dispatch = await orchestrator?.dispatch({
+      challengeId: challenge?.id ?? "",
+      input: "starter workspace",
+      expectedOutput: "working city tile",
+    });
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]?.sessionId).toBe(dispatch?.sessionId);
+    expect(JSON.parse(prompts[0]?.prompt ?? "{}")).toMatchObject({
+      objective: "Build an accessible square",
+      decision: { steererName: "Bia" },
+    });
+  } finally {
+    await runtime.close();
   }
 });

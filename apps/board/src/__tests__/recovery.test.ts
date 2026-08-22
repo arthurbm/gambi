@@ -227,3 +227,120 @@ test("recovers a dispatched Decision and its escalation after restart", async ()
     await rm(directory, { force: true, recursive: true });
   }
 });
+
+test("routes a returned review through a persisted harness session after restart", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "gambi-session-recovery-"));
+  const databaseUrl = `file:${join(directory, "board.db")}`;
+  const firstPrompts: Array<{ sessionId: string; prompt: string }> = [];
+  const restoredPrompts: Array<{ sessionId: string; prompt: string }> = [];
+  const fakeHarness = (
+    prompts: Array<{ sessionId: string; prompt: string }>
+  ): BoardHarnessRuntime => ({
+    close: () => Promise.resolve(),
+    prompt: async () => ({ sessionId: "unused", revision: 0 }),
+    promptSession: (input) => {
+      prompts.push({ sessionId: input.sessionId, prompt: input.prompt });
+      return Promise.resolve("Resposta recuperável do harness");
+    },
+    reconcileHosted: () => Promise.resolve(),
+    subscribeArtifacts: () => () => undefined,
+  });
+  const harnessOptions = {
+    hostedHarnessId: "fake" as const,
+    hubUrl: "http://hub.test",
+    roomCode: "ROOM74",
+  };
+
+  try {
+    const first = await createBoardApp({
+      adminToken: "test-admin-token",
+      databaseUrl,
+      harness: harnessOptions,
+      harnessRuntime: fakeHarness(firstPrompts),
+      onError: () => undefined,
+    });
+    const client = rpcClient(first);
+    await client.admin.configure({
+      theme: "Cidade persistente",
+      squadCount: 1,
+      hostedHarnessCount: 1,
+    });
+    await client.people.join({ personId: "person-session", name: "Bia" });
+    await client.squads.join({
+      personId: "person-session",
+      squadId: "squad-1",
+    });
+    await first.repository.reconcileHarnessParticipants([
+      {
+        id: "board-hosted-session",
+        nickname: "Hospedado persistente",
+        model: "fake-event",
+        harness: { id: "fake", hosted: true, model: "fake-event" },
+        connection: { connected: true },
+      },
+    ]);
+    await client.harnesses.claimHosted({
+      personId: "person-session",
+      participantId: "board-hosted-session",
+    });
+    await client.phase.advance();
+    await client.harnesses.assign({
+      actorPersonId: "person-session",
+      squadId: "squad-1",
+      participantId: "board-hosted-session",
+    });
+    await client.harnesses.electSteerer({
+      actorPersonId: "person-session",
+      squadId: "squad-1",
+      personId: "person-session",
+    });
+    await client.orchestrator.selectSteerer({
+      actorPersonId: "person-session",
+      personId: "person-session",
+    });
+    const challenge = (await client.workflow.get({})).challenges[0];
+    await client.orchestrator.publish({ actorPersonId: "person-session" });
+    await client.decisions.record({
+      actorPersonId: "person-session",
+      challengeId: challenge?.id ?? "",
+      build: "Praça com abrigo",
+      cut: "Gradis",
+      reason: "Manter a chegada aberta",
+      consideredDraftIds: [challenge?.drafts[0]?.id ?? ""],
+    });
+    const dispatch = await client.dispatches.send({
+      actorPersonId: "person-session",
+      challengeId: challenge?.id ?? "",
+      expectedOutput: "Um lote navegável",
+      constraints: ["Preservar o acesso"],
+    });
+    expect(firstPrompts.at(-1)?.sessionId).toBe(dispatch.sessionId);
+    await first.close();
+
+    const second = await createBoardApp({
+      adminToken: "test-admin-token",
+      databaseUrl,
+      harness: harnessOptions,
+      harnessRuntime: fakeHarness(restoredPrompts),
+      onError: () => undefined,
+    });
+    const restored = second.orchestrator;
+    expect(restored).toBeDefined();
+    await restored?.recordReview({
+      dispatchId: dispatch.id,
+      outcome: "returned",
+      reason: "Aumente o contraste",
+      reviewerName: "Bia",
+    });
+
+    expect(restoredPrompts).toEqual([
+      {
+        sessionId: dispatch.sessionId,
+        prompt: "Returned by Bia: Aumente o contraste",
+      },
+    ]);
+    await second.close();
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});

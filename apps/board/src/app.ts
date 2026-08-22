@@ -1,4 +1,4 @@
-import { MemoryHarnessTransport, Orchestrator } from "@gambi/agents";
+import { Orchestrator } from "@gambi/agents";
 import type { Client } from "@libsql/client";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
 import { OpenAPIReferencePlugin } from "@orpc/openapi/plugins";
@@ -20,6 +20,7 @@ import {
   type BoardHarnessRuntimeOptions,
   createBoardHarnessRuntime,
 } from "./harness-runtime";
+import { BoardOrchestratorTransport } from "./orchestrator-transport";
 import { createContext, type OrchestratorActions } from "./orpc/context";
 import { createAppRouter } from "./orpc/routers";
 import { BoardEventBus } from "./sse";
@@ -116,14 +117,23 @@ export async function createBoardApp(
   });
   let orchestrator: Orchestrator | undefined;
   let orchestratorProvider: ReturnType<typeof createGambi> | undefined;
+  let orchestratorTransports: BoardOrchestratorTransport[] = [];
   if (harnessOptions) {
     const [world, persistedModel] = await Promise.all([
       workflow.toWorldState(),
       workflow.getOrchestratorModel(),
     ]);
-    const transports = Object.fromEntries(
-      world.squads.map((squad) => [squad.id, new MemoryHarnessTransport()])
-    );
+    const transportEntries = world.squads.map((squad) => {
+      const transport = new BoardOrchestratorTransport({
+        eventBus: events,
+        harness: harness as BoardHarnessRuntime,
+        repository,
+        squadId: squad.id,
+      });
+      orchestratorTransports.push(transport);
+      return [squad.id, transport] as const;
+    });
+    const transports = Object.fromEntries(transportEntries);
     const restoredSessions = Object.fromEntries(
       world.dispatches.map((dispatch) => [dispatch.squadId, dispatch.sessionId])
     );
@@ -285,6 +295,10 @@ export async function createBoardApp(
     harness,
     close: async () => {
       await orchestrator?.close();
+      for (const transport of orchestratorTransports) {
+        transport.dispose();
+      }
+      orchestratorTransports = [];
       unsubscribeArtifacts?.();
       await harness?.close();
       client.close();
