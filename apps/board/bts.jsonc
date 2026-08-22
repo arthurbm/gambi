@@ -1,0 +1,36 @@
+// Better-T-Stack project metadata
+//
+// Keep this file to use the `add` command.
+// Add addons: bunx create-better-t-stack@latest add
+//
+// Docs: https://better-t-stack.dev/docs
+// Stack Builder: https://better-t-stack.dev/new
+
+{
+  "$schema": "https://r2.better-t-stack.dev/schema.json",
+  "version": "3.40.2",
+  "createdAt": "2026-08-22T10:11:18.916Z",
+  "reproducibleCommand": "BTS_TELEMETRY_DISABLED=1 bunx create-better-t-stack@3.40.2 create-json --json '<see apps/board/README.md>'",
+  "addonOptions": {
+    "ultracite": {
+      "linter": "biome",
+      "editors": [],
+      "agents": [],
+      "hooks": [],
+    },
+  },
+  "database": "sqlite",
+  "orm": "drizzle",
+  "backend": "hono",
+  "runtime": "bun",
+  "frontend": ["tanstack-router"],
+  "addons": ["ultracite"],
+  "examples": [],
+  "auth": "none",
+  "payments": "none",
+  "packageManager": "bun",
+  "dbSetup": "none",
+  "api": "orpc",
+  "webDeploy": "none",
+  "serverDeploy": "none",
+}

@@ -35,6 +35,9 @@ const PATH_SEPARATOR_REGEX = /[\\/]/;
 
 type JsonRecord = Record<string, unknown>;
 type HarnessProcess = Bun.Subprocess<"pipe", "pipe", "pipe">;
+type ErrorAwareFsWatcher = FSWatcher & {
+  on: (event: "error", listener: (error: Error) => void) => FSWatcher;
+};
 
 interface HubApiResult<T> {
   data: T;
@@ -747,7 +750,7 @@ class ManagedHarnessParticipantSession implements HarnessParticipantSession {
         this.#scheduleArtifact();
       }
     );
-    this.#watcher.on("error", (error) => {
+    (this.#watcher as ErrorAwareFsWatcher).on("error", (error) => {
       this.#sendStatus(
         this.sessionId,
         "error",

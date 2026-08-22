@@ -1,0 +1,38 @@
+{
+  "name": "@gambi/board",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/app.ts",
+    "./router": "./src/orpc/routers/index.ts"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "check-types": "tsc --noEmit",
+    "compile": "bun build --compile --minify --sourcemap --bytecode ./src/index.ts --outfile server",
+    "db:migrate": "bun run src/db/migrate-cli.ts",
+    "dev": "bun run --hot src/index.ts",
+    "start": "bun run dist/index.mjs"
+  },
+  "dependencies": {
+    "@libsql/client": "0.17.4",
+    "@orpc/openapi": "1.14.12",
+    "@orpc/server": "1.14.12",
+    "@orpc/zod": "1.14.12",
+    "dotenv": "17.4.2",
+    "drizzle-orm": "0.45.2",
+    "hono": "4.12.32",
+    "libsql": "0.5.29",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@gambi/config": "workspace:*",
+    "@orpc/client": "1.14.12",
+    "@types/bun": "1.3.14",
+    "drizzle-kit": "0.31.10",
+    "tsdown": "0.22.14",
+    "typescript": "5.9.3"
+  }
+}

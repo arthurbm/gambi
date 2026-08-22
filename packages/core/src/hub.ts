@@ -1847,6 +1847,12 @@ function trackResponseStream(
   );
 }
 
+function asByteStream(
+  stream: NonNullable<Response["body"]>
+): ReadableStream<Uint8Array> {
+  return stream as unknown as ReadableStream<Uint8Array>;
+}
+
 function buildFallbackResponseOutputItems(
   accumulatedText: string,
   messageId: string,
@@ -2318,10 +2324,13 @@ async function forwardNativeResponsesCreate(
       return error("Target endpoint returned an empty streaming body", 502);
     }
 
-    return new Response(trackResponseStream(response.body, entry), {
-      status: response.status,
-      headers: createStreamingHeaders(),
-    });
+    return new Response(
+      trackResponseStream(asByteStream(response.body), entry),
+      {
+        status: response.status,
+        headers: createStreamingHeaders(),
+      }
+    );
   }
 
   const data = await response.json();
@@ -2372,7 +2381,7 @@ async function proxyFallbackResponsesCreate(
 
     return new Response(
       transformChatStreamToResponses(
-        response.body,
+        asByteStream(response.body),
         body,
         participant.model,
         responseId,
@@ -2446,10 +2455,13 @@ async function proxyStoredOpenResponses(
   if ((req.method === "GET" || method === "POST") && response.body) {
     const contentType = response.headers.get("Content-Type") ?? "";
     if (contentType.includes("text/event-stream")) {
-      return new Response(trackResponseStream(response.body, entry), {
-        status: response.status,
-        headers: createStreamingHeaders(),
-      });
+      return new Response(
+        trackResponseStream(asByteStream(response.body), entry),
+        {
+          status: response.status,
+          headers: createStreamingHeaders(),
+        }
+      );
     }
   }
 
