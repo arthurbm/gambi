@@ -175,6 +175,15 @@ Optimized for code-driven operational workflows. Namespaces:
 - `client.events.watchRoom()`
 - `client.harness.attach()`
 
+`@gambi/agents` supplies `TunnelHarnessTransport` above this SDK channel. It
+opens an ACP harness session, turns ACP updates, status, and versioned artifact
+frames into UI-independent `HarnessEvent` values, and republishes them through
+the orchestrator as ordered `harness.event` domain events. A prompt is complete
+only when its ACP JSON-RPC response arrives. A channel close or response timeout
+is an explicit recoverable error; the orchestrator drops the cached harness
+session so a retried dispatch opens a new session after reconnection. The hub
+remains a relay and does not take part in that recovery policy.
+
 ### TUI
 
 Optimized for human monitoring. It is not the canonical operational contract — automation should target the management plane (`/v1`) directly via CLI or SDK.

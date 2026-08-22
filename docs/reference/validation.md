@@ -16,6 +16,7 @@ For the day-to-day command set (install, dev, build, check-types, lint), see the
 | HTTP contracts or public types | quick test of affected endpoint(s); see `docs/reference/docs-update.md` for required doc updates |
 | Tunnel protocol | `bun test packages/core/src` (tunnel tests); see `docs/reference/docs-update.md` |
 | Harness participant runtime | `bun test packages/core/src/harness-participant-session.test.ts`, then the OpenCode smoke below |
+| `@gambi/agents` | `bun test packages/agents/src`, `bun run --cwd packages/agents check-types`, then the tunnel demo below |
 | Distribution / release | `bun run --cwd packages/cli check-types`, `bun run --cwd packages/cli build`, `npm pack --dry-run --cache /tmp/npm-cache ./packages/cli/dist/npm/gambi`, `node ./packages/cli/dist/npm/gambi/bin/gambi --version` |
 
 ## Quick validation set
@@ -64,3 +65,26 @@ Check these facts before pressing Ctrl+C:
 
 Do not copy authentication output into the ticket. Record only the adapter,
 model label, operating system, command exit code, and which checks passed.
+
+## Harness dispatch demo
+
+This command starts a real hub and two deterministic fake ACP processes. It
+dispatches decided challenges through `client.harness.attach()`, records one
+accept and one return, verifies the return stays in the same harness session,
+and waits for the resulting second artifact version:
+
+```bash
+bun run --cwd packages/agents demo
+```
+
+The final NDJSON object has `status: "complete"`, the room code, both dispatch
+ids, and the returned session id. No model is called. To smoke the optional
+inference-plane model injection, first share a model participant in an existing
+room and run:
+
+```bash
+bun run --cwd packages/agents demo -- \
+  --hub-url http://localhost:3000 \
+  --room <ROOM_CODE> \
+  --model <MODEL_NAME>
+```

@@ -6,11 +6,23 @@ export type {
 } from "./orchestrator.ts";
 export { Orchestrator } from "./orchestrator.ts";
 export type {
+  HarnessArtifactFile,
   HarnessEvent,
   HarnessOpenOptions,
   HarnessSession,
   HarnessTransport,
 } from "./transport.ts";
+export type {
+  HarnessAttachChannel,
+  HarnessAttachClient,
+  TunnelHarnessAttachedFrame,
+  TunnelHarnessClientFrame,
+  TunnelHarnessTransportOptions,
+} from "./tunnel-transport.ts";
+export {
+  HarnessTransportError,
+  TunnelHarnessTransport,
+} from "./tunnel-transport.ts";
 export type {
   Challenge,
   CreateChallengeInput,
