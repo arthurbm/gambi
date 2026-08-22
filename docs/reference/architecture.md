@@ -112,7 +112,7 @@ Behavior:
 - return a stable `200` or `201` path for retries
 - update the existing participant when the payload changes
 
-The registration response also returns the tunnel bootstrap data (`participant`, `roomId`, `tunnel`). The participant then opens the bootstrap WebSocket route, after which the hub dispatches inference into the tunnel.
+The registration response also returns the tunnel bootstrap data (`participant`, `roomId`, `tunnel`). Model participants include an `endpoint`; harness participants instead include `harness` metadata and may omit it. The participant then opens the bootstrap WebSocket route.
 
 This idempotent shape is the foundation for retry-safe automation and the CLI's `participant join --participant-id`.
 
@@ -135,6 +135,8 @@ The participant tunnel is the canonical (and only) hub↔participant transport. 
 - provider auth headers stay local to the participant runtime — they are never uploaded to the hub
 - the hub dispatches inference operations across a WebSocket tunnel opened by the participant
 - the public client-facing API remains HTTP + SSE; tunnel is internal control path
+- harness participants carry opaque ACP v1 frames and artifacts over that same participant-opened tunnel
+- management clients initiate a separate attach WebSocket to the hub; the hub relays between it and the existing participant tunnel, and never connects back to the participant
 
 For the rationale and rejected alternatives behind this inversion of connection direction, see [`docs/adr/0003-tunnel-first-transport.md`](../adr/0003-tunnel-first-transport.md). For the tunnel message catalog, see [`docs/reference/contracts.md`](./contracts.md).
 
@@ -146,7 +148,7 @@ Routing happens on the `model` field at request time:
 - `model:<name>` routes to the first available participant matching that model
 - `*` or `any` routes to a random available participant
 
-Specific participant targeting returns explicit errors when the participant is busy or its tunnel is disconnected. Routing only considers participants whose tunnel is connected, whose status is not offline, and which are not already handling another request.
+Specific participant targeting returns explicit errors when the participant is busy or its tunnel is disconnected. Routing only considers model participants whose tunnel is connected, whose status is not offline, and which are not already handling another request. Harness participants are visible through management but never selected by inference routing.
 
 ## Discovery
 
@@ -165,6 +167,7 @@ Optimized for code-driven operational workflows. Namespaces:
 - `client.rooms.*`
 - `client.participants.*`
 - `client.events.watchRoom()`
+- `client.harness.attach()`
 
 ### TUI
 

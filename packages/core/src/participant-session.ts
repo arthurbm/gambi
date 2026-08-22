@@ -352,7 +352,7 @@ class ManagedParticipantSession implements ParticipantSession {
       return;
     }
 
-    if (parsed.data.type === "tunnel.pong") {
+    if (parsed.data.type !== "tunnel.request") {
       return;
     }
 

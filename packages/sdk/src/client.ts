@@ -1,3 +1,8 @@
+import {
+  type TunnelHarnessAttachedMessage,
+  TunnelHarnessAttachedMessage as TunnelHarnessAttachedMessageSchema,
+  type TunnelHarnessClientMessage,
+} from "@gambi/core/tunnel-protocol";
 import type {
   ApiErrorResponse,
   ApiMeta,
@@ -24,7 +29,8 @@ export interface CreateRoomInput {
 export interface UpsertParticipantInput {
   nickname: string;
   model: string;
-  endpoint: string;
+  endpoint?: string;
+  harness?: ParticipantSummary["harness"];
   password?: string;
   specs?: ParticipantSummary["specs"];
   config?: RuntimeConfig;
@@ -45,6 +51,18 @@ export interface ApiResult<T> {
 export interface WatchRoomOptions {
   roomCode: string;
   signal?: AbortSignal;
+}
+
+export interface AttachHarnessOptions {
+  participantId: string;
+  roomCode: string;
+  signal?: AbortSignal;
+}
+
+export interface HarnessChannel {
+  close: () => void;
+  messages: AsyncIterable<TunnelHarnessAttachedMessage>;
+  send: (message: TunnelHarnessClientMessage) => void;
 }
 
 export interface GambiClient {
@@ -73,6 +91,9 @@ export interface GambiClient {
   };
   events: {
     watchRoom: (options: WatchRoomOptions) => AsyncIterable<RoomEvent>;
+  };
+  harness: {
+    attach: (options: AttachHarnessOptions) => Promise<HarnessChannel>;
   };
 }
 
@@ -257,6 +278,127 @@ async function* streamRoomEvents(response: Response): AsyncIterable<RoomEvent> {
   }
 }
 
+function toWebSocketUrl(hubUrl: string, path: string): string {
+  const url = new URL(path, hubUrl);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString();
+}
+
+function decodeWebSocketData(data: unknown): Promise<string> | string {
+  if (typeof data === "string") {
+    return data;
+  }
+  if (data instanceof ArrayBuffer) {
+    return new TextDecoder().decode(data);
+  }
+  if (ArrayBuffer.isView(data)) {
+    const bytes = new Uint8Array(data.byteLength);
+    bytes.set(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+    return new TextDecoder().decode(bytes);
+  }
+  if (typeof Blob !== "undefined" && data instanceof Blob) {
+    return data.text();
+  }
+  throw new Error("Unsupported WebSocket message payload.");
+}
+
+function createHarnessMessageStream(
+  socket: WebSocket
+): AsyncIterable<TunnelHarnessAttachedMessage> {
+  const values: TunnelHarnessAttachedMessage[] = [];
+  const waiters: Array<
+    (result: IteratorResult<TunnelHarnessAttachedMessage>) => void
+  > = [];
+  let closed = false;
+
+  const end = () => {
+    closed = true;
+    for (const resolve of waiters.splice(0)) {
+      resolve({ done: true, value: undefined });
+    }
+  };
+  socket.addEventListener("close", end, { once: true });
+  socket.addEventListener("message", async (event) => {
+    try {
+      const text = await decodeWebSocketData(event.data);
+      const parsed = TunnelHarnessAttachedMessageSchema.safeParse(
+        JSON.parse(text)
+      );
+      if (!parsed.success) {
+        return;
+      }
+      const resolve = waiters.shift();
+      if (resolve) {
+        resolve({ done: false, value: parsed.data });
+      } else {
+        values.push(parsed.data);
+      }
+    } catch {
+      // Invalid frames are ignored so one peer cannot terminate the channel.
+    }
+  });
+
+  return {
+    [Symbol.asyncIterator]() {
+      return {
+        next(): Promise<IteratorResult<TunnelHarnessAttachedMessage>> {
+          const value = values.shift();
+          if (value) {
+            return Promise.resolve({ done: false, value });
+          }
+          if (closed) {
+            return Promise.resolve({ done: true, value: undefined });
+          }
+          return new Promise((resolve) => waiters.push(resolve));
+        },
+        return(): Promise<IteratorResult<TunnelHarnessAttachedMessage>> {
+          socket.close();
+          end();
+          return Promise.resolve({ done: true, value: undefined });
+        },
+      };
+    },
+  };
+}
+
+async function openHarnessSocket(
+  url: string,
+  signal?: AbortSignal
+): Promise<WebSocket> {
+  if (signal?.aborted) {
+    throw new DOMException("Aborted", "AbortError");
+  }
+  return await new Promise<WebSocket>((resolve, reject) => {
+    const socket = new WebSocket(url);
+    const cleanup = () => {
+      signal?.removeEventListener("abort", onAbort);
+      socket.removeEventListener("open", onOpen);
+      socket.removeEventListener("error", onError);
+    };
+    const onAbort = () => {
+      cleanup();
+      socket.close();
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    const onOpen = () => {
+      cleanup();
+      resolve(socket);
+    };
+    const onError = () => {
+      cleanup();
+      reject(
+        createConnectivityError(
+          "Failed to attach to harness participant.",
+          "Check the room, participant, and hub connectivity."
+        )
+      );
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    socket.addEventListener("open", onOpen, { once: true });
+    socket.addEventListener("error", onError, { once: true });
+  });
+}
+
 export function createClient(options: ClientOptions = {}): GambiClient {
   const hubUrl = options.hubUrl ?? "http://localhost:3000";
 
@@ -371,6 +513,36 @@ export function createClient(options: ClientOptions = {}): GambiClient {
         for await (const event of streamRoomEvents(response)) {
           yield event;
         }
+      },
+    },
+    harness: {
+      async attach(options): Promise<HarnessChannel> {
+        const path = `/v1/rooms/${encodeURIComponent(options.roomCode)}/participants/${encodeURIComponent(options.participantId)}/harness`;
+        const socket = await openHarnessSocket(
+          toWebSocketUrl(hubUrl, path),
+          options.signal
+        );
+        const onAbort = () => socket.close();
+        options.signal?.addEventListener("abort", onAbort, { once: true });
+        socket.addEventListener(
+          "close",
+          () => options.signal?.removeEventListener("abort", onAbort),
+          { once: true }
+        );
+        return {
+          close: () => socket.close(),
+          messages: createHarnessMessageStream(socket),
+          send(message) {
+            if (socket.readyState !== WebSocket.OPEN) {
+              throw new ClientError({
+                message: "Harness channel is not open.",
+                status: 409,
+                code: "PARTICIPANT_TUNNEL_NOT_CONNECTED",
+              });
+            }
+            socket.send(JSON.stringify(message));
+          },
+        };
       },
     },
   };

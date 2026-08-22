@@ -23,6 +23,8 @@ import { Room } from "./room.ts";
 import { SSE } from "./sse.ts";
 import {
   TunnelClientMessage,
+  type TunnelHarnessAttachedMessage,
+  TunnelHarnessClientMessage,
   type TunnelRequestMessage,
 } from "./tunnel-protocol.ts";
 import {
@@ -61,6 +63,8 @@ const MANAGEMENT_PARTICIPANT_PATH_REGEX =
   /^\/v1\/rooms\/([^/]+)\/participants\/([^/]+)(?:\/heartbeat)?$/;
 const MANAGEMENT_PARTICIPANT_TUNNEL_PATH_REGEX =
   /^\/v1\/rooms\/([^/]+)\/participants\/([^/]+)\/tunnel$/;
+const MANAGEMENT_PARTICIPANT_HARNESS_PATH_REGEX =
+  /^\/v1\/rooms\/([^/]+)\/participants\/([^/]+)\/harness$/;
 const RESPONSES_PATH_REGEX =
   /^\/rooms\/([^/]+)\/v1\/responses\/([^/]+)(?:\/(cancel|input_items))?$/;
 const SSE_LINE_SPLIT_REGEX = /\r?\n/;
@@ -115,16 +119,31 @@ interface TunnelSession {
   ws: Bun.ServerWebSocket<TunnelSocketData>;
 }
 
-interface TunnelSocketData {
+interface ParticipantTunnelSocketData {
+  kind: "participant";
   participantId: string;
   roomCode: string;
   roomId: string;
   sessionKey: string;
 }
 
+interface HarnessClientSocketData {
+  clientId: string;
+  kind: "harness-client";
+  participantId: string;
+  roomCode: string;
+  roomId: string;
+}
+
+type TunnelSocketData = ParticipantTunnelSocketData | HarnessClientSocketData;
+
 const responseRegistry = new Map<string, ResponseRegistryEntry>();
 const tunnelBootstrapRegistry = new Map<string, TunnelBootstrapEntry>();
 const tunnelSessionRegistry = new Map<string, TunnelSession>();
+const harnessClientRegistry = new Map<
+  string,
+  Set<Bun.ServerWebSocket<TunnelSocketData>>
+>();
 const participantActiveRequests = new Map<string, number>();
 
 function rememberResponse(
@@ -209,6 +228,105 @@ function getTunnelSession(
   participantId: string
 ): TunnelSession | undefined {
   return tunnelSessionRegistry.get(getTunnelSessionKey(roomId, participantId));
+}
+
+function getHarnessClients(
+  roomId: string,
+  participantId: string
+): Set<Bun.ServerWebSocket<TunnelSocketData>> {
+  const key = getTunnelSessionKey(roomId, participantId);
+  let clients = harnessClientRegistry.get(key);
+  if (!clients) {
+    clients = new Set();
+    harnessClientRegistry.set(key, clients);
+  }
+  return clients;
+}
+
+function removeHarnessClient(ws: Bun.ServerWebSocket<TunnelSocketData>): void {
+  if (ws.data.kind !== "harness-client") {
+    return;
+  }
+  const key = getTunnelSessionKey(ws.data.roomId, ws.data.participantId);
+  const clients = harnessClientRegistry.get(key);
+  clients?.delete(ws);
+  if (clients?.size === 0) {
+    harnessClientRegistry.delete(key);
+  }
+}
+
+function closeHarnessClients(roomId: string, participantId: string): void {
+  const key = getTunnelSessionKey(roomId, participantId);
+  const clients = harnessClientRegistry.get(key);
+  harnessClientRegistry.delete(key);
+  for (const client of clients ?? []) {
+    client.close(1000, "Harness participant left the room.");
+  }
+}
+
+function broadcastHarnessFrame(
+  roomId: string,
+  participantId: string,
+  message: TunnelHarnessAttachedMessage
+): void {
+  const clients = harnessClientRegistry.get(
+    getTunnelSessionKey(roomId, participantId)
+  );
+  if (!clients) {
+    return;
+  }
+  const frame = JSON.stringify(message);
+  for (const client of clients) {
+    client.send(frame);
+  }
+}
+
+function handleNonInferenceTunnelFrame(
+  session: TunnelSession,
+  message: TunnelClientMessage
+): boolean {
+  if (message.type === "tunnel.ping") {
+    session.ws.send(
+      JSON.stringify({ type: "tunnel.pong", timestamp: Date.now() })
+    );
+    return true;
+  }
+
+  if (message.type === "tunnel.harness.message") {
+    broadcastHarnessFrame(session.roomId, session.participantId, message);
+    return true;
+  }
+
+  if (message.type === "tunnel.harness.artifact") {
+    broadcastHarnessFrame(session.roomId, session.participantId, message);
+    SSE.broadcast(
+      "harness.artifact",
+      {
+        participantId: session.participantId,
+        sessionId: message.sessionId,
+        version: message.version,
+      },
+      session.roomCode
+    );
+    return true;
+  }
+
+  if (message.type === "tunnel.harness.status") {
+    broadcastHarnessFrame(session.roomId, session.participantId, message);
+    if (message.status === "opened" || message.status === "closed") {
+      SSE.broadcast(
+        `harness.session.${message.status}`,
+        {
+          participantId: session.participantId,
+          sessionId: message.sessionId,
+        },
+        session.roomCode
+      );
+    }
+    return true;
+  }
+
+  return false;
 }
 
 function setParticipantActiveRequestCount(
@@ -545,10 +663,7 @@ function handleTunnelMessage(
     lastTunnelSeenAt: session.lastTunnelSeenAt,
   });
 
-  if (parsed.data.type === "tunnel.ping") {
-    session.ws.send(
-      JSON.stringify({ type: "tunnel.pong", timestamp: Date.now() })
-    );
+  if (handleNonInferenceTunnelFrame(session, parsed.data)) {
     return;
   }
 
@@ -619,6 +734,35 @@ function handleTunnelMessage(
       pending.reject(error);
     });
   }
+}
+
+function handleHarnessClientMessage(
+  ws: Bun.ServerWebSocket<TunnelSocketData>,
+  rawMessage: string | Buffer | ArrayBuffer | Uint8Array
+): void {
+  if (ws.data.kind !== "harness-client") {
+    return;
+  }
+  const text =
+    typeof rawMessage === "string"
+      ? rawMessage
+      : Buffer.from(
+          rawMessage instanceof ArrayBuffer
+            ? new Uint8Array(rawMessage)
+            : rawMessage
+        ).toString("utf8");
+  let message: unknown;
+  try {
+    message = JSON.parse(text);
+  } catch {
+    return;
+  }
+  const parsed = TunnelHarnessClientMessage.safeParse(message);
+  if (!parsed.success) {
+    return;
+  }
+  const tunnel = getTunnelSession(ws.data.roomId, ws.data.participantId);
+  tunnel?.ws.send(JSON.stringify(parsed.data));
 }
 
 function createBufferedResponseStream(pending: PendingTunnelRequest) {
@@ -993,14 +1137,14 @@ async function upsertParticipant(
     );
   }
 
-  if (!(bodyInput.nickname && bodyInput.model && bodyInput.endpoint)) {
+  if (!(bodyInput.nickname && bodyInput.model)) {
     return managementError(
       requestId,
       "INVALID_REQUEST",
       "Missing required fields.",
-      "Provide nickname, model, and endpoint.",
+      "Provide nickname and model; model participants must also provide endpoint.",
       400,
-      { required: ["nickname", "model", "endpoint"] }
+      { required: ["nickname", "model"] }
     );
   }
 
@@ -1039,9 +1183,12 @@ async function upsertParticipant(
     nickname: body.nickname,
     model: body.model,
     endpoint: body.endpoint,
+    harness: body.harness,
     specs: body.specs ?? {},
     config: body.config ?? {},
-    capabilities: body.capabilities ?? getDefaultCapabilities(),
+    capabilities: body.harness
+      ? getDefaultCapabilities()
+      : (body.capabilities ?? getDefaultCapabilities()),
     connection: {
       kind: "tunnel",
       connected: false,
@@ -1110,6 +1257,7 @@ function leaveRoom(
   }
 
   clearTunnelSession(room.id, participantId);
+  closeHarnessClients(room.id, participantId);
 
   SSE.broadcast("participant.left", { participantId }, code);
 
@@ -1175,8 +1323,11 @@ function listModels(code: string): Response {
   }
 
   const participants = Room.getParticipants(room.id).filter(
-    (participant) =>
-      participant.connection.connected && participant.status !== "offline"
+    (participant): participant is typeof participant & { endpoint: string } =>
+      !participant.harness &&
+      typeof participant.endpoint === "string" &&
+      participant.connection.connected &&
+      participant.status !== "offline"
   );
 
   const models: GambiModel[] = participants.map((participant) => ({
@@ -1252,6 +1403,7 @@ function findParticipant(
     .map((record) => record.info)
     .filter(
       (participant) =>
+        !participant.harness &&
         participant.connection.connected &&
         participant.status !== "offline" &&
         getParticipantActiveRequestCount(roomId, participant.id) === 0
@@ -1271,6 +1423,7 @@ function findParticipant(
 
   const participantRecord = Room.getParticipantRecord(roomId, modelId);
   if (
+    !participantRecord?.info.harness &&
     participantRecord?.info.connection.connected &&
     participantRecord.info.status !== "offline" &&
     getParticipantActiveRequestCount(roomId, participantRecord.info.id) === 0
@@ -1301,6 +1454,12 @@ function resolveParticipant(
       room.id,
       modelId
     )?.info;
+    if (specificParticipant?.harness) {
+      return error(
+        "Harness participants do not serve inference requests; attach through the management harness channel instead.",
+        400
+      );
+    }
     if (
       specificParticipant &&
       getParticipantActiveRequestCount(room.id, modelId) > 0
@@ -2838,6 +2997,10 @@ export function createHub(options: HubOptions = {}): Hub {
     websocket: {
       data: {} as TunnelSocketData,
       message(ws, message) {
+        if (ws.data.kind === "harness-client") {
+          handleHarnessClientMessage(ws, message);
+          return;
+        }
         const session = tunnelSessionRegistry.get(ws.data.sessionKey);
         if (!session) {
           return;
@@ -2845,6 +3008,10 @@ export function createHub(options: HubOptions = {}): Hub {
         handleTunnelMessage(session, message);
       },
       open(ws) {
+        if (ws.data.kind === "harness-client") {
+          getHarnessClients(ws.data.roomId, ws.data.participantId).add(ws);
+          return;
+        }
         const existing = tunnelSessionRegistry.get(ws.data.sessionKey);
         if (existing && existing.ws !== ws) {
           rejectPendingTunnelRequests(
@@ -2869,9 +3036,14 @@ export function createHub(options: HubOptions = {}): Hub {
         );
       },
       close(ws) {
+        if (ws.data.kind === "harness-client") {
+          removeHarnessClient(ws);
+          return;
+        }
         clearTunnelSession(ws.data.roomId, ws.data.participantId, ws);
       },
     },
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: The hub fetch handler is the single routing table for all HTTP and WebSocket surfaces.
     fetch(req) {
       const url = new URL(req.url);
       const method = req.method;
@@ -2891,6 +3063,64 @@ export function createHub(options: HubOptions = {}): Hub {
       }
       if (path === "/v1/rooms" && method === "GET") {
         return listRooms(requestId);
+      }
+
+      const harnessMatch = path.match(
+        MANAGEMENT_PARTICIPANT_HARNESS_PATH_REGEX
+      );
+      if (harnessMatch?.[1] && harnessMatch[2] && method === "GET") {
+        const roomCode = harnessMatch[1];
+        const participantId = harnessMatch[2];
+        const room = Room.getByCode(roomCode);
+        if (!room) {
+          return managementError(
+            requestId,
+            "ROOM_NOT_FOUND",
+            "Room not found.",
+            "Check the room code and retry.",
+            404
+          );
+        }
+        const participant = Room.getParticipantRecord(
+          room.id,
+          participantId
+        )?.info;
+        if (!participant) {
+          return managementError(
+            requestId,
+            "PARTICIPANT_NOT_FOUND",
+            "Participant not found.",
+            "Check the participant id and retry.",
+            404
+          );
+        }
+        if (!participant.harness) {
+          return managementError(
+            requestId,
+            "INVALID_REQUEST",
+            "Participant is not a harness participant.",
+            "Attach only to participants registered with harness metadata.",
+            400
+          );
+        }
+        const upgraded = server.upgrade(req, {
+          data: {
+            clientId: crypto.randomUUID(),
+            kind: "harness-client",
+            roomId: room.id,
+            roomCode,
+            participantId,
+          },
+        });
+        if (!upgraded) {
+          return managementError(
+            requestId,
+            "INTERNAL_ERROR",
+            "Failed to attach to the harness participant.",
+            "Retry the attach operation."
+          );
+        }
+        return;
       }
 
       const tunnelMatch = path.match(MANAGEMENT_PARTICIPANT_TUNNEL_PATH_REGEX);
@@ -2951,6 +3181,7 @@ export function createHub(options: HubOptions = {}): Hub {
 
         const upgraded = server.upgrade(req, {
           data: {
+            kind: "participant",
             roomId: room.id,
             roomCode,
             participantId,
@@ -3028,6 +3259,12 @@ export function createHub(options: HubOptions = {}): Hub {
         session.ws.close(1001, "Hub shutting down.");
       }
       tunnelSessionRegistry.clear();
+      for (const clients of harnessClientRegistry.values()) {
+        for (const client of clients) {
+          client.close(1001, "Hub shutting down.");
+        }
+      }
+      harnessClientRegistry.clear();
       participantActiveRequests.clear();
       clearResponseRegistry();
       Room.clear();

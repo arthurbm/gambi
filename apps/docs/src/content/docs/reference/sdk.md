@@ -143,6 +143,7 @@ All management methods return `{ data, meta }` envelopes.
 | `client.rooms` | `create`, `get`, `list` |
 | `client.participants` | `upsert`, `list`, `remove`, `heartbeat` |
 | `client.events` | `watchRoom` |
+| `client.harness` | `attach` |
 
 ### `client.rooms.create(input)`
 
@@ -197,7 +198,8 @@ Input fields:
 | --- | --- | --- | --- |
 | `nickname` | `string` | yes | display name |
 | `model` | `string` | yes | model name |
-| `endpoint` | `string` | yes | participant-local endpoint URL |
+| `endpoint` | `string` | for model participants | participant-local endpoint URL |
+| `harness` | `object` | for harness participants | harness `id` plus optional `model` and `hosted` metadata |
 | `password` | `string` | no | room password |
 | `specs` | `object` | no | machine specs |
 | `config` | `RuntimeConfig` | no | participant runtime defaults |
@@ -266,8 +268,39 @@ Event types:
 - `llm.request`
 - `llm.complete`
 - `llm.error`
+- `harness.session.opened`
+- `harness.session.closed`
+- `harness.artifact`
 
 See [Observability](/reference/observability/) for the payload shapes of the `llm.*` events.
+
+### `client.harness.attach({ roomCode, participantId, signal? })`
+
+Attach to a harness participant over the management WebSocket and receive its validated relay frames.
+
+```ts
+const channel = await client.harness.attach({
+  roomCode: "ABC123",
+  participantId: "harness-1",
+});
+
+channel.send({
+  type: "tunnel.harness.control",
+  sessionId: "session-1",
+  action: "open",
+  cwd: "/workspace",
+});
+
+for await (const frame of channel.messages) {
+  if (frame.type === "tunnel.harness.message") {
+    console.log(frame.message);
+  }
+}
+
+channel.close();
+```
+
+`send()` accepts `tunnel.harness.message` and `tunnel.harness.control`. `messages` yields message, artifact, and status frames. Aborting `signal` or calling `close()` ends the channel. The hub treats the ACP `message` object as opaque.
 
 ## `createParticipantSession(options)`
 

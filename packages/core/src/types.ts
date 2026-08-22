@@ -94,11 +94,19 @@ export const ParticipantConnection = z.object({
 });
 export type ParticipantConnection = z.infer<typeof ParticipantConnection>;
 
+export const HarnessParticipant = z.object({
+  id: z.enum(["opencode", "claude-code", "codex", "pi", "fake"]),
+  model: z.string().trim().min(1).optional(),
+  hosted: z.boolean().optional(),
+});
+export type HarnessParticipant = z.infer<typeof HarnessParticipant>;
+
 export const ParticipantInfoInternal = z.object({
   id: z.string(),
   nickname: z.string(),
   model: z.string(),
-  endpoint: z.string().url(), // Informational local endpoint on the participant machine
+  endpoint: z.string().url().optional(), // Informational local endpoint on the participant machine
+  harness: HarnessParticipant.optional(),
   config: RuntimeConfig,
   specs: MachineSpecs,
   capabilities: ParticipantCapabilities.default({
@@ -122,7 +130,8 @@ export const ParticipantInfo = z.object({
   id: z.string(),
   nickname: z.string(),
   model: z.string(),
-  endpoint: z.string().url(),
+  endpoint: z.string().url().optional(),
+  harness: HarnessParticipant.optional(),
   config: RuntimeConfigPublic,
   specs: MachineSpecs,
   capabilities: ParticipantCapabilities.default({
@@ -142,16 +151,25 @@ export const ParticipantInfo = z.object({
 
 export type ParticipantInfo = z.infer<typeof ParticipantInfo>;
 
-export const ParticipantRegistration = z.object({
-  id: z.string(),
-  nickname: z.string(),
-  model: z.string(),
-  endpoint: z.string().url(),
-  password: z.string().optional(),
-  specs: MachineSpecs.optional(),
-  config: RuntimeConfig.optional(),
-  capabilities: ParticipantCapabilities.optional(),
-});
+export const ParticipantRegistration = z
+  .object({
+    id: z.string(),
+    nickname: z.string(),
+    model: z.string(),
+    endpoint: z.string().url().optional(),
+    harness: HarnessParticipant.optional(),
+    password: z.string().optional(),
+    specs: MachineSpecs.optional(),
+    config: RuntimeConfig.optional(),
+    capabilities: ParticipantCapabilities.optional(),
+  })
+  .refine(
+    (registration) => Boolean(registration.harness || registration.endpoint),
+    {
+      message: "endpoint is required for model participants",
+      path: ["endpoint"],
+    }
+  );
 
 export type ParticipantRegistration = z.infer<typeof ParticipantRegistration>;
 
@@ -287,6 +305,9 @@ export const RoomEventType = z.enum([
   "llm.request",
   "llm.complete",
   "llm.error",
+  "harness.session.opened",
+  "harness.session.closed",
+  "harness.artifact",
 ]);
 
 export type RoomEventType = z.infer<typeof RoomEventType>;

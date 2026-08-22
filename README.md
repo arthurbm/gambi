@@ -309,6 +309,21 @@ for await (const event of client.events.watchRoom({ roomCode: "ABC123" })) {
 }
 ```
 
+Harness clients can attach to a harness participant without exposing that harness to inference routing:
+
+```ts
+const channel = await client.harness.attach({
+  roomCode: "ABC123",
+  participantId: "harness-1",
+});
+
+channel.send({
+  type: "tunnel.harness.message",
+  sessionId: "session-1",
+  message: { jsonrpc: "2.0", id: 1, method: "session/prompt", params: {} },
+});
+```
+
 ## HTTP API overview
 
 Management API:
@@ -321,6 +336,7 @@ Management API:
 - `PUT /v1/rooms/:code/participants/:id`
 - `DELETE /v1/rooms/:code/participants/:id`
 - `POST /v1/rooms/:code/participants/:id/heartbeat`
+- `GET /v1/rooms/:code/participants/:id/harness` (WebSocket)
 - `GET /v1/rooms/:code/events`
 
 Inference API:

@@ -12,6 +12,9 @@ Current signals:
   - `llm.request`
   - `llm.complete`
   - `llm.error`
+  - `harness.session.opened`
+  - `harness.session.closed`
+  - `harness.artifact`
 - Structured console logs:
   - `console.info("[gambi] llm.request", ...)`
   - `console.info("[gambi] llm.complete", ...)`
@@ -43,6 +46,8 @@ Current signals:
 - `protocol`
 - `stage`
 - `error`
+
+Harness lifecycle events use `participantId` and `sessionId`. `harness.artifact` adds the incremental `version`, but never includes artifact files or their contents. Consumers that need the artifact subscribe through `client.harness.attach()` instead of SSE.
 
 ## Metrics Model
 

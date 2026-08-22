@@ -2,7 +2,13 @@
 
 export type * from "@gambi/core/tunnel-protocol";
 // HTTP client for remote hubs
-export { ClientError, createClient, type GambiClient } from "./client.ts";
+export {
+  type AttachHarnessOptions,
+  ClientError,
+  createClient,
+  type GambiClient,
+  type HarnessChannel,
+} from "./client.ts";
 // Optional discovery helpers for local-network apps
 export {
   type DiscoveredHub,

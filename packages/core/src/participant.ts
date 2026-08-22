@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
 import type {
+  HarnessParticipant,
   MachineSpecs,
   ParticipantCapabilities,
   ParticipantInfo,
@@ -8,14 +9,25 @@ import type {
   RuntimeConfigPublic,
 } from "./types.ts";
 
-export interface CreateParticipantOptions {
+interface CreateParticipantOptionsBase {
   nickname: string;
   model: string;
-  endpoint: string; // Endpoint exposing OpenResponses and/or chat/completions
   specs?: MachineSpecs;
   config?: RuntimeConfig;
   capabilities?: ParticipantCapabilities;
 }
+
+export type CreateParticipantOptions = CreateParticipantOptionsBase &
+  (
+    | {
+        endpoint: string; // Endpoint exposing OpenResponses and/or chat/completions
+        harness?: never;
+      }
+    | {
+        endpoint?: string;
+        harness: HarnessParticipant;
+      }
+  );
 
 function create(options: CreateParticipantOptions): ParticipantInfoInternal {
   const now = Date.now();
@@ -24,12 +36,16 @@ function create(options: CreateParticipantOptions): ParticipantInfoInternal {
     nickname: options.nickname,
     model: options.model,
     endpoint: options.endpoint,
+    harness: options.harness,
     specs: options.specs ?? {},
     config: options.config ?? {},
-    capabilities: options.capabilities ?? {
-      openResponses: "unknown",
-      chatCompletions: "unknown",
-    },
+    capabilities:
+      options.harness === undefined && options.capabilities
+        ? options.capabilities
+        : {
+            openResponses: "unknown",
+            chatCompletions: "unknown",
+          },
     connection: {
       kind: "tunnel",
       connected: false,

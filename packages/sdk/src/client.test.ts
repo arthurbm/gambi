@@ -30,6 +30,35 @@ function createHubWithRetry(): Hub {
   throw lastError;
 }
 
+async function openWebSocket(url: string): Promise<WebSocket> {
+  return await new Promise((resolve, reject) => {
+    const socket = new WebSocket(url);
+    socket.addEventListener("open", () => resolve(socket), { once: true });
+    socket.addEventListener(
+      "error",
+      () => reject(new Error(`Failed to open WebSocket: ${url}`)),
+      { once: true }
+    );
+  });
+}
+
+function nextWebSocketFrame(socket: WebSocket): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error("Timed out waiting for WebSocket frame.")),
+      1000
+    );
+    socket.addEventListener(
+      "message",
+      (event) => {
+        clearTimeout(timeout);
+        resolve(JSON.parse(String(event.data)));
+      },
+      { once: true }
+    );
+  });
+}
+
 describe("HTTP Client", () => {
   let hub: Hub;
   let client: ReturnType<typeof createClient>;
@@ -121,6 +150,63 @@ describe("HTTP Client", () => {
       "worker-1"
     );
     expect(removed.data.success).toBe(true);
+  });
+
+  test("attaches to a harness participant and exchanges typed frames", async () => {
+    const created = await client.rooms.create({ name: "Harness SDK" });
+    const joined = await client.participants.upsert(
+      created.data.room.code,
+      "harness-sdk",
+      {
+        nickname: "Harness",
+        model: "agent-model",
+        harness: { id: "fake", model: "fixture" },
+      }
+    );
+    const tunnelUrl = new URL(joined.data.tunnel.url);
+    tunnelUrl.searchParams.set("token", joined.data.tunnel.token);
+    const tunnel = await openWebSocket(tunnelUrl.toString());
+    const abortController = new AbortController();
+    const channel = await client.harness.attach({
+      roomCode: created.data.room.code,
+      participantId: "harness-sdk",
+      signal: abortController.signal,
+    });
+
+    try {
+      const outbound = {
+        type: "tunnel.harness.message" as const,
+        sessionId: "sdk-session",
+        message: { jsonrpc: "2.0", id: 1, method: "session/prompt" },
+      };
+      const tunnelFrame = nextWebSocketFrame(tunnel);
+      channel.send(outbound);
+      expect(await tunnelFrame).toEqual(outbound);
+
+      const iterator = channel.messages[Symbol.asyncIterator]();
+      const inbound = {
+        type: "tunnel.harness.artifact",
+        sessionId: "sdk-session",
+        version: 1,
+        files: [{ path: "README.md", content: "hello", encoding: "utf8" }],
+        reason: "final",
+      };
+      const nextMessage = iterator.next();
+      tunnel.send(JSON.stringify(inbound));
+      await expect(nextMessage).resolves.toEqual({
+        done: false,
+        value: inbound,
+      });
+
+      abortController.abort();
+      await expect(iterator.next()).resolves.toEqual({
+        done: true,
+        value: undefined,
+      });
+    } finally {
+      channel.close();
+      tunnel.close();
+    }
   });
 
   test("parses typed management errors into ClientError", async () => {
