@@ -358,3 +358,87 @@ export const orchestratorSteerers = sqliteTable("orchestrator_steerers", {
     .references(() => people.id),
   selectedAt: text("selected_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const tiles = sqliteTable(
+  "tiles",
+  {
+    id: text("id").primaryKey(),
+    squadId: text("squad_id")
+      .notNull()
+      .references(() => squads.id),
+    roundId: text("round_id").references(() => rounds.id),
+    dispatchId: text("dispatch_id"),
+    boardVersion: integer("board_version").notNull(),
+    sourceParticipantId: text("source_participant_id")
+      .notNull()
+      .references(() => harnessParticipants.participantId),
+    sourceSessionId: text("source_session_id").notNull(),
+    sourceVersion: integer("source_version").notNull(),
+    sourceFingerprint: text("source_fingerprint").notNull(),
+    sourceHarnessId: text("source_harness_id").notNull(),
+    sourceModel: text("source_model"),
+    sourceReason: text("source_reason").notNull(),
+    manifestJson: text("manifest_json"),
+    indexHtml: text("index_html"),
+    readme: text("readme"),
+    valid: integer("valid", { mode: "boolean" }).notNull().default(false),
+    validationError: text("validation_error"),
+    authorPersonId: text("author_person_id").references(() => people.id, {
+      onDelete: "set null",
+    }),
+    authorName: text("author_name"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("tiles_squad_board_version_unique").on(
+      table.squadId,
+      table.boardVersion
+    ),
+    uniqueIndex("tiles_source_artifact_unique").on(
+      table.sourceParticipantId,
+      table.sourceSessionId,
+      table.sourceVersion,
+      table.sourceFingerprint
+    ),
+    index("tiles_source_session_idx").on(table.sourceSessionId),
+  ]
+);
+
+export const tilePublications = sqliteTable("tile_publications", {
+  squadId: text("squad_id")
+    .primaryKey()
+    .references(() => squads.id),
+  tileId: text("tile_id")
+    .notNull()
+    .unique()
+    .references(() => tiles.id),
+  publishedByPersonId: text("published_by_person_id").references(
+    () => people.id,
+    { onDelete: "set null" }
+  ),
+  publishedByName: text("published_by_name").notNull(),
+  publicationKind: text("publication_kind").notNull(),
+  publishedAt: text("published_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const tileAcceptances = sqliteTable(
+  "tile_acceptances",
+  {
+    squadId: text("squad_id")
+      .notNull()
+      .references(() => squads.id),
+    sourceSessionId: text("source_session_id").notNull(),
+    acceptedByPersonId: text("accepted_by_person_id")
+      .notNull()
+      .references(() => people.id),
+    acceptedByName: text("accepted_by_name").notNull(),
+    acceptedAt: text("accepted_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    publishedTileId: text("published_tile_id").references(() => tiles.id),
+  },
+  (table) => [
+    uniqueIndex("tile_acceptances_squad_session_unique").on(
+      table.squadId,
+      table.sourceSessionId
+    ),
+  ]
+);

@@ -6,7 +6,7 @@ The board is a map-led field book, not a dashboard. Its reference is the approve
 
 On a projector, the city plan is the dominant field. A bound squad ledger sits to its left, the current phase and room state sit in the right margin, and the append-only event ledger runs below. Borders, parcel numbers, survey lines, and architectural corner marks establish structure. Controls support that structure rather than creating a grid of decorative cards.
 
-On phones, the city stays first. Navigation becomes a fixed bottom route bar; squads, phase details, and the audit list follow in document order. The audit table becomes a labelled list that preserves sequence, event, author, and time. Interactive controls on the member and admin routes have a minimum 44px touch target.
+On phones, the city stays first. Navigation becomes a fixed bottom route bar above tile content (`z-index: 20`), with 58px of page clearance reserved for it; squads, phase details, and the audit list follow in document order. The audit table becomes a labelled list that preserves sequence, event, author, and time. Interactive controls on the member and admin routes have a minimum 44px touch target.
 
 ## Material and type
 
@@ -18,14 +18,14 @@ On phones, the city stays first. Navigation becomes a fixed bottom route bar; sq
 
 ## Interaction
 
-One short survey-sheet unfold introduces the city without moving readable content afterward. Reduced-motion preferences collapse it to an effectively static transition. Keyboard focus uses the survey-teal ring. The room register reports the real SSE state as connected, reconnecting, or offline through a polite live region. Admin phase changes are disabled before state is known and require an explicit current-to-next confirmation because the audit transition cannot be undone.
+Motion is reserved for one rare event: a newly published tile replacing a measured lot. Its opacity and small vertical offset settle over 200ms with a strong ease-out (`cubic-bezier(0.23, 1, 0.32, 1)`) so the state change is perceptible without making the replacement jarring. Do not add a city-wide entrance animation or use `transition-all`. Reduced-motion preferences remove the transform and keep only the 200ms opacity fade. Keyboard focus uses the survey-teal ring. The room register reports the real SSE state as connected, reconnecting, or offline through a polite live region. Admin phase changes are disabled before state is known and require an explicit current-to-next confirmation because the audit transition cannot be undone.
 
 ## Workflow surfaces
 
 Interior routes keep the same field-book material at a smaller working scale. Proposed challenges sit in a measured register, seeded and human drafts read as adjacent paper slips, and the four Decision answers share one continuous interview. The "Use" action copies draft text into the local Decision form without changing the source. Dispatch and review remain in document order below the interview, while the live harness ledger keeps its dark terminal treatment.
 
-Issue #75 adds the recoverable round workflow and `/orchestrator`. Rich city tiles remain the boundary of #76, and metro dependencies plus the finale remain later work. The measured empty lots on the city route are still intentional placeholders.
+Issue #75 adds the recoverable round workflow and `/orchestrator`. Issue #76 turns the measured lots into durable publication slots. A valid accepted artifact can occupy a squad parcel in a sandboxed tile viewport; empty, invalid, or runtime-broken artifacts leave the parcel's measured lot and squad plate intact. Tile version, harness, and model provenance stay visible without competing with the city plan. Metro dependencies and the finale remain later work.
 
 ## Finish evidence
 
-The base visual proof is in `.impeccable/review/desktop.png` and `.impeccable/review/mobile.png`. Issue #75 responsive evidence lives in `.impeccable/review/issue-75/`. The desktop workflow keeps the measured register readable at projector scale; the 390×844 capture reflows it into one column above the fixed four-route bar.
+The base visual proof is in `.impeccable/review/desktop.png` and `.impeccable/review/mobile.png`. Issue #75 responsive evidence lives in `.impeccable/review/issue-75/`. Issue #76 proof is in `.impeccable/review/hero-repro.png` and `.impeccable/review/issue-76/mobile-city-tabs.png`, with admin, member, and steerer states beside them under `.impeccable/review/issue-76/`. The 1600×1000 desktop capture follows the approved map topology; the 380×822 mobile capture keeps the two-column city first, preserves broken and empty lots, and shows the fixed route bar above the tile content.

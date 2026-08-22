@@ -23,6 +23,10 @@ import {
 import { createContext } from "./orpc/context";
 import { createAppRouter } from "./orpc/routers";
 import { BoardEventBus } from "./sse";
+import {
+  injectTileStatusBridge,
+  TILE_CONTENT_SECURITY_POLICY,
+} from "./tile-response";
 
 export interface CreateBoardAppOptions {
   adminToken?: string;
@@ -89,6 +93,26 @@ export async function createBoardApp(
           onError: harnessOptions.onError ?? reportError,
         })
       : undefined);
+  const unsubscribeArtifacts = harness?.subscribeArtifacts(async (envelope) => {
+    try {
+      const result = await repository.ingestTileArtifact({
+        participantId: envelope.participantId,
+        sessionId: envelope.sessionId,
+        sourceVersion: envelope.event.version,
+        reason: envelope.event.reason,
+        files: envelope.event.files,
+      });
+      if (result.created) {
+        await events.publish({
+          type: "board.changed",
+          change: result.valid ? "tile.versioned" : "tile.invalid",
+          revision: result.revision,
+        });
+      }
+    } catch (error) {
+      reportError(error);
+    }
+  });
   let orchestrator: Orchestrator | undefined;
   if (harnessOptions) {
     const world = await workflow.toWorldState();
@@ -152,6 +176,36 @@ export async function createBoardApp(
     })
   );
 
+  app.get("/tiles/:squadId/live/index.html", async (context) => {
+    const tile = await repository.getLiveTileDocument(
+      context.req.param("squadId")
+    );
+    if (!tile) {
+      return context.text("Nenhum tile está no ar para este squad.", 404, {
+        "Cache-Control": "no-store",
+        "Content-Type": "text/plain; charset=utf-8",
+        "X-Content-Type-Options": "nosniff",
+      });
+    }
+    return context.body(
+      injectTileStatusBridge({
+        tileId: tile.id,
+        squadId: tile.squadId,
+        boardVersion: tile.boardVersion,
+        indexHtml: tile.indexHtml,
+      }),
+      200,
+      {
+        "Cache-Control": "no-store",
+        "Content-Security-Policy": TILE_CONTENT_SECURITY_POLICY,
+        "Content-Type": "text/html; charset=utf-8",
+        "Cross-Origin-Resource-Policy": "cross-origin",
+        "Referrer-Policy": "no-referrer",
+        "X-Content-Type-Options": "nosniff",
+      }
+    );
+  });
+
   const apiHandler = new OpenAPIHandler(appRouter, {
     plugins: [
       new OpenAPIReferencePlugin({
@@ -206,6 +260,7 @@ export async function createBoardApp(
     harness,
     close: async () => {
       await orchestrator?.close();
+      unsubscribeArtifacts?.();
       await harness?.close();
       client.close();
     },

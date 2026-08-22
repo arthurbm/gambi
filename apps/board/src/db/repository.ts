@@ -1,3 +1,4 @@
+import type { HarnessArtifactFile } from "@gambi/agents";
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 
 import {
@@ -7,6 +8,11 @@ import {
   roundNumberForPhase,
 } from "../domain/phase";
 import { SEEDED_ROUNDS } from "../domain/rounds";
+import {
+  prepareTileArtifact,
+  type TileManifest,
+  tileManifestSchema,
+} from "../tile-artifacts";
 import type { BoardDatabase } from "./client";
 import {
   boardConfig,
@@ -19,6 +25,9 @@ import {
   rounds,
   squads,
   steerers,
+  tileAcceptances,
+  tilePublications,
+  tiles,
 } from "./schema";
 
 const DEFAULT_THEME = "Cidade das inteligências mistas";
@@ -70,7 +79,33 @@ export interface BoardState {
   }>;
   events: AuditEvent[];
   harnesses: HarnessView[];
+  tiles: TileVersionView[];
   revision: number;
+}
+
+export interface TileVersionView {
+  id: string;
+  squadId: string;
+  roundId: string | null;
+  dispatchId: string | null;
+  boardVersion: number;
+  sourceParticipantId: string;
+  sourceSessionId: string;
+  sourceVersion: number;
+  sourceHarnessId: string;
+  sourceModel: string | null;
+  sourceReason: string;
+  manifest: TileManifest | null;
+  readme: string | null;
+  valid: boolean;
+  validationError: string | null;
+  authorPersonId: string | null;
+  authorName: string | null;
+  createdAt: string;
+  isLive: boolean;
+  publicationKind: string | null;
+  publishedByName: string | null;
+  publishedAt: string | null;
 }
 
 export interface HarnessView {
@@ -123,6 +158,18 @@ function parsePayload(value: string): Record<string, unknown> {
 
 function squadId(ordinal: number) {
   return `squad-${ordinal}`;
+}
+
+function parseManifest(value: string | null): TileManifest | null {
+  if (!value) {
+    return null;
+  }
+  try {
+    const result = tileManifestSchema.safeParse(JSON.parse(value));
+    return result.success ? result.data : null;
+  } catch {
+    return null;
+  }
 }
 
 export class BoardRepository {
@@ -241,15 +288,23 @@ export class BoardRepository {
   }
 
   async getState(): Promise<BoardState> {
-    const [config, squadList, roundRows, eventRows, revision, harnesses] =
-      await Promise.all([
-        this.getConfig(),
-        this.listSquads(),
-        this.db.select().from(rounds).orderBy(asc(rounds.number)),
-        this.getEvents(),
-        this.getRevision(),
-        this.listHarnesses(),
-      ]);
+    const [
+      config,
+      squadList,
+      roundRows,
+      eventRows,
+      revision,
+      harnesses,
+      liveTiles,
+    ] = await Promise.all([
+      this.getConfig(),
+      this.listSquads(),
+      this.db.select().from(rounds).orderBy(asc(rounds.number)),
+      this.getEvents(),
+      this.getRevision(),
+      this.listHarnesses(),
+      this.listLiveTiles(),
+    ]);
     return {
       config,
       squads: squadList,
@@ -262,8 +317,308 @@ export class BoardRepository {
       })),
       events: eventRows,
       harnesses,
+      tiles: liveTiles,
       revision,
     };
+  }
+
+  async listTileVersions(squad?: string): Promise<TileVersionView[]> {
+    const rows = await this.db
+      .select({ tile: tiles, publication: tilePublications })
+      .from(tiles)
+      .leftJoin(tilePublications, eq(tilePublications.tileId, tiles.id))
+      .orderBy(asc(tiles.squadId), desc(tiles.boardVersion));
+    return rows
+      .filter((row) => !squad || row.tile.squadId === squad)
+      .map(({ tile, publication }) => ({
+        id: tile.id,
+        squadId: tile.squadId,
+        roundId: tile.roundId,
+        dispatchId: tile.dispatchId,
+        boardVersion: tile.boardVersion,
+        sourceParticipantId: tile.sourceParticipantId,
+        sourceSessionId: tile.sourceSessionId,
+        sourceVersion: tile.sourceVersion,
+        sourceHarnessId: tile.sourceHarnessId,
+        sourceModel: tile.sourceModel,
+        sourceReason: tile.sourceReason,
+        manifest: parseManifest(tile.manifestJson),
+        readme: tile.readme,
+        valid: tile.valid,
+        validationError: tile.validationError,
+        authorPersonId: tile.authorPersonId,
+        authorName: tile.authorName,
+        createdAt: tile.createdAt,
+        isLive: publication !== null,
+        publicationKind: publication?.publicationKind ?? null,
+        publishedByName: publication?.publishedByName ?? null,
+        publishedAt: publication?.publishedAt ?? null,
+      }));
+  }
+
+  async listLiveTiles() {
+    const versions = await this.listTileVersions();
+    return versions.filter((version) => version.isLive);
+  }
+
+  async getLiveTileDocument(squad: string) {
+    const [row] = await this.db
+      .select({ tile: tiles, publication: tilePublications })
+      .from(tilePublications)
+      .innerJoin(tiles, eq(tiles.id, tilePublications.tileId))
+      .where(eq(tilePublications.squadId, squad));
+    if (!(row?.tile.valid && row.tile.indexHtml)) {
+      return null;
+    }
+    return {
+      id: row.tile.id,
+      squadId: row.tile.squadId,
+      boardVersion: row.tile.boardVersion,
+      indexHtml: row.tile.indexHtml,
+      publishedAt: row.publication.publishedAt,
+    };
+  }
+
+  ingestTileArtifact(input: {
+    participantId: string;
+    sessionId: string;
+    sourceVersion: number;
+    reason: "watch" | "final";
+    files: HarnessArtifactFile[];
+  }) {
+    const prepared = prepareTileArtifact(input.files);
+    return this.db.transaction(async (tx) => {
+      const [binding] = await tx
+        .select({
+          squadId: harnessSessions.squadId,
+          roundId: harnessSessions.roundId,
+          participantId: harnessSessions.participantId,
+          harnessId: harnessParticipants.harnessId,
+          model: harnessParticipants.model,
+          authorPersonId: harnessParticipants.ownerPersonId,
+          authorName: people.name,
+        })
+        .from(harnessSessions)
+        .innerJoin(
+          harnessParticipants,
+          eq(harnessParticipants.participantId, harnessSessions.participantId)
+        )
+        .leftJoin(people, eq(people.id, harnessParticipants.ownerPersonId))
+        .where(eq(harnessSessions.sessionId, input.sessionId));
+      if (!binding || binding.participantId !== input.participantId) {
+        throw new Error(
+          "Artifact recebido para uma sessão que não pertence a este harness."
+        );
+      }
+
+      const [existing] = await tx
+        .select({ id: tiles.id, boardVersion: tiles.boardVersion })
+        .from(tiles)
+        .where(
+          and(
+            eq(tiles.sourceParticipantId, input.participantId),
+            eq(tiles.sourceSessionId, input.sessionId),
+            eq(tiles.sourceVersion, input.sourceVersion),
+            eq(tiles.sourceFingerprint, prepared.fingerprint)
+          )
+        );
+      if (existing) {
+        return { ...existing, created: false as const, revision: null };
+      }
+
+      const [versionRow] = await tx
+        .select({
+          boardVersion: sql<number>`coalesce(max(${tiles.boardVersion}), 0) + 1`,
+        })
+        .from(tiles)
+        .where(eq(tiles.squadId, binding.squadId));
+      const boardVersion = Number(versionRow?.boardVersion ?? 1);
+      const id = `tile-${crypto.randomUUID()}`;
+      await tx.insert(tiles).values({
+        id,
+        squadId: binding.squadId,
+        roundId: binding.roundId,
+        boardVersion,
+        sourceParticipantId: input.participantId,
+        sourceSessionId: input.sessionId,
+        sourceVersion: input.sourceVersion,
+        sourceFingerprint: prepared.fingerprint,
+        sourceHarnessId: binding.harnessId,
+        sourceModel: binding.model,
+        sourceReason: input.reason,
+        manifestJson: prepared.manifestJson,
+        indexHtml: prepared.indexHtml,
+        readme: prepared.readme,
+        valid: prepared.valid,
+        validationError: prepared.validationError,
+        authorPersonId: binding.authorPersonId,
+        authorName: binding.authorName,
+      });
+      let revision = await this.appendEvent(
+        tx,
+        "tile.versioned",
+        {
+          tileId: id,
+          squadId: binding.squadId,
+          roundId: binding.roundId,
+          boardVersion,
+          sourceParticipantId: input.participantId,
+          sourceSessionId: input.sessionId,
+          sourceVersion: input.sourceVersion,
+          valid: prepared.valid,
+          validationError: prepared.validationError,
+        },
+        {
+          personId: binding.authorPersonId ?? undefined,
+          name: binding.authorName ?? undefined,
+        }
+      );
+
+      const [acceptance] = await tx
+        .select()
+        .from(tileAcceptances)
+        .where(
+          and(
+            eq(tileAcceptances.squadId, binding.squadId),
+            eq(tileAcceptances.sourceSessionId, input.sessionId),
+            sql`${tileAcceptances.publishedTileId} IS NULL`
+          )
+        );
+      if (acceptance && prepared.valid) {
+        revision = await this.publishTileInTransaction(tx, {
+          tileId: id,
+          squadId: binding.squadId,
+          personId: acceptance.acceptedByPersonId,
+          personName: acceptance.acceptedByName,
+          kind: "accepted",
+        });
+        await tx
+          .update(tileAcceptances)
+          .set({ publishedTileId: id })
+          .where(
+            and(
+              eq(tileAcceptances.squadId, binding.squadId),
+              eq(tileAcceptances.sourceSessionId, input.sessionId)
+            )
+          );
+      }
+      return {
+        id,
+        boardVersion,
+        created: true as const,
+        revision,
+        valid: prepared.valid,
+      };
+    });
+  }
+
+  async acceptLatestTile(input: { actorPersonId: string; squadId: string }) {
+    const binding = await this.requirePromptBinding(input);
+    if (!binding.session) {
+      throw new Error("A sessão do squad ainda não foi aberta.");
+    }
+    const sessionId = binding.session.sessionId;
+    const actor = await this.requireSquadMember(
+      input.actorPersonId,
+      input.squadId
+    );
+    return this.db.transaction(async (tx) => {
+      const now = new Date().toISOString();
+      await tx
+        .insert(tileAcceptances)
+        .values({
+          squadId: input.squadId,
+          sourceSessionId: sessionId,
+          acceptedByPersonId: actor.id,
+          acceptedByName: actor.name,
+          acceptedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [tileAcceptances.squadId, tileAcceptances.sourceSessionId],
+          set: {
+            acceptedByPersonId: actor.id,
+            acceptedByName: actor.name,
+            acceptedAt: now,
+          },
+        });
+      let revision = await this.appendEvent(
+        tx,
+        "tile.accepted",
+        {
+          squadId: input.squadId,
+          sourceSessionId: sessionId,
+        },
+        { personId: actor.id, name: actor.name }
+      );
+      const [latest] = await tx
+        .select({ id: tiles.id, boardVersion: tiles.boardVersion })
+        .from(tiles)
+        .where(
+          and(
+            eq(tiles.squadId, input.squadId),
+            eq(tiles.sourceSessionId, sessionId),
+            eq(tiles.valid, true)
+          )
+        )
+        .orderBy(desc(tiles.boardVersion))
+        .limit(1);
+      if (latest) {
+        revision = await this.publishTileInTransaction(tx, {
+          tileId: latest.id,
+          squadId: input.squadId,
+          personId: actor.id,
+          personName: actor.name,
+          kind: "accepted",
+        });
+        await tx
+          .update(tileAcceptances)
+          .set({ publishedTileId: latest.id })
+          .where(
+            and(
+              eq(tileAcceptances.squadId, input.squadId),
+              eq(tileAcceptances.sourceSessionId, sessionId)
+            )
+          );
+      }
+      return {
+        squadId: input.squadId,
+        sourceSessionId: sessionId,
+        boardVersion: latest?.boardVersion ?? null,
+        awaitingArtifact: !latest,
+        revision,
+      };
+    });
+  }
+
+  async publishTileOverride(input: {
+    squadId: string;
+    boardVersion: number;
+    actorName: string;
+  }) {
+    const [tile] = await this.db
+      .select({ id: tiles.id, valid: tiles.valid })
+      .from(tiles)
+      .where(
+        and(
+          eq(tiles.squadId, input.squadId),
+          eq(tiles.boardVersion, input.boardVersion)
+        )
+      );
+    if (!tile) {
+      throw new Error("Esta versão de tile não existe.");
+    }
+    if (!tile.valid) {
+      throw new Error("Uma versão inválida não pode ir ao ar.");
+    }
+    const revision = await this.db.transaction((tx) =>
+      this.publishTileInTransaction(tx, {
+        tileId: tile.id,
+        squadId: input.squadId,
+        personName: input.actorName.trim(),
+        kind: "admin_override",
+      })
+    );
+    return { ...input, tileId: tile.id, revision };
   }
 
   async listHarnesses(): Promise<HarnessView[]> {
@@ -918,6 +1273,49 @@ export class BoardRepository {
         { from, to }
       );
     });
+  }
+
+  private async publishTileInTransaction(
+    tx: Parameters<Parameters<BoardDatabase["transaction"]>[0]>[0],
+    input: {
+      tileId: string;
+      squadId: string;
+      personId?: string;
+      personName: string;
+      kind: "accepted" | "admin_override";
+    }
+  ) {
+    const publishedAt = new Date().toISOString();
+    await tx
+      .insert(tilePublications)
+      .values({
+        squadId: input.squadId,
+        tileId: input.tileId,
+        publishedByPersonId: input.personId,
+        publishedByName: input.personName,
+        publicationKind: input.kind,
+        publishedAt,
+      })
+      .onConflictDoUpdate({
+        target: tilePublications.squadId,
+        set: {
+          tileId: input.tileId,
+          publishedByPersonId: input.personId ?? null,
+          publishedByName: input.personName,
+          publicationKind: input.kind,
+          publishedAt,
+        },
+      });
+    return this.appendEvent(
+      tx,
+      "tile.published",
+      {
+        tileId: input.tileId,
+        squadId: input.squadId,
+        publicationKind: input.kind,
+      },
+      { personId: input.personId, name: input.personName }
+    );
   }
 
   private async appendEvent(
