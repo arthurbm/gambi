@@ -1,6 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeftIcon, MapPinIcon, UserRoundIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  CheckIcon,
+  ClipboardIcon,
+  MapPinIcon,
+  PlugZapIcon,
+  UserRoundIcon,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -28,6 +35,10 @@ import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/me")({ component: MePage });
 
+function shellQuote(value: string) {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
 function MePage() {
   const state = useQuery(orpc.board.state.queryOptions());
   const personId = useMemo(() => getPersonId(), []);
@@ -38,6 +49,22 @@ function MePage() {
   );
   const [selectedSquad, setSelectedSquad] = useState("");
   const [pending, setPending] = useState(false);
+  const [harnessId, setHarnessId] = useState("opencode");
+  const personalParticipantId = `board-person-${personId}`;
+  const personalHarness = state.data?.harnesses.find(
+    (harness) => harness.participantId === personalParticipantId
+  );
+  const ownedHarness = state.data?.harnesses.find(
+    (harness) => harness.ownerPersonId === personId
+  );
+  const availableHosted =
+    state.data?.harnesses.filter(
+      (harness) => harness.hosted && !harness.ownerPersonId
+    ) ?? [];
+  const roomCode = state.data?.config.roomCode;
+  const joinCommand = roomCode
+    ? `gambi join --room ${roomCode} --participant-id ${personalParticipantId} --nickname ${shellQuote(savedName || "Seu nome")} --harness ${harnessId}`
+    : "Configure GAMBI_ROOM_CODE no servidor do board.";
 
   async function saveIdentity(event: React.FormEvent) {
     event.preventDefault();
@@ -74,6 +101,21 @@ function MePage() {
         error instanceof Error
           ? error.message
           : "Não foi possível entrar no squad."
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function claimHosted(participantId: string) {
+    setPending(true);
+    try {
+      await client.harnesses.claimHosted({ personId, participantId });
+      await queryClient.invalidateQueries();
+      toast.success("Harness hospedado registrado no seu nome.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Não foi possível reivindicar."
       );
     } finally {
       setPending(false);
@@ -182,6 +224,98 @@ function MePage() {
                 <MapPinIcon data-icon="inline-start" />
                 Confirmar squad
               </Button>
+            </FieldGroup>
+          </CardContent>
+        </Card>
+
+        <Card className="harness-card">
+          <CardHeader>
+            <CardTitle>Meu harness</CardTitle>
+            <CardDescription>
+              Traga o seu pela rede local ou use um processo hospedado pelo
+              admin.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <FieldGroup>
+              <Field data-disabled={!(savedName && roomCode)}>
+                <FieldTitle id="harness-label">Harness local</FieldTitle>
+                <ToggleGroup
+                  aria-labelledby="harness-label"
+                  disabled={!(savedName && roomCode)}
+                  onValueChange={(values) =>
+                    setHarnessId(values[0] ?? "opencode")
+                  }
+                  value={[harnessId]}
+                  variant="outline"
+                >
+                  <ToggleGroupItem value="opencode">OpenCode</ToggleGroupItem>
+                  <ToggleGroupItem value="claude-code">
+                    Claude Code
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="codex">Codex</ToggleGroupItem>
+                </ToggleGroup>
+                <FieldDescription>
+                  O comando roda no seu computador. Credenciais nunca passam
+                  pelo board ou pelo hub.
+                </FieldDescription>
+              </Field>
+              <div className="command-slip">
+                <code>{joinCommand}</code>
+                <Button
+                  disabled={!(roomCode && savedName)}
+                  onClick={() => {
+                    navigator.clipboard
+                      .writeText(joinCommand)
+                      .then(() => toast.success("Comando copiado."));
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  <ClipboardIcon data-icon="inline-start" />
+                  Copiar
+                </Button>
+              </div>
+              <div aria-live="polite" className="harness-status">
+                {personalHarness?.connected ? (
+                  <>
+                    <CheckIcon aria-hidden="true" />
+                    Conectado como {personalHarness.nickname}
+                  </>
+                ) : (
+                  <>
+                    <PlugZapIcon aria-hidden="true" />
+                    Aguardando o túnel pessoal
+                  </>
+                )}
+              </div>
+              {ownedHarness?.hosted ? (
+                <p className="field-note">
+                  Hospedado reservado: {ownedHarness.nickname}
+                </p>
+              ) : null}
+              {!ownedHarness?.hosted && availableHosted.length > 0 ? (
+                <Field>
+                  <FieldTitle>Hospedados livres</FieldTitle>
+                  <div className="hosted-list">
+                    {availableHosted.map((harness) => (
+                      <Button
+                        disabled={pending || !savedName}
+                        key={harness.participantId}
+                        onClick={() => claimHosted(harness.participantId)}
+                        type="button"
+                        variant="outline"
+                      >
+                        Reivindicar {harness.nickname}
+                      </Button>
+                    ))}
+                  </div>
+                </Field>
+              ) : null}
+              {!ownedHarness?.hosted && availableHosted.length === 0 ? (
+                <p className="field-note">Nenhum hospedado livre agora.</p>
+              ) : null}
             </FieldGroup>
           </CardContent>
         </Card>

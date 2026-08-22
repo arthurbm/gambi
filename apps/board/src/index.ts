@@ -18,9 +18,9 @@ console.log(
   `Gambi board listening on http://${server.hostname}:${server.port}`
 );
 
-function shutdown() {
+async function shutdown() {
   server.stop();
-  runtime.close();
+  await runtime.close();
   process.exit(0);
 }
 

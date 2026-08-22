@@ -216,6 +216,12 @@
   text-transform: uppercase;
 }
 
+.squad-title-row a,
+.parcel-copy a {
+  color: inherit;
+  text-decoration-color: color-mix(in srgb, var(--primary) 42%, transparent);
+}
+
 .member-list {
   display: flex;
   margin: 0.7rem 0 0;
@@ -243,6 +249,117 @@
 .join-link,
 .admin-link {
   width: 100%;
+}
+
+.harness-card {
+  grid-column: 1 / -1;
+}
+
+.command-slip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem;
+  border: 1px dashed var(--border);
+  background: color-mix(in srgb, var(--muted) 58%, transparent);
+}
+
+.command-slip code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.harness-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.harness-status svg,
+.stream-ledger svg {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+}
+
+.hosted-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.field-note {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+}
+
+.squad-workbench {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.72fr) minmax(340px, 1.28fr);
+  gap: 1rem;
+}
+
+.harness-console [data-slot="card-content"] {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.stream-ledger {
+  display: flex;
+  min-height: 280px;
+  max-height: 52vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  background: var(--foreground);
+  color: var(--background);
+  list-style: none;
+}
+
+.stream-ledger li {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--background) 18%, transparent);
+}
+
+.stream-ledger span {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.stream-ledger p {
+  margin: 0.2rem 0 0;
+  white-space: pre-wrap;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.stream-ledger .stream-empty {
+  color: color-mix(in srgb, var(--background) 65%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.squad-choice svg,
+.squad-workbench [data-slot="toggle-group-item"] svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 .city-sheet {
@@ -651,6 +768,10 @@ code {
     box-shadow: none;
   }
 
+  .squad-workbench {
+    grid-template-columns: 1fr;
+  }
+
   .event-ledger {
     order: 4;
   }
@@ -788,6 +909,16 @@ code {
   .interior-page input,
   .interior-page a[role="button"] {
     min-height: 44px;
+  }
+
+  .command-slip {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .stream-ledger {
+    min-height: 240px;
+    max-height: 46svh;
   }
 }
 

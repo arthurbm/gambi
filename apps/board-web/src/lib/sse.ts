@@ -5,6 +5,24 @@ export type BoardConnectionStatus = "connected" | "reconnecting" | "offline";
 
 let connectionStatus: BoardConnectionStatus = "offline";
 const statusListeners = new Set<() => void>();
+export interface HarnessStreamItem {
+  key: string;
+  squadId: string;
+  participantId: string;
+  sessionId: string;
+  event: {
+    type: string;
+    text?: string;
+    toolName?: string;
+    path?: string;
+    files?: Array<{ path: string }>;
+    status?: string;
+    message?: string;
+  };
+}
+const EMPTY_HARNESS_EVENTS: HarnessStreamItem[] = [];
+const harnessEvents = new Map<string, HarnessStreamItem[]>();
+const harnessListeners = new Set<() => void>();
 
 function setConnectionStatus(next: BoardConnectionStatus) {
   if (connectionStatus === next) {
@@ -24,6 +42,17 @@ export function useBoardConnectionStatus() {
     },
     () => connectionStatus,
     () => "offline" as BoardConnectionStatus
+  );
+}
+
+export function useHarnessStream(squadId: string) {
+  return useSyncExternalStore(
+    (listener) => {
+      harnessListeners.add(listener);
+      return () => harnessListeners.delete(listener);
+    },
+    () => harnessEvents.get(squadId) ?? EMPTY_HARNESS_EVENTS,
+    () => [] as HarnessStreamItem[]
   );
 }
 
@@ -50,6 +79,24 @@ export function subscribeToBoard(queryClient: QueryClient) {
   });
   source.addEventListener("board.snapshot", invalidate);
   source.addEventListener("board.changed", invalidate);
+  source.addEventListener("harness.stream", (rawEvent) => {
+    try {
+      const event = JSON.parse((rawEvent as MessageEvent).data) as Omit<
+        HarnessStreamItem,
+        "key"
+      >;
+      const current = harnessEvents.get(event.squadId) ?? EMPTY_HARNESS_EVENTS;
+      harnessEvents.set(event.squadId, [
+        ...current.slice(-199),
+        { ...event, key: crypto.randomUUID() },
+      ]);
+      for (const listener of harnessListeners) {
+        listener();
+      }
+    } catch {
+      // A later event remains usable when one transient frame is malformed.
+    }
+  });
   setConnectionStatus("reconnecting");
 
   return () => {

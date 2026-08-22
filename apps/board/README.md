@@ -85,7 +85,31 @@ The committed migration creates `board_config`, `people`, `squads`, `memberships
 
 Rounds 3 and 5 are skippable. Admin configuration locks after the lobby. Reducing the squad count also fails while a squad being removed still has members. These rules prevent an operator from hiding active membership or changing the event shape midway through a round.
 
-`hostedHarnessCount` is persisted but does not spawn processes here. Harness spawning, assignment, steerer rotation, `/squad/:id`, and harness streams belong to issue #74.
+`hostedHarnessCount` is desired state for stable participants named
+`board-hosted-01`, `board-hosted-02`, and so on. The server recreates a process
+after a tunnel or ACP exit. `BoardRuntime.close()` waits for every child to
+stop. Reducing the count fails while one of the removed ordinals is claimed or
+assigned.
+
+## Harness runtime
+
+The board does not create hub rooms. Create one once, then give the board its
+stable code and hub address:
+
+```bash
+GAMBI_ROOM_CODE=ABC123 GAMBI_HUB_URL=http://localhost:3000 bun run dev
+```
+
+For the deterministic manual route, use the fake ACP adapter:
+
+```bash
+GAMBI_ROOM_CODE=ABC123 BOARD_HOSTED_HARNESS=fake bun run --cwd apps/board dev:fake
+```
+
+The browser talks only to the board. The board owns SDK harness attachments and
+checks the current steerer before prompt delivery. Full artifact contents stay
+in the server fanout for durable consumers; browser SSE carries paths, reasons,
+and source version metadata only.
 
 ## shadcn choice
 

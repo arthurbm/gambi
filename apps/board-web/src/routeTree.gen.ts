@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as MeRouteImport } from './routes/me'
+import { Route as SquadIdRouteImport } from './routes/squad.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -28,35 +29,44 @@ const MeRoute = MeRouteImport.update({
   path: '/me',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SquadIdRoute = SquadIdRouteImport.update({
+  id: '/squad/$id',
+  path: '/squad/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/me': typeof MeRoute
+  '/squad/$id': typeof SquadIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/me': typeof MeRoute
+  '/squad/$id': typeof SquadIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/me': typeof MeRoute
+  '/squad/$id': typeof SquadIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/admin' | '/me'
+  fullPaths: '/' | '/admin' | '/me' | '/squad/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/me'
-  id: '__root__' | '/' | '/admin' | '/me'
+  to: '/' | '/admin' | '/me' | '/squad/$id'
+  id: '__root__' | '/' | '/admin' | '/me' | '/squad/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
   MeRoute: typeof MeRoute
+  SquadIdRoute: typeof SquadIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -82,6 +92,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/squad/$id': {
+      id: '/squad/$id'
+      path: '/squad/$id'
+      fullPath: '/squad/$id'
+      preLoaderRoute: typeof SquadIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -89,6 +106,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   MeRoute: MeRoute,
+  SquadIdRoute: SquadIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

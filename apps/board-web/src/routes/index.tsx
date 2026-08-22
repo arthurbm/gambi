@@ -87,7 +87,9 @@ function HomeComponent() {
             <li key={squad.id}>
               <div className="squad-title-row">
                 <h2>
-                  {String(squad.ordinal).padStart(2, "0")} · {squad.name}
+                  <Link params={{ id: squad.id }} to="/squad/$id">
+                    {String(squad.ordinal).padStart(2, "0")} · {squad.name}
+                  </Link>
                 </h2>
                 <Badge variant="outline">{squad.members.length}</Badge>
               </div>
@@ -147,7 +149,11 @@ function HomeComponent() {
                   {String(squad.ordinal).padStart(2, "0")}
                 </div>
                 <div className="parcel-copy">
-                  <h3>{squad.name}</h3>
+                  <h3>
+                    <Link params={{ id: squad.id }} to="/squad/$id">
+                      {squad.name}
+                    </Link>
+                  </h3>
                   <p>
                     {squad.members.length === 0
                       ? "Lote disponível"
