@@ -33,10 +33,18 @@ export function injectTileStatusBridge(input: {
   const bridge = `<script data-gambi-tile-bridge>
 (() => {
   const identity = ${identity};
-  const report = (status, detail) => parent.postMessage({ type: "gambi.tile.status", status, ...identity, detail }, "*");
-  addEventListener("error", (event) => report("error", String(event.message || "Tile script failed")));
-  addEventListener("unhandledrejection", (event) => report("error", String(event.reason || "Tile promise rejected")));
-  addEventListener("load", () => report("ready"), { once: true });
+  let broken = false;
+  const reportError = (detail) => {
+    broken = true;
+    parent.postMessage({ type: "gambi.tile.status", status: "error", ...identity, detail }, "*");
+  };
+  addEventListener("error", (event) => reportError(String(event.message || "Tile script failed")));
+  addEventListener("unhandledrejection", (event) => reportError(String(event.reason || "Tile promise rejected")));
+  addEventListener("load", () => {
+    if (!broken) {
+      parent.postMessage({ type: "gambi.tile.status", status: "ready", ...identity }, "*");
+    }
+  }, { once: true });
 })();
 </script>`;
   const headStart = HEAD_START_PATTERN.exec(input.indexHtml);

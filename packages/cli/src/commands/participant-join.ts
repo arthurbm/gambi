@@ -1,4 +1,4 @@
-import { password as passwordPrompt, select, text } from "@clack/prompts";
+import { select } from "@clack/prompts";
 import { probeEndpoint } from "@gambi/core/endpoint";
 import {
   getHarnessAdapter,
@@ -14,11 +14,15 @@ import {
   type ParticipantSession,
 } from "@gambi/core/participant-session";
 import type { ParticipantAuthHeaders, RuntimeConfig } from "@gambi/core/types";
-import { nanoid } from "nanoid";
 import { AgentCommand } from "../utils/agent-command.ts";
 import { loadRuntimeConfigFromInput } from "../utils/cli-config.ts";
 import { Command, Option } from "../utils/option.ts";
 import { writeStructured } from "../utils/output.ts";
+import {
+  resolveJoinIdentity,
+  resolveJoinScope,
+  waitForJoinSession,
+} from "../utils/participant-join-lifecycle.ts";
 import { handleCancel } from "../utils/prompt.ts";
 import { detectSpecs } from "../utils/specs.ts";
 
@@ -76,10 +80,6 @@ export function validateHarnessFlagCombination(input: {
   }
 }
 
-function ignorePromise(promise: Promise<unknown>): void {
-  promise.catch(() => undefined);
-}
-
 function resolveAuthHeaders(
   headers: string[],
   headerEnv: string[],
@@ -128,7 +128,7 @@ export class ParticipantJoinCommand extends AgentCommand {
       ],
       [
         "Join with OpenCode",
-        "gambi join --room ABC123 --participant-id worker-1 --name Arthur --harness opencode",
+        "gambi participant join --room ABC123 --participant-id worker-1 --name Arthur --harness opencode",
       ],
     ],
   });
@@ -241,64 +241,37 @@ export class ParticipantJoinCommand extends AgentCommand {
       return 2;
     }
 
-    if (this.allowInteractive(true)) {
-      if (!room) {
-        const roomResult = await text({ message: "Room code:" });
-        handleCancel(roomResult);
-        room = String(roomResult).trim();
+    const interactive = this.allowInteractive(true);
+    ({ room, participantId } = await resolveJoinScope({
+      interactive,
+      room,
+      participantId,
+    }));
+    if (interactive && !model) {
+      const probe = await probeEndpoint(endpoint, { authHeaders });
+      if (probe.models.length === 0) {
+        this.context.stderr.write(
+          "Error: No models found on the endpoint.\nHint: verify the local endpoint and retry.\n"
+        );
+        return 3;
       }
-
-      if (!participantId) {
-        const participantIdResult = await text({
-          message: "Participant ID:",
-          placeholder: nanoid(8),
-        });
-        handleCancel(participantIdResult);
-        participantId = String(participantIdResult).trim();
-      }
-
-      if (!model) {
-        const probe = await probeEndpoint(endpoint, { authHeaders });
-        if (probe.models.length === 0) {
-          this.context.stderr.write(
-            "Error: No models found on the endpoint.\nHint: verify the local endpoint and retry.\n"
-          );
-          return 3;
-        }
-        const modelResult = await select({
-          message: "Model:",
-          options: probe.models.map((candidate) => ({
-            value: candidate,
-            label: candidate,
-          })),
-        });
-        handleCancel(modelResult);
-        model = String(modelResult);
-      }
-
-      if (nickname === undefined) {
-        const nicknamePromptResult = await text({
-          message: "Nickname (optional):",
-          placeholder: model,
-        });
-        handleCancel(nicknamePromptResult);
-        const nicknameResult = String(nicknamePromptResult).trim();
-        if (nicknameResult) {
-          nickname = nicknameResult;
-        }
-      }
-
-      if (password === undefined) {
-        const passwordPromptResult = await passwordPrompt({
-          message: "Room password (leave empty if none):",
-        });
-        handleCancel(passwordPromptResult);
-        const passwordResult = String(passwordPromptResult).trim();
-        if (passwordResult) {
-          password = passwordResult;
-        }
-      }
+      const modelResult = await select({
+        message: "Model:",
+        options: probe.models.map((candidate) => ({
+          value: candidate,
+          label: candidate,
+        })),
+      });
+      handleCancel(modelResult);
+      model = String(modelResult);
     }
+    ({ nickname, password } = await resolveJoinIdentity({
+      interactive,
+      nickname,
+      nicknameLabel: "Nickname (optional):",
+      nicknamePlaceholder: model ?? "participant",
+      password,
+    }));
 
     if (!(room && model)) {
       this.context.stderr.write(
@@ -441,27 +414,9 @@ export class ParticipantJoinCommand extends AgentCommand {
       });
     }
 
-    return await new Promise<number>((resolve) => {
-      let closing = false;
-
-      const cleanup = () => {
-        process.off("SIGINT", onSigint);
-        process.off("SIGTERM", onSigterm);
-      };
-
-      const onSigint = () => {
-        shutdown("SIGINT");
-      };
-      const onSigterm = () => {
-        shutdown("SIGTERM");
-      };
-
-      const shutdown = (signal: string) => {
-        if (closing) {
-          return;
-        }
-        closing = true;
-
+    return await waitForJoinSession({
+      session,
+      onLeaving: (signal) => {
         if (format === "text") {
           this.context.stdout.write(`Leaving room ${room}...\n`);
         } else {
@@ -471,60 +426,38 @@ export class ParticipantJoinCommand extends AgentCommand {
             data: { signal, participantId, room },
           });
         }
-
-        ignorePromise(session.close());
-      };
-
-      process.once("SIGINT", onSigint);
-      process.once("SIGTERM", onSigterm);
-
-      session
-        .waitUntilClosed()
-        .then((result) => {
-          cleanup();
-
-          if (result.reason === "closed") {
-            if (format === "text") {
-              this.context.stdout.write("Left room successfully.\n");
-            } else {
-              writeStructured(this.context.stdout, format, {
-                type: "left",
-                timestamp: Date.now(),
-                data: { participantId, room },
-              });
-            }
-            resolve(0);
-            return;
-          }
-
-          const message =
-            result.error?.message ?? "Participant session closed.";
-          if (format === "text") {
-            this.context.stderr.write(`Error: ${message}\n`);
-          } else {
-            writeStructured(this.context.stdout, format, {
-              type:
-                result.reason === "heartbeat_failed"
-                  ? "heartbeat_failed"
-                  : "tunnel_failed",
-              timestamp: Date.now(),
-              data: {
-                participantId,
-                room,
-                reason: result.reason,
-                message,
-              },
-            });
-          }
-          resolve(3);
-        })
-        .catch((error) => {
-          cleanup();
-          this.context.stderr.write(
-            `Error: ${error instanceof Error ? error.message : String(error)}\n`
-          );
-          resolve(1);
-        });
+      },
+      onSuccess: () => {
+        if (format === "text") {
+          this.context.stdout.write("Left room successfully.\n");
+        } else {
+          writeStructured(this.context.stdout, format, {
+            type: "left",
+            timestamp: Date.now(),
+            data: { participantId, room },
+          });
+        }
+      },
+      onFailure: (result) => {
+        const message = result.error?.message ?? "Participant session closed.";
+        if (format === "text") {
+          this.context.stderr.write(`Error: ${message}\n`);
+        } else {
+          writeStructured(this.context.stdout, format, {
+            type:
+              result.reason === "heartbeat_failed"
+                ? "heartbeat_failed"
+                : "tunnel_failed",
+            timestamp: Date.now(),
+            data: { participantId, room, reason: result.reason, message },
+          });
+        }
+      },
+      onInternalError: (error) => {
+        this.context.stderr.write(
+          `Error: ${error instanceof Error ? error.message : String(error)}\n`
+        );
+      },
     });
   }
 
@@ -560,42 +493,19 @@ export class ParticipantJoinCommand extends AgentCommand {
       this.context.stderr.write(`${note}\n`);
     }
 
-    if (this.allowInteractive(true)) {
-      if (!room) {
-        const roomResult = await text({ message: "Room code:" });
-        handleCancel(roomResult);
-        room = String(roomResult).trim();
-      }
-      if (!participantId) {
-        const participantIdResult = await text({
-          message: "Participant ID:",
-          placeholder: nanoid(8),
-        });
-        handleCancel(participantIdResult);
-        participantId = String(participantIdResult).trim();
-      }
-      if (nickname === undefined) {
-        const nicknamePromptResult = await text({
-          message: "Name (optional):",
-          placeholder: model,
-        });
-        handleCancel(nicknamePromptResult);
-        const result = String(nicknamePromptResult).trim();
-        if (result) {
-          nickname = result;
-        }
-      }
-      if (password === undefined) {
-        const passwordPromptResult = await passwordPrompt({
-          message: "Room password (leave empty if none):",
-        });
-        handleCancel(passwordPromptResult);
-        const result = String(passwordPromptResult).trim();
-        if (result) {
-          password = result;
-        }
-      }
-    }
+    const interactive = this.allowInteractive(true);
+    ({ room, participantId } = await resolveJoinScope({
+      interactive,
+      room,
+      participantId,
+    }));
+    ({ nickname, password } = await resolveJoinIdentity({
+      interactive,
+      nickname,
+      nicknameLabel: "Name (optional):",
+      nicknamePlaceholder: model,
+      password,
+    }));
 
     if (!room) {
       this.context.stderr.write(
@@ -750,17 +660,9 @@ export class ParticipantJoinCommand extends AgentCommand {
       this.context.stdout.write("Press Ctrl+C to leave.\n");
     }
 
-    return await new Promise<number>((resolveExit) => {
-      let closing = false;
-      const cleanup = () => {
-        process.off("SIGINT", onSigint);
-        process.off("SIGTERM", onSigterm);
-      };
-      const shutdown = (signal: string) => {
-        if (closing) {
-          return;
-        }
-        closing = true;
+    return await waitForJoinSession({
+      session,
+      onLeaving: (signal) => {
         if (options.format === "text") {
           this.context.stdout.write(`Leaving room ${room}...\n`);
         } else {
@@ -770,55 +672,41 @@ export class ParticipantJoinCommand extends AgentCommand {
             data: { signal, participantId, room },
           });
         }
-        ignorePromise(session.close());
-      };
-      const onSigint = () => shutdown("SIGINT");
-      const onSigterm = () => shutdown("SIGTERM");
-      process.once("SIGINT", onSigint);
-      process.once("SIGTERM", onSigterm);
-
-      session
-        .waitUntilClosed()
-        .then((result) => {
-          cleanup();
-          if (result.reason === "closed") {
-            if (options.format === "text") {
-              this.context.stdout.write("Left room successfully.\n");
-            } else {
-              writeStructured(this.context.stdout, options.format, {
-                type: "left",
-                timestamp: Date.now(),
-                data: { participantId, room },
-              });
-            }
-            resolveExit(0);
-            return;
+      },
+      onSuccess: () => {
+        if (options.format === "text") {
+          this.context.stdout.write("Left room successfully.\n");
+        } else {
+          writeStructured(this.context.stdout, options.format, {
+            type: "left",
+            timestamp: Date.now(),
+            data: { participantId, room },
+          });
+        }
+      },
+      onFailure: (result) => {
+        const message = result.error?.message ?? "Harness session closed.";
+        if (options.format === "text") {
+          this.context.stderr.write(`Error: ${message}\n`);
+        } else {
+          let eventType = "tunnel_failed";
+          if (result.reason === "heartbeat_failed") {
+            eventType = "heartbeat_failed";
+          } else if (result.reason === "harness_exited") {
+            eventType = "harness_exited";
           }
-          const message = result.error?.message ?? "Harness session closed.";
-          if (options.format === "text") {
-            this.context.stderr.write(`Error: ${message}\n`);
-          } else {
-            let eventType = "tunnel_failed";
-            if (result.reason === "heartbeat_failed") {
-              eventType = "heartbeat_failed";
-            } else if (result.reason === "harness_exited") {
-              eventType = "harness_exited";
-            }
-            writeStructured(this.context.stdout, options.format, {
-              type: eventType,
-              timestamp: Date.now(),
-              data: { participantId, room, reason: result.reason, message },
-            });
-          }
-          resolveExit(3);
-        })
-        .catch((error) => {
-          cleanup();
-          this.context.stderr.write(
-            `Error: ${error instanceof Error ? error.message : String(error)}\n`
-          );
-          resolveExit(1);
-        });
+          writeStructured(this.context.stdout, options.format, {
+            type: eventType,
+            timestamp: Date.now(),
+            data: { participantId, room, reason: result.reason, message },
+          });
+        }
+      },
+      onInternalError: (error) => {
+        this.context.stderr.write(
+          `Error: ${error instanceof Error ? error.message : String(error)}\n`
+        );
+      },
     });
   }
 }

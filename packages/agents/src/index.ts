@@ -1,6 +1,7 @@
 export { MemoryHarnessTransport } from "./memory-transport.ts";
 export type {
   AskHumanInput,
+  ChallengeProposal,
   OrchestratorOptions,
   ReviewResult,
 } from "./orchestrator.ts";

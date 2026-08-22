@@ -83,7 +83,7 @@ The CLI is resource-oriented:
 - `gambi hub serve`
 - `gambi room create|list|get`
 - `gambi participant join|leave|heartbeat`
-- `gambi join` as the short participant-join alias
+- `gambi participant join` as the canonical resource-oriented participant command
 - `gambi events watch`
 - `gambi self update`
 

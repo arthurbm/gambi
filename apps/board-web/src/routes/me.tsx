@@ -70,7 +70,7 @@ function MePage() {
     ) ?? [];
   const roomCode = state.data?.config.roomCode;
   const joinCommand = roomCode
-    ? `gambi join --room ${roomCode} --participant-id ${personalParticipantId} --nickname ${shellQuote(savedName || "Seu nome")} --harness ${harnessId}`
+    ? `gambi participant join --room ${roomCode} --participant-id ${personalParticipantId} --nickname ${shellQuote(savedName || "Seu nome")} --harness ${harnessId}`
     : "Configure GAMBI_ROOM_CODE no servidor do board.";
 
   async function saveIdentity(event: React.FormEvent) {

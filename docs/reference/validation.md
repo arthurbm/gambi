@@ -61,7 +61,7 @@ OpenCode example:
 
 ```bash
 opencode auth list --pure
-bun run dev:cli -- join \
+bun run dev:cli -- participant join \
   --room <ROOM_CODE> \
   --participant-id opencode-smoke \
   --name "OpenCode smoke" \

@@ -112,7 +112,7 @@ test("recovers a dispatched Decision and its escalation after restart", async ()
   const fakeHarness: BoardHarnessRuntime = {
     close: () => Promise.resolve(),
     prompt: async () => ({ sessionId: "unused", revision: 0 }),
-    promptSession: () => Promise.resolve(),
+    promptSession: () => Promise.resolve("Resposta recuperável do harness"),
     reconcileHosted: () => Promise.resolve(),
     subscribeArtifacts: () => () => undefined,
   };

@@ -185,7 +185,7 @@ the participant workspace, and kills the child process during `close()`.
 
 ### Harness participant workspace and artifacts
 
-`gambi join --harness <id>` uses this path:
+`gambi participant join --harness <id>` uses this path:
 
 ```text
 ~/.gambi/workspaces/<room>/<participant-id>/
@@ -273,7 +273,7 @@ Inherited from the `AgentCommand` base by every subcommand:
 - `--interactive` / `--no-interactive`
 - `--verbose` / `--quiet`
 
-`gambi participant join` requires `--participant-id` for retry-safe non-interactive flows. Model mode uses `createParticipantSession()`. `gambi join` is an alias. Passing `--harness opencode|claude-code|codex|fake` selects `createHarnessParticipantSession()` and makes `--model` optional. `--name` aliases `--nickname`.
+`gambi participant join` requires `--participant-id` for retry-safe non-interactive flows. Model mode uses `createParticipantSession()`. Passing `--harness opencode|claude-code|codex|fake` selects `createHarnessParticipantSession()` and makes `--model` optional. `--name` aliases `--nickname`.
 
 Harness mode rejects `--endpoint`, `--header`, and `--header-env` with exit code `2`. A missing binary, missing local authentication, failed ACP negotiation, or lost tunnel returns exit code `3`. Structured output adds `harness_spawned`, `session_opened`, `artifact_sent`, and `harness_exited` lifecycle events.
 

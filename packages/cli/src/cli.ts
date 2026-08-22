@@ -44,7 +44,6 @@ function renderRootHelp() {
     "",
     "Participants:",
     "  gambi participant join       Register a participant and keep its tunnel alive",
-    "  gambi join                   Alias for participant join (supports --harness)",
     "  gambi participant leave      Remove a participant",
     "  gambi participant heartbeat  Send one participant heartbeat",
     "",
@@ -85,10 +84,7 @@ const rawArgs = process.argv.slice(2).filter((arg) => {
   process.env.GAMBI_NO_INTERACTIVE = "1";
   return false;
 });
-const args =
-  rawArgs[0] === "join"
-    ? ["participant", "join", ...rawArgs.slice(1)]
-    : rawArgs;
+const args = rawArgs;
 if (args[0] === "__fake-acp-agent") {
   await runFakeAcpAgent();
 } else if (

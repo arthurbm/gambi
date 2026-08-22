@@ -64,21 +64,21 @@ Run one of these commands. Replace the room code, participant ID, and name with 
 
 ```bash
 # OpenCode
-gambi join \
+gambi participant join \
   --room ABC123 \
   --participant-id arthur-opencode \
   --name Arthur \
   --harness opencode
 
 # Claude Code
-gambi join \
+gambi participant join \
   --room ABC123 \
   --participant-id bia-claude \
   --name Bia \
   --harness claude-code
 
 # Codex
-gambi join \
+gambi participant join \
   --room ABC123 \
   --participant-id caio-codex \
   --name Caio \
@@ -88,7 +88,7 @@ gambi join \
 Add `--hub` when the hub runs on another machine:
 
 ```bash
-gambi join \
+gambi participant join \
   --hub http://192.168.1.10:3000 \
   --room ABC123 \
   --participant-id arthur-opencode \
@@ -112,7 +112,7 @@ The process stays in the foreground. Press Ctrl+C once to close the ACP process,
 For machine-readable lifecycle output, use NDJSON:
 
 ```bash
-gambi join \
+gambi participant join \
   --room ABC123 \
   --participant-id arthur-opencode \
   --harness opencode \
@@ -138,7 +138,7 @@ The harness login remains local. It is not part of participant registration, lif
 Use `--dry-run` to check the resolved room, participant ID, workspace, and registration payload:
 
 ```bash
-gambi join \
+gambi participant join \
   --room ABC123 \
   --participant-id arthur-opencode \
   --harness opencode \

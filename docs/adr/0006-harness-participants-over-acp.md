@@ -12,7 +12,7 @@ Gambi compartilha endpoints de modelo numa sala. O próximo degrau é compartilh
 
 ## Decisão
 
-1. Um **harness participant** é um participante comum cujo `gambi join --harness <id>` faz spawn do agent ACP local (`opencode acp`, `claude-agent-acp`, `codex-acp`) com `cwd` em `~/.gambi/workspaces/<room>/<participantId>/`, e encaminha as mensagens **ACP v1** (JSON-RPC) pelo túnel existente num frame opaco. O hub **relaya**; não interpreta o payload nem guarda credenciais. O mesmo processo observa o workspace e envia os arquivos alterados pelo túnel como artefato versionado.
+1. Um **harness participant** é um participante comum cujo `gambi participant join --harness <id>` faz spawn do agent ACP local (`opencode acp`, `claude-agent-acp`, `codex-acp`) com `cwd` em `~/.gambi/workspaces/<room>/<participantId>/`, e encaminha as mensagens **ACP v1** (JSON-RPC) pelo túnel existente num frame opaco. O hub **relaya**; não interpreta o payload nem guarda credenciais. O mesmo processo observa o workspace e envia os arquivos alterados pelo túnel como artefato versionado.
 2. **Orquestração fica fora do hub.** `packages/agents` é uma biblioteca (orquestrador como `ToolLoopAgent` do AI SDK cujas tools são os harness participants; dispatch tipado; aceitar/devolver com motivo; drafts; decisões; escalação após N devoluções). `apps/board` é a aplicação de uma experiência específica (rodadas, cidade, viewer, SQLite). O hub ganha só o relay.
 3. Pinar ACP **v1** (`@agentclientprotocol/*`); negociar apenas v1 até o v2 sair do draft.
 

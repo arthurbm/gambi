@@ -1,3 +1,4 @@
+import type { ChallengeProposal } from "@gambi/agents";
 import { z } from "zod";
 
 import type { Context } from "../context";
@@ -92,13 +93,28 @@ export function createRoundWorkflowRouter() {
         .input(z.object({ actorPersonId: personId, objective: content }))
         .handler(async ({ context, input }) => {
           try {
+            const roundId = await context.workflow.activeRoundId();
+            let proposals: ChallengeProposal[] | undefined;
+            let modelError: string | undefined;
             if (context.orchestrator) {
-              await context.orchestrator.run(
-                `Frame the current round around this human objective without dispatching work: ${input.objective}`
-              );
-              await context.workflow.consumeModelHandoff();
+              try {
+                proposals = await context.orchestrator.proposeChallenges(
+                  `Frame the current round around this human objective without dispatching work: ${input.objective}`,
+                  roundId
+                );
+                await context.workflow.consumeModelHandoff();
+              } catch (error) {
+                modelError =
+                  error instanceof Error
+                    ? error.message
+                    : "A proposta do modelo falhou sem detalhe.";
+              }
             }
-            const result = await context.workflow.proposeChallenges(input);
+            const result = await context.workflow.proposeChallenges({
+              ...input,
+              proposals,
+              modelError,
+            });
             await publish(context, "challenges.proposed", result.revision);
             return result;
           } catch (error) {
@@ -146,8 +162,32 @@ export function createRoundWorkflowRouter() {
         .handler(async ({ context, input }) => {
           try {
             const result = await context.workflow.answerEscalation(input);
+            let continuationError: string | undefined;
+            if (context.orchestrator) {
+              try {
+                await context.orchestrator.run(
+                  `A human answered escalation ${input.escalationId}: ${input.response}. Re-enter the coordination loop from this steering answer without inventing another human decision.`
+                );
+              } catch (error) {
+                continuationError =
+                  error instanceof Error
+                    ? error.message
+                    : "O orquestrador não retomou após a resposta.";
+              }
+            }
+            let continuation = "persisted" as
+              | "failed"
+              | "persisted"
+              | "resumed";
+            if (context.orchestrator) {
+              continuation = continuationError ? "failed" : "resumed";
+            }
             await publish(context, "escalation.answered", result.revision);
-            return result;
+            return {
+              ...result,
+              continuation,
+              continuationError,
+            };
           } catch (error) {
             return badRequest(error);
           }
@@ -194,7 +234,7 @@ export function createRoundWorkflowRouter() {
               input.actorPersonId
             );
             const sessionId = `draft-${view.roundId}-${input.actorPersonId}`;
-            await context.harness.promptSession({
+            const response = await context.harness.promptSession({
               participantId: harness.participantId,
               prompt: `Proponha um draft para este desafio: ${challenge.objective}\n\nPedido da pessoa: ${input.request}`,
               roundId: view.roundId,
@@ -204,7 +244,7 @@ export function createRoundWorkflowRouter() {
             const result = await context.workflow.createDraft({
               actorPersonId: input.actorPersonId,
               challengeId: input.challengeId,
-              content: input.request,
+              content: response,
               origin: "harness",
             });
             await publish(context, "draft.created", result.revision);

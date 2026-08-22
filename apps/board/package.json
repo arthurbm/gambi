@@ -26,7 +26,6 @@
     "@orpc/openapi": "1.14.12",
     "@orpc/server": "1.14.12",
     "@orpc/zod": "1.14.12",
-    "dotenv": "17.4.2",
     "drizzle-orm": "0.45.2",
     "hono": "4.12.32",
     "libsql": "0.5.29",

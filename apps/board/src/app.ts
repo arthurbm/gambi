@@ -20,7 +20,7 @@ import {
   type BoardHarnessRuntimeOptions,
   createBoardHarnessRuntime,
 } from "./harness-runtime";
-import { createContext } from "./orpc/context";
+import { createContext, type OrchestratorActions } from "./orpc/context";
 import { createAppRouter } from "./orpc/routers";
 import { BoardEventBus } from "./sse";
 import {
@@ -35,6 +35,7 @@ export interface CreateBoardAppOptions {
   onError?: (error: unknown) => void;
   harness?: false | Omit<BoardHarnessRuntimeOptions, "events" | "repository">;
   harnessRuntime?: BoardHarnessRuntime;
+  orchestratorRuntime?: OrchestratorActions;
 }
 
 export interface BoardRuntime {
@@ -237,17 +238,20 @@ export async function createBoardApp(
       adminToken,
       harness,
       orchestrator:
-        orchestrator && orchestratorProvider
+        options.orchestratorRuntime ??
+        (orchestrator && orchestratorProvider
           ? {
               listModels: () => orchestratorProvider.listModels(),
               run: (prompt) => orchestrator.run(prompt),
+              proposeChallenges: (prompt, roundId) =>
+                orchestrator.proposeChallenges(prompt, roundId),
               swapModel: (participantId, handoff) =>
                 orchestrator.swapModel(
                   orchestratorProvider.participant(participantId),
                   handoff
                 ),
             }
-          : undefined,
+          : undefined),
     });
     const rpcResult = await rpcHandler.handle(context.req.raw, {
       prefix: "/rpc",
