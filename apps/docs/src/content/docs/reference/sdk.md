@@ -302,6 +302,8 @@ channel.close();
 
 `send()` accepts `tunnel.harness.message` and `tunnel.harness.control`. `messages` yields message, artifact, and status frames. Aborting `signal` or calling `close()` ends the channel. The hub treats the ACP `message` object as opaque.
 
+This channel is part of the management client. Harness participants do not appear in model routing and cannot receive `createGambi()` inference calls. See [Bring your harness](/guides/bring-your-harness/) for the participant setup.
+
 ## `createParticipantSession(options)`
 
 Create and manage a tunnel-backed participant runtime.

@@ -9,7 +9,7 @@
 
 <div align="center">
 
-**Share local LLMs across your network, with an agent-friendly control plane.**
+**Share model endpoints and local coding harnesses across your trusted network.**
 
 [![npm version](https://img.shields.io/npm/v/gambi-sdk)](https://www.npmjs.com/package/gambi-sdk)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -21,9 +21,11 @@
 
 ## What is Gambi?
 
-Gambi is a local-first system for sharing OpenAI-compatible LLM endpoints across a trusted network. A central hub tracks rooms and participants, proxies inference requests, and publishes real-time events over SSE.
+Gambi is a local-first system for sharing OpenAI-compatible model endpoints and local coding harnesses across a trusted network. A central hub tracks rooms and participants, relays inference requests or ACP messages, and publishes real-time events over SSE.
 
 Participants now connect through a hub-managed tunnel. The hub never needs direct network reachability to the participant's provider endpoint, so `localhost` and provider credentials can remain local to the participant machine.
+
+A harness participant contributes OpenCode, Claude Code, or Codex from the participant's own machine and login. It does not serve OpenAI-compatible inference. Apps control it through the SDK harness attach channel.
 
 The public name **Gambi** is the short form of **gambiarra**. Here it means the good kind: creative improvisation under constraints, turned into a practical tool.
 
@@ -143,10 +145,12 @@ Claude Code and Codex can join through their published ACP bridges as
 `@agentclientprotocol/codex-acp`) globally first; the CLI checks the existing
 local Claude/Codex login and never sends credentials to the hub. Claude Code
 must be run by each end user with the unmodified Anthropic binary and their own
-authentication—Gambi does not intermediate subscription login or host Claude
+authentication. Gambi does not intermediate subscription login or host Claude
 Code for third parties. See the
-[CLI reference](apps/docs/src/content/docs/reference/cli.mdx) for setup commands
-and the terms warning.
+[Bring your harness guide](apps/docs/src/content/docs/guides/bring-your-harness.mdx)
+for all three setup paths, or the
+[CLI reference](apps/docs/src/content/docs/reference/cli.mdx) for every flag and
+the terms warning.
 
 Preview the registration flow:
 

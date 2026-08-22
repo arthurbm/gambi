@@ -86,6 +86,12 @@ How it works:
 3. Each npm package on npmjs.com must allow granular access tokens (with 2FA bypass) in its publishing access settings.
 4. The `publish` job also has `id-token: write` permission, enabling `--provenance` signing if added in the future.
 
+### Why the token is still required
+
+The March 2026 v0.3.x releases tested npm Trusted Publishing. Several workflow runs failed around v0.3.2 after npm returned `404` for packages that the workflow needed to publish. Commit `8372798` restored `NODE_AUTH_TOKEN` after each npm package was configured for granular token access with 2FA bypass. Issue #28 records the earlier v0.3.0 CI failure and the attempted migration.
+
+The current token plus structured verification model is intentional. Do not remove `NODE_AUTH_TOKEN`, change the npm authentication method, or treat `id-token: write` as sufficient without a separate release-infrastructure change and a successful end-to-end publish test.
+
 When adding a new published package to the repo:
 
 1. Create the package on npmjs.com (or use the "pending package" flow).
@@ -97,16 +103,20 @@ When adding a new published package to the repo:
 ### GitHub UI
 
 1. Open **Actions** → **Release** → **Run workflow**
-2. Choose `patch`, `minor`, or `major`
+2. Select the `main` branch
+3. Choose `patch`, `minor`, or `major`
 
 ### GitHub CLI
 
 ```bash
-gh workflow run release.yml -f bump=patch
-gh run watch
+gh workflow run release.yml --ref main -f bump=patch
+gambi_release_run_id=$(gh run list --workflow=release.yml --branch main --limit 1 --json databaseId --jq '.[0].databaseId')
+gh run watch "$gambi_release_run_id" --exit-status
 ```
 
 The workflow always publishes the synchronized package set (`gambi-sdk`, `gambi-tui`, all binary packages, wrapper `gambi`, plus GitHub Release assets from the same artifact).
+
+Run it only after the release changes have merged and the required validation is green on `main`. A feature branch must prepare release notes and validation instructions, but must not dispatch this workflow.
 
 ## Manual Binary Rebuilds
 
