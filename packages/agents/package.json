@@ -6,7 +6,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./memory": "./src/memory-transport.ts"
+    "./memory": "./src/memory-transport.ts",
+    "./tunnel": "./src/tunnel-transport.ts"
   },
   "files": [
     "src",
@@ -14,6 +15,7 @@
   ],
   "scripts": {
     "check-types": "tsc --noEmit",
+    "demo": "bun run scripts/demo.ts",
     "test": "bun test"
   },
   "dependencies": {
@@ -21,6 +23,7 @@
     "zod": "^4.3.5"
   },
   "devDependencies": {
+    "@gambi/core": "workspace:*",
     "@types/bun": "latest",
     "typescript": "^5"
   },

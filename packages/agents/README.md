@@ -73,3 +73,53 @@ for await (const event of orchestrator.events) {
 For tests, `MemoryHarnessTransport` records opens, prompts, and closes and lets
 the test emit deterministic harness events. Production transports implement the
 same `HarnessTransport` interface and can be supplied per squad.
+
+## Tunnel transport
+
+`TunnelHarnessTransport` adapts the public `client.harness.attach()` channel
+from `gambi-sdk` without taking a hard runtime dependency on the SDK. Pass the
+client returned by `createClient()` and scope one transport to each squad's
+harness participant:
+
+```ts
+import { TunnelHarnessTransport } from "@gambi/agents/tunnel";
+import { createClient } from "gambi-sdk";
+
+const client = createClient({ hubUrl: "http://localhost:3000" });
+const transport = new TunnelHarnessTransport({
+  client,
+  roomCode: "ABC123",
+  participantId: "ana-opencode",
+});
+```
+
+ACP message updates, versioned artifacts, and harness status frames become
+`HarnessEvent` values. An `Orchestrator` republishes them as ordered
+`harness.event` domain events with the squad id so applications can persist or
+render them without understanding tunnel frames.
+
+`prompt()` resolves only after the harness acknowledges the ACP request. If a
+channel drops or the acknowledgement times out, it throws
+`HarnessTransportError` with `recoverable: true`; the orchestrator forgets that
+harness session so retrying the dispatch after the participant reconnects opens
+a new one. A dropped dispatch is therefore never reported as sent.
+
+## Executable demo
+
+The demo starts a real hub, two real fake ACP processes, two squads, and the
+orchestrator. It sends two decided challenges, accepts one result, returns the
+other in the same harness session, and waits for artifact version 2:
+
+```bash
+bun run --cwd packages/agents demo
+```
+
+It uses `MockLanguageModelV3` by default and spends no model tokens. To inject a
+model already shared in an existing room through the Gambi inference plane:
+
+```bash
+bun run --cwd packages/agents demo -- \
+  --hub-url http://localhost:3000 \
+  --room ABC123 \
+  --model qwen3
+```

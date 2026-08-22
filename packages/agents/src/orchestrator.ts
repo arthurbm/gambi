@@ -124,6 +124,7 @@ export class Orchestrator {
   #handoff?: string;
   #model: LanguageModel;
   #sequence = 0;
+  #closed = false;
 
   constructor(options: OrchestratorOptions) {
     if (
@@ -152,9 +153,11 @@ export class Orchestrator {
     this.#agent = this.createAgent(options.model);
 
     for (const squad of options.squads) {
-      if (!options.transports[squad.id]) {
+      const transport = options.transports[squad.id];
+      if (!transport) {
         throw new Error(`Missing harness transport for squad ${squad.id}.`);
       }
+      this.forwardHarnessEvents(squad.id, transport).catch(() => undefined);
     }
   }
 
@@ -315,7 +318,12 @@ export class Orchestrator {
         decision,
       },
     };
-    await transport.prompt(sessionId, JSON.stringify(dispatch.payload));
+    try {
+      await transport.prompt(sessionId, JSON.stringify(dispatch.payload));
+    } catch (error) {
+      this.#sessions.delete(challenge.squadId);
+      throw error;
+    }
     challenge.status = "dispatched";
     this.#dispatches.set(dispatch.id, dispatch);
     this.emit({ type: "dispatch.sent", dispatch });
@@ -426,9 +434,12 @@ export class Orchestrator {
   }
 
   async close(): Promise<void> {
-    for (const [squadId, sessionId] of this.#sessions) {
-      await this.requireTransport(squadId).close(sessionId);
-    }
+    this.#closed = true;
+    await Promise.allSettled(
+      [...this.#sessions].map(([squadId, sessionId]) =>
+        this.requireTransport(squadId).close(sessionId)
+      )
+    );
     this.#sessions.clear();
     for (const pending of this.#pendingHumanAnswers.values()) {
       pending.reject(
@@ -437,6 +448,40 @@ export class Orchestrator {
     }
     this.#pendingHumanAnswers.clear();
     this.#eventStream.close();
+  }
+
+  private async forwardHarnessEvents(
+    squadId: string,
+    transport: HarnessTransport
+  ): Promise<void> {
+    try {
+      for await (const event of transport.events) {
+        if (this.#closed) {
+          return;
+        }
+        if (event.type === "error" && event.recoverable) {
+          this.#sessions.delete(squadId);
+        }
+        this.emit({ type: "harness.event", squadId, event });
+      }
+    } catch (error) {
+      if (this.#closed) {
+        return;
+      }
+      this.emit({
+        type: "harness.event",
+        squadId,
+        event: {
+          type: "error",
+          sessionId: this.#sessions.get(squadId) ?? "unknown",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Harness event stream failed.",
+          recoverable: true,
+        },
+      });
+    }
   }
 
   private createAgent(

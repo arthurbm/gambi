@@ -58,6 +58,7 @@
         "zod": "^4.3.5"
       },
       "devDependencies": {
+        "@gambi/core": "workspace:*",
         "@types/bun": "latest",
         "typescript": "^5"
       },

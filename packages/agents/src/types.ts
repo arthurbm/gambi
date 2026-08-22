@@ -1,3 +1,5 @@
+import type { HarnessEvent } from "./transport.ts";
+
 export interface Squad {
   id: string;
   name: string;
@@ -109,6 +111,12 @@ export type DomainEvent =
       previousModel: string;
       nextModel: string;
       handoff: string;
+    }
+  | {
+      sequence: number;
+      type: "harness.event";
+      squadId: string;
+      event: HarnessEvent;
     };
 
 export interface WorldState {

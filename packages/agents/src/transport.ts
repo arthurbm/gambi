@@ -7,6 +7,12 @@ export interface HarnessSession {
   sessionId: string;
 }
 
+export interface HarnessArtifactFile {
+  content: string;
+  encoding: "base64" | "utf8";
+  path: string;
+}
+
 export type HarnessEvent =
   | { type: "text"; sessionId: string; text: string }
   | {
@@ -16,7 +22,30 @@ export type HarnessEvent =
       input: unknown;
     }
   | { type: "file"; sessionId: string; path: string }
-  | { type: "error"; sessionId: string; message: string };
+  | {
+      type: "artifact";
+      sessionId: string;
+      version: number;
+      files: HarnessArtifactFile[];
+      reason: "watch" | "final";
+    }
+  | {
+      type: "status";
+      sessionId: string;
+      status: "opened" | "closed";
+      message?: string;
+    }
+  | {
+      type: "message";
+      sessionId: string;
+      message: Record<string, unknown>;
+    }
+  | {
+      type: "error";
+      sessionId: string;
+      message: string;
+      recoverable?: boolean;
+    };
 
 export interface HarnessTransport {
   readonly events: AsyncIterable<HarnessEvent>;
