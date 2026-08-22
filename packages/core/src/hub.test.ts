@@ -75,6 +75,17 @@ const JoinResponseSchema = successSchema(
       id: z.string(),
       nickname: z.string(),
       endpoint: z.string().optional(),
+      harness: z
+        .object({
+          id: z.string(),
+          model: z.string().optional(),
+          hosted: z.boolean().optional(),
+        })
+        .optional(),
+      capabilities: z.object({
+        openResponses: z.string(),
+        chatCompletions: z.string(),
+      }),
       status: z.string(),
       connection: z.object({
         kind: z.literal("tunnel"),
@@ -569,6 +580,30 @@ describe("Hub", () => {
     return { res, data };
   }
 
+  async function registerHarness(
+    code: string,
+    participantId: string,
+    overrides: Record<string, unknown> = {}
+  ) {
+    const response = await fetch(
+      `${baseUrl}/v1/rooms/${code}/participants/${participantId}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nickname: "Harness Worker",
+          model: "agent-model",
+          harness: { id: "fake", model: "fixture", hosted: true },
+          ...overrides,
+        }),
+      }
+    );
+    return {
+      response,
+      body: JoinResponseSchema.parse(await response.json()),
+    };
+  }
+
   async function connectParticipantTunnel(params: {
     authHeaders?: Record<string, string>;
     endpoint: string;
@@ -594,7 +629,7 @@ describe("Hub", () => {
           ? event.data
           : Buffer.from(event.data as ArrayBuffer).toString("utf8");
       const parsed = TunnelServerMessage.safeParse(JSON.parse(text));
-      if (!parsed.success || parsed.data.type === "tunnel.pong") {
+      if (!parsed.success || parsed.data.type !== "tunnel.request") {
         return;
       }
 
@@ -725,6 +760,41 @@ describe("Hub", () => {
         }
       },
     };
+  }
+
+  async function openWebSocket(url: string): Promise<WebSocket> {
+    const socket = await new Promise<WebSocket>((resolve, reject) => {
+      const ws = new WebSocket(url);
+      ws.addEventListener("open", () => resolve(ws), { once: true });
+      ws.addEventListener(
+        "error",
+        () => reject(new Error(`Failed to connect WebSocket: ${url}`)),
+        { once: true }
+      );
+    });
+    tunnelSockets.add(socket);
+    return socket;
+  }
+
+  function nextWebSocketFrame(socket: WebSocket): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error("Timed out waiting for WebSocket frame.")),
+        1000
+      );
+      socket.addEventListener(
+        "message",
+        (event) => {
+          clearTimeout(timeout);
+          const text =
+            typeof event.data === "string"
+              ? event.data
+              : Buffer.from(event.data as ArrayBuffer).toString("utf8");
+          resolve(JSON.parse(text));
+        },
+        { once: true }
+      );
+    });
   }
 
   describe("mDNS", () => {
@@ -1045,6 +1115,211 @@ describe("Hub", () => {
       expect(participantsData.data[0]?.config).not.toHaveProperty(
         "instructions"
       );
+    });
+  });
+
+  describe("Harness participant relay", () => {
+    test("registers without endpoint, exposes harness metadata, and stays out of inference routing", async () => {
+      const { data: created } = await createRoom("Harness Room");
+      const { response, body } = await registerHarness(
+        created.room.code,
+        "harness-1",
+        {
+          capabilities: {
+            openResponses: "supported",
+            chatCompletions: "supported",
+          },
+        }
+      );
+
+      expect(response.status).toBe(201);
+      expect(body.data.participant.endpoint).toBeUndefined();
+      expect(body.data.participant.harness).toEqual({
+        id: "fake",
+        model: "fixture",
+        hosted: true,
+      });
+      expect(body.data.participant.capabilities).toEqual({
+        openResponses: "unknown",
+        chatCompletions: "unknown",
+      });
+
+      const tunnelUrl = new URL(body.data.tunnel.url);
+      tunnelUrl.searchParams.set("token", body.data.tunnel.token);
+      await openWebSocket(tunnelUrl.toString());
+
+      const modelsResponse = await fetch(
+        `${baseUrl}/rooms/${created.room.code}/v1/models`
+      );
+      const models = ModelsResponseSchema.parse(await modelsResponse.json());
+      expect(models.data).toHaveLength(0);
+
+      for (const model of ["*", "model:agent-model"]) {
+        const inferenceResponse = await fetch(
+          `${baseUrl}/rooms/${created.room.code}/v1/chat/completions`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model, messages: [] }),
+          }
+        );
+        expect(inferenceResponse.status).toBe(404);
+      }
+
+      const directResponse = await fetch(
+        `${baseUrl}/rooms/${created.room.code}/v1/chat/completions`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: "harness-1", messages: [] }),
+        }
+      );
+      expect(directResponse.status).toBe(400);
+      expect(await directResponse.json()).toEqual({
+        error:
+          "Harness participants do not serve inference requests; attach through the management harness channel instead.",
+      });
+    });
+
+    test("relays opaque ACP frames and artifacts to every client, emits SSE, and survives tunnel reconnect", async () => {
+      const { data: created } = await createRoom("Harness Relay Room");
+      const firstRegistration = await registerHarness(
+        created.room.code,
+        "harness-relay"
+      );
+      const firstTunnelUrl = new URL(firstRegistration.body.data.tunnel.url);
+      firstTunnelUrl.searchParams.set(
+        "token",
+        firstRegistration.body.data.tunnel.token
+      );
+      const firstTunnel = await openWebSocket(firstTunnelUrl.toString());
+      const attachUrl = `${baseUrl.replace("http:", "ws:")}/v1/rooms/${created.room.code}/participants/harness-relay/harness`;
+      const firstClient = await openWebSocket(attachUrl);
+      const secondClient = await openWebSocket(attachUrl);
+      const events = await connectRoomEvents(created.room.code);
+
+      try {
+        expect((await events.nextEvent()).type).toBe("connected");
+
+        const clientMessage = {
+          type: "tunnel.harness.message",
+          sessionId: "session-1",
+          message: {
+            jsonrpc: "2.0",
+            id: 1,
+            method: "semantically.invalid/acp-method",
+            params: { untouched: true },
+          },
+        };
+        const clientToTunnel = nextWebSocketFrame(firstTunnel);
+        firstClient.send(JSON.stringify(clientMessage));
+        expect(await clientToTunnel).toEqual(clientMessage);
+
+        const participantMessage = {
+          ...clientMessage,
+          message: {
+            jsonrpc: "2.0",
+            id: 1,
+            result: { opaque: ["still", "untouched"] },
+          },
+        };
+        const firstClientMessage = nextWebSocketFrame(firstClient);
+        const secondClientMessage = nextWebSocketFrame(secondClient);
+        firstTunnel.send(JSON.stringify(participantMessage));
+        expect(await firstClientMessage).toEqual(participantMessage);
+        expect(await secondClientMessage).toEqual(participantMessage);
+
+        const openedStatus = {
+          type: "tunnel.harness.status",
+          sessionId: "session-1",
+          status: "opened",
+        };
+        const openedFrame = nextWebSocketFrame(firstClient);
+        firstTunnel.send(JSON.stringify(openedStatus));
+        expect(await openedFrame).toEqual(openedStatus);
+        expect(await events.nextEvent()).toMatchObject({
+          type: "harness.session.opened",
+          data: {
+            participantId: "harness-relay",
+            sessionId: "session-1",
+          },
+        });
+
+        const artifact = {
+          type: "tunnel.harness.artifact",
+          sessionId: "session-1",
+          version: 1,
+          files: [
+            {
+              path: "index.html",
+              content: "<main>hello</main>",
+              encoding: "utf8",
+            },
+          ],
+          reason: "watch",
+        };
+        const firstArtifact = nextWebSocketFrame(firstClient);
+        const secondArtifact = nextWebSocketFrame(secondClient);
+        firstTunnel.send(JSON.stringify(artifact));
+        expect(await firstArtifact).toEqual(artifact);
+        expect(await secondArtifact).toEqual(artifact);
+        const artifactEvent = await events.nextEvent();
+        expect(artifactEvent).toMatchObject({
+          type: "harness.artifact",
+          data: {
+            participantId: "harness-relay",
+            sessionId: "session-1",
+            version: 1,
+          },
+        });
+        expect(artifactEvent.data).not.toHaveProperty("files");
+
+        const secondRegistration = await registerHarness(
+          created.room.code,
+          "harness-relay"
+        );
+        const secondTunnelUrl = new URL(
+          secondRegistration.body.data.tunnel.url
+        );
+        secondTunnelUrl.searchParams.set(
+          "token",
+          secondRegistration.body.data.tunnel.token
+        );
+        const secondTunnel = await openWebSocket(secondTunnelUrl.toString());
+        await Bun.sleep(25);
+        expect(firstTunnel.readyState).toBe(WebSocket.CLOSED);
+        expect(firstClient.readyState).toBe(WebSocket.OPEN);
+        expect(secondClient.readyState).toBe(WebSocket.OPEN);
+
+        const control = {
+          type: "tunnel.harness.control",
+          sessionId: "session-2",
+          action: "open",
+          cwd: "/tmp/workspace",
+        };
+        const reconnectedFrame = nextWebSocketFrame(secondTunnel);
+        secondClient.send(JSON.stringify(control));
+        expect(await reconnectedFrame).toEqual(control);
+
+        const closedStatus = {
+          type: "tunnel.harness.status",
+          sessionId: "session-2",
+          status: "closed",
+        };
+        const closedFrame = nextWebSocketFrame(firstClient);
+        secondTunnel.send(JSON.stringify(closedStatus));
+        expect(await closedFrame).toEqual(closedStatus);
+        expect((await events.nextEvent()).type).toBe("participant.updated");
+        expect(await events.nextEvent()).toMatchObject({
+          type: "harness.session.closed",
+          data: {
+            participantId: "harness-relay",
+            sessionId: "session-2",
+          },
+        });
+      } finally {
+        await events.close();
+      }
     });
   });
 

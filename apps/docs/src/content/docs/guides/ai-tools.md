@@ -140,4 +140,19 @@ const participants = await client.participants.list(created.data.room.code);
 console.log(participants.data);
 ```
 
+Harness participants are managed separately from OpenAI-compatible inference. Attach to one when an app needs its ACP stream or artifacts:
+
+```ts
+const channel = await client.harness.attach({
+  roomCode: created.data.room.code,
+  participantId: "harness-1",
+});
+
+for await (const frame of channel.messages) {
+  console.log(frame.type, frame.sessionId);
+}
+```
+
+They stay out of `*`, `model:<name>`, and participant-id inference routing.
+
 See the reference docs for the full SDK and HTTP surfaces.

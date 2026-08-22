@@ -31,6 +31,16 @@ Three inference-related event types are emitted on every request that reaches ro
 
 Management-level events (`participant.joined`, `participant.updated`, `participant.left`, `participant.offline`, `room.created`) are documented in the [API Reference](/reference/api/) and [SDK Reference](/reference/sdk/#clienteventswatchroom-roomcode-signal-).
 
+Harness participants add three lifecycle signals:
+
+| Event | Data |
+| --- | --- |
+| `harness.session.opened` | `participantId`, `sessionId` |
+| `harness.session.closed` | `participantId`, `sessionId` |
+| `harness.artifact` | `participantId`, `sessionId`, incremental `version` |
+
+Artifact file content is not placed on SSE. Consume the attach channel when the actual artifact is required.
+
 ### `llm.request`
 
 | Field | Type | Description |
