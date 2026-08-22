@@ -227,6 +227,13 @@ Defined in `packages/core/src/types.ts`:
 | `HEALTH_CHECK_INTERVAL` | `10_000` ms | Cadence of management heartbeat and tunnel ping/pong. |
 | `PARTICIPANT_TIMEOUT` | `30_000` ms (`HEALTH_CHECK_INTERVAL * 3`) | Window after which the hub marks a participant offline. |
 
+`TunnelHarnessTransport` keeps two application-side deadlines outside the hub
+protocol: `operationTimeoutMs` defaults to 10 seconds for session open and close,
+while `promptTimeoutMs` defaults to five minutes for a complete ACP
+`session/prompt` turn. A prompt timeout is recoverable but delivery is uncertain:
+the caller records `delivery_unknown`, discards the session, and retries only
+after an explicit human or application decision.
+
 ## Runtime defaults merge order
 
 At proxy time the hub merges defaults in this order:

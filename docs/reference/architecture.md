@@ -198,6 +198,12 @@ is an explicit recoverable error; the orchestrator drops the cached harness
 session so a retried dispatch opens a new session after reconnection. The hub
 remains a relay and does not take part in that recovery policy.
 
+Control operations and prompt turns use separate deadlines. Session open and
+close keep a 10-second default. A full ACP prompt turn gets five minutes by
+default because its response marks completion, not receipt. Both deadlines are
+transport options so deterministic tests and event applications can choose
+smaller or larger bounds without changing the hub protocol.
+
 ### TUI
 
 Optimized for human monitoring. It is not the canonical operational contract — automation should target the management plane (`/v1`) directly via CLI or SDK.

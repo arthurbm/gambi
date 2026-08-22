@@ -151,14 +151,17 @@ spends one model round, exactly once.
 3. Run the command with `GAMBI_NO_INTERACTIVE=1` and `--format ndjson`. Confirm
    `registered`, `tunnel_connected`, `harness_spawned`, and `session_opened`.
 4. Publish one round, make one decision, send one dispatch, and stop. Do not
-   send a second model prompt. Confirm an `artifact_sent` event and accept one
-   valid tile.
+   send a second model prompt. A full ACP turn may use the five-minute prompt
+   deadline; session open and close retain their 10-second deadline. Confirm an
+   `artifact_sent` event and accept one valid tile.
 5. Press Ctrl+C in the participant and supervisor terminals. Confirm
    `harness_exited`, `left`, exit code 0, and no `opencode acp` child.
 
 Record only adapter, model label, operating system, command exit code, and the
 five checks above. If the binary or login is missing, record the readiness
 failure and do not substitute credentials or another paid adapter.
+If the prompt deadline expires, record `delivery_unknown`, close the participant,
+and do not retry during this bounded smoke.
 
 ## Harness dispatch demo
 
