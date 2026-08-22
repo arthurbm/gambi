@@ -15,6 +15,7 @@ For the day-to-day command set (install, dev, build, check-types, lint), see the
 | `apps/tui` | `bun run --cwd apps/tui test` |
 | HTTP contracts or public types | quick test of affected endpoint(s); see `docs/reference/docs-update.md` for required doc updates |
 | Tunnel protocol | `bun test packages/core/src` (tunnel tests); see `docs/reference/docs-update.md` |
+| Harness participant runtime | `bun test packages/core/src/harness-participant-session.test.ts`, then the OpenCode smoke below |
 | Distribution / release | `bun run --cwd packages/cli check-types`, `bun run --cwd packages/cli build`, `npm pack --dry-run --cache /tmp/npm-cache ./packages/cli/dist/npm/gambi`, `node ./packages/cli/dist/npm/gambi/bin/gambi --version` |
 
 ## Quick validation set
@@ -29,3 +30,37 @@ bun run --cwd apps/tui test
 - Tests in `core` and `sdk` start a hub on fixed ports (e.g., 3998 / 3999) and may fail if the port is busy. Report this as an environmental failure, not a product failure.
 - `packages/core/src/endpoint-capabilities.test.ts` has a historically-flaky test (`probeEndpoint > does not detect protected endpoints without auth headers`). Pre-existing; not introduced by recent work.
 - No Docker, database, or external service is required — all state is in-memory.
+
+## Harness participant smoke
+
+The automated test starts the deterministic fake ACP process, negotiates ACP
+v1, prompts it through a real hub attach socket, observes its file write, and
+checks the artifact snapshot. It does not call a model:
+
+```bash
+bun test packages/core/src/harness-participant-session.test.ts
+```
+
+Run this once with a logged-in OpenCode before an event release:
+
+```bash
+opencode auth list --pure
+bun run dev:cli -- join \
+  --room <ROOM_CODE> \
+  --participant-id opencode-smoke \
+  --name "OpenCode smoke" \
+  --harness opencode \
+  --model <MODEL_LABEL> \
+  --format ndjson
+```
+
+Check these facts before pressing Ctrl+C:
+
+1. Output contains `registered`, `tunnel_connected`, `harness_spawned`, and `session_opened`.
+2. `~/.gambi/workspaces/<ROOM_CODE>/opencode-smoke/` contains the starter files.
+3. An attached harness client can send `session/prompt` and receive ACP updates.
+4. Editing `README.md` produces `artifact_sent` after about one second.
+5. Ctrl+C produces `harness_exited` and `left`, and no `opencode acp` child remains.
+
+Do not copy authentication output into the ticket. Record only the adapter,
+model label, operating system, command exit code, and which checks passed.

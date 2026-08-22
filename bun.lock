@@ -85,6 +85,7 @@
       "name": "@gambi/core",
       "version": "0.5.0",
       "dependencies": {
+        "@agentclientprotocol/sdk": "1.4.0",
         "bonjour-service": "^1.3.0",
         "nanoid": "^5.1.5",
         "zod": "^4.1.13"
@@ -119,6 +120,13 @@
     }
   },
   "packages": {
+    "@agentclientprotocol/sdk": [
+      "@agentclientprotocol/sdk@1.4.0",
+      "",
+      { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } },
+      "sha512-/eufudw+aFY1LKLolT6yFE6UMmYRl7fMJ/DEONSIyR6wI3slHWITBsANRGqXEY8FRzqUxwh7QEaGiZHcJPVThg=="
+    ],
+
     "@ai-sdk/gateway": [
       "@ai-sdk/gateway@3.0.5",
       "",

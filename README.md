@@ -122,6 +122,21 @@ gambi participant join \
 
 `gambi participant join` probes the local endpoint, registers the participant, opens a participant tunnel back to the hub, and keeps the session alive until interrupted. This works the same way for local hubs and remote hubs on the same trusted network: the endpoint can stay loopback-only on the participant machine.
 
+To join with the OpenCode agent already installed and authenticated on your
+machine:
+
+```bash
+gambi join \
+  --room ABC123 \
+  --participant-id arthur-opencode \
+  --name Arthur \
+  --harness opencode
+```
+
+This creates `~/.gambi/workspaces/ABC123/arthur-opencode/`, starts
+`opencode acp` there, and publishes workspace changes through the same outbound
+tunnel. OpenCode credentials stay on the participant machine.
+
 Preview the registration flow:
 
 ```bash
@@ -223,6 +238,7 @@ gambi room create
 gambi room list
 gambi room get
 gambi participant join
+gambi join
 gambi participant leave
 gambi participant heartbeat
 gambi events watch

@@ -58,7 +58,7 @@ Key responsibilities:
 - room and participant registry
 - management HTTP handlers
 - inference proxying
-- participant tunnel runtime (canonical `createParticipantSession()`)
+- model and harness participant tunnel runtimes
 - SSE room events
 - mDNS discovery support
 - shared transport and domain schemas (Zod)
@@ -68,6 +68,9 @@ Important files:
 - `packages/core/src/hub.ts` — HTTP server, tunnel upgrade, routing
 - `packages/core/src/room.ts` — room and participant state
 - `packages/core/src/participant-session.ts` — participant runtime
+- `packages/core/src/harness-participant-session.ts` — ACP process, workspace watcher, and artifact runtime
+- `packages/core/src/harness-adapters.ts` — local harness command and readiness checks
+- `packages/core/src/harness-workspace.ts` — city tile starter and workspace metadata
 - `packages/core/src/tunnel-protocol.ts` — tunnel messages
 - `packages/core/src/types.ts` — public Zod schemas and runtime constants
 
@@ -80,6 +83,7 @@ The CLI is resource-oriented:
 - `gambi hub serve`
 - `gambi room create|list|get`
 - `gambi participant join|leave|heartbeat`
+- `gambi join` as the short participant-join alias
 - `gambi events watch`
 - `gambi self update`
 
@@ -113,6 +117,8 @@ Behavior:
 - update the existing participant when the payload changes
 
 The registration response also returns the tunnel bootstrap data (`participant`, `roomId`, `tunnel`). Model participants include an `endpoint`; harness participants instead include `harness` metadata and may omit it. The participant then opens the bootstrap WebSocket route.
+
+In harness mode, the participant runtime creates a local workspace and starts an ACP process there. It negotiates only ACP v1. A one-second watcher publishes versioned workspace snapshots through the participant-opened tunnel. The hub sees ACP envelopes and artifact bytes, but it never sees the harness login or provider credentials.
 
 This idempotent shape is the foundation for retry-safe automation and the CLI's `participant join --participant-id`.
 
