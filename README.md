@@ -137,6 +137,17 @@ This creates `~/.gambi/workspaces/ABC123/arthur-opencode/`, starts
 `opencode acp` there, and publishes workspace changes through the same outbound
 tunnel. OpenCode credentials stay on the participant machine.
 
+Claude Code and Codex can join through their published ACP bridges as
+`--harness claude-code` and `--harness codex`. Install the matching bridge
+(`@agentclientprotocol/claude-agent-acp` or
+`@agentclientprotocol/codex-acp`) globally first; the CLI checks the existing
+local Claude/Codex login and never sends credentials to the hub. Claude Code
+must be run by each end user with the unmodified Anthropic binary and their own
+authentication—Gambi does not intermediate subscription login or host Claude
+Code for third parties. See the
+[CLI reference](apps/docs/src/content/docs/reference/cli.mdx) for setup commands
+and the terms warning.
+
 Preview the registration flow:
 
 ```bash

@@ -258,7 +258,7 @@ Register a model endpoint or local ACP harness and keep its tunnel alive.
 
 ```bash
 gambi participant join --room <room> --participant-id <id> --model <model> [options]
-gambi join --room <room> --participant-id <id> --harness opencode [options]
+gambi join --room <room> --participant-id <id> --harness <id> [options]
 ```
 
 Options:
@@ -269,7 +269,7 @@ Options:
 | `--participant-id` | stable participant identifier |
 | `--nickname`, `--name` | display name (`--name` is an alias) |
 | `--model` | model to expose, or an optional label in harness mode |
-| `--harness <opencode\|fake>` | start a local ACP harness instead of a model endpoint |
+| `--harness <opencode\|claude-code\|codex\|fake>` | start a local ACP harness instead of a model endpoint |
 | `--endpoint` | local endpoint used for probing and inference |
 | `--header` | auth header in `Header=Value` format |
 | `--header-env` | auth header in `Header=ENV_VAR` format |
@@ -288,6 +288,10 @@ Notes:
 - Harness mode creates `~/.gambi/workspaces/<room>/<participant-id>/`, adds the city tile starter when files are missing, starts the ACP agent in that directory, and publishes changed workspace files after a one-second debounce.
 - `--endpoint`, `--header`, and `--header-env` are invalid with `--harness`. The harness uses its existing login on the participant machine. Gambi does not read or upload those credentials.
 - The `opencode` adapter runs `opencode acp`. If OpenCode is missing or has no detected credentials, the command exits with code `3` and prints the command needed to fix it.
+- The `claude-code` adapter runs the published `claude-agent-acp` bridge. Install it with `npm install -g @agentclientprotocol/claude-agent-acp`, install Claude Code with `npm install -g @anthropic-ai/claude-code`, and authenticate locally with `claude auth login`.
+- **Claude Code terms warning:** each end user must run the unmodified Anthropic binary with their own local authentication. Gambi never intermediates a Claude subscription login and must never host Claude Code for third parties. Review Anthropic's [legal and compliance terms](https://code.claude.com/docs/en/legal-and-compliance) before joining.
+- The `codex` adapter runs the published `codex-acp` bridge. Install it with `npm install -g @agentclientprotocol/codex-acp`, install Codex CLI with `npm install -g @openai/codex`, and authenticate locally with `codex login`.
+- Claude Code and Codex readiness checks use `claude auth status --json` and `codex login status`. Authentication state and credentials remain on the participant machine and are never included in registration, lifecycle events, or tunnel frames.
 - The `fake` adapter is deterministic and calls no model. It is for the event rehearsal and automated tests.
 
 Examples:
@@ -322,6 +326,18 @@ gambi join \
   --participant-id arthur-opencode \
   --name Arthur \
   --harness opencode
+
+gambi join \
+  --room ABC123 \
+  --participant-id bia-claude \
+  --name Bia \
+  --harness claude-code
+
+gambi join \
+  --room ABC123 \
+  --participant-id caio-codex \
+  --name Caio \
+  --harness codex
 
 gambi join \
   --room ABC123 \

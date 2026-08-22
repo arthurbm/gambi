@@ -246,9 +246,20 @@ Inherited from the `AgentCommand` base by every subcommand:
 - `--interactive` / `--no-interactive`
 - `--verbose` / `--quiet`
 
-`gambi participant join` requires `--participant-id` for retry-safe non-interactive flows. Model mode uses `createParticipantSession()`. `gambi join` is an alias. Passing `--harness opencode|fake` selects `createHarnessParticipantSession()` and makes `--model` optional. `--name` aliases `--nickname`.
+`gambi participant join` requires `--participant-id` for retry-safe non-interactive flows. Model mode uses `createParticipantSession()`. `gambi join` is an alias. Passing `--harness opencode|claude-code|codex|fake` selects `createHarnessParticipantSession()` and makes `--model` optional. `--name` aliases `--nickname`.
 
 Harness mode rejects `--endpoint`, `--header`, and `--header-env` with exit code `2`. A missing binary, missing local authentication, failed ACP negotiation, or lost tunnel returns exit code `3`. Structured output adds `harness_spawned`, `session_opened`, `artifact_sent`, and `harness_exited` lifecycle events.
+
+Adapter commands and readiness checks are local:
+
+| Harness id | ACP command | Readiness check |
+| --- | --- | --- |
+| `opencode` | `opencode acp` | `opencode auth list --pure` |
+| `claude-code` | `claude-agent-acp` from `@agentclientprotocol/claude-agent-acp` | `claude auth status --json` |
+| `codex` | `codex-acp` from `@agentclientprotocol/codex-acp` | `codex login status` |
+| `fake` | bundled deterministic agent | bundled script exists |
+
+No readiness output or credential is registered or tunneled. The participant's board-facing `harness.id` is the selected id and `harness.model` is the optional `--model` label. Claude Code additionally prints Anthropic's terms warning on join and rejects `hosted: true`: every end user must run the unmodified binary with their own local authentication; Gambi never intermediates subscription login or hosts Claude Code for third parties.
 
 `gambi self update` updates via `bun`, `npm`, or the standalone binary depending on installation mode.
 

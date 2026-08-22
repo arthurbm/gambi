@@ -862,6 +862,11 @@ class ManagedHarnessParticipantSession implements HarnessParticipantSession {
 export async function createHarnessParticipantSession(
   options: HarnessParticipantSessionOptions
 ): Promise<HarnessParticipantSession> {
+  if (options.harnessId === "claude-code" && options.hosted) {
+    throw new HarnessDependencyError(
+      "Claude Code cannot run as a Gambi-hosted harness for third parties. Each end user must run the unmodified binary with their own local authentication."
+    );
+  }
   const adapter = options.adapter ?? getHarnessAdapter(options.harnessId);
   if (adapter.id !== options.harnessId) {
     throw new HarnessDependencyError(

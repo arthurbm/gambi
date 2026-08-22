@@ -19,9 +19,11 @@ describe("participant join helpers", () => {
 describe("harness join validation", () => {
   test("accepts the supported adapters", () => {
     expect(parseHarnessId("opencode")).toBe("opencode");
+    expect(parseHarnessId("claude-code")).toBe("claude-code");
+    expect(parseHarnessId("codex")).toBe("codex");
     expect(parseHarnessId("fake")).toBe("fake");
-    expect(() => parseHarnessId("codex")).toThrow(
-      "Unsupported harness 'codex'"
+    expect(() => parseHarnessId("unknown")).toThrow(
+      "Unsupported harness 'unknown'"
     );
   });
 
