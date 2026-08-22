@@ -26,6 +26,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { TilePublicationControl } from "@/features/city/tile-publication-control";
 import { ADMIN_TOKEN_KEY, client, orpc, queryClient } from "@/lib/orpc";
 import { cn } from "@/lib/utils";
 
@@ -61,6 +62,7 @@ function AdminPage() {
     enabled: Boolean(token),
     retry: false,
   });
+  const tileVersions = useQuery(orpc.tiles.versions.queryOptions());
   const [theme, setTheme] = useState("");
   const [squadCount, setSquadCount] = useState(6);
   const [hostedHarnessCount, setHostedHarnessCount] = useState(0);
@@ -315,6 +317,10 @@ function AdminPage() {
           </CardContent>
         </Card>
       </div>
+      <TilePublicationControl
+        squads={state.data?.squads ?? []}
+        versions={tileVersions.data ?? []}
+      />
     </main>
   );
 }

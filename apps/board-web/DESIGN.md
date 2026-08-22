@@ -6,7 +6,7 @@ The board is a map-led field book, not a dashboard. Its reference is the approve
 
 On a projector, the city plan is the dominant field. A bound squad ledger sits to its left, the current phase and room state sit in the right margin, and the append-only event ledger runs below. Borders, parcel numbers, survey lines, and architectural corner marks establish structure. Controls support that structure rather than creating a grid of decorative cards.
 
-On phones, the city stays first. Navigation becomes a fixed bottom route bar; squads, phase details, and the audit list follow in document order. The audit table becomes a labelled list that preserves sequence, event, author, and time. Interactive controls on the member and admin routes have a minimum 44px touch target.
+On phones, the city stays first. Navigation becomes a fixed bottom route bar above tile content (`z-index: 20`), with 58px of page clearance reserved for it; squads, phase details, and the audit list follow in document order. The audit table becomes a labelled list that preserves sequence, event, author, and time. Interactive controls on the member and admin routes have a minimum 44px touch target.
 
 ## Material and type
 
@@ -18,12 +18,12 @@ On phones, the city stays first. Navigation becomes a fixed bottom route bar; sq
 
 ## Interaction
 
-One short survey-sheet unfold introduces the city without moving readable content afterward. Reduced-motion preferences collapse it to an effectively static transition. Keyboard focus uses the survey-teal ring. The room register reports the real SSE state as connected, reconnecting, or offline through a polite live region. Admin phase changes are disabled before state is known and require an explicit current-to-next confirmation because the audit transition cannot be undone.
+Motion is reserved for one rare event: a newly published tile replacing a measured lot. Its opacity and small vertical offset settle over 200ms with a strong ease-out (`cubic-bezier(0.23, 1, 0.32, 1)`) so the state change is perceptible without making the replacement jarring. Do not add a city-wide entrance animation or use `transition-all`. Reduced-motion preferences remove the transform and keep only the 200ms opacity fade. Keyboard focus uses the survey-teal ring. The room register reports the real SSE state as connected, reconnecting, or offline through a polite live region. Admin phase changes are disabled before state is known and require an explicit current-to-next confirmation because the audit transition cannot be undone.
 
 ## Issue boundary
 
-Issue #73 renders recoverable lobby state: people, squad membership, phases, configuration, and audit events. `hostedHarnessCount` is stored now, but harness spawning, assignment, steerer rotation, `/squad/:id`, harness streams, and richer city tiles belong to #74 and later work. The measured empty lots are intentional placeholders, not missing #73 UI.
+Issue #76 turns the measured lots into durable publication slots. A valid accepted artifact can occupy a squad parcel in a sandboxed tile viewport; empty, invalid, or runtime-broken artifacts leave the parcel's measured lot and squad plate intact. Tile version, harness, and model provenance stay visible without competing with the city plan.
 
 ## Finish evidence
 
-The final visual proof is in `.impeccable/review/desktop.png` and `.impeccable/review/mobile.png`. The desktop capture follows the approved map topology; the 390×844 capture keeps the city first with no horizontal overflow. The Impeccable finish review informed the complete mobile ledger, guarded admin transitions, connection-state copy, and mobile touch targets.
+The current visual proof is in `.impeccable/review/hero-repro.png` and `.impeccable/review/issue-76/mobile-city-tabs.png`, with admin, member, and steerer states beside them under `.impeccable/review/issue-76/`. The 1600×1000 desktop capture follows the approved map topology; the 380×822 mobile capture keeps the two-column city first, preserves broken and empty lots, and shows the fixed route bar above the tile content.

@@ -20,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { CityMap } from "@/features/city/city-map";
 import { orpc } from "@/lib/orpc";
 import { useBoardConnectionStatus } from "@/lib/sse";
 import { cn } from "@/lib/utils";
@@ -116,67 +117,12 @@ function HomeComponent() {
         </Link>
       </aside>
 
-      <section aria-labelledby="city-title" className="city-sheet">
-        <header className="plan-heading">
-          <div>
-            <p>Planta cadastral</p>
-            <h2 id="city-title">{config.theme}</h2>
-          </div>
-          <dl>
-            <div>
-              <dt>Escala</dt>
-              <dd>1:1000</dd>
-            </div>
-            <div>
-              <dt>Revisão</dt>
-              <dd>{state.data.revision}</dd>
-            </div>
-          </dl>
-        </header>
-        <div className="parcel-map">
-          <svg
-            aria-hidden="true"
-            className="survey-lines"
-            viewBox="0 0 1000 640"
-          >
-            <path d="M20 76 L982 28 M5 534 L988 591 M152 8 L88 632 M838 4 L914 634" />
-            <path d="M0 310 C210 278 345 350 530 318 S807 244 1000 292" />
-          </svg>
-          <div className="parcel-grid">
-            {squads.map((squad) => (
-              <article className="parcel" key={squad.id}>
-                <div className="parcel-number">
-                  {String(squad.ordinal).padStart(2, "0")}
-                </div>
-                <div className="parcel-copy">
-                  <h3>
-                    <Link params={{ id: squad.id }} to="/squad/$id">
-                      {squad.name}
-                    </Link>
-                  </h3>
-                  <p>
-                    {squad.members.length === 0
-                      ? "Lote disponível"
-                      : `${squad.members.length} pessoa${squad.members.length === 1 ? "" : "s"}`}
-                  </p>
-                </div>
-                <div aria-hidden="true" className="lot-plan">
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                </div>
-                <Badge
-                  variant={squad.members.length > 0 ? "default" : "outline"}
-                >
-                  {squad.members.length > 0 ? "Ocupado" : "Em formação"}
-                </Badge>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
+      <CityMap
+        revision={state.data.revision}
+        squads={squads}
+        theme={config.theme}
+        tiles={state.data.tiles}
+      />
 
       <aside aria-label="Fase atual" className="phase-margin">
         <section>

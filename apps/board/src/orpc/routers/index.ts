@@ -159,6 +159,51 @@ export function createAppRouter() {
           }
         }),
     },
+    tiles: {
+      versions: publicProcedure
+        .input(
+          z
+            .object({ squadId: z.string().trim().min(1).max(128).optional() })
+            .optional()
+        )
+        .handler(({ context, input }) =>
+          context.repository.listTileVersions(input?.squadId)
+        ),
+      acceptLatest: publicProcedure
+        .input(
+          z.object({
+            actorPersonId: personId,
+            squadId: z.string().trim().min(1).max(128),
+          })
+        )
+        .handler(async ({ context, input }) => {
+          try {
+            const result = await context.repository.acceptLatestTile(input);
+            await publish(context, "tile.accepted", result.revision);
+            return result;
+          } catch (error) {
+            return badRequest(error);
+          }
+        }),
+      publish: publicProcedure
+        .input(
+          z.object({
+            squadId: z.string().trim().min(1).max(128),
+            boardVersion: z.number().int().positive(),
+            actorName: z.string().trim().min(1).max(80),
+          })
+        )
+        .handler(async ({ context, input }) => {
+          assertAdmin(context);
+          try {
+            const result = await context.repository.publishTileOverride(input);
+            await publish(context, "tile.published", result.revision);
+            return result;
+          } catch (error) {
+            return badRequest(error);
+          }
+        }),
+    },
     phase: {
       get: publicProcedure.handler(async ({ context }) => {
         const config = await context.repository.getConfig();
