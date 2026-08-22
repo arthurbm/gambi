@@ -41,6 +41,8 @@ Harness participants add three lifecycle signals:
 
 Artifact file content is not placed on SSE. Consume the attach channel when the actual artifact is required.
 
+The session events confirm that the local ACP session opened or closed. They do not include ACP prompts, responses, local authentication, or workspace files. `harness.artifact` reports only that a new artifact version is available. Use `client.harness.attach()` to receive its files.
+
 Application-local event streams are outside this public hub contract. For
 example, the repository event board persists its own audit sequence in SQLite.
 That does not add storage or replay to `/v1/rooms/:code/events`.

@@ -293,6 +293,9 @@ Notes:
 - The `codex` adapter runs the published `codex-acp` bridge. Install it with `npm install -g @agentclientprotocol/codex-acp`, install Codex CLI with `npm install -g @openai/codex`, and authenticate locally with `codex login`.
 - Claude Code and Codex readiness checks use `claude auth status --json` and `codex login status`. Authentication state and credentials remain on the participant machine and are never included in registration, lifecycle events, or tunnel frames.
 - The `fake` adapter is deterministic and calls no model. It is for the event rehearsal and automated tests.
+- `--dry-run` validates the command input and prints the registration preview. It does not start the ACP process or verify the harness login.
+
+For a task-oriented setup for OpenCode, Claude Code, and Codex, see [Bring your harness](/guides/bring-your-harness/).
 
 Examples:
 

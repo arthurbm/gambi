@@ -20,8 +20,11 @@ For the release pipeline (workflow stages, authentication, trigger steps, local 
 | `gambi-windows-x64` | Yes | Windows x64 CLI binary |
 | `gambi-sdk` | Yes | SDK package for app integrations |
 | `gambi-tui` | Yes | Interactive terminal dashboard |
+| `@gambi/agents` | No | Internal harness orchestration library; workspace use only |
 | `@gambi/core` | No | Internal core library |
 | `@gambi/config` | No | Internal shared config |
+| `@gambi/board` (`apps/board`) | No | Private event board server; never published |
+| `@gambi/board-web` (`apps/board-web`) | No | Private event board UI; never published |
 | `packages/cli` workspace | No | Source workspace used to build the wrapper and binary packages |
 
 Important details:
@@ -30,6 +33,7 @@ Important details:
 - The npm package named `gambi` is generated under `packages/cli/dist/npm/gambi`.
 - Platform packages are generated under `packages/cli/dist/npm/gambi-<platform>-<arch>`.
 - All published packages share the same version on every release (synchronized — see ADR-0005).
+- `@gambi/agents`, `apps/board`, and `apps/board-web` may receive a workspace version update from the release script, but the workflow never publishes them.
 
 ## Rules for Everyday Development
 
