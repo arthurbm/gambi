@@ -195,8 +195,12 @@ describe("Orchestrator", () => {
     });
   });
 
-  test("returns an escalation immediately at maxReturns", async () => {
-    const { alphaTransport, orchestrator } = createFixture({ maxReturns: 2 });
+  test("suspends at maxReturns through askHuman and re-enters the loop with its answer", async () => {
+    const model = new MockLanguageModelV3({ doGenerate: textResult() });
+    const { alphaTransport, orchestrator } = createFixture({
+      maxReturns: 2,
+      model,
+    });
     const challenge = createChallenge(orchestrator);
     recordDecision(orchestrator, challenge.id);
     const dispatch = await orchestrator.dispatch({
@@ -211,12 +215,21 @@ describe("Orchestrator", () => {
       reviewerName: "Ana",
     });
 
-    const secondReview = await orchestrator.recordReview({
-      dispatchId: dispatch.id,
-      outcome: "returned",
-      reason: "Second revision",
-      reviewerName: "Ana",
-    });
+    let settled = false;
+    const secondReviewPromise = orchestrator
+      .recordReview({
+        dispatchId: dispatch.id,
+        outcome: "returned",
+        reason: "Second revision",
+        reviewerName: "Ana",
+      })
+      .then((result) => {
+        settled = true;
+        return result;
+      });
+    while (orchestrator.world.escalations.length === 0) {
+      await Promise.resolve();
+    }
     expect(alphaTransport.prompts).toHaveLength(2);
     const escalation = orchestrator.world.escalations[0];
     expect(escalation).toMatchObject({
@@ -226,9 +239,20 @@ describe("Orchestrator", () => {
       status: "pending",
     });
 
-    expect(secondReview.escalation).toEqual(escalation);
+    expect(settled).toBe(false);
     orchestrator.answerHuman(
       escalation?.id ?? "",
+      "Accept the constrained scope"
+    );
+    const secondReview = await secondReviewPromise;
+    expect(secondReview.escalation).toMatchObject({
+      id: escalation?.id,
+      status: "answered",
+      response: "Accept the constrained scope",
+    });
+    expect(secondReview.humanResponse).toBe("Accept the constrained scope");
+    await orchestrator.run("Continue after the repeated return");
+    expect(JSON.stringify(model.doGenerateCalls[0]?.prompt)).toContain(
       "Accept the constrained scope"
     );
     expect(alphaTransport.prompts).toHaveLength(2);
@@ -302,6 +326,42 @@ describe("Orchestrator", () => {
     ).toBe(true);
   });
 
+  test("returns distinct typed model proposals for persistence", async () => {
+    const responses = [
+      toolResult("finish", {
+        summary: "Distinct proposals",
+        challenges: squads.map((squad, index) => ({
+          squadId: squad.id,
+          roundId: "round-1",
+          objective: `Model objective ${index + 1} for ${squad.name}`,
+          seededDrafts: [
+            { content: `Model seed ${index + 1}.A` },
+            { content: `Model seed ${index + 1}.B` },
+          ],
+        })),
+      }),
+      textResult("Ready"),
+    ];
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => responses.shift() ?? textResult(),
+    });
+    const { orchestrator } = createFixture({ model });
+
+    const proposals = await orchestrator.proposeChallenges(
+      "Make each squad different",
+      "round-1"
+    );
+
+    expect(proposals.map((proposal) => proposal.objective)).toEqual([
+      "Model objective 1 for Alpha",
+      "Model objective 2 for Beta",
+    ]);
+    expect(proposals[1]?.seededDrafts.map((draft) => draft.content)).toEqual([
+      "Model seed 2.A",
+      "Model seed 2.B",
+    ]);
+  });
+
   test("swapModel hands off current state without replaying prior prompts", async () => {
     const oldModel = new MockLanguageModelV3({
       modelId: "old-model",
@@ -329,7 +389,7 @@ describe("Orchestrator", () => {
 
   test("emits domain events in causal order", async () => {
     const { orchestrator } = createFixture({ maxReturns: 1 });
-    const eventsPromise = collectEvents(orchestrator.events, 8);
+    const eventsPromise = collectEvents(orchestrator.events, 9);
     const challenge = createChallenge(orchestrator);
     recordDecision(orchestrator, challenge.id);
     const dispatch = await orchestrator.dispatch({
@@ -337,13 +397,18 @@ describe("Orchestrator", () => {
       input: "starter",
       expectedOutput: "artifact",
     });
-    await orchestrator.recordReview({
+    const reviewPromise = orchestrator.recordReview({
       dispatchId: dispatch.id,
       outcome: "returned",
       reason: "Needs human judgment",
       reviewerName: "Ana",
     });
-    const _escalation = orchestrator.world.escalations[0];
+    while (orchestrator.world.escalations.length === 0) {
+      await Promise.resolve();
+    }
+    const escalation = orchestrator.world.escalations[0];
+    orchestrator.answerHuman(escalation?.id ?? "", "Proceed with less scope");
+    await reviewPromise;
     orchestrator.swapModel(
       new MockLanguageModelV3({
         modelId: "replacement",
@@ -360,10 +425,11 @@ describe("Orchestrator", () => {
       "dispatch.sent",
       "review.recorded",
       "escalation.raised",
+      "escalation.answered",
       "model.swapped",
     ]);
     expect(events.map((event) => event.sequence)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8,
+      1, 2, 3, 4, 5, 6, 7, 8, 9,
     ]);
   });
 

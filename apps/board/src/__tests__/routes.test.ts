@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 
@@ -7,12 +10,16 @@ import type { BoardHarnessRuntime } from "../harness-runtime";
 import type { AppRouterClient } from "../orpc/routers";
 
 const runtimes: BoardRuntime[] = [];
+const directories: string[] = [];
 const REVISION_PATTERN = /"revision":\d+/;
 
-afterEach(() => {
-  while (runtimes.length > 0) {
-    runtimes.pop()?.close();
-  }
+afterEach(async () => {
+  await Promise.all(runtimes.splice(0).map((runtime) => runtime.close()));
+  await Promise.all(
+    directories
+      .splice(0)
+      .map((directory) => rm(directory, { force: true, recursive: true }))
+  );
 });
 
 async function createRuntime() {
@@ -238,6 +245,7 @@ describe.serial("board routes", () => {
 
   test("runs a complete recoverable round through the fake harness", async () => {
     const prompts: Array<{ sessionId: string; prompt: string }> = [];
+    const orchestratorPrompts: string[] = [];
     const fakeHarness: BoardHarnessRuntime = {
       close: () => Promise.resolve(),
       reconcileHosted: () => Promise.resolve(),
@@ -245,7 +253,7 @@ describe.serial("board routes", () => {
       prompt: async () => ({ sessionId: "unused", revision: 0 }),
       promptSession: (input) => {
         prompts.push({ sessionId: input.sessionId, prompt: input.prompt });
-        return Promise.resolve();
+        return Promise.resolve(`Resposta real do harness: ${input.prompt}`);
       },
     };
     const runtime = await createBoardApp({
@@ -253,6 +261,16 @@ describe.serial("board routes", () => {
       databaseUrl: ":memory:",
       harness: false,
       harnessRuntime: fakeHarness,
+      orchestratorRuntime: {
+        listModels: () => Promise.resolve([]),
+        proposeChallenges: () =>
+          Promise.reject(new Error("fixture uses deterministic fallback")),
+        run: (prompt) => {
+          orchestratorPrompts.push(prompt);
+          return Promise.resolve();
+        },
+        swapModel: () => "handoff",
+      },
       onError: () => undefined,
     });
     runtimes.push(runtime);
@@ -323,11 +341,11 @@ describe.serial("board routes", () => {
       request: "Proponha uma entrada sem degraus",
     });
     workflow = await client.workflow.get({});
-    expect(
-      workflow.challenges
-        .find((item) => item.id === challenge?.id)
-        ?.drafts.some((draft) => draft.origin === "harness" && !draft.seeded)
-    ).toBe(true);
+    const harnessDraft = workflow.challenges
+      .find((item) => item.id === challenge?.id)
+      ?.drafts.find((draft) => draft.origin === "harness" && !draft.seeded);
+    expect(harnessDraft?.content).toContain("Resposta real do harness:");
+    expect(harnessDraft?.content).not.toBe("Proponha uma entrada sem degraus");
     await client.decisions.record({
       actorPersonId: "person-round-steer",
       challengeId: challenge?.id ?? "",
@@ -373,11 +391,15 @@ describe.serial("board routes", () => {
     });
     expect(secondReturn.escalationId).toBeDefined();
     expect(prompts).toHaveLength(3);
-    await client.orchestrator.answerEscalation({
+    const answered = await client.orchestrator.answerEscalation({
       actorPersonId: "person-round-owner",
       escalationId: secondReturn.escalationId ?? "",
       response: "Mantenha a praça e simplifique a sinalização",
     });
+    expect(answered.continuation).toBe("resumed");
+    expect(orchestratorPrompts.at(-1)).toContain(
+      "Mantenha a praça e simplifique a sinalização"
+    );
     await client.reviews.record({
       actorPersonId: "person-round-steer",
       dispatchId: sent.id,
@@ -392,5 +414,74 @@ describe.serial("board routes", () => {
     expect(
       workflow.challenges.find((item) => item.id === challenge?.id)?.dispatch
     ).toMatchObject({ status: "accepted", sessionId: sent.sessionId });
+  });
+
+  test("persists distinct typed Challenge content proposed by the orchestrator model", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "gambi-model-proposal-"));
+    directories.push(directory);
+    const runtime = await createBoardApp({
+      adminToken: "test-admin-token",
+      databaseUrl: `file:${join(directory, "board.db")}`,
+      harness: false,
+      orchestratorRuntime: {
+        listModels: () => Promise.resolve([]),
+        run: () => Promise.resolve(),
+        proposeChallenges: (_prompt, roundId) =>
+          Promise.resolve(
+            [1, 2].map((ordinal) => ({
+              squadId: `squad-${ordinal}`,
+              roundId,
+              objective: `Desafio original do modelo ${ordinal}`,
+              seededDrafts: [
+                {
+                  authorName: "Orquestrador modelo",
+                  content: `Proposta ${ordinal}.A do modelo`,
+                  origin: "harness" as const,
+                },
+                {
+                  authorName: "Orquestrador modelo",
+                  content: `Proposta ${ordinal}.B do modelo`,
+                  origin: "harness" as const,
+                },
+              ],
+            }))
+          ),
+        swapModel: () => "handoff",
+      },
+      onError: () => undefined,
+    });
+    runtimes.push(runtime);
+    const client = rpcClient(runtime);
+    const admin = rpcClient(runtime, "test-admin-token");
+    await admin.admin.configure({
+      theme: "Cidade modelada",
+      squadCount: 2,
+      hostedHarnessCount: 2,
+    });
+    await client.people.join({ personId: "person-model-owner", name: "Bia" });
+    await client.squads.join({
+      personId: "person-model-owner",
+      squadId: "squad-1",
+    });
+    await admin.phase.advance();
+    await admin.orchestrator.selectSteerer({
+      actorPersonId: "person-model-owner",
+      personId: "person-model-owner",
+    });
+
+    const proposed = await client.orchestrator.propose({
+      actorPersonId: "person-model-owner",
+      objective: "Faça propostas diferentes",
+    });
+    const workflow = await client.workflow.get({});
+
+    expect(proposed.source).toBe("model");
+    expect(workflow.challenges.map((item) => item.objective)).toEqual([
+      "Desafio original do modelo 1",
+      "Desafio original do modelo 2",
+    ]);
+    expect(
+      workflow.challenges[1]?.drafts.map((draft) => draft.content)
+    ).toEqual(["Proposta 2.A do modelo", "Proposta 2.B do modelo"]);
   });
 });

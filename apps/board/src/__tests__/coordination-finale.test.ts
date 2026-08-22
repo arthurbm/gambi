@@ -41,7 +41,7 @@ function fakeHarness(prompts: string[] = []): BoardHarnessRuntime {
     prompt: async () => ({ sessionId: "unused", revision: 0 }),
     promptSession: (input) => {
       prompts.push(input.prompt);
-      return Promise.resolve();
+      return Promise.resolve(`Resposta do fake: ${input.prompt}`);
     },
     reconcileHosted: () => Promise.resolve(),
     subscribeArtifacts: () => () => undefined,

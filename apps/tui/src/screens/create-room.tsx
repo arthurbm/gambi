@@ -269,8 +269,8 @@ export function CreateRoom({ onNavigate, onBack, canGoBack }: CreateRoomProps) {
               </text>
               <box backgroundColor={colors.surface} paddingLeft={1}>
                 <text fg={colors.accent}>
-                  gambi join {createdRoom.code} --endpoint {"<"}llm-url{">"}{" "}
-                  --model {"<"}model{">"}
+                  gambi participant join {createdRoom.code} --endpoint {"<"}
+                  llm-url{">"} --model {"<"}model{">"}
                 </text>
               </box>
               <text fg={colors.muted}>Press [s] to hide</text>

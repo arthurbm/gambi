@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import type { BoardState } from "@/lib/orpc";
 import { MetroOverlay } from "./metro-overlay";
+import { nextTileLoadStatus, type TileLoadStatus } from "./tile-load-state";
 
 type Squad = BoardState["squads"][number];
 type Tile = BoardState["tiles"][number];
@@ -73,7 +74,7 @@ function TileSurface({
   tile?: Tile;
 }) {
   const iframe = useRef<HTMLIFrameElement>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "broken">(
+  const [status, setStatus] = useState<TileLoadStatus>(
     tile ? "loading" : "ready"
   );
 
@@ -82,7 +83,7 @@ function TileSurface({
       return;
     }
     const timeout = window.setTimeout(() => {
-      setStatus("broken");
+      setStatus((current) => nextTileLoadStatus(current, "timeout"));
       onBroken();
     }, READY_TIMEOUT_MS);
     const receiveStatus = (event: MessageEvent) => {
@@ -99,10 +100,10 @@ function TileSurface({
       }
       if (event.data.status === "ready") {
         window.clearTimeout(timeout);
-        setStatus("ready");
+        setStatus((current) => nextTileLoadStatus(current, "ready"));
       } else if (event.data.status === "error") {
         window.clearTimeout(timeout);
-        setStatus("broken");
+        setStatus((current) => nextTileLoadStatus(current, "error"));
         onBroken();
       }
     };

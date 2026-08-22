@@ -1,4 +1,6 @@
+import type { ChallengeProposal } from "@gambi/agents";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { z } from "zod";
 
 import { roundNumberForPhase } from "../domain/phase";
 import { roundSeed, SEEDED_ROUNDS } from "../domain/rounds";
@@ -30,7 +32,27 @@ const MAX_RETURNS = 2;
 const CRISIS_ROUND_ID = "round-5";
 const CRISIS_DEPENDENCY_KIND = "neighbor_crisis";
 
-interface AgentDecision {
+const challengeProposalSetSchema = z
+  .array(
+    z.object({
+      objective: z.string().trim().min(1),
+      roundId: z.string().trim().min(1),
+      seededDrafts: z
+        .array(
+          z.object({
+            authorName: z.string().trim().min(1),
+            content: z.string().trim().min(1),
+            origin: z.enum(["human", "harness"]),
+          })
+        )
+        .min(2)
+        .max(3),
+      squadId: z.string().trim().min(1),
+    })
+  )
+  .min(1);
+
+interface RecordedDecision {
   id: string;
   challengeId: string;
   squadId: string;
@@ -47,7 +69,7 @@ interface DispatchPayload {
   input: string;
   expectedOutput: string;
   constraints: string[];
-  decision: AgentDecision;
+  decision: RecordedDecision;
 }
 
 export interface OrchestratorModelView {
@@ -230,6 +252,16 @@ export class WorkflowRepository {
             objective: round.challenge,
           })
           .onConflictDoNothing();
+        const [existingSeed] = await tx
+          .select({ id: drafts.id })
+          .from(drafts)
+          .where(
+            and(eq(drafts.challengeId, challengeId), eq(drafts.seeded, true))
+          )
+          .limit(1);
+        if (existingSeed) {
+          continue;
+        }
         for (const [index, proposal] of round.proposals.entries()) {
           await tx
             .insert(drafts)
@@ -502,10 +534,40 @@ export class WorkflowRepository {
     return { challengeId: challenge.id, revision };
   }
 
-  async proposeChallenges(input: { actorPersonId: string; objective: string }) {
+  async proposeChallenges(input: {
+    actorPersonId: string;
+    objective: string;
+    proposals?: ChallengeProposal[];
+    modelError?: string;
+  }) {
     const actor = await this.requireOrchestratorSteerer(input.actorPersonId);
     const roundId = await this.activeRoundId();
     const seed = roundSeed(roundId);
+    const activeSquads = await this.db
+      .select({ id: squads.id })
+      .from(squads)
+      .where(eq(squads.active, true));
+    const parsed = challengeProposalSetSchema.safeParse(input.proposals);
+    const modelProposals = parsed.success
+      ? parsed.data.filter((proposal) => proposal.roundId === roundId)
+      : [];
+    const modelSquadIds = new Set(
+      modelProposals.map((proposal) => proposal.squadId)
+    );
+    const useModel =
+      modelProposals.length === activeSquads.length &&
+      modelSquadIds.size === activeSquads.length &&
+      activeSquads.every((squad) => modelSquadIds.has(squad.id));
+    const proposalBySquad = new Map(
+      modelProposals.map((proposal) => [proposal.squadId, proposal])
+    );
+    const source = useModel ? ("model" as const) : ("fallback" as const);
+    const warning = useModel
+      ? undefined
+      : (input.modelError ??
+        (input.proposals
+          ? "A resposta do modelo não trouxe exatamente um Challenge válido por squad; as sementes determinísticas foram mantidas."
+          : "O modelo do orquestrador não está ativo; as sementes determinísticas foram mantidas."));
     const revision = await this.db.transaction(async (tx) => {
       const roundChallenges = await tx
         .select()
@@ -525,26 +587,49 @@ export class WorkflowRepository {
               .from(squads)
               .where(eq(squads.id, dependency.dependsOnSquadId))
           : [];
-        const seededObjective = neighbor
-          ? crisisObjective(
-              seed?.challenge ?? challenge.objective,
-              neighbor.name
-            )
-          : (seed?.challenge ?? challenge.objective);
-        const objective = `${input.objective.trim()}\n\n${seededObjective}`;
+        const fallbackObjective = `${input.objective.trim()}\n\n${seed?.challenge ?? challenge.objective}`;
+        const proposal = useModel
+          ? proposalBySquad.get(challenge.squadId)
+          : undefined;
+        const proposedObjective = proposal?.objective ?? fallbackObjective;
+        const objective = neighbor
+          ? crisisObjective(proposedObjective, neighbor.name)
+          : proposedObjective;
         await tx
           .update(challenges)
           .set({ objective, updatedAt: new Date().toISOString() })
           .where(eq(challenges.id, challenge.id));
+        if (proposal) {
+          await tx
+            .delete(drafts)
+            .where(
+              and(eq(drafts.challengeId, challenge.id), eq(drafts.seeded, true))
+            );
+          await tx.insert(drafts).values(
+            proposal.seededDrafts.map((draft, index) => ({
+              id: stableId(
+                "draft",
+                challenge.roundId,
+                challenge.squadId,
+                String(index + 1)
+              ),
+              challengeId: challenge.id,
+              authorName: draft.authorName,
+              origin: draft.origin,
+              content: draft.content,
+              seeded: true,
+            }))
+          );
+        }
       }
       return this.appendEvent(
         tx,
         "challenges.proposed",
-        { roundId, objective: input.objective.trim() },
+        { roundId, objective: input.objective.trim(), source, warning },
         actor
       );
     });
-    return { roundId, revision };
+    return { roundId, revision, source, warning };
   }
 
   async publishChallenges(actorPersonId: string) {
@@ -705,7 +790,7 @@ export class WorkflowRepository {
         .from(decisionDrafts)
         .where(eq(decisionDrafts.decisionId, decision.id))
     ).map((item) => item.draftId);
-    const agentDecision: AgentDecision = {
+    const recordedDecision: RecordedDecision = {
       id: decision.id,
       challengeId: challenge.id,
       squadId: challenge.squadId,
@@ -731,12 +816,12 @@ export class WorkflowRepository {
       : undefined;
     const payload: DispatchPayload = {
       objective: challenge.objective,
-      input: agentDecision.build,
+      input: recordedDecision.build,
       expectedOutput: input.expectedOutput.trim(),
       constraints: dependencyConstraint
         ? [dependencyConstraint, ...input.constraints]
         : input.constraints,
-      decision: agentDecision,
+      decision: recordedDecision,
     };
     const id = stableId("dispatch", challenge.id);
     const revision = await this.db.transaction(async (tx) => {

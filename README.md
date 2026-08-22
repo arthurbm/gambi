@@ -128,7 +128,7 @@ To join with the OpenCode agent already installed and authenticated on your
 machine:
 
 ```bash
-gambi join \
+gambi participant join \
   --room ABC123 \
   --participant-id arthur-opencode \
   --name Arthur \
@@ -253,7 +253,7 @@ gambi room create
 gambi room list
 gambi room get
 gambi participant join
-gambi join
+gambi participant join
 gambi participant leave
 gambi participant heartbeat
 gambi events watch

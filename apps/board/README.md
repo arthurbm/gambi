@@ -8,7 +8,7 @@ From the repository root:
 
 ```bash
 bun install
-bun run dev
+bun run event
 ```
 
 The default admin URL is `http://localhost:3002/admin?token=gambi-local-admin`. Set `BOARD_ADMIN_TOKEN` before an event. The browser stores this token in session storage and removes it from the visible URL. SQLite data lives at `apps/board/data/board.db` by default.
@@ -97,7 +97,7 @@ The board does not create hub rooms. Create one once, then give the board its
 stable code and hub address:
 
 ```bash
-GAMBI_ROOM_CODE=ABC123 GAMBI_HUB_URL=http://localhost:3000 bun run dev
+GAMBI_ROOM_CODE=ABC123 GAMBI_HUB_URL=http://localhost:3000 bun run event
 ```
 
 For the deterministic manual route, use the fake ACP adapter:

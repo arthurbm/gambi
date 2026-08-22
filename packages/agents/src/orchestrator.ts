@@ -73,6 +73,17 @@ export interface ReviewResult {
   review: Review;
 }
 
+export interface ChallengeProposal {
+  objective: string;
+  roundId: string;
+  seededDrafts: Array<{
+    authorName: string;
+    content: string;
+    origin: "human" | "harness";
+  }>;
+  squadId: string;
+}
+
 interface FinishInput {
   summary: string;
   challenges?: CreateChallengeInput[];
@@ -123,8 +134,9 @@ export class Orchestrator {
   readonly #generateId: (kind: string) => string;
   readonly maxReturns: number;
   readonly events: AsyncIterable<DomainEvent> = this.#eventStream;
-  #agent: ToolLoopAgent<never, OrchestratorToolSet, never>;
+  #toolLoop: ToolLoopAgent<never, OrchestratorToolSet, never>;
   #handoff?: string;
+  readonly #humanContext: string[] = [];
   #model: LanguageModel;
   #sequence = 0;
   #closed = false;
@@ -153,7 +165,7 @@ export class Orchestrator {
         return `${kind}-${nextId}`;
       });
     this.#model = options.model;
-    this.#agent = this.createAgent(options.model);
+    this.#toolLoop = this.createToolLoop(options.model);
     this.hydrate(options.initialState, options.restoredSessions);
     this.#handoff = options.initialHandoff;
 
@@ -166,8 +178,8 @@ export class Orchestrator {
     }
   }
 
-  get agent(): ToolLoopAgent<never, OrchestratorToolSet, never> {
-    return this.#agent;
+  get toolLoop(): ToolLoopAgent<never, OrchestratorToolSet, never> {
+    return this.#toolLoop;
   }
 
   get world(): WorldState {
@@ -186,10 +198,62 @@ export class Orchestrator {
   run(prompt: string) {
     const handoff = this.#handoff;
     this.#handoff = undefined;
-    const contextualPrompt = handoff
-      ? `Handoff from the previous model:\n${handoff}\n\nCurrent request:\n${prompt}`
-      : prompt;
-    return this.#agent.generate({ prompt: contextualPrompt });
+    const humanContext = this.#humanContext.splice(0);
+    const contextualPrompt =
+      handoff || humanContext.length > 0
+        ? [
+            handoff
+              ? `Handoff from the previous model:\n${handoff}`
+              : undefined,
+            humanContext.length > 0
+              ? `Human steering received while suspended:\n${humanContext.join("\n")}`
+              : undefined,
+            `Current request:\n${prompt}`,
+          ]
+            .filter(Boolean)
+            .join("\n\n")
+        : prompt;
+    return this.#toolLoop.generate({ prompt: contextualPrompt });
+  }
+
+  async proposeChallenges(
+    prompt: string,
+    roundId: string
+  ): Promise<ChallengeProposal[]> {
+    this.requireRound(roundId);
+    const existingIds = new Set(this.#challenges.keys());
+    await this.run(
+      `${prompt}\n\nUse finish with exactly one Challenge for every squad in round ${roundId}. Each Challenge needs two or three concrete seeded proposals.`
+    );
+    const proposals = [...this.#challenges.values()]
+      .filter(
+        (challenge) =>
+          challenge.roundId === roundId && !existingIds.has(challenge.id)
+      )
+      .map((challenge) => ({
+        squadId: challenge.squadId,
+        roundId: challenge.roundId,
+        objective: challenge.objective,
+        seededDrafts: challenge.seededDraftIds.map((draftId) => {
+          const draft = this.#drafts.get(draftId);
+          if (!draft) {
+            throw new Error(
+              `Model proposal ${challenge.id} references missing draft ${draftId}.`
+            );
+          }
+          return {
+            authorName: draft.authorName,
+            content: draft.content,
+            origin: draft.origin,
+          };
+        }),
+      }));
+    if (proposals.length === 0) {
+      throw new Error(
+        "The orchestrator model did not return typed Challenge proposals through finish."
+      );
+    }
+    return proposals;
   }
 
   createChallenge(input: CreateChallengeInput): Challenge {
@@ -362,14 +426,25 @@ export class Orchestrator {
 
     const returnCount = this.returnCount(dispatch.squadId, dispatch.roundId);
     if (returnCount >= this.maxReturns) {
-      const escalation = this.createEscalation({
+      const existingEscalationIds = new Set(this.#escalations.keys());
+      const answer = this.askHuman({
         squadId: dispatch.squadId,
         roundId: dispatch.roundId,
         reason: review.reason ?? "Repeated return",
         returnCount,
         question: `Squad ${dispatch.squadId} has returned work ${returnCount} times. How should the orchestrator proceed?`,
       });
-      return { review, escalation };
+      const escalation = [...this.#escalations.values()].find(
+        (candidate) => !existingEscalationIds.has(candidate.id)
+      );
+      if (!escalation) {
+        throw new Error("askHuman did not create a pending escalation.");
+      }
+      const humanResponse = await answer;
+      this.#humanContext.push(
+        `Squad ${dispatch.squadId}, round ${dispatch.roundId}: ${humanResponse}`
+      );
+      return { review, escalation, humanResponse };
     }
 
     await this.requireTransport(dispatch.squadId).prompt(
@@ -488,7 +563,7 @@ export class Orchestrator {
     const previousModel = describeModel(this.#model);
     const handoff = durableHandoff ?? this.createHandoff();
     this.#model = model;
-    this.#agent = this.createAgent(model);
+    this.#toolLoop = this.createToolLoop(model);
     this.#handoff = handoff;
     this.emit({
       type: "model.swapped",
@@ -550,7 +625,7 @@ export class Orchestrator {
     }
   }
 
-  private createAgent(
+  private createToolLoop(
     model: LanguageModel
   ): ToolLoopAgent<never, OrchestratorToolSet, never> {
     const tools: OrchestratorToolSet = {

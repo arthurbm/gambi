@@ -3,7 +3,7 @@
 Decidido no grill de 2026-08-22. Cada item diz por que ficou de fora e o que reabriria.
 
 - **AI SDK v7 e `@ai-sdk/harness-acp`.** Nada do caminho ACP precisa de v7. Migrar com a skill `migrate-ai-sdk-v6-to-v7`; depois avaliar um sandbox provider local (~200 linhas, ver `docs/research/harness-orchestration-options.md`) para rodar `HarnessAgent` sobre o workspace real.
-- **Git como publicação do bairro.** "Contribuir = push" é mais fiel à tese; ficou de fora por git server + push em Windows na véspera. Hoje o `gambi join` sincroniza a pasta.
+- **Git como publicação do bairro.** "Contribuir = push" é mais fiel à tese; ficou de fora por git server + push em Windows na véspera. Hoje o `gambi participant join` sincroniza a pasta.
 - **Votação e discussão no board.** A primitiva de hoje é draft → decisão → aceitar/devolver. Votação exige múltiplos clientes escrevendo no mesmo objeto; reabrir se a dinâmica pedir.
 - **Orquestrador por squad (assembleia).** Hoje é um orquestrador global, hub-and-spoke nomeado. A versão com vários orquestradores é a próxima experiência (Meira et al., Tabela 5.2).
 - **Trabalho de plataforma.** Consolidar os tiles e refinar as guidelines do starter a partir do que os squads entregaram, continuamente. Analogia: times de produto (squads) e time de plataforma. Não entra na dinâmica; entra no TCC.

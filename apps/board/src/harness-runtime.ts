@@ -50,7 +50,7 @@ export interface BoardHarnessRuntime {
     roundId: string;
     sessionId: string;
     squadId: string;
-  }) => Promise<void>;
+  }) => Promise<string>;
   reconcileHosted: (desiredCount?: number) => Promise<void>;
   subscribeArtifacts: (
     listener: (
@@ -111,6 +111,7 @@ class HarnessGateway {
   readonly #entries = new Map<string, GatewayEntry>();
   readonly #events: BoardEventBus;
   readonly #onError: (error: unknown) => void;
+  readonly #promptCollectors = new Map<string, string[]>();
   readonly #repository: BoardRepository;
   readonly #roomCode: string;
   #closed = false;
@@ -188,7 +189,25 @@ class HarnessGateway {
   }) {
     const entry = this.ensureEntry(input);
     await entry.open;
-    await entry.transport.prompt(input.sessionId, input.prompt);
+    if (this.#promptCollectors.has(input.sessionId)) {
+      throw new Error(
+        "Já existe um prompt em andamento nesta sessão de harness."
+      );
+    }
+    const chunks: string[] = [];
+    this.#promptCollectors.set(input.sessionId, chunks);
+    try {
+      await entry.transport.prompt(input.sessionId, input.prompt);
+      const response = chunks.join("").trim();
+      if (!response) {
+        throw new Error(
+          "O harness concluiu o prompt sem devolver texto para o draft."
+        );
+      }
+      return response;
+    } finally {
+      this.#promptCollectors.delete(input.sessionId);
+    }
   }
 
   async restore() {
@@ -284,6 +303,9 @@ class HarnessGateway {
         sessionId: entry.sessionId,
         event,
       };
+      if (event.type === "text") {
+        this.#promptCollectors.get(entry.sessionId)?.push(event.text);
+      }
       if (event.type === "artifact") {
         const fullEnvelope = { ...envelope, event };
         await Promise.allSettled(

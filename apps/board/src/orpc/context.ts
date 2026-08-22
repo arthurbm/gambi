@@ -1,3 +1,4 @@
+import type { ChallengeProposal } from "@gambi/agents";
 import type { Context as HonoContext } from "hono";
 
 import type { BoardRepository } from "../db/repository";
@@ -17,14 +18,18 @@ interface HarnessActions {
     roundId: string;
     sessionId: string;
     squadId: string;
-  }) => Promise<void>;
+  }) => Promise<string>;
 }
 
-interface OrchestratorActions {
+export interface OrchestratorActions {
   listModels: () => Promise<
     Array<{ id: string; nickname: string; model: string }>
   >;
   run: (prompt: string) => Promise<unknown>;
+  proposeChallenges: (
+    prompt: string,
+    roundId: string
+  ) => Promise<ChallengeProposal[]>;
   swapModel: (participantId: string, handoff: string) => string;
 }
 
