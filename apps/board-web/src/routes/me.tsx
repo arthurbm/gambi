@@ -8,7 +8,7 @@ import {
   PlugZapIcon,
   UserRoundIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +40,8 @@ function shellQuote(value: string) {
 }
 
 function MePage() {
+  const fakeHarnessEnabled =
+    import.meta.env.VITE_BOARD_ENABLE_FAKE_HARNESS === "1";
   const state = useQuery(orpc.board.state.queryOptions());
   const personId = useMemo(() => getPersonId(), []);
   const [name, setName] = useState(getStoredName);
@@ -54,6 +56,11 @@ function MePage() {
   const personalHarness = state.data?.harnesses.find(
     (harness) => harness.participantId === personalParticipantId
   );
+  useEffect(() => {
+    if (personalHarness?.harnessId === "fake" && fakeHarnessEnabled) {
+      setHarnessId("fake");
+    }
+  }, [personalHarness?.harnessId]);
   const ownedHarness = state.data?.harnesses.find(
     (harness) => harness.ownerPersonId === personId
   );
@@ -254,6 +261,11 @@ function MePage() {
                     Claude Code
                   </ToggleGroupItem>
                   <ToggleGroupItem value="codex">Codex</ToggleGroupItem>
+                  {fakeHarnessEnabled ? (
+                    <ToggleGroupItem value="fake">
+                      Fake de ensaio
+                    </ToggleGroupItem>
+                  ) : null}
                 </ToggleGroup>
                 <FieldDescription>
                   O comando roda no seu computador. Credenciais nunca passam

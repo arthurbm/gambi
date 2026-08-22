@@ -17,6 +17,9 @@ For the day-to-day command set (install, dev, build, check-types, lint), see the
 | Tunnel protocol | `bun test packages/core/src` (tunnel tests); see `docs/reference/docs-update.md` |
 | Harness participant runtime | `bun test packages/core/src/harness-adapters.test.ts packages/core/src/harness-participant-session.test.ts`, then the installed-adapter smokes below |
 | `@gambi/agents` | `bun test packages/agents/src`, `bun run --cwd packages/agents check-types`, then the tunnel demo below |
+| `apps/board` | `bun test apps/board/src`, `bun run --cwd apps/board check-types`, then the event board rehearsal below |
+| `apps/board-web` | `bun run --cwd apps/board-web check-types`, `bun run --cwd apps/board-web build`, then desktop and mobile browser checks |
+| Event supervisor | `bun test scripts/event.test.ts`, `bun run board:e2e`, one `SIGUSR1` board restart, then one Ctrl+C cleanup check |
 | Distribution / release | `bun run --cwd packages/cli check-types`, `bun run --cwd packages/cli build`, `npm pack --dry-run --cache /tmp/npm-cache ./packages/cli/dist/npm/gambi`, `node ./packages/cli/dist/npm/gambi/bin/gambi --version` |
 
 ## Quick validation set
@@ -84,30 +87,81 @@ unmodified binary with their own local authentication. For Codex, confirm that
 the registered participant and the board `/me` response contain
 `harness.id: "codex"` (and the optional model label when supplied).
 
-## Board harness route with fake ACP
+## Full event board rehearsal
 
-Use this route before an event. It exercises personal join copy, hosted claims,
-round assignment, steerer enforcement, the server-owned SDK attachment, browser
-SSE, restart recovery, and child cleanup without calling a model.
+Run this after `bun install --frozen-lockfile`. It exercises the complete event
+path without calling a paid model. Do not add Playwright. Use the browser tool
+available to the implementer and keep admin, member, and steerer identities in
+separate browser profiles or origins.
 
-1. Start the hub and create one room. Keep its code.
-2. Start the board with `GAMBI_ROOM_CODE=<ROOM_CODE>
-   BOARD_HOSTED_HARNESS=fake bun run --cwd apps/board dev:fake` and start
-   `apps/board-web` in another terminal.
-3. Open `/admin?token=<BOARD_ADMIN_TOKEN>`, set two hosted harnesses, save, and
-   advance to round 1.
-4. In two browser profiles, register two people in the same squad. On `/me`,
-   confirm the personal command includes the room, stable participant ID, name,
-   and selected harness. Claim one hosted harness.
-5. Open `/squad/squad-1`, designate the claimed harness, and elect the other
-   person as steerer. The first person's prompt control must stay disabled.
-6. As the steerer, send a prompt. Confirm text, tool calls, and touched files
-   appear in both profiles. Browser `/events` must contain artifact paths and a
-   version, never file contents.
-7. Stop and restart only the board with the same database and room code.
-   Confirm the claim, assignment, steerer, and stable outer session remain, and
-   `board-hosted-01` and `board-hosted-02` reconnect.
-8. Stop the board cleanly and confirm no fake ACP child remains.
+1. Run `bun run board:e2e`. Wait for the ready block and record its room code,
+   database path, admin URL, projector URL, and board-only restart command.
+2. Open admin at `http://localhost:3002/admin?token=<token>` with a 1440×900
+   viewport. Set three squads and two hosted fake harnesses. Save. Capture the
+   configured admin state.
+3. Open member at `http://127.0.0.1:3002/me` and steerer at the facilitator LAN
+   URL. These origins keep separate `gambi.board.person-id` values. Register two
+   people in squad 1. Select `Fake de ensaio` for the member, run the copied
+   command with `GAMBI_NO_INTERACTIVE=1`, and confirm `Conectado`. Capture `/me`
+   at 390×844.
+4. Claim a hosted harness as the steerer. Advance to round 1. On
+   `/squad/squad-1`, assign the hosted harness and elect the steerer. The member
+   may observe but must not prompt. Register one person in each remaining squad
+   from two more isolated browser origins.
+5. For rounds 1 through 3, select the orchestrator steerer, publish the seeded
+   challenges, record at least one four-answer decision, dispatch it, and
+   accept its review. Round 3 may be skipped, but still verify the phase change.
+6. In round 4, assign one connected fake to every squad and dispatch all three
+   decisions. Edit each fake workspace with valid `manifest.json`, `index.html`,
+   and `README.md`. Give two manifests different station coordinates and leave
+   one station `null`. Accept the artifacts, publish the accepted versions, and
+   confirm the metro joins only live stations. Capture `/` at 1440×900 and
+   390×844.
+7. In round 5, confirm every challenge names its neighbor. Return squad 1 with
+   a reason, verify the rework uses the same session ID, then accept it. Capture
+   the neighbor, return reason, and session ID at 1280×720.
+8. In round 6, confirm model discovery lists the two fixture model participants
+   and no harnesses. Swap model A to model B. Verify the handoff lists squads,
+   prior decisions, and pending work. Capture `/orchestrator` at 1280×720.
+9. Send `SIGUSR1` with the exact PID printed by the supervisor. Do not use
+   `SIGKILL`. Wait for `Board restart complete`, reload every role, and confirm
+   phase, identities, claims, assignments, connected hosted participants, live
+   tiles, decisions, return count, selected model, and handoff.
+10. Advance to `finale`. Confirm the metro city, every recorded decision,
+    human/harness draft totals, and return totals. At 390×844, assert
+    `document.documentElement.scrollWidth <= clientWidth`. Capture desktop and
+    mobile finale screenshots.
+11. Press Ctrl+C once at the supervisor. Confirm ports 3000, 3001, 3002, 3101,
+    and 3102 are free, and no fake ACP child remains.
+
+Store the eight screenshots under
+`docs/product/gambiarra-2026-08-23/evidence/issue-79/`. Its README records the
+browser, viewport, command, restart result, and pass/fail facts without the
+admin token.
+
+### One-round OpenCode smoke
+
+Run this only after the deterministic rehearsal and automated checks pass. It
+spends one model round, exactly once.
+
+1. Run `opencode auth list --pure`. Record only whether a login exists. Never
+   copy its output into an issue or log.
+2. Start `bun run event`, register one browser identity, and copy its OpenCode
+   join command.
+3. Run the command with `GAMBI_NO_INTERACTIVE=1` and `--format ndjson`. Confirm
+   `registered`, `tunnel_connected`, `harness_spawned`, and `session_opened`.
+4. Publish one round, make one decision, send one dispatch, and stop. Do not
+   send a second model prompt. A full ACP turn may use the five-minute prompt
+   deadline; session open and close retain their 10-second deadline. Confirm an
+   `artifact_sent` event and accept one valid tile.
+5. Press Ctrl+C in the participant and supervisor terminals. Confirm
+   `harness_exited`, `left`, exit code 0, and no `opencode acp` child.
+
+Record only adapter, model label, operating system, command exit code, and the
+five checks above. If the binary or login is missing, record the readiness
+failure and do not substitute credentials or another paid adapter.
+If the prompt deadline expires, record `delivery_unknown`, close the participant,
+and do not retry during this bounded smoke.
 
 ## Harness dispatch demo
 

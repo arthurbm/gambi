@@ -104,6 +104,20 @@ The management client maps directly to `/v1` instead of inventing a parallel con
 
 Human-first monitoring interface (OpenTUI + React). It consumes the management plane and the room event stream, but remains a separate package from `gambi`. Published as `gambi-tui` on npm.
 
+### `packages/agents` and the event board
+
+`@gambi/agents` adds typed coordination above the SDK attach channel. It owns
+decisions, dispatches, reviews, returns, model handoff, and the rule that only a
+selected human steerer may resolve judgment calls. It does not add behavior to
+the hub.
+
+`apps/board` persists the event workflow, tile versions, claims, steerers, and
+an append-only audit log in SQLite. `apps/board-web` is its local-network UI.
+The board attaches to participant-opened harness tunnels through the SDK and
+starts hosted harness sessions from its saved configuration. Restarting the
+board keeps the hub and participant connections alive. The hosted supervisor
+recreates its sessions and reconciles them by stable participant ID.
+
 ## Participant lifecycle
 
 Participant registration is an idempotent upsert:
@@ -184,15 +198,34 @@ is an explicit recoverable error; the orchestrator drops the cached harness
 session so a retried dispatch opens a new session after reconnection. The hub
 remains a relay and does not take part in that recovery policy.
 
+Control operations and prompt turns use separate deadlines. Session open and
+close keep a 10-second default. A full ACP prompt turn gets five minutes by
+default because its response marks completion, not receipt. Both deadlines are
+transport options so deterministic tests and event applications can choose
+smaller or larger bounds without changing the hub protocol.
+
 ### TUI
 
 Optimized for human monitoring. It is not the canonical operational contract — automation should target the management plane (`/v1`) directly via CLI or SDK.
+
+### Event supervisor
+
+`scripts/event.ts` owns the live event processes. `bun run event` starts the
+hub, creates one room, chooses a room-specific SQLite file, then starts the
+board and web UI. `bun run board:e2e` swaps hosted OpenCode for the deterministic
+fake ACP adapter, uses a temporary database, and adds two ordinary fixture
+model participants to the inference plane. `SIGUSR1` restarts only the board.
+Ctrl+C stops children in reverse order so hosted ACP processes exit before the
+hub.
 
 ## Repository map
 
 - `packages/core` — hub runtime and contracts
 - `packages/cli` — operational CLI source
 - `packages/sdk` — inference provider and management client
+- `packages/agents`: UI-independent coordination rules and harness transports
+- `apps/board`: SQLite-backed event server and hosted harness supervisor
+- `apps/board-web`: local-network event UI and city projector
 - `apps/tui` — monitoring interface
 - `apps/docs` — documentation site (Astro Starlight)
 - `packages/config` — shared TypeScript configs
@@ -203,7 +236,8 @@ Gambi is designed for trusted local networks. The hub does not include native au
 
 ## Forward path
 
-The current architecture is meant to stay narrow: transport, routing, and operability.
+The hub stays narrow: transport, routing, and operability. Coordination lives
+in the optional agents package and board app above those contracts.
 
 Related internal docs:
 

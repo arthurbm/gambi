@@ -6,7 +6,8 @@ import type {
   HarnessTransport,
 } from "./transport.ts";
 
-const DEFAULT_OPERATION_TIMEOUT_MS = 10_000;
+const DEFAULT_CONTROL_TIMEOUT_MS = 10_000;
+const DEFAULT_PROMPT_TIMEOUT_MS = 5 * 60_000;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -68,6 +69,7 @@ export interface TunnelHarnessTransportOptions {
   generateSessionId?: () => string;
   operationTimeoutMs?: number;
   participantId?: string;
+  promptTimeoutMs?: number;
   roomCode: string;
 }
 
@@ -99,10 +101,11 @@ export class TunnelHarnessTransport implements HarnessTransport {
   readonly #eventStream = new AsyncEventStream<HarnessEvent>();
   readonly #generateSessionId: () => string;
   readonly #openSessions = new Set<string>();
-  readonly #operationTimeoutMs: number;
+  readonly #controlTimeoutMs: number;
   readonly #participantId?: string;
   readonly #pendingControl = new Map<string, PendingOperation>();
   readonly #pendingRpc = new Map<string, PendingOperation>();
+  readonly #promptTimeoutMs: number;
   readonly #rpcPrefix = crypto.randomUUID();
   readonly #roomCode: string;
   readonly events: AsyncIterable<HarnessEvent> = this.#eventStream;
@@ -111,21 +114,19 @@ export class TunnelHarnessTransport implements HarnessTransport {
   #nextRpcId = 0;
 
   constructor(options: TunnelHarnessTransportOptions) {
-    if (
-      !Number.isFinite(
-        options.operationTimeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS
-      )
-    ) {
-      throw new Error("operationTimeoutMs must be finite.");
-    }
-    if ((options.operationTimeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS) <= 0) {
-      throw new Error("operationTimeoutMs must be positive.");
-    }
+    const controlTimeoutMs = validateTimeout(
+      "operationTimeoutMs",
+      options.operationTimeoutMs ?? DEFAULT_CONTROL_TIMEOUT_MS
+    );
+    const promptTimeoutMs = validateTimeout(
+      "promptTimeoutMs",
+      options.promptTimeoutMs ?? DEFAULT_PROMPT_TIMEOUT_MS
+    );
     this.#client = options.client;
     this.#roomCode = options.roomCode;
     this.#participantId = options.participantId;
-    this.#operationTimeoutMs =
-      options.operationTimeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS;
+    this.#controlTimeoutMs = controlTimeoutMs;
+    this.#promptTimeoutMs = promptTimeoutMs;
     this.#generateSessionId =
       options.generateSessionId ?? (() => crypto.randomUUID());
   }
@@ -343,7 +344,7 @@ export class TunnelHarnessTransport implements HarnessTransport {
         });
         this.failSession(error);
         reject(error);
-      }, this.#operationTimeoutMs);
+      }, this.#controlTimeoutMs);
       this.#pendingControl.set(sessionId, {
         resolve,
         reject,
@@ -359,13 +360,13 @@ export class TunnelHarnessTransport implements HarnessTransport {
         this.#pendingRpc.delete(id);
         const error = new HarnessTransportError({
           message:
-            "The harness did not acknowledge the prompt. The tunnel may be disconnected; reopen the harness session and retry the dispatch.",
+            "Timed out waiting for the harness to finish the prompt turn. Delivery may be incomplete; reopen the harness session and retry the dispatch explicitly.",
           recoverable: true,
           sessionId,
         });
         this.failSession(error);
         reject(error);
-      }, this.#operationTimeoutMs);
+      }, this.#promptTimeoutMs);
       this.#pendingRpc.set(id, { resolve, reject, sessionId, timeout });
     });
   }
@@ -464,6 +465,16 @@ export class TunnelHarnessTransport implements HarnessTransport {
       throw new Error(`Harness session ${sessionId} is not open.`);
     }
   }
+}
+
+function validateTimeout(name: string, value: number): number {
+  if (!Number.isFinite(value)) {
+    throw new Error(`${name} must be finite.`);
+  }
+  if (value <= 0) {
+    throw new Error(`${name} must be positive.`);
+  }
+  return value;
 }
 
 function rpcKey(id: unknown): string | undefined {

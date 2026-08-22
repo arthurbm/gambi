@@ -16,6 +16,12 @@ import type { BoardEventBus } from "./sse";
 const RECONCILE_INTERVAL_MS = 3000;
 const RETRY_MAX_MS = 15_000;
 
+function isExpectedWatchDisconnect(error: unknown) {
+  return (
+    error instanceof Error && error.message === "Event stream interrupted."
+  );
+}
+
 export type CreateHostedSession = (
   options: HarnessParticipantSessionOptions
 ) => Promise<HarnessParticipantSession>;
@@ -474,7 +480,9 @@ export async function createBoardHarnessRuntime(
         attempt = 0;
       } catch (error) {
         if (!abort.signal.aborted) {
-          onError(error);
+          if (!isExpectedWatchDisconnect(error)) {
+            onError(error);
+          }
           await delay(
             Math.min(1000 * 2 ** attempt, RETRY_MAX_MS),
             abort.signal

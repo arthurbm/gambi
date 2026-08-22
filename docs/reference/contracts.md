@@ -198,6 +198,26 @@ then sends a complete workspace snapshot with the next positive `version`.
 Text files use `utf8`; other files use `base64`. `.git` and `node_modules`
 directories are omitted.
 
+### Event board boundary
+
+The event board is an internal app contract, not a new hub endpoint. It serves
+oRPC under `/rpc`, board updates under `/events`, and accepted tile documents at
+`/tiles/:squadId/live/index.html` on port `3001`. Vite proxies those paths on
+port `3002`. Board SSE has `board.snapshot`, `board.changed`,
+`harness.presence`, and `harness.stream`; it is separate from the room SSE
+contract above. SQLite stores board audit history. The hub room stream remains
+in-memory and does not gain replay semantics.
+
+The root process entrypoints are repository operations:
+
+- `bun run event` starts the live stack with hosted OpenCode.
+- `bun run board:e2e` uses fake ACP, fixture model participants, and an isolated
+  SQLite file.
+- `SIGUSR1` sent to the printed supervisor PID restarts only the board with the
+  same room code and database.
+
+These commands do not change the published CLI contract.
+
 ## Runtime constants
 
 Defined in `packages/core/src/types.ts`:
@@ -206,6 +226,13 @@ Defined in `packages/core/src/types.ts`:
 |---|---|---|
 | `HEALTH_CHECK_INTERVAL` | `10_000` ms | Cadence of management heartbeat and tunnel ping/pong. |
 | `PARTICIPANT_TIMEOUT` | `30_000` ms (`HEALTH_CHECK_INTERVAL * 3`) | Window after which the hub marks a participant offline. |
+
+`TunnelHarnessTransport` keeps two application-side deadlines outside the hub
+protocol: `operationTimeoutMs` defaults to 10 seconds for session open and close,
+while `promptTimeoutMs` defaults to five minutes for a complete ACP
+`session/prompt` turn. A prompt timeout is recoverable but delivery is uncertain:
+the caller records `delivery_unknown`, discards the session, and retries only
+after an explicit human or application decision.
 
 ## Runtime defaults merge order
 

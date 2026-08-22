@@ -75,6 +75,11 @@ Participants no longer need to publish a network-reachable provider endpoint. In
 - powers the TUI and operational clients
 - keeps operational visibility separate from inference transport
 
+Optional applications can build coordination above these contracts. The
+repository event board uses `gambi-sdk` to attach to harness participants and
+stores its own workflow in SQLite. Its local `/events` stream is not the hub
+room stream and does not change the public hub API.
+
 ## Routing Rules
 
 The `model` field controls participant selection:
@@ -158,6 +163,7 @@ The hub emits:
 
 - it does not host the models itself
 - it does not add built-in authentication to the hub
-- it does not try to be an agent orchestrator yet
+- the hub does not orchestrate agents; optional packages and applications may
+  coordinate work through the SDK without moving that policy into the hub
 
 The future `gambi agents` direction builds above this transport layer rather than replacing it.

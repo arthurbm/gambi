@@ -41,6 +41,10 @@ Harness participants add three lifecycle signals:
 
 Artifact file content is not placed on SSE. Consume the attach channel when the actual artifact is required.
 
+Application-local event streams are outside this public hub contract. For
+example, the repository event board persists its own audit sequence in SQLite.
+That does not add storage or replay to `/v1/rooms/:code/events`.
+
 ### `llm.request`
 
 | Field | Type | Description |
