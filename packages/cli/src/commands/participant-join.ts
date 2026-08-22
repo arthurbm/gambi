@@ -1,5 +1,11 @@
 import { password as passwordPrompt, select, text } from "@clack/prompts";
 import { probeEndpoint } from "@gambi/core/endpoint";
+import type { SupportedHarnessId } from "@gambi/core/harness-adapters";
+import {
+  createHarnessParticipantSession,
+  type HarnessParticipantLifecycleEvent,
+  type HarnessParticipantSession,
+} from "@gambi/core/harness-participant-session";
 import {
   createParticipantSession,
   type ParticipantSession,
@@ -29,6 +35,37 @@ export function parseHeaderAssignment(input: string): {
   }
 
   return { name, value };
+}
+
+export function parseHarnessId(input: string): SupportedHarnessId {
+  if (input === "opencode" || input === "fake") {
+    return input;
+  }
+  throw new Error(
+    `Unsupported harness '${input}'. Use one of: opencode, fake.`
+  );
+}
+
+export function validateHarnessFlagCombination(input: {
+  endpoint?: string;
+  headerEnv: string[];
+  headers: string[];
+}): void {
+  const conflicts: string[] = [];
+  if (input.endpoint !== undefined) {
+    conflicts.push("--endpoint");
+  }
+  if (input.headers.length > 0) {
+    conflicts.push("--header");
+  }
+  if (input.headerEnv.length > 0) {
+    conflicts.push("--header-env");
+  }
+  if (conflicts.length > 0) {
+    throw new Error(
+      `${conflicts.join(", ")} cannot be used with --harness. Harness credentials stay in the local harness.`
+    );
+  }
 }
 
 function ignorePromise(promise: Promise<unknown>): void {
@@ -65,9 +102,9 @@ export class ParticipantJoinCommand extends AgentCommand {
   static override paths = [["participant", "join"]];
 
   static override usage = Command.Usage({
-    description: "Register a participant and keep its tunnel alive",
+    description: "Join a room with a model endpoint or local ACP harness",
     details:
-      "Probes the local endpoint, registers the participant through the management API, opens a participant tunnel, and keeps the session alive until interrupted.",
+      "Registers the participant, opens its outbound tunnel, and keeps the session alive until interrupted. Harness mode starts a local ACP agent in a Gambi workspace.",
     examples: [
       [
         "Join a room",
@@ -80,6 +117,10 @@ export class ParticipantJoinCommand extends AgentCommand {
       [
         "Join a remote hub",
         "gambi participant join --room ABC123 --participant-id worker-1 --model llama3 --hub http://192.168.1.10:3000",
+      ],
+      [
+        "Join with OpenCode",
+        "gambi join --room ABC123 --participant-id worker-1 --name Arthur --harness opencode",
       ],
     ],
   });
@@ -96,6 +137,16 @@ export class ParticipantJoinCommand extends AgentCommand {
 
   nickname = Option.String("--nickname,-n", {
     description: "Display name",
+    required: false,
+  });
+
+  name = Option.String("--name", {
+    description: "Alias for --nickname",
+    required: false,
+  });
+
+  harness = Option.String("--harness", {
+    description: "Local ACP harness: opencode or fake",
     required: false,
   });
 
@@ -140,6 +191,7 @@ export class ParticipantJoinCommand extends AgentCommand {
     description: "Validate session inputs and exit",
   });
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: this command preserves the existing interactive and streaming participant lifecycle.
   async execute(): Promise<number> {
     const envConfigResult = await this.loadEnvConfig();
     if (!envConfigResult.ok) {
@@ -148,14 +200,23 @@ export class ParticipantJoinCommand extends AgentCommand {
 
     const envConfig = envConfigResult.value;
     const hubUrl = this.hub ?? envConfig?.hubUrl ?? "http://localhost:3000";
+    const format = this.resolveFormat(true);
+
+    if (this.harness) {
+      return await this.executeHarness({
+        format,
+        hubUrl,
+        noSpecsFromEnv: envConfig?.noSpecs ?? false,
+      });
+    }
+
     const endpoint =
       this.endpoint ?? envConfig?.endpoint ?? "http://localhost:11434";
-    const format = this.resolveFormat(true);
 
     let room = this.room;
     let model = this.model;
     let password = this.password;
-    let nickname = this.nickname;
+    let nickname = this.nickname ?? this.name;
     let participantId = this.participantId;
 
     let authHeaders: ParticipantAuthHeaders;
@@ -455,6 +516,294 @@ export class ParticipantJoinCommand extends AgentCommand {
             `Error: ${error instanceof Error ? error.message : String(error)}\n`
           );
           resolve(1);
+        });
+    });
+  }
+
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: harness mode coordinates prompts, startup events, signals, and structured output in one command lifecycle.
+  async executeHarness(options: {
+    format: "json" | "ndjson" | "text";
+    hubUrl: string;
+    noSpecsFromEnv: boolean;
+  }): Promise<number> {
+    let harnessId: SupportedHarnessId;
+    try {
+      validateHarnessFlagCombination({
+        endpoint: this.endpoint,
+        headers: this.headers,
+        headerEnv: this.headerEnv,
+      });
+      harnessId = parseHarnessId(this.harness ?? "");
+    } catch (error) {
+      this.context.stderr.write(
+        `Error: ${error instanceof Error ? error.message : String(error)}\n`
+      );
+      return 2;
+    }
+
+    let room = this.room;
+    let password = this.password;
+    let nickname = this.nickname ?? this.name;
+    let participantId = this.participantId;
+    const model = this.model ?? harnessId;
+
+    if (this.allowInteractive(true)) {
+      if (!room) {
+        const roomResult = await text({ message: "Room code:" });
+        handleCancel(roomResult);
+        room = String(roomResult).trim();
+      }
+      if (!participantId) {
+        const participantIdResult = await text({
+          message: "Participant ID:",
+          placeholder: nanoid(8),
+        });
+        handleCancel(participantIdResult);
+        participantId = String(participantIdResult).trim();
+      }
+      if (nickname === undefined) {
+        const nicknamePromptResult = await text({
+          message: "Name (optional):",
+          placeholder: model,
+        });
+        handleCancel(nicknamePromptResult);
+        const result = String(nicknamePromptResult).trim();
+        if (result) {
+          nickname = result;
+        }
+      }
+      if (password === undefined) {
+        const passwordPromptResult = await passwordPrompt({
+          message: "Room password (leave empty if none):",
+        });
+        handleCancel(passwordPromptResult);
+        const result = String(passwordPromptResult).trim();
+        if (result) {
+          password = result;
+        }
+      }
+    }
+
+    if (!room) {
+      this.context.stderr.write(
+        "Error: --room is required.\nHint: pass the flag or use --interactive.\n"
+      );
+      return 2;
+    }
+    if (!participantId) {
+      this.context.stderr.write(
+        "Error: --participant-id is required.\nHint: provide a stable id for retry-safe registration.\n"
+      );
+      return 2;
+    }
+
+    let runtimeConfig: RuntimeConfig | undefined;
+    try {
+      runtimeConfig = await loadRuntimeConfigFromInput(this.configPath);
+    } catch (error) {
+      this.context.stderr.write(
+        `Error: ${error instanceof Error ? error.message : String(error)}\n`
+      );
+      return 2;
+    }
+
+    const displayName = nickname ?? `${model}@${participantId.slice(0, 6)}`;
+    const specs =
+      this.noSpecs || options.noSpecsFromEnv ? undefined : await detectSpecs();
+    const preview = {
+      hubUrl: options.hubUrl,
+      room,
+      participantId,
+      connection: { kind: "tunnel" },
+      workspace: `~/.gambi/workspaces/${room}/${participantId}`,
+      payload: {
+        nickname: displayName,
+        model,
+        harness: { id: harnessId },
+        password: password ? "[redacted]" : undefined,
+        specs,
+        config: runtimeConfig,
+      },
+    };
+
+    if (this.dryRun) {
+      if (options.format === "text") {
+        this.context.stdout.write(
+          `Prepared ${harnessId} harness ${participantId} for room ${room}.\n${JSON.stringify(preview, null, 2)}\n`
+        );
+      } else {
+        writeStructured(this.context.stdout, options.format, preview);
+      }
+      return 0;
+    }
+
+    if (options.format !== "text") {
+      writeStructured(this.context.stdout, options.format, {
+        type: "prepared",
+        timestamp: Date.now(),
+        data: {
+          room,
+          participantId,
+          harness: harnessId,
+          connection: { kind: "tunnel" },
+        },
+      });
+    }
+
+    const queuedEvents: HarnessParticipantLifecycleEvent[] = [];
+    let canWriteLifecycle = false;
+    const writeLifecycle = (event: HarnessParticipantLifecycleEvent) => {
+      if (!canWriteLifecycle) {
+        queuedEvents.push(event);
+        return;
+      }
+      if (options.format === "text") {
+        if (event.type === "harness_spawned") {
+          this.context.stdout.write(
+            `Started ${harnessId} ACP process (pid ${event.pid}).\n`
+          );
+        } else if (event.type === "session_opened") {
+          this.context.stdout.write(
+            `ACP session ${event.sessionId} opened in the workspace.\n`
+          );
+        } else if (event.type === "artifact_sent") {
+          this.context.stdout.write(
+            `Sent artifact v${event.version} (${event.fileCount} files, ${event.reason}).\n`
+          );
+        } else {
+          this.context.stdout.write(
+            `Harness process exited${event.exitCode === null ? "" : ` with code ${event.exitCode}`}.\n`
+          );
+        }
+        return;
+      }
+      const { type, ...data } = event;
+      writeStructured(this.context.stdout, options.format, {
+        type,
+        timestamp: Date.now(),
+        data,
+      });
+    };
+
+    let session: HarnessParticipantSession;
+    try {
+      session = await createHarnessParticipantSession({
+        hubUrl: options.hubUrl,
+        roomCode: room,
+        participantId,
+        nickname: displayName,
+        model: this.model,
+        harnessId,
+        password,
+        specs,
+        config: runtimeConfig,
+        onEvent: writeLifecycle,
+      });
+    } catch (error) {
+      this.context.stderr.write(
+        `Error: ${error instanceof Error ? error.message : String(error)}\n`
+      );
+      return 3;
+    }
+
+    if (options.format === "text") {
+      this.context.stdout.write(
+        `Registered ${session.participant.nickname} in room ${room}.\n`
+      );
+      this.context.stdout.write("Participant tunnel connected.\n");
+      this.context.stdout.write(`Workspace: ${session.workspacePath}\n`);
+    } else {
+      writeStructured(this.context.stdout, options.format, {
+        type: "registered",
+        timestamp: Date.now(),
+        data: {
+          participant: session.participant,
+          roomId: session.roomId,
+          tunnel: { url: session.tunnel.url },
+        },
+      });
+      writeStructured(this.context.stdout, options.format, {
+        type: "tunnel_connected",
+        timestamp: Date.now(),
+        data: { participantId, room },
+      });
+    }
+    canWriteLifecycle = true;
+    for (const event of queuedEvents) {
+      writeLifecycle(event);
+    }
+    if (options.format === "text") {
+      this.context.stdout.write("Press Ctrl+C to leave.\n");
+    }
+
+    return await new Promise<number>((resolveExit) => {
+      let closing = false;
+      const cleanup = () => {
+        process.off("SIGINT", onSigint);
+        process.off("SIGTERM", onSigterm);
+      };
+      const shutdown = (signal: string) => {
+        if (closing) {
+          return;
+        }
+        closing = true;
+        if (options.format === "text") {
+          this.context.stdout.write(`Leaving room ${room}...\n`);
+        } else {
+          writeStructured(this.context.stdout, options.format, {
+            type: "leaving",
+            timestamp: Date.now(),
+            data: { signal, participantId, room },
+          });
+        }
+        ignorePromise(session.close());
+      };
+      const onSigint = () => shutdown("SIGINT");
+      const onSigterm = () => shutdown("SIGTERM");
+      process.once("SIGINT", onSigint);
+      process.once("SIGTERM", onSigterm);
+
+      session
+        .waitUntilClosed()
+        .then((result) => {
+          cleanup();
+          if (result.reason === "closed") {
+            if (options.format === "text") {
+              this.context.stdout.write("Left room successfully.\n");
+            } else {
+              writeStructured(this.context.stdout, options.format, {
+                type: "left",
+                timestamp: Date.now(),
+                data: { participantId, room },
+              });
+            }
+            resolveExit(0);
+            return;
+          }
+          const message = result.error?.message ?? "Harness session closed.";
+          if (options.format === "text") {
+            this.context.stderr.write(`Error: ${message}\n`);
+          } else {
+            let eventType = "tunnel_failed";
+            if (result.reason === "heartbeat_failed") {
+              eventType = "heartbeat_failed";
+            } else if (result.reason === "harness_exited") {
+              eventType = "harness_exited";
+            }
+            writeStructured(this.context.stdout, options.format, {
+              type: eventType,
+              timestamp: Date.now(),
+              data: { participantId, room, reason: result.reason, message },
+            });
+          }
+          resolveExit(3);
+        })
+        .catch((error) => {
+          cleanup();
+          this.context.stderr.write(
+            `Error: ${error instanceof Error ? error.message : String(error)}\n`
+          );
+          resolveExit(1);
         });
     });
   }
