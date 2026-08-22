@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import type { BoardState } from "@/lib/orpc";
+import { MetroOverlay } from "./metro-overlay";
 
 type Squad = BoardState["squads"][number];
 type Tile = BoardState["tiles"][number];
@@ -155,6 +156,7 @@ function CityParcel({ squad, tile }: { squad: Squad; tile?: Tile }) {
       data-station-name={station?.name}
       data-station-x={station?.x}
       data-station-z={station?.z}
+      data-tile-broken={broken || undefined}
       data-tile-id={tile?.id}
     >
       <div className="parcel-number">
@@ -188,11 +190,13 @@ export function CityMap({
   squads,
   theme,
   tiles,
+  showMetro = false,
 }: {
   revision: number;
   squads: Squad[];
   theme: string;
   tiles: Tile[];
+  showMetro?: boolean;
 }) {
   const tilesBySquad = new Map(tiles.map((tile) => [tile.squadId, tile]));
 
@@ -231,6 +235,7 @@ export function CityMap({
             );
           })}
         </div>
+        {showMetro ? <MetroOverlay squads={squads} tiles={tiles} /> : null}
       </div>
     </section>
   );

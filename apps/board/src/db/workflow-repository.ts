@@ -1,10 +1,11 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 
 import { roundNumberForPhase } from "../domain/phase";
 import { roundSeed, SEEDED_ROUNDS } from "../domain/rounds";
 import type { BoardDatabase } from "./client";
 import {
   boardConfig,
+  challengeDependencies,
   challenges,
   decisionDrafts,
   decisions,
@@ -14,15 +15,20 @@ import {
   events,
   harnessParticipants,
   memberships,
+  orchestratorModelHandoffs,
   orchestratorSteerers,
   people,
   reviews,
   rounds,
   squads,
   steerers,
+  tilePublications,
+  tiles,
 } from "./schema";
 
 const MAX_RETURNS = 2;
+const CRISIS_ROUND_ID = "round-5";
+const CRISIS_DEPENDENCY_KIND = "neighbor_crisis";
 
 interface AgentDecision {
   id: string;
@@ -44,21 +50,71 @@ interface DispatchPayload {
   decision: AgentDecision;
 }
 
+export interface OrchestratorModelView {
+  participantId: string;
+  modelLabel: string;
+  previousModelLabel: string;
+  handoff: string;
+  actorPersonId: string;
+  actorName: string;
+  roundId: string;
+  createdAt: string;
+  consumedAt: string | null;
+}
+
+export interface FinaleView {
+  squads: Array<{
+    id: string;
+    ordinal: number;
+    name: string;
+    liveTile: {
+      id: string;
+      boardVersion: number;
+      manifest: Record<string, unknown> | null;
+      readme: string | null;
+      sourceHarnessId: string;
+      sourceModel: string | null;
+    } | null;
+    decisions: Array<{
+      id: string;
+      roundId: string;
+      roundNumber: number;
+      build: string;
+      cut: string;
+      reason: string;
+      steererName: string;
+    }>;
+    draftCounts: { human: number; harness: number };
+    returnedReviews: number;
+  }>;
+  totals: {
+    drafts: { human: number; harness: number };
+    returnedReviews: number;
+  };
+  orchestratorModel: OrchestratorModelView | null;
+}
+
 interface Actor {
   id: string;
   name: string;
 }
 
+type BoardTransaction = Parameters<
+  Parameters<BoardDatabase["transaction"]>[0]
+>[0];
+
 export interface WorkflowView {
   roundId: string;
   maxReturns: number;
   orchestratorSteerer: { personId: string; personName: string } | null;
+  orchestratorModel: OrchestratorModelView | null;
   challenges: Array<{
     id: string;
     squadId: string;
     roundId: string;
     objective: string;
     status: string;
+    dependsOnSquad: { id: string; name: string } | null;
     drafts: Array<{
       id: string;
       authorPersonId: string | null;
@@ -117,6 +173,24 @@ function stableId(kind: string, ...parts: string[]) {
   return `${kind}-${parts.join("-")}`;
 }
 
+function crisisObjective(base: string, neighborName: string) {
+  return `${base}\n\nA crise deste lote depende do squad ${neighborName}. Combine a resposta com esse vizinho antes de fechar o trabalho.`;
+}
+
+function parseJsonObject(value: string | null): Record<string, unknown> | null {
+  if (!value) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export class WorkflowRepository {
   private readonly db: BoardDatabase;
 
@@ -129,37 +203,101 @@ export class WorkflowRepository {
   }
 
   private async ensureSeeds() {
-    const squadRows = await this.db.select().from(squads);
+    const squadRows = await this.db
+      .select()
+      .from(squads)
+      .orderBy(asc(squads.ordinal));
     await this.db.transaction(async (tx) => {
-      for (const round of SEEDED_ROUNDS) {
-        for (const squad of squadRows) {
-          const roundId = `round-${round.number}`;
-          const challengeId = stableId("challenge", roundId, squad.id);
+      await this.seedChallenges(tx, squadRows);
+      await this.reconcileCrisisDependencies(tx, squadRows);
+    });
+  }
+
+  private async seedChallenges(
+    tx: BoardTransaction,
+    squadRows: (typeof squads.$inferSelect)[]
+  ) {
+    for (const round of SEEDED_ROUNDS) {
+      for (const squad of squadRows) {
+        const roundId = `round-${round.number}`;
+        const challengeId = stableId("challenge", roundId, squad.id);
+        await tx
+          .insert(challenges)
+          .values({
+            id: challengeId,
+            squadId: squad.id,
+            roundId,
+            objective: round.challenge,
+          })
+          .onConflictDoNothing();
+        for (const [index, proposal] of round.proposals.entries()) {
           await tx
-            .insert(challenges)
+            .insert(drafts)
             .values({
-              id: challengeId,
-              squadId: squad.id,
-              roundId,
-              objective: round.challenge,
+              id: stableId("draft", roundId, squad.id, String(index + 1)),
+              challengeId,
+              authorName: "Orquestrador",
+              origin: "harness",
+              content: proposal,
+              seeded: true,
             })
             .onConflictDoNothing();
-          for (const [index, proposal] of round.proposals.entries()) {
-            await tx
-              .insert(drafts)
-              .values({
-                id: stableId("draft", roundId, squad.id, String(index + 1)),
-                challengeId,
-                authorName: "Orquestrador",
-                origin: "harness",
-                content: proposal,
-                seeded: true,
-              })
-              .onConflictDoNothing();
-          }
         }
       }
-    });
+    }
+  }
+
+  private async reconcileCrisisDependencies(
+    tx: BoardTransaction,
+    squadRows: (typeof squads.$inferSelect)[]
+  ) {
+    await tx.delete(challengeDependencies);
+    const activeSquads = squadRows.filter((squad) => squad.active);
+    const crisisSeed = roundSeed(CRISIS_ROUND_ID);
+    for (const [index, squad] of activeSquads.entries()) {
+      const challengeId = stableId("challenge", CRISIS_ROUND_ID, squad.id);
+      const nextSquad =
+        activeSquads.length > 1
+          ? activeSquads[(index + 1) % activeSquads.length]
+          : undefined;
+      const [current] = await tx
+        .select({ objective: challenges.objective })
+        .from(challenges)
+        .where(eq(challenges.id, challengeId));
+      if (!nextSquad) {
+        if (
+          current?.objective.includes("A crise deste lote depende do squad")
+        ) {
+          await tx
+            .update(challenges)
+            .set({ objective: crisisSeed?.challenge ?? current.objective })
+            .where(eq(challenges.id, challengeId));
+        }
+        continue;
+      }
+      await tx.insert(challengeDependencies).values({
+        challengeId,
+        dependsOnSquadId: nextSquad.id,
+        kind: CRISIS_DEPENDENCY_KIND,
+      });
+      if (
+        current?.objective === crisisSeed?.challenge ||
+        current?.objective.startsWith(
+          `${crisisSeed?.challenge}\n\nA crise deste lote depende do squad`
+        )
+      ) {
+        await tx
+          .update(challenges)
+          .set({
+            objective: crisisObjective(
+              crisisSeed?.challenge ?? current?.objective ?? "",
+              nextSquad.name
+            ),
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(challenges.id, challengeId));
+      }
+    }
   }
 
   async activeRoundId() {
@@ -186,6 +324,8 @@ export class WorkflowRepository {
       escalationRows,
       steererRows,
       activeSquadRows,
+      dependencyRows,
+      orchestratorModel,
     ] = await Promise.all([
       this.db
         .select()
@@ -218,9 +358,12 @@ export class WorkflowRepository {
         .from(orchestratorSteerers)
         .where(eq(orchestratorSteerers.roundId, selectedRoundId)),
       this.db
-        .select({ id: squads.id })
+        .select({ id: squads.id, name: squads.name, ordinal: squads.ordinal })
         .from(squads)
-        .where(eq(squads.active, true)),
+        .where(eq(squads.active, true))
+        .orderBy(asc(squads.ordinal)),
+      this.db.select().from(challengeDependencies),
+      this.getOrchestratorModel(),
     ]);
     const activeSquadIds = new Set(activeSquadRows.map((squad) => squad.id));
     return {
@@ -232,8 +375,16 @@ export class WorkflowRepository {
             personName: steererRows[0].personName,
           }
         : null,
+      orchestratorModel,
       challenges: challengeRows
         .filter((challenge) => activeSquadIds.has(challenge.squadId))
+        .sort(
+          (left, right) =>
+            (activeSquadRows.find((squad) => squad.id === left.squadId)
+              ?.ordinal ?? 0) -
+            (activeSquadRows.find((squad) => squad.id === right.squadId)
+              ?.ordinal ?? 0)
+        )
         .map((challenge) => {
           const decision = decisionRows.find(
             (item) => item.challengeId === challenge.id
@@ -241,8 +392,17 @@ export class WorkflowRepository {
           const dispatch = dispatchRows.find(
             (item) => item.challengeId === challenge.id
           );
+          const dependency = dependencyRows.find(
+            (item) => item.challengeId === challenge.id
+          );
+          const neighbor = activeSquadRows.find(
+            (squad) => squad.id === dependency?.dependsOnSquadId
+          );
           return {
             ...challenge,
+            dependsOnSquad: neighbor
+              ? { id: neighbor.id, name: neighbor.name }
+              : null,
             drafts: draftRows.filter(
               (draft) => draft.challengeId === challenge.id
             ),
@@ -355,7 +515,23 @@ export class WorkflowRepository {
         if (challenge.status !== "draft") {
           throw new Error("Os desafios desta rodada já foram enviados.");
         }
-        const objective = `${input.objective.trim()}\n\n${seed?.challenge ?? challenge.objective}`;
+        const [dependency] = await tx
+          .select()
+          .from(challengeDependencies)
+          .where(eq(challengeDependencies.challengeId, challenge.id));
+        const [neighbor] = dependency
+          ? await tx
+              .select({ name: squads.name })
+              .from(squads)
+              .where(eq(squads.id, dependency.dependsOnSquadId))
+          : [];
+        const seededObjective = neighbor
+          ? crisisObjective(
+              seed?.challenge ?? challenge.objective,
+              neighbor.name
+            )
+          : (seed?.challenge ?? challenge.objective);
+        const objective = `${input.objective.trim()}\n\n${seededObjective}`;
         await tx
           .update(challenges)
           .set({ objective, updatedAt: new Date().toISOString() })
@@ -540,11 +716,26 @@ export class WorkflowRepository {
       consideredDraftIds,
       steererName: decision.steererName,
     };
+    const [dependency] = await this.db
+      .select()
+      .from(challengeDependencies)
+      .where(eq(challengeDependencies.challengeId, challenge.id));
+    const [neighbor] = dependency
+      ? await this.db
+          .select({ name: squads.name })
+          .from(squads)
+          .where(eq(squads.id, dependency.dependsOnSquadId))
+      : [];
+    const dependencyConstraint = neighbor
+      ? `Dependência de crise: coordene a solução com o squad ${neighbor.name}.`
+      : undefined;
     const payload: DispatchPayload = {
       objective: challenge.objective,
       input: agentDecision.build,
       expectedOutput: input.expectedOutput.trim(),
-      constraints: input.constraints,
+      constraints: dependencyConstraint
+        ? [dependencyConstraint, ...input.constraints]
+        : input.constraints,
       decision: agentDecision,
     };
     const id = stableId("dispatch", challenge.id);
@@ -748,6 +939,225 @@ export class WorkflowRepository {
       throw new Error("Reivindique seu harness antes de pedir um draft.");
     }
     return harness;
+  }
+
+  async assertCanSwapModel(input: {
+    actorPersonId: string;
+    participantId: string;
+  }) {
+    const actor = await this.requireOrchestratorSteerer(input.actorPersonId);
+    const roundId = await this.activeRoundId();
+    if (roundId !== "round-6") {
+      throw new Error("A troca de modelo só fica disponível na rodada 6.");
+    }
+    const current = await this.getOrchestratorModel();
+    if (current?.participantId === input.participantId) {
+      throw new Error("Este modelo já conduz o orquestrador.");
+    }
+    return { actor, current, roundId };
+  }
+
+  async recordModelSwap(input: {
+    actorPersonId: string;
+    participantId: string;
+    modelLabel: string;
+    previousModelLabel: string;
+    handoff: string;
+  }) {
+    const { actor, roundId } = await this.assertCanSwapModel(input);
+    const id = crypto.randomUUID();
+    const revision = await this.db.transaction(async (tx) => {
+      await tx.insert(orchestratorModelHandoffs).values({
+        id,
+        participantId: input.participantId,
+        modelLabel: input.modelLabel,
+        previousModelLabel: input.previousModelLabel,
+        handoff: input.handoff,
+        actorPersonId: actor.id,
+        actorName: actor.name,
+        roundId,
+      });
+      return this.appendEvent(
+        tx,
+        "orchestrator.model.swapped",
+        {
+          id,
+          roundId,
+          participantId: input.participantId,
+          modelLabel: input.modelLabel,
+          previousModelLabel: input.previousModelLabel,
+        },
+        actor
+      );
+    });
+    return { id, roundId, revision };
+  }
+
+  async getOrchestratorModel(): Promise<OrchestratorModelView | null> {
+    const [row] = await this.db
+      .select()
+      .from(orchestratorModelHandoffs)
+      .orderBy(desc(orchestratorModelHandoffs.sequence))
+      .limit(1);
+    return row
+      ? {
+          participantId: row.participantId,
+          modelLabel: row.modelLabel,
+          previousModelLabel: row.previousModelLabel,
+          handoff: row.handoff,
+          actorPersonId: row.actorPersonId,
+          actorName: row.actorName,
+          roundId: row.roundId,
+          createdAt: row.createdAt,
+          consumedAt: row.consumedAt,
+        }
+      : null;
+  }
+
+  async createModelHandoff() {
+    const [squadRows, decisionRows, challengeRows] = await Promise.all([
+      this.db
+        .select({ id: squads.id, name: squads.name })
+        .from(squads)
+        .where(eq(squads.active, true))
+        .orderBy(asc(squads.ordinal)),
+      this.db.select().from(decisions).orderBy(asc(decisions.roundId)),
+      this.db
+        .select()
+        .from(challenges)
+        .where(eq(challenges.roundId, "round-6")),
+    ]);
+    const activeSquadIds = new Set(squadRows.map((squad) => squad.id));
+    return JSON.stringify({
+      squads: squadRows,
+      decisions: decisionRows.map((decision) => ({
+        squadId: decision.squadId,
+        roundId: decision.roundId,
+        build: decision.build,
+        cut: decision.cut,
+        reason: decision.reason,
+      })),
+      pending: challengeRows
+        .filter(
+          (challenge) =>
+            activeSquadIds.has(challenge.squadId) &&
+            challenge.status !== "dispatched"
+        )
+        .map((challenge) => ({
+          challengeId: challenge.id,
+          squadId: challenge.squadId,
+          roundId: challenge.roundId,
+          hasDecision: decisionRows.some(
+            (decision) => decision.challengeId === challenge.id
+          ),
+        })),
+    });
+  }
+
+  async consumeModelHandoff() {
+    const [current] = await this.db
+      .select({ sequence: orchestratorModelHandoffs.sequence })
+      .from(orchestratorModelHandoffs)
+      .where(sql`${orchestratorModelHandoffs.consumedAt} IS NULL`)
+      .orderBy(desc(orchestratorModelHandoffs.sequence))
+      .limit(1);
+    if (!current) {
+      return;
+    }
+    await this.db
+      .update(orchestratorModelHandoffs)
+      .set({ consumedAt: new Date().toISOString() })
+      .where(eq(orchestratorModelHandoffs.sequence, current.sequence));
+  }
+
+  async getFinale(): Promise<FinaleView> {
+    const [
+      squadRows,
+      decisionRows,
+      draftRows,
+      returnedRows,
+      liveTileRows,
+      model,
+    ] = await Promise.all([
+      this.db
+        .select()
+        .from(squads)
+        .where(eq(squads.active, true))
+        .orderBy(asc(squads.ordinal)),
+      this.db.select().from(decisions).orderBy(asc(decisions.roundId)),
+      this.db
+        .select({ squadId: challenges.squadId, origin: drafts.origin })
+        .from(drafts)
+        .innerJoin(challenges, eq(challenges.id, drafts.challengeId))
+        .where(eq(drafts.seeded, false)),
+      this.db
+        .select({ squadId: dispatches.squadId })
+        .from(reviews)
+        .innerJoin(dispatches, eq(dispatches.id, reviews.dispatchId))
+        .where(eq(reviews.outcome, "returned")),
+      this.db
+        .select({ tile: tiles, publication: tilePublications })
+        .from(tilePublications)
+        .innerJoin(tiles, eq(tiles.id, tilePublications.tileId)),
+      this.getOrchestratorModel(),
+    ]);
+    const finaleSquads = squadRows.map((squad) => {
+      const live = liveTileRows.find((row) => row.tile.squadId === squad.id);
+      const squadDrafts = draftRows.filter(
+        (draft) => draft.squadId === squad.id
+      );
+      return {
+        id: squad.id,
+        ordinal: squad.ordinal,
+        name: squad.name,
+        liveTile: live
+          ? {
+              id: live.tile.id,
+              boardVersion: live.tile.boardVersion,
+              manifest: parseJsonObject(live.tile.manifestJson),
+              readme: live.tile.readme,
+              sourceHarnessId: live.tile.sourceHarnessId,
+              sourceModel: live.tile.sourceModel,
+            }
+          : null,
+        decisions: decisionRows
+          .filter((decision) => decision.squadId === squad.id)
+          .map((decision) => ({
+            id: decision.id,
+            roundId: decision.roundId,
+            roundNumber: Number(decision.roundId.replace("round-", "")),
+            build: decision.build,
+            cut: decision.cut,
+            reason: decision.reason,
+            steererName: decision.steererName,
+          }))
+          .sort((left, right) => left.roundNumber - right.roundNumber),
+        draftCounts: {
+          human: squadDrafts.filter((draft) => draft.origin === "human").length,
+          harness: squadDrafts.filter((draft) => draft.origin === "harness")
+            .length,
+        },
+        returnedReviews: returnedRows.filter((row) => row.squadId === squad.id)
+          .length,
+      };
+    });
+    return {
+      squads: finaleSquads,
+      totals: {
+        drafts: finaleSquads.reduce(
+          (total, squad) => ({
+            human: total.human + squad.draftCounts.human,
+            harness: total.harness + squad.draftCounts.harness,
+          }),
+          { human: 0, harness: 0 }
+        ),
+        returnedReviews: finaleSquads.reduce(
+          (total, squad) => total + squad.returnedReviews,
+          0
+        ),
+      },
+      orchestratorModel: model,
+    };
   }
 
   async toWorldState() {

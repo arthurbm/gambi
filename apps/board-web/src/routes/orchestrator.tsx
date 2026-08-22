@@ -4,6 +4,7 @@ import { ArrowLeftIcon, CircleHelpIcon, SendIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { ModelHandoffCard } from "@/components/model-handoff-card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -103,6 +104,15 @@ function OrchestratorPage() {
           a rodada.
         </p>
       </header>
+
+      {workflow.data.roundId === "round-6" ? (
+        <ModelHandoffCard
+          currentModel={workflow.data.orchestratorModel}
+          pending={pending}
+          personId={personId}
+          run={run}
+        />
+      ) : null}
 
       <section className="objective-slip">
         <FieldGroup>

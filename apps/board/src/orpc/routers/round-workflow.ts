@@ -19,8 +19,58 @@ export function createRoundWorkflowRouter() {
         .handler(({ context, input }) =>
           context.workflow.getView(input.roundId)
         ),
+      finale: publicProcedure.handler(({ context }) =>
+        context.workflow.getFinale()
+      ),
     },
     orchestrator: {
+      models: publicProcedure.handler(({ context }) => {
+        if (!context.orchestrator) {
+          return [];
+        }
+        return context.orchestrator.listModels();
+      }),
+      swapModel: publicProcedure
+        .input(z.object({ actorPersonId: personId, participantId: entityId }))
+        .handler(async ({ context, input }) => {
+          try {
+            if (!context.orchestrator) {
+              throw new Error("O runtime do orquestrador está desativado.");
+            }
+            const permitted = await context.workflow.assertCanSwapModel(input);
+            const models = await context.orchestrator.listModels();
+            const model = models.find(
+              (item) => item.id === input.participantId
+            );
+            if (!model) {
+              throw new Error(
+                "O modelo escolhido não está disponível na sala."
+              );
+            }
+            const modelLabel = `${model.nickname} · ${model.model}`;
+            const previousModelLabel =
+              permitted.current?.modelLabel ?? "Seleção automática da sala";
+            const durableHandoff = await context.workflow.createModelHandoff();
+            const handoff = context.orchestrator.swapModel(
+              model.id,
+              durableHandoff
+            );
+            const result = await context.workflow.recordModelSwap({
+              ...input,
+              modelLabel,
+              previousModelLabel,
+              handoff,
+            });
+            await publish(
+              context,
+              "orchestrator.model.swapped",
+              result.revision
+            );
+            return { ...result, modelLabel, previousModelLabel, handoff };
+          } catch (error) {
+            return badRequest(error);
+          }
+        }),
       selectSteerer: publicProcedure
         .input(z.object({ actorPersonId: personId, personId }))
         .handler(async ({ context, input }) => {
@@ -42,9 +92,12 @@ export function createRoundWorkflowRouter() {
         .input(z.object({ actorPersonId: personId, objective: content }))
         .handler(async ({ context, input }) => {
           try {
-            await context.orchestrator?.run(
-              `Frame the current round around this human objective without dispatching work: ${input.objective}`
-            );
+            if (context.orchestrator) {
+              await context.orchestrator.run(
+                `Frame the current round around this human objective without dispatching work: ${input.objective}`
+              );
+              await context.workflow.consumeModelHandoff();
+            }
             const result = await context.workflow.proposeChallenges(input);
             await publish(context, "challenges.proposed", result.revision);
             return result;

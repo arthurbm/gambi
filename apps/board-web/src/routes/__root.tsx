@@ -5,7 +5,13 @@ import {
   Link,
   Outlet,
 } from "@tanstack/react-router";
-import { MapIcon, NetworkIcon, ShieldIcon, UserRoundIcon } from "lucide-react";
+import {
+  MapIcon,
+  NetworkIcon,
+  PartyPopperIcon,
+  ShieldIcon,
+  UserRoundIcon,
+} from "lucide-react";
 import { useEffect } from "react";
 
 import { Toaster } from "@/components/ui/sonner";
@@ -54,6 +60,10 @@ function RootComponent() {
         <Link activeProps={{ "aria-current": "page" }} to="/orchestrator">
           <NetworkIcon aria-hidden="true" />
           Orquestrador
+        </Link>
+        <Link activeProps={{ "aria-current": "page" }} to="/finale">
+          <PartyPopperIcon aria-hidden="true" />
+          Finale
         </Link>
         <Link activeProps={{ "aria-current": "page" }} to="/admin">
           <ShieldIcon aria-hidden="true" />

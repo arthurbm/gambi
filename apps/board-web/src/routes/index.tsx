@@ -119,6 +119,10 @@ function HomeComponent() {
 
       <CityMap
         revision={state.data.revision}
+        showMetro={
+          state.data.config.currentPhase === "finale" ||
+          Number(state.data.config.currentPhase.replace("round:", "")) >= 4
+        }
         squads={squads}
         theme={config.theme}
         tiles={state.data.tiles}
@@ -159,6 +163,11 @@ function HomeComponent() {
             </div>
           </dl>
         </section>
+        {config.currentPhase === "finale" ? (
+          <Link className={cn(buttonVariants(), "finale-link")} to="/finale">
+            Abrir registro final
+          </Link>
+        ) : null}
         <Link className={cn(buttonVariants(), "admin-link")} to="/admin">
           Abrir controle do admin
         </Link>

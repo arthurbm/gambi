@@ -400,4 +400,33 @@ describe("Orchestrator", () => {
     });
     expect(restoredTransport.prompts[0]?.sessionId).toBe(dispatch.sessionId);
   });
+
+  test("delivers a persisted handoff on the first run after restart", async () => {
+    const model = new MockLanguageModelV3({
+      modelId: "restored-model",
+      doGenerate: textResult(),
+    });
+    const { orchestrator } = createFixture({ model });
+    const restarted = new Orchestrator({
+      model,
+      squads,
+      rounds,
+      transports: {
+        alpha: new MemoryHarnessTransport(),
+        beta: new MemoryHarnessTransport(),
+      },
+      initialState: orchestrator.world,
+      initialHandoff: '{"squads":[{"id":"alpha"}],"pending":[]}',
+    });
+
+    await restarted.run("Continue the festival");
+
+    const prompt = JSON.stringify(model.doGenerateCalls[0]?.prompt);
+    expect(prompt).toContain("Handoff from the previous model");
+    expect(prompt).toContain("Continue the festival");
+    await restarted.run("Second request");
+    expect(JSON.stringify(model.doGenerateCalls[1]?.prompt)).not.toContain(
+      "Handoff from the previous model"
+    );
+  });
 });

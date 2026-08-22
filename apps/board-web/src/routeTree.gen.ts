@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as FinaleRouteImport } from './routes/finale'
 import { Route as MeRouteImport } from './routes/me'
 import { Route as OrchestratorRouteImport } from './routes/orchestrator'
 import { Route as SquadIdRouteImport } from './routes/squad.$id'
@@ -23,6 +24,11 @@ const IndexRoute = IndexRouteImport.update({
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FinaleRoute = FinaleRouteImport.update({
+  id: '/finale',
+  path: '/finale',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MeRoute = MeRouteImport.update({
@@ -44,6 +50,7 @@ const SquadIdRoute = SquadIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/finale': typeof FinaleRoute
   '/me': typeof MeRoute
   '/orchestrator': typeof OrchestratorRoute
   '/squad/$id': typeof SquadIdRoute
@@ -51,6 +58,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/finale': typeof FinaleRoute
   '/me': typeof MeRoute
   '/orchestrator': typeof OrchestratorRoute
   '/squad/$id': typeof SquadIdRoute
@@ -59,21 +67,30 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/finale': typeof FinaleRoute
   '/me': typeof MeRoute
   '/orchestrator': typeof OrchestratorRoute
   '/squad/$id': typeof SquadIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/admin' | '/me' | '/orchestrator' | '/squad/$id'
+  fullPaths: '/' | '/admin' | '/finale' | '/me' | '/orchestrator' | '/squad/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/me' | '/orchestrator' | '/squad/$id'
-  id: '__root__' | '/' | '/admin' | '/me' | '/orchestrator' | '/squad/$id'
+  to: '/' | '/admin' | '/finale' | '/me' | '/orchestrator' | '/squad/$id'
+  id:
+    | '__root__'
+    | '/'
+    | '/admin'
+    | '/finale'
+    | '/me'
+    | '/orchestrator'
+    | '/squad/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
+  FinaleRoute: typeof FinaleRoute
   MeRoute: typeof MeRoute
   OrchestratorRoute: typeof OrchestratorRoute
   SquadIdRoute: typeof SquadIdRoute
@@ -93,6 +110,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/finale': {
+      id: '/finale'
+      path: '/finale'
+      fullPath: '/finale'
+      preLoaderRoute: typeof FinaleRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/me': {
@@ -122,6 +146,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
+  FinaleRoute: FinaleRoute,
   MeRoute: MeRoute,
   OrchestratorRoute: OrchestratorRoute,
   SquadIdRoute: SquadIdRoute,
