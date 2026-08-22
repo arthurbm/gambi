@@ -15,6 +15,7 @@ gambi room create
 gambi room list
 gambi room get
 gambi participant join
+gambi participant join
 gambi participant leave
 gambi participant heartbeat
 gambi events watch
@@ -253,10 +254,11 @@ gambi room get --code ABC123 --format json
 
 ## `gambi participant join`
 
-Register a participant and keep its tunnel alive.
+Register a model endpoint or local ACP harness and keep its tunnel alive.
 
 ```bash
 gambi participant join --room <room> --participant-id <id> --model <model> [options]
+gambi participant join --room <room> --participant-id <id> --harness <id> [options]
 ```
 
 Options:
@@ -265,8 +267,9 @@ Options:
 | --- | --- |
 | `--room` | room code |
 | `--participant-id` | stable participant identifier |
-| `--nickname` | display name |
-| `--model` | model to expose |
+| `--nickname`, `--name` | display name (`--name` is an alias) |
+| `--model` | model to expose, or an optional label in harness mode |
+| `--harness <opencode\|claude-code\|codex\|fake>` | start a local ACP harness instead of a model endpoint |
 | `--endpoint` | local endpoint used for probing and inference |
 | `--header` | auth header in `Header=Value` format |
 | `--header-env` | auth header in `Header=ENV_VAR` format |
@@ -282,6 +285,17 @@ Notes:
 - `--config -` reads participant runtime config JSON from stdin.
 - The CLI probes the endpoint before registration to validate the model and detect capabilities.
 - Participant joins now always use a tunnel, so the provider endpoint can stay on `localhost` even when the hub runs on another machine. See [How tunnels work](/explanation/tunnel-first/).
+- Harness mode creates `~/.gambi/workspaces/<room>/<participant-id>/`, adds the city tile starter when files are missing, starts the ACP agent in that directory, and publishes changed workspace files after a one-second debounce.
+- `--endpoint`, `--header`, and `--header-env` are invalid with `--harness`. The harness uses its existing login on the participant machine. Gambi does not read or upload those credentials.
+- The `opencode` adapter runs `opencode acp`. If OpenCode is missing or has no detected credentials, the command exits with code `3` and prints the command needed to fix it.
+- The `claude-code` adapter runs the published `claude-agent-acp` bridge. Install it with `npm install -g @agentclientprotocol/claude-agent-acp`, install Claude Code with `npm install -g @anthropic-ai/claude-code`, and authenticate locally with `claude auth login`.
+- **Claude Code terms warning:** each end user must run the unmodified Anthropic binary with their own local authentication. Gambi never intermediates a Claude subscription login and must never host Claude Code for third parties. Review Anthropic's [legal and compliance terms](https://code.claude.com/docs/en/legal-and-compliance) before joining.
+- The `codex` adapter runs the published `codex-acp` bridge. Install it with `npm install -g @agentclientprotocol/codex-acp`, install Codex CLI with `npm install -g @openai/codex`, and authenticate locally with `codex login`.
+- Claude Code and Codex readiness checks use `claude auth status --json` and `codex login status`. Authentication state and credentials remain on the participant machine and are never included in registration, lifecycle events, or tunnel frames.
+- The `fake` adapter is deterministic and calls no model. It is for the event rehearsal and automated tests.
+- `--dry-run` validates the command input and prints the registration preview. It does not start the ACP process or verify the harness login.
+
+For a task-oriented setup for OpenCode, Claude Code, and Codex, see [Bring your harness](/guides/bring-your-harness/).
 
 Examples:
 
@@ -309,6 +323,30 @@ gambi participant join \
   --model llama3 \
   --dry-run \
   --format ndjson
+
+gambi participant join \
+  --room ABC123 \
+  --participant-id arthur-opencode \
+  --name Arthur \
+  --harness opencode
+
+gambi participant join \
+  --room ABC123 \
+  --participant-id bia-claude \
+  --name Bia \
+  --harness claude-code
+
+gambi participant join \
+  --room ABC123 \
+  --participant-id caio-codex \
+  --name Caio \
+  --harness codex
+
+gambi participant join \
+  --room ABC123 \
+  --participant-id rehearsal-1 \
+  --harness fake \
+  --model deterministic-fixture
 ```
 
 NDJSON lifecycle events:
@@ -318,6 +356,10 @@ NDJSON lifecycle events:
 | `prepared` | endpoint probing and payload assembly completed |
 | `registered` | participant registration succeeded |
 | `tunnel_connected` | the participant tunnel is open |
+| `harness_spawned` | the local ACP process started |
+| `session_opened` | ACP v1 negotiation and `session/new` succeeded |
+| `artifact_sent` | a versioned workspace snapshot crossed the tunnel |
+| `harness_exited` | the local ACP process exited |
 | `leaving` | shutdown started |
 | `left` | participant removal completed |
 | `heartbeat_failed` | management heartbeat loop failed |

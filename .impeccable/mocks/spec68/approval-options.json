@@ -1,0 +1,41 @@
+{
+  "title": "Choose the board composition",
+  "question": "All three keep the field-book world. Choose the composition to build, or steer a revision.",
+  "options": [
+    {
+      "id": "cadastral-sheet",
+      "label": "Complete cadastral sheet",
+      "lineage": "city plan with full operational margins",
+      "thesis": "The projector sees the whole event as one official plan sheet.",
+      "palette": ["#E9E2CF", "#24322F", "#C94F32", "#2C6E6B", "#E1B84A"],
+      "materials": ["survey paper", "graphite", "registration stamps"],
+      "viewport": "City parcels lead, with squad books left, controls right, and a full event ledger below.",
+      "risk": "The density is excellent on a projector but asks for careful reduction on phones.",
+      "comp": ".impeccable/mocks/spec68/comp-1-cadastral-sheet.webp"
+    },
+    {
+      "id": "map-led",
+      "label": "Map-led field book",
+      "lineage": "continuous city plan with narrow working margins",
+      "thesis": "The shared city owns the viewport while squads and phase controls stay at its edges.",
+      "palette": ["#E9E2CF", "#24322F", "#C94F32", "#2C6E6B", "#E1B84A"],
+      "materials": ["survey paper", "field ledger", "painted stakes"],
+      "viewport": "A 70% city map, a slim squad gutter, a bottom decision ledger, and a restrained admin margin.",
+      "risk": "The squad work surface must open without shrinking the city into a thumbnail.",
+      "comp": ".impeccable/mocks/spec68/comp-2-map-led.png"
+    },
+    {
+      "id": "book-spread",
+      "label": "Open field-book spread",
+      "lineage": "city plan on the left, active squad work on the right",
+      "thesis": "The city and the current human decision share one physical spread.",
+      "palette": ["#E9E2CF", "#24322F", "#C94F32", "#2C6E6B", "#E1B84A"],
+      "materials": ["bound field book", "map tabs", "revision stamps"],
+      "viewport": "The left page carries all six lots; the right page carries drafts, decision, harness stream, and review.",
+      "risk": "It is ideal for squad work but shows less room-level status at once.",
+      "comp": ".impeccable/mocks/spec68/comp-3-book-spread.png"
+    }
+  ],
+  "steer": true,
+  "followup": false
+}

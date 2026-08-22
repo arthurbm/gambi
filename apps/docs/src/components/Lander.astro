@@ -14,7 +14,8 @@ const useCases = [
     group: "A · build with many LLMs",
     title: "Model arena",
     body: "Same prompt, every model in the room. Spot differences in tone, accuracy, and speed at a glance.",
-    pattern: 'Round-robin via model:"*", N requests in parallel, render side by side.',
+    pattern:
+      'Round-robin via model:"*", N requests in parallel, render side by side.',
     href: "/guides/patterns/#model-arena",
   },
   {
@@ -22,7 +23,8 @@ const useCases = [
     group: "A · build with many LLMs",
     title: "Jury / judge panel",
     body: "Generate the answer once. Fan it out to other models for verdicts and scoring. The g-eval pattern, off the shelf.",
-    pattern: "1 generator participant + N judge participants. Aggregate the votes.",
+    pattern:
+      "1 generator participant + N judge participants. Aggregate the votes.",
     href: "/guides/patterns/#jury-panel",
   },
   {
@@ -46,7 +48,8 @@ const useCases = [
     group: "B · build experiences",
     title: "Multi-persona NPCs",
     body: "A game where each character has its own brain. Different model, different system prompt, different attitude.",
-    pattern: "One participant per persona. Route by ID at the moment of speech.",
+    pattern:
+      "One participant per persona. Route by ID at the moment of speech.",
     href: "/guides/patterns/#multi-persona-npcs",
   },
   {
@@ -54,7 +57,8 @@ const useCases = [
     group: "B · build experiences",
     title: "LAN debate club",
     body: "Bring friends or students. Each plugs their own LLM into the room. You build the UI; the models stay theirs.",
-    pattern: "Multi-person registration. App reads the participant list and fans out.",
+    pattern:
+      "Multi-person registration. App reads the participant list and fans out.",
     href: "/guides/patterns/#lan-debate-club",
   },
 ];
@@ -80,9 +84,9 @@ const builderSpecs = [
   },
   {
     n: "04",
-    title: "Many rooms, one hub",
-    body: "Run as many rooms as you want on a single hub — one per app, team, or experiment. Each room has its own participants, routing, and event stream.",
-    spec: "scoped routing · isolated state",
+    title: "Bring your coding harness",
+    body: "Share your local OpenCode, Claude Code, or Codex process. Its login stays on your machine while ACP messages cross the participant tunnel.",
+    spec: "opencode · claude-code · codex",
   },
 ];
 
@@ -97,6 +101,9 @@ const providers = [
   "fireworks",
   "together ai",
   "localai",
+  "opencode",
+  "claude code",
+  "codex",
 ];
 
 const sdkSnippet = `import { createGambi } from "gambi-sdk";
@@ -141,17 +148,17 @@ const deployDate = new Date().toISOString().slice(0, 10);
 
       <h1 id="hero-title" class="hero-title">
         <span class="hero-title-line">A shared room</span>
-        <span class="hero-title-line accent">for every LLM<span class="cursor">_</span></span>
-        <span class="hero-title-line">you build with.</span>
+        <span class="hero-title-line accent">for models and harnesses<span class="cursor">_</span></span>
+        <span class="hero-title-line">running on your network.</span>
       </h1>
 
       <p class="hero-sub">
-        Build apps where many models collaborate across people, machines and providers.
+        Share OpenAI-compatible model endpoints and local coding harnesses through participant-opened tunnels.
       </p>
 
       <p class="hero-tag">
-        <span class="hero-tag-strong">Gambi ships the gateway.</span>
-        <span class="hero-tag-soft">You ship the experience.</span>
+        <span class="hero-tag-strong">Gambi runs the shared hub.</span>
+        <span class="hero-tag-soft">Credentials stay on each participant machine.</span>
       </p>
 
       <div class="cta-buttons">
@@ -159,6 +166,7 @@ const deployDate = new Date().toISOString().slice(0, 10);
           <span>Get started</span><span class="btn-arrow">↗</span>
         </a>
         <a href="/guides/patterns/" class="btn btn-secondary">See patterns</a>
+        <a href="/guides/bring-your-harness/" class="btn btn-secondary">Bring your harness</a>
         <a
           href="https://github.com/arthurbm/gambi"
           class="btn btn-secondary"
@@ -187,7 +195,7 @@ const deployDate = new Date().toISOString().slice(0, 10);
       <span class="section-kicker">/ patterns</span>
       <h2 id="patterns-title" class="section-title">What you can build</h2>
       <p class="section-lead">
-        Six recipes that fit on a few lines of TypeScript. The substrate (routing, observability, multi-source) is already there.
+        Six recipes that fit on a few lines of TypeScript. Gambi handles room routing, event streams, and participants from several machines.
       </p>
     </header>
 
@@ -216,7 +224,7 @@ const deployDate = new Date().toISOString().slice(0, 10);
       <span class="section-kicker">/ architecture</span>
       <h2 id="how-title" class="section-title">How it sits in your stack</h2>
       <p class="section-lead">
-        Your app talks to a single OpenAI-compatible URL. The hub routes inside the room. Every participant runs its own provider, in its own tunnel.
+        Apps use one OpenAI-compatible URL. Harness clients use the management attach channel. Every participant opens its own tunnel to the hub.
       </p>
     </header>
 
@@ -264,12 +272,12 @@ const deployDate = new Date().toISOString().slice(0, 10);
       <div class="how-col how-col-participants">
         <div class="how-tag">03 · participants</div>
         <div class="how-box participant-box">
-          <div class="how-box-title">your providers</div>
+          <div class="how-box-title">your models and harnesses</div>
           <ul class="participant-list">
             <li><span class="dot ok"></span> ollama @ localhost:11434</li>
             <li><span class="dot ok"></span> vllm @ 192.168.1.50:8000</li>
             <li><span class="dot ok"></span> openrouter (cloud)</li>
-            <li><span class="dot warn"></span> openai (rate limited)</li>
+            <li><span class="dot ok"></span> opencode / claude code / codex (ACP)</li>
           </ul>
         </div>
       </div>
@@ -385,6 +393,7 @@ const deployDate = new Date().toISOString().slice(0, 10);
       <div class="footer-col">
         <span class="footer-label">docs</span>
         <a href="/guides/quickstart/">Quick start</a>
+        <a href="/guides/bring-your-harness/">Bring your harness</a>
         <a href="/guides/patterns/">Patterns</a>
         <a href="/reference/sdk/">SDK</a>
         <a href="/reference/api/">API</a>
@@ -409,7 +418,7 @@ const deployDate = new Date().toISOString().slice(0, 10);
 
     <div class="footer-strip">
       <span>made with gambiarra · for the local LLM community</span>
-      <span class="footer-strip-version">v0.3.x · {deployDate}</span>
+      <span class="footer-strip-version">docs build · {deployDate}</span>
     </div>
   </footer>
 </div>

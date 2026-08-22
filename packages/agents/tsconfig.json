@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig.json",
+  "compilerOptions": {
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*", "scripts/**/*"],
+  "exclude": ["src/**/*.test.ts", "node_modules"]
+}

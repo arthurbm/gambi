@@ -1,0 +1,93 @@
+{
+  "title": "Choose the event board's visual world",
+  "question": "The board must work on phones during a live club event and read clearly on a projector. Keep the field-book direction, choose an alternate, or re-roll.",
+  "options": [
+    {
+      "id": "assigned",
+      "label": "Caderno de loteamento",
+      "kicker": "THE ROLL",
+      "lineage": "Brazilian survey field books, cadastral maps, and site stakes",
+      "thesis": "Every squad occupies a measured lot, and every human decision leaves a dated field mark.",
+      "palette": ["#E9E2CF", "#24322F", "#C94F32", "#2C6E6B", "#E1B84A"],
+      "materials": ["survey paper", "graphite", "registration stamps", "painted site stakes"],
+      "viewport": "A projector-scale cadastral sheet fills the screen; live district tiles sit inside measured parcels, while the current round and squad status live in the map margin.",
+      "risk": "The map grammar must stay operational on a narrow phone instead of becoming decorative paperwork.",
+      "raised": [
+        {"from": "Iridescent cloud edge", "raise": "Color stays concentrated at live state boundaries, so the city remains legible at distance."},
+        {"from": "Alphabet storm", "raise": "Recorded words visibly change the plan only after a decision is dispatched."},
+        {"from": "Flash-scrawl sleeve", "raise": "Returns and revisions remain as marks in the lot history instead of disappearing."},
+        {"from": "Phosphor terminal", "raise": "System state writes itself into the field log instead of hiding behind generic chrome."}
+      ],
+      "comp": ".impeccable/mocks/decision/spec68-assigned.png"
+    },
+    {
+      "id": "model-pick",
+      "label": "Mural de mutirão",
+      "kicker": "IMPECCABLE’S PICK",
+      "lineage": "community planning walls, masking tape, index cards, and public assembly notes",
+      "thesis": "The room sees a shared wall where squads pin proposals, cross out cuts, and move accepted work into the city.",
+      "palette": ["#F2E7CE", "#1F2B28", "#E35B38", "#167D73", "#F2C94C"],
+      "materials": ["kraft paper", "masking tape", "felt marker", "pinned photographs"],
+      "viewport": "The city occupies the center of a wall-sized board, with squad strips and the live round arranged around it like an active workshop.",
+      "risk": "This is the most familiar collaboration metaphor and can slip into generic kanban if the city stops leading.",
+      "comp": ".impeccable/mocks/decision/spec68-pick.png"
+    },
+    {
+      "id": "challenger-timetable",
+      "label": "Departure rack",
+      "verdict": "competitive",
+      "lineage": "1970s pocket airline timetables on a lit slide rack",
+      "thesis": "Rounds become departures, squads become gates, and each dispatch occupies one exact status cell.",
+      "palette": ["#D7A928", "#27313A", "#F4EEDC", "#B64232", "#1F5D45"],
+      "materials": ["goldenrod stock", "tinted acetate", "printed code strips"],
+      "viewport": "A lateral rack shows every squad and round at once, with the city visible as the destination beyond the active slide.",
+      "case": "Its fixed cells make phase and dispatch state exceptionally clear, but the audience identifies less strongly with airline operations than collective building.",
+      "risk": "Dense codes can overwhelm first-time participants on phones.",
+      "comp": ".impeccable/mocks/decision/spec68-timetable.png",
+      "hero": "https://impeccable.style/worlds/cards/rw-timetable-slide-rack-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/rw-timetable-slide-rack.webp"
+    },
+    {
+      "id": "challenger-one-bit",
+      "label": "One-bit city desk",
+      "verdict": "competitive",
+      "lineage": "early one-bit desktops with tiled windows and marching selections",
+      "thesis": "Every squad owns a crisp city window, and accepted artifacts snap into the shared desktop.",
+      "palette": ["#F8F8F2", "#111111", "#D9D9D0", "#FF5C35"],
+      "materials": ["one-bit pixels", "ordered dithers", "single-pixel chrome"],
+      "viewport": "The projector is one desktop of tiled district windows; the active steerer and pending decisions invert in place.",
+      "case": "Tool users recognize the grammar immediately, but it makes the city feel like software before it feels like a collective place.",
+      "risk": "Strict monochrome can flatten differences between harnesses and models.",
+      "comp": ".impeccable/mocks/decision/spec68-one-bit.png",
+      "hero": "https://impeccable.style/worlds/cards/medium-native-one-bit-desktop-hero.webp",
+      "board": "https://impeccable.style/worlds/cards/medium-native-one-bit-desktop.webp"
+    },
+    {
+      "id": "challenger-scrawl",
+      "label": "Flash-scrawl club sleeve",
+      "verdict": "declined",
+      "lineage": "direct-flash club photographs marked up by hand",
+      "thesis": "The event accumulates as one defaced group photograph whose marks record each round.",
+      "palette": ["#F4F1E8", "#171717", "#FF3EB5", "#2F6BFF"],
+      "materials": ["direct-flash photography", "fat marker", "fluorescent stickers"],
+      "viewport": "A live room photograph sits behind the city while every action adds a persistent hand mark.",
+      "case": "It captures the club's energy, but it obscures operational state and requires photography the event setup does not guarantee.",
+      "kept": "Human revisions remain visibly present instead of being replaced by the latest clean state.",
+      "risk": "The projector can become visually noisy before the first round finishes.",
+      "hero": "https://impeccable.style/worlds/cards/posters-covers-sleeves-flash-scrawl-club-sleeve-hero.webp"
+    }
+  ],
+  "reroll": {"registers": ["safer", "bolder"]},
+  "buildPath": {"value": "comp", "toggle": true},
+  "canon": true,
+  "canonCard": {
+    "label": "The category standard",
+    "thesis": "A polished responsive dashboard with cards, tabs, a city panel, and familiar admin forms.",
+    "palette": ["#FFFFFF", "#111827", "#2563EB", "#E5E7EB"],
+    "materials": ["clean grid", "neutral cards", "standard dashboard controls"],
+    "viewport": "A top navigation bar, status cards, and the city in a large central panel.",
+    "risk": "Clear and familiar, but indistinguishable from a generic event dashboard.",
+    "comp": ".impeccable/mocks/decision/spec68-canon.png"
+  },
+  "steer": true
+}

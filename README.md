@@ -9,7 +9,7 @@
 
 <div align="center">
 
-**Share local LLMs across your network, with an agent-friendly control plane.**
+**Share model endpoints and local coding harnesses across your trusted network.**
 
 [![npm version](https://img.shields.io/npm/v/gambi-sdk)](https://www.npmjs.com/package/gambi-sdk)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -21,9 +21,11 @@
 
 ## What is Gambi?
 
-Gambi is a local-first system for sharing OpenAI-compatible LLM endpoints across a trusted network. A central hub tracks rooms and participants, proxies inference requests, and publishes real-time events over SSE.
+Gambi is a local-first system for sharing OpenAI-compatible model endpoints and local coding harnesses across a trusted network. A central hub tracks rooms and participants, relays inference requests or ACP messages, and publishes real-time events over SSE.
 
 Participants now connect through a hub-managed tunnel. The hub never needs direct network reachability to the participant's provider endpoint, so `localhost` and provider credentials can remain local to the participant machine.
+
+A harness participant contributes OpenCode, Claude Code, or Codex from the participant's own machine and login. It does not serve OpenAI-compatible inference. Apps control it through the SDK harness attach channel.
 
 The public name **Gambi** is the short form of **gambiarra**. Here it means the good kind: creative improvisation under constraints, turned into a practical tool.
 
@@ -121,6 +123,34 @@ gambi participant join \
 ```
 
 `gambi participant join` probes the local endpoint, registers the participant, opens a participant tunnel back to the hub, and keeps the session alive until interrupted. This works the same way for local hubs and remote hubs on the same trusted network: the endpoint can stay loopback-only on the participant machine.
+
+To join with the OpenCode agent already installed and authenticated on your
+machine:
+
+```bash
+gambi participant join \
+  --room ABC123 \
+  --participant-id arthur-opencode \
+  --name Arthur \
+  --harness opencode
+```
+
+This creates `~/.gambi/workspaces/ABC123/arthur-opencode/`, starts
+`opencode acp` there, and publishes workspace changes through the same outbound
+tunnel. OpenCode credentials stay on the participant machine.
+
+Claude Code and Codex can join through their published ACP bridges as
+`--harness claude-code` and `--harness codex`. Install the matching bridge
+(`@agentclientprotocol/claude-agent-acp` or
+`@agentclientprotocol/codex-acp`) globally first; the CLI checks the existing
+local Claude/Codex login and never sends credentials to the hub. Claude Code
+must be run by each end user with the unmodified Anthropic binary and their own
+authentication. Gambi does not intermediate subscription login or host Claude
+Code for third parties. See the
+[Bring your harness guide](apps/docs/src/content/docs/guides/bring-your-harness.mdx)
+for all three setup paths, or the
+[CLI reference](apps/docs/src/content/docs/reference/cli.mdx) for every flag and
+the terms warning.
 
 Preview the registration flow:
 
@@ -223,6 +253,7 @@ gambi room create
 gambi room list
 gambi room get
 gambi participant join
+gambi participant join
 gambi participant leave
 gambi participant heartbeat
 gambi events watch
@@ -309,6 +340,21 @@ for await (const event of client.events.watchRoom({ roomCode: "ABC123" })) {
 }
 ```
 
+Harness clients can attach to a harness participant without exposing that harness to inference routing:
+
+```ts
+const channel = await client.harness.attach({
+  roomCode: "ABC123",
+  participantId: "harness-1",
+});
+
+channel.send({
+  type: "tunnel.harness.message",
+  sessionId: "session-1",
+  message: { jsonrpc: "2.0", id: 1, method: "session/prompt", params: {} },
+});
+```
+
 ## HTTP API overview
 
 Management API:
@@ -321,6 +367,7 @@ Management API:
 - `PUT /v1/rooms/:code/participants/:id`
 - `DELETE /v1/rooms/:code/participants/:id`
 - `POST /v1/rooms/:code/participants/:id/heartbeat`
+- `GET /v1/rooms/:code/participants/:id/harness` (WebSocket)
 - `GET /v1/rooms/:code/events`
 
 Inference API:
@@ -392,9 +439,17 @@ bun run check-types
 Root dev workflow:
 
 - `bun run dev` and `bun run dev:hub` start the hub with `gambi hub serve`
+- `bun run event` supervises the hub, event board, web UI, and the hosted harnesses saved in the board database
+- `bun run board:e2e` starts the same stack with an isolated database, deterministic model participants, and fake ACP harnesses; it never calls a paid model
 - `bun run dev:cli -- <subcommand...>` forwards any CLI command from the repo root
 - `bun run dev:monitor` is a TUI alias for human-first monitoring
 - Prefer `bun run dev:cli -- room create --help` and `bun run dev:cli -- participant join --help` for CLI discovery during development
+
+Both event commands bind ports `3000`, `3001`, and `3002`. They print the room,
+admin, projector, and database details after every child reports ready. Press
+Ctrl+C once to stop the stack in reverse order. See the
+[event validation route](docs/reference/validation.md#full-event-board-rehearsal)
+before using it with a room.
 
 Workspace-specific:
 

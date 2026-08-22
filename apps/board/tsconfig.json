@@ -1,0 +1,18 @@
+{
+  "extends": "@gambi/config/tsconfig.base.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "composite": false,
+    "outDir": "dist",
+    "rootDir": "../..",
+    "paths": {
+      "@/*": ["./src/*"],
+      "gambi-sdk": ["../../packages/sdk/src/index.ts"]
+    },
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx",
+    "strictNullChecks": true,
+    "types": ["bun"]
+  },
+  "include": ["src/**/*.ts", "drizzle.config.ts", "tsdown.config.ts"]
+}

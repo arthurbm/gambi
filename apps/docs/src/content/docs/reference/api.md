@@ -133,6 +133,9 @@ Participant summaries include:
 - `config`
 - `capabilities`
 - `connection`
+- `harness` (harness participants only)
+
+`endpoint` is absent for a harness participant. Its `harness` object contains `id` (`opencode`, `claude-code`, `codex`, `pi`, or `fake`) and optional `model` and `hosted` fields.
 
 `connection` currently has:
 
@@ -152,11 +155,14 @@ Request body:
 | --- | --- | --- | --- |
 | `nickname` | `string` | yes | display name shown to operators |
 | `model` | `string` | yes | model name exposed by the participant |
-| `endpoint` | `string (URL)` | yes | participant-local provider endpoint |
+| `endpoint` | `string (URL)` | for model participants | participant-local provider endpoint |
+| `harness` | `{ id, model?, hosted? }` | for harness participants | local harness identity and display metadata |
 | `password` | `string` | no | room password, required when the room is protected |
 | `specs` | `MachineSpecs` | no | optional machine specs, see below |
 | `config` | `RuntimeConfig` | no | participant runtime defaults, see below |
 | `capabilities` | `ParticipantCapabilities` | no | participant protocol capabilities, see below |
+
+When `harness` is present, `endpoint` may be omitted and `capabilities` is ignored. Harness participants remain visible in management responses but are never returned by `/v1/models` or selected for inference.
 
 Provider credentials are intentionally not part of participant registration. Do not send `authHeaders` to this endpoint; pass them to `createParticipantSession()` or the CLI runtime so they stay local to the participant.
 
@@ -253,6 +259,14 @@ Error responses:
 | `404` | `ROOM_NOT_FOUND` | room code does not exist |
 | `404` | `PARTICIPANT_NOT_FOUND` | participant is not registered in the room |
 
+### GET /v1/rooms/:code/participants/:id/harness
+
+Attach a management client to a registered harness participant using a WebSocket upgrade. The client initiates this connection; the hub never connects to the participant.
+
+Clients send `tunnel.harness.message` and `tunnel.harness.control` frames. They receive `tunnel.harness.message`, `tunnel.harness.artifact`, and `tunnel.harness.status` frames. Every frame includes `sessionId`; ACP JSON-RPC lives in the opaque `message` field. Multiple clients may attach, and their sockets remain open while the participant tunnel reconnects.
+
+The route returns `ROOM_NOT_FOUND`, `PARTICIPANT_NOT_FOUND`, or `INVALID_REQUEST` when the target is not a harness participant.
+
 ### DELETE /v1/rooms/:code/participants/:id
 
 Remove a participant from a room.
@@ -302,12 +316,16 @@ Current event types:
 - `llm.request`
 - `llm.complete`
 - `llm.error`
+- `harness.session.opened`
+- `harness.session.closed`
+- `harness.artifact`
 
 Observability events:
 
 - `llm.request` includes `requestId`, `participantId`, `model`, and `protocol`
 - `llm.complete` includes the same fields plus `metrics`
 - `llm.error` includes request identity, participant info, protocol, stage, and error text
+- harness session events include `participantId` and `sessionId`; `harness.artifact` adds `version` and omits file contents
 
 `metrics` may include:
 
