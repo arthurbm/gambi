@@ -110,4 +110,6 @@ A participant is "available" only when its tunnel is connected, its status is no
 
 - **"Gambi"** refers to today's product (transport + room hub). The future umbrella brand also called "Gambi" (per ADR-0001) is *brand framing*, not a renamed product. When ambiguity matters, say **Gambi (the hub)** vs **Gambi (the brand)**.
 
+- **"Substrate" / "social primitives"** are **internal vocabulary** — they name the two layers of the product/research model in `docs/product/research-direction.md`: the *substrate* is what Gambi ships today (hub, tunnel, routing, observability); *social primitives* is the layer above it (turn-taking, shared context, agent-to-agent interaction), still research. Use them freely in `docs/` and in design conversation. _Rule_: never in public copy (landing, docs pages, README). A reader who has not read the research doc gets nothing from either term — say the concrete thing instead ("turn-taking, shared context, models talking to models"). Ruled in ADR-0001 § 7 (E6).
+
 - **"Heartbeat"** is reserved for the management-plane HTTP heartbeat. The tunnel's keepalive is **ping/pong** (`tunnel.ping` / `tunnel.pong`). Saying "the heartbeat failed" implicitly means management; tunnel failures are "ping/pong stopped" or "tunnel closed."

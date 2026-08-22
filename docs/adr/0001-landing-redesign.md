@@ -37,6 +37,8 @@ A landing apresenta a Gambi como **substrato (sala) onde experiências multi-LLM
 
 ### D2 — Escopo desta iteração: landing de produto único, brand-aware
 
+> **Parcialmente emendado em 2026-08-16** (§ 7, E1): a rejeição a tiles "coming soon" cai; o resto vale.
+
 Esta iteração **não** transforma a landing em página de marca-guarda-chuva. O produto atual mantém o nome "Gambi" e a página fala dele. A copy é escrita pra que, quando o Gambi Agents existir, a transição pra formato umbrella seja **aditiva**, não destrutiva.
 
 **Rejeitadas:**
@@ -44,6 +46,8 @@ Esta iteração **não** transforma a landing em página de marca-guarda-chuva. 
 - *Ignorar completamente o futuro umbrella* — gera retrabalho na próxima iteração.
 
 ### D3 — Hero: framing híbrido (canvas-first, fabric-anchored)
+
+> **Emendado em 2026-08-16** (§ 7, E4): a hero não nomeia categoria — nem "room", nem "gateway".
 
 **Tagline (h1):** "A room where many LLMs collaborate."
 
@@ -76,6 +80,8 @@ Esta iteração **não** transforma a landing em página de marca-guarda-chuva. 
 
 ### D5 — Arquitetura de informação
 
+> **Emendado em 2026-08-16** (§ 7, E3): entra a seção `04 Layers`; install, specs e footer descem um.
+
 Ordem de seções (substitui a ordem atual Hero → Install → Features → How → Use Cases → Code → Footer):
 
 1. **Hero** (problema + sub-hero + CTAs)
@@ -107,6 +113,8 @@ Cada card: **título + 2-3 frases concretas** (incluindo exemplo prático e 1 li
 - *Title + descrição + 6 guias separados* — escopo inflado de docs.
 
 ### D7 — Seção "Built for builders" (ex-Features, 4 cards)
+
+> **Reafirmado em 2026-08-16** (§ 7, E4): a reprovação de "gateway" vale também para a hero, que divergira na implementação.
 
 1. **Bring any provider, mix freely** — BYO + tunnel + multi-source. Credenciais ficam na máquina do participante; o hub não as vê.
 2. **Real-time observability, out of the box** — eventos SSE com TTFT, duração, tokens. Sem bolt-on de Langfuse pra começar.
@@ -145,6 +153,8 @@ O `challenges.md` original é **deletado** (conteúdo é absorvido e melhorado �
 `apps/docs/astro.config.mjs` precisa ter o sidebar atualizado (remover deletados, adicionar `patterns.mdx`).
 
 ### D10 — Tratamento do Gambi Agents
+
+> **Revogado em 2026-08-16** (§ 7, E1 e E2). O texto abaixo é histórico: a landing ganha seção de camadas e o link de profundidade é `whats-next.mdx`.
 
 **Sem teaser explícito na landing.** A direção futura fica embedada na linguagem da hero ("You write the experience. Gambi is the room." sugere que a sala pode ganhar maestro depois sem reaprender vocabulário).
 
@@ -200,7 +210,7 @@ O produto continua sendo "Gambi" nesta iteração. CLI binary, npm packages (`ga
 - **Texto exato dos cards** é polish, não decisão arquitetural. Os rascunhos da entrevista servem como ponto de partida; ajustes finais cabem na implementação.
 - **Direção visual / estética** é responsabilidade da próxima fase (`/frontend-design`). Esta ADR não decide tipografia, paleta, layout exato, ilustrações ou animações.
 - **Card "Many rooms, one hub"** pode soar fraco visualmente. Candidatos alternativos pra teste: "Multi-room hub", "Rooms with scope", "Per-app rooms". Decisão final na implementação.
-- **`/explanation/why-gambi.mdx` vs `/explanation/whats-next.mdx`** (D10) — depende de quanto contexto adicional cabe lá sem virar texto-frankenstein.
+- ~~**`/explanation/why-gambi.mdx` vs `/explanation/whats-next.mdx`** (D10) — depende de quanto contexto adicional cabe lá sem virar texto-frankenstein.~~ — **resolvido em 2026-08-16** (§ 7, E2): `whats-next.mdx`.
 - **Links internos espalhados** podem referenciar `homelab.md`/`hackathon.md`/`challenges.md` em outros guias, no `README.md` raiz, ou em READMEs de workspace. Grep antes de deletar.
 - **Conteúdo de `apps/tui/README.md` e similares** pode citar use cases descartados — fora de escopo desta ADR, mas vale grep pra catar referências quebradas.
 - ~~**`docs/PLAN-landing-docs.md`** segue parcialmente válido (estrutura de pastas, design system, copy-to-clipboard). Não deletar; sobrescrever só o que esta ADR diverge.~~ — **superado em 2026-05-17:** o plano foi removido na reorg de docs; consultar git log se precisar do conteúdo histórico.
@@ -220,3 +230,94 @@ O produto continua sendo "Gambi" nesta iteração. CLI binary, npm packages (`ga
 9. Commit Conventional (`feat(docs): redesign landing problem-first` ou `docs(landing): pivot to multi-llm experiences framing`).
 
 A fase visual/estética é tratada separadamente via `/frontend-design` (próxima invocação prevista).
+
+---
+
+## 7. Emendas
+
+### 2026-08-16 — Seção de camadas, ordem do D5 e vocabulário da hero
+
+**Origem:** ticket [#59](https://github.com/arthurbm/gambi/issues/59) do mapa de wayfinding [#58](https://github.com/arthurbm/gambi/issues/58) (repaginação da landing).
+**Motivação:** a `docs/product/research-direction.md` (2026-06-17) explicitou o modelo em camadas — substrato hoje, primitivas sociais adiante — e a repaginação da landing quer refleti-lo. O D10 desta ADR proibia teaser explícito; esta emenda o revoga sob condições.
+
+#### E1 — Revoga o D10: entra uma seção de camadas
+
+A landing ganha uma seção dedicada às camadas, com a cebola da `research-direction.md` (simplificada para 3 faixas) como peça visual. A seção fala **no presente** sobre o que existe e marca a camada seguinte com um badge `coming soon`.
+
+**Limites que a seção respeita:**
+- Não nomeia produto futuro. "Gambi Agents" não aparece (mantém o D2: não força decisão de naming prematura).
+- Não usa termo de arte na copy pública: sem "substrate", "social primitives", "room", "gateway" (ver E6).
+- O "adiante" é dito por **badge**, não por prosa — a seção não explica que é pesquisa.
+
+**Também revoga, do D2,** a rejeição a tiles "coming soon". A rejeição valia contra reorganizar a página inteira em formato umbrella com produto vazio; um badge numa faixa de diagrama não é isso. O resto do D2 (landing de produto único, brand-aware, transição aditiva) permanece.
+
+**Rascunho de copy** (polish exato cabe na implementação):
+
+```text
+04  / layers
+    What Gambi handles — and what still lands on you
+
+    Gambi moves the messages between models. Everything about how the
+    conversation actually runs is still your code.
+
+    [ cebola: 3 faixas ]
+      What you build          — arenas · debates · juries · multi-persona NPCs
+      Turn-taking · shared context · models talking to models   [ coming soon ]
+      One endpoint. Many models, many machines, many people.    [ today ]
+
+    The turn-taking is your code. The shared context is your code.
+    Keeping track of who said what to whom is your code. Gambi does not
+    help you there — yet.
+
+    Where this is going →   /explanation/whats-next/
+```
+
+**Enquadramento escolhido:** a seção descreve **o trabalho que hoje sobra pro leitor** (turnos, contexto compartilhado, bookkeeping), não os conceitos da camada. Quem já construiu algo multi-modelo reconhece a dor sem precisar aprender vocabulário; o "yet" mais o badge fazem o teaser sem substantivo abstrato.
+
+**Rejeitados:** seção só-filosofia em presente puro (não entrega o "adiante" que a repaginação pede); teaser de roadmap explícito (overpromise que o D1 rejeitou); nomear "social primitives" cru (jargão de tese, ilegível pra quem chega frio).
+
+#### E2 — Resolve o item em aberto do D10: `whats-next.mdx`
+
+O link de profundidade aponta para **`apps/docs/src/content/docs/explanation/whats-next.mdx`** (novo, curto, puxando de `docs/product/vision.md`). `why-gambi.mdx` permanece sobre o nome apenas.
+
+**Motivo:** o `why-gambi.mdx` hoje trata exclusivamente da origem do nome (gambi ← gambiarra) e não tem uma linha sobre camadas; enxertar ali produziria o "texto-frankenstein" que a seção 5 desta ADR já listava como risco.
+
+**Rejeitado:** linkar `docs/product/research-direction.md` no repo — o doc se declara "intenção de pesquisa, não plano comprometido" e leitor público leria como roadmap.
+
+**Cortável:** se o prazo apertar, a seção funciona sem link de profundidade.
+
+#### E3 — Emenda o D5: nova ordem de seções
+
+```text
+01 Hero · 02 Use Cases · 03 How It Works · 04 Layers ·
+05 Install + Quickstart · 06 Built for builders · 07 Footer
+```
+
+A seção de camadas entra **depois** da How It Works: o leitor acabou de ver onde a Gambi encaixa no stack dele, e a pergunta seguinte natural é o que existe acima disso. Preserva o princípio do D5 (prova antes de pitch) e mantém a cebola em slot de meio de página.
+
+**Rejeitados:** logo após a hero (pede fé antes de dar prova, desfaz o D5); antes do footer (enterra a peça visual central da página).
+
+#### E4 — Emenda o D3 e reafirma o D7: a hero não nomeia categoria
+
+```diff
+-Gambi ships the gateway. You ship the experience.
++Gambi connects the models. You write what happens between them.
+```
+
+O `Lander.astro` implementado dizia "gateway", termo que o D7 já reprovava — divergência entre ADR e código corrigida aqui. "Room" também sai da primeira tela: é o vocabulário interno do produto (`gambi hub` cria salas) mas não significa nada para quem chega frio.
+
+**Motivo estrutural:** "gateway" é plano por definição; uma página que argumenta camadas não pode se chamar gateway na primeira tela sem contradizer a seção 04 três scrolls depois. A formulação escolhida carrega a divisão de trabalho sem termo de arte nenhum.
+
+#### E5 — Gambiarra Club fora desta iteração
+
+A landing **não** menciona o [Gambiarra Club](https://gambiarra.club). A menção volta quando houver exemplos concretos do que aconteceu nas edições — procedência com evidência, não link de comunidade.
+
+#### E6 — Vocabulário interno vs. copy pública
+
+"Substrato", "primitivas sociais" e "social-ready" são vocabulário **interno** (docs de produto e pesquisa). Não entram em copy pública. Registrado no `CONTEXT.md` § Flagged ambiguities.
+
+#### Impacto no mapa de arquivos (seção 4)
+
+- `apps/docs/src/components/Lander.astro` — nova seção 04 + reordenação (E1, E3) + hero (E4). **Nota:** a repaginação em curso ([#58](https://github.com/arthurbm/gambi/issues/58)) move a landing para `apps/docs/src/pages/index.astro`; a emenda vale para onde a landing viver.
+- **Criar** `apps/docs/src/content/docs/explanation/whats-next.mdx` (E2).
+- `why-gambi.mdx` sai do mapa de arquivos — não é mais tocado (E2).
