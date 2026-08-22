@@ -15,6 +15,10 @@ interface CreateRoomProps {
 
 type Step = "form" | "success";
 
+export function buildParticipantJoinCommand(roomCode: string): string {
+  return `gambi participant join --room ${roomCode} --endpoint <llm-url> --model <model>`;
+}
+
 /**
  * Copy text to clipboard using system clipboard.
  * Returns true if successful, false otherwise.
@@ -269,8 +273,7 @@ export function CreateRoom({ onNavigate, onBack, canGoBack }: CreateRoomProps) {
               </text>
               <box backgroundColor={colors.surface} paddingLeft={1}>
                 <text fg={colors.accent}>
-                  gambi participant join {createdRoom.code} --endpoint {"<"}
-                  llm-url{">"} --model {"<"}model{">"}
+                  {buildParticipantJoinCommand(createdRoom.code)}
                 </text>
               </box>
               <text fg={colors.muted}>Press [s] to hide</text>
