@@ -5,7 +5,7 @@ import {
   Link,
   Outlet,
 } from "@tanstack/react-router";
-import { MapIcon, ShieldIcon, UserRoundIcon } from "lucide-react";
+import { MapIcon, NetworkIcon, ShieldIcon, UserRoundIcon } from "lucide-react";
 import { useEffect } from "react";
 
 import { Toaster } from "@/components/ui/sonner";
@@ -50,6 +50,10 @@ function RootComponent() {
         <Link activeProps={{ "aria-current": "page" }} to="/me">
           <UserRoundIcon aria-hidden="true" />
           Meu squad
+        </Link>
+        <Link activeProps={{ "aria-current": "page" }} to="/orchestrator">
+          <NetworkIcon aria-hidden="true" />
+          Orquestrador
         </Link>
         <Link activeProps={{ "aria-current": "page" }} to="/admin">
           <ShieldIcon aria-hidden="true" />

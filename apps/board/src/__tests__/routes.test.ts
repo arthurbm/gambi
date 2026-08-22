@@ -3,6 +3,7 @@ import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 
 import { type BoardRuntime, createBoardApp } from "../app";
+import type { BoardHarnessRuntime } from "../harness-runtime";
 import type { AppRouterClient } from "../orpc/routers";
 
 const runtimes: BoardRuntime[] = [];
@@ -55,6 +56,11 @@ describe.serial("board routes", () => {
       currentPhase: "lobby",
     });
     expect(await publicClient.squads.list()).toHaveLength(3);
+    const workflow = await publicClient.workflow.get({});
+    expect(workflow.challenges).toHaveLength(3);
+    expect(
+      workflow.challenges.every((challenge) => challenge.drafts.length === 3)
+    ).toBe(true);
     await expect(runtime.client.execute("DELETE FROM events")).rejects.toThrow(
       "events are append-only"
     );
@@ -228,5 +234,163 @@ describe.serial("board routes", () => {
           )
         )
     ).toEqual(["harness.claimed", "harness.assigned", "steerer.elected"]);
+  });
+
+  test("runs a complete recoverable round through the fake harness", async () => {
+    const prompts: Array<{ sessionId: string; prompt: string }> = [];
+    const fakeHarness: BoardHarnessRuntime = {
+      close: () => Promise.resolve(),
+      reconcileHosted: () => Promise.resolve(),
+      subscribeArtifacts: () => () => undefined,
+      prompt: async () => ({ sessionId: "unused", revision: 0 }),
+      promptSession: (input) => {
+        prompts.push({ sessionId: input.sessionId, prompt: input.prompt });
+        return Promise.resolve();
+      },
+    };
+    const runtime = await createBoardApp({
+      adminToken: "test-admin-token",
+      databaseUrl: ":memory:",
+      harness: false,
+      harnessRuntime: fakeHarness,
+      onError: () => undefined,
+    });
+    runtimes.push(runtime);
+    const client = rpcClient(runtime);
+    const admin = rpcClient(runtime, "test-admin-token");
+    await client.people.join({ personId: "person-round-owner", name: "Bia" });
+    await client.people.join({ personId: "person-round-steer", name: "Lia" });
+    await client.squads.join({
+      personId: "person-round-owner",
+      squadId: "squad-1",
+    });
+    await client.squads.join({
+      personId: "person-round-steer",
+      squadId: "squad-1",
+    });
+    await runtime.repository.reconcileHarnessParticipants([
+      {
+        id: "board-hosted-09",
+        nickname: "Hospedado 01",
+        model: "fake-event",
+        harness: { id: "fake", hosted: true, model: "fake-event" },
+        connection: { connected: true },
+      },
+    ]);
+    await client.harnesses.claimHosted({
+      personId: "person-round-owner",
+      participantId: "board-hosted-09",
+    });
+    await admin.phase.advance();
+    await client.harnesses.assign({
+      actorPersonId: "person-round-owner",
+      squadId: "squad-1",
+      participantId: "board-hosted-09",
+    });
+    await client.harnesses.electSteerer({
+      actorPersonId: "person-round-owner",
+      squadId: "squad-1",
+      personId: "person-round-steer",
+    });
+    await admin.orchestrator.selectSteerer({
+      actorPersonId: "person-round-owner",
+      personId: "person-round-owner",
+    });
+
+    await client.orchestrator.propose({
+      actorPersonId: "person-round-owner",
+      objective: "Crie uma cidade acolhedora",
+    });
+    let workflow = await client.workflow.get({});
+    const challenge = workflow.challenges.find(
+      (item) => item.squadId === "squad-1"
+    );
+    expect(challenge?.drafts).toHaveLength(3);
+    await client.orchestrator.editChallenge({
+      actorPersonId: "person-round-owner",
+      challengeId: challenge?.id ?? "",
+      objective: "Abra uma praça de chegada",
+    });
+    await client.orchestrator.publish({ actorPersonId: "person-round-owner" });
+    const manual = await client.drafts.create({
+      actorPersonId: "person-round-steer",
+      challengeId: challenge?.id ?? "",
+      content: "Banco contínuo sob as árvores",
+    });
+    await client.drafts.requestFromHarness({
+      actorPersonId: "person-round-owner",
+      challengeId: challenge?.id ?? "",
+      request: "Proponha uma entrada sem degraus",
+    });
+    workflow = await client.workflow.get({});
+    expect(
+      workflow.challenges
+        .find((item) => item.id === challenge?.id)
+        ?.drafts.some((draft) => draft.origin === "harness" && !draft.seeded)
+    ).toBe(true);
+    await client.decisions.record({
+      actorPersonId: "person-round-steer",
+      challengeId: challenge?.id ?? "",
+      build: "Praça acessível com sombra",
+      cut: "Palco elevado",
+      reason: "A chegada precisa servir todos os corpos",
+      consideredDraftIds: [manual.id],
+    });
+    const sent = await client.dispatches.send({
+      actorPersonId: "person-round-steer",
+      challengeId: challenge?.id ?? "",
+      expectedOutput: "Lote navegável em HTML",
+      constraints: ["Preservar os arquivos iniciais"],
+    });
+    expect(JSON.parse(prompts.at(-1)?.prompt ?? "{}")).toMatchObject({
+      objective: "Abra uma praça de chegada",
+      decision: { steererName: "Lia" },
+    });
+    const firstReturn = await client.reviews.record({
+      actorPersonId: "person-round-steer",
+      dispatchId: sent.id,
+      outcome: "returned",
+      reason: "A entrada ainda tem um degrau",
+    });
+    expect(firstReturn.escalationId).toBeUndefined();
+    expect(prompts.at(-1)).toEqual({
+      sessionId: sent.sessionId,
+      prompt: "Devolvido por steerer: A entrada ainda tem um degrau",
+    });
+    const repeatedReturn = await client.reviews.record({
+      actorPersonId: "person-round-steer",
+      dispatchId: sent.id,
+      outcome: "returned",
+      reason: "A entrada ainda tem um degrau",
+    });
+    expect(repeatedReturn.duplicate).toBe(true);
+    expect(prompts).toHaveLength(3);
+    const secondReturn = await client.reviews.record({
+      actorPersonId: "person-round-steer",
+      dispatchId: sent.id,
+      outcome: "returned",
+      reason: "Falta contraste na sinalização",
+    });
+    expect(secondReturn.escalationId).toBeDefined();
+    expect(prompts).toHaveLength(3);
+    await client.orchestrator.answerEscalation({
+      actorPersonId: "person-round-owner",
+      escalationId: secondReturn.escalationId ?? "",
+      response: "Mantenha a praça e simplifique a sinalização",
+    });
+    await client.reviews.record({
+      actorPersonId: "person-round-steer",
+      dispatchId: sent.id,
+      outcome: "accepted",
+      reason: "Aprovado",
+    });
+    workflow = await client.workflow.get({});
+    expect(workflow.escalations[0]).toMatchObject({
+      status: "answered",
+      responderName: "Bia",
+    });
+    expect(
+      workflow.challenges.find((item) => item.id === challenge?.id)?.dispatch
+    ).toMatchObject({ status: "accepted", sessionId: sent.sessionId });
   });
 });

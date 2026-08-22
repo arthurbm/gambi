@@ -26,6 +26,15 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { getPersonId } from "@/lib/identity";
 import { ADMIN_TOKEN_KEY, client, orpc, queryClient } from "@/lib/orpc";
 import { cn } from "@/lib/utils";
 
@@ -56,6 +65,7 @@ function initialToken() {
 function AdminPage() {
   const [token] = useState(initialToken);
   const state = useQuery(orpc.board.state.queryOptions());
+  const workflow = useQuery(orpc.workflow.get.queryOptions({ input: {} }));
   const config = useQuery({
     ...orpc.admin.getConfig.queryOptions(),
     enabled: Boolean(token),
@@ -65,6 +75,7 @@ function AdminPage() {
   const [squadCount, setSquadCount] = useState(6);
   const [hostedHarnessCount, setHostedHarnessCount] = useState(0);
   const [pending, setPending] = useState(false);
+  const [orchestratorSteerer, setOrchestratorSteerer] = useState("");
   const [confirmAction, setConfirmAction] = useState<"advance" | "skip" | null>(
     null
   );
@@ -151,6 +162,7 @@ function AdminPage() {
   const currentPhase = state.data?.config.currentPhase;
   const nextPhase = currentPhase ? NEXT_PHASE[currentPhase] : undefined;
   const phaseUnavailable = state.isPending || state.isError || !currentPhase;
+  const people = state.data?.squads.flatMap((squad) => squad.members) ?? [];
 
   return (
     <main className="interior-page">
@@ -311,6 +323,71 @@ function AdminPage() {
               <FieldDescription>
                 Somente as rodadas 3 e 5 são puláveis.
               </FieldDescription>
+            </FieldGroup>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Steerer do orquestrador</CardTitle>
+            <CardDescription>
+              {workflow.data?.orchestratorSteerer
+                ? `${workflow.data.orchestratorSteerer.personName} conduz ${workflow.data.roundId}.`
+                : "Escolha uma pessoa registrada para a rodada ativa."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="orchestrator-steerer">Pessoa</FieldLabel>
+                <Select
+                  onValueChange={(value) => setOrchestratorSteerer(value ?? "")}
+                  value={orchestratorSteerer}
+                >
+                  <SelectTrigger className="w-full" id="orchestrator-steerer">
+                    <SelectValue placeholder="Selecione uma pessoa" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {people.map((person) => (
+                        <SelectItem key={person.id} value={person.id}>
+                          {person.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <FieldDescription>
+                  O admin também precisa ter definido seu nome em Meu squad para
+                  assinar esta escolha.
+                </FieldDescription>
+              </Field>
+              <Button
+                disabled={pending || !orchestratorSteerer}
+                onClick={async () => {
+                  setPending(true);
+                  try {
+                    await client.orchestrator.selectSteerer({
+                      actorPersonId: getPersonId(),
+                      personId: orchestratorSteerer,
+                    });
+                    await queryClient.invalidateQueries();
+                    toast.success("Steerer do orquestrador registrado.");
+                  } catch (error) {
+                    toast.error(
+                      error instanceof Error
+                        ? error.message
+                        : "Não foi possível registrar o steerer."
+                    );
+                  } finally {
+                    setPending(false);
+                  }
+                }}
+                type="button"
+                variant="outline"
+              >
+                Registrar steerer
+              </Button>
             </FieldGroup>
           </CardContent>
         </Card>

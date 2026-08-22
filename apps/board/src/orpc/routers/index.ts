@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { Context } from "../context";
 import { assertAdmin, badRequest, publicProcedure } from "../index";
+import { createRoundWorkflowRouter } from "./round-workflow";
 
 const personId = z.string().trim().min(8).max(128);
 const name = z.string().trim().min(1, "Digite seu nome.").max(80);
@@ -13,6 +14,7 @@ function publish(context: Context, change: string, revision: number) {
 
 export function createAppRouter() {
   return {
+    ...createRoundWorkflowRouter(),
     board: {
       state: publicProcedure.handler(({ context }) =>
         context.repository.getState()

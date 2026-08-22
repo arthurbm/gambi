@@ -186,3 +186,175 @@ export const events = sqliteTable(
   },
   (table) => [index("events_type_idx").on(table.type)]
 );
+
+export const challenges = sqliteTable(
+  "challenges",
+  {
+    id: text("id").primaryKey(),
+    squadId: text("squad_id")
+      .notNull()
+      .references(() => squads.id),
+    roundId: text("round_id")
+      .notNull()
+      .references(() => rounds.id),
+    objective: text("objective").notNull(),
+    status: text("status").notNull().default("draft"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("challenges_squad_round_unique").on(
+      table.squadId,
+      table.roundId
+    ),
+  ]
+);
+
+export const drafts = sqliteTable(
+  "drafts",
+  {
+    id: text("id").primaryKey(),
+    challengeId: text("challenge_id")
+      .notNull()
+      .references(() => challenges.id),
+    authorPersonId: text("author_person_id").references(() => people.id, {
+      onDelete: "set null",
+    }),
+    authorName: text("author_name").notNull(),
+    origin: text("origin").notNull(),
+    content: text("content").notNull(),
+    seeded: integer("seeded", { mode: "boolean" }).notNull().default(false),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("drafts_challenge_idx").on(table.challengeId)]
+);
+
+export const decisions = sqliteTable(
+  "decisions",
+  {
+    id: text("id").primaryKey(),
+    challengeId: text("challenge_id")
+      .notNull()
+      .references(() => challenges.id),
+    squadId: text("squad_id")
+      .notNull()
+      .references(() => squads.id),
+    roundId: text("round_id")
+      .notNull()
+      .references(() => rounds.id),
+    build: text("build").notNull(),
+    cut: text("cut").notNull(),
+    reason: text("reason").notNull(),
+    steererPersonId: text("steerer_person_id")
+      .notNull()
+      .references(() => people.id),
+    steererName: text("steerer_name").notNull(),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [uniqueIndex("decisions_challenge_unique").on(table.challengeId)]
+);
+
+export const decisionDrafts = sqliteTable(
+  "decision_drafts",
+  {
+    decisionId: text("decision_id")
+      .notNull()
+      .references(() => decisions.id, { onDelete: "cascade" }),
+    draftId: text("draft_id")
+      .notNull()
+      .references(() => drafts.id),
+  },
+  (table) => [
+    uniqueIndex("decision_drafts_unique").on(table.decisionId, table.draftId),
+  ]
+);
+
+export const dispatches = sqliteTable(
+  "dispatches",
+  {
+    id: text("id").primaryKey(),
+    challengeId: text("challenge_id")
+      .notNull()
+      .references(() => challenges.id),
+    squadId: text("squad_id")
+      .notNull()
+      .references(() => squads.id),
+    roundId: text("round_id")
+      .notNull()
+      .references(() => rounds.id),
+    participantId: text("participant_id")
+      .notNull()
+      .references(() => harnessParticipants.participantId),
+    sessionId: text("session_id").notNull(),
+    payload: text("payload").notNull(),
+    status: text("status").notNull().default("pending"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("dispatches_challenge_unique").on(table.challengeId),
+    index("dispatches_session_idx").on(table.sessionId),
+  ]
+);
+
+export const reviews = sqliteTable(
+  "reviews",
+  {
+    id: text("id").primaryKey(),
+    dispatchId: text("dispatch_id")
+      .notNull()
+      .references(() => dispatches.id),
+    outcome: text("outcome").notNull(),
+    reason: text("reason"),
+    reviewerPersonId: text("reviewer_person_id")
+      .notNull()
+      .references(() => people.id),
+    reviewerName: text("reviewer_name").notNull(),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("reviews_dispatch_idx").on(table.dispatchId)]
+);
+
+export const escalations = sqliteTable(
+  "escalations",
+  {
+    id: text("id").primaryKey(),
+    dispatchId: text("dispatch_id")
+      .notNull()
+      .references(() => dispatches.id),
+    squadId: text("squad_id")
+      .notNull()
+      .references(() => squads.id),
+    roundId: text("round_id")
+      .notNull()
+      .references(() => rounds.id),
+    question: text("question").notNull(),
+    reason: text("reason").notNull(),
+    returnCount: integer("return_count").notNull(),
+    status: text("status").notNull().default("pending"),
+    response: text("response"),
+    responderPersonId: text("responder_person_id").references(() => people.id),
+    responderName: text("responder_name"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    answeredAt: text("answered_at"),
+  },
+  (table) => [
+    index("escalations_round_status_idx").on(table.roundId, table.status),
+  ]
+);
+
+export const orchestratorSteerers = sqliteTable("orchestrator_steerers", {
+  roundId: text("round_id")
+    .primaryKey()
+    .references(() => rounds.id),
+  personId: text("person_id")
+    .notNull()
+    .references(() => people.id),
+  personName: text("person_name").notNull(),
+  selectedByPersonId: text("selected_by_person_id")
+    .notNull()
+    .references(() => people.id),
+  selectedAt: text("selected_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});

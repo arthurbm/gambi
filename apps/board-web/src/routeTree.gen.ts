@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as MeRouteImport } from './routes/me'
+import { Route as OrchestratorRouteImport } from './routes/orchestrator'
 import { Route as SquadIdRouteImport } from './routes/squad.$id'
 
 const IndexRoute = IndexRouteImport.update({
@@ -29,6 +30,11 @@ const MeRoute = MeRouteImport.update({
   path: '/me',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OrchestratorRoute = OrchestratorRouteImport.update({
+  id: '/orchestrator',
+  path: '/orchestrator',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SquadIdRoute = SquadIdRouteImport.update({
   id: '/squad/$id',
   path: '/squad/$id',
@@ -39,12 +45,14 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/me': typeof MeRoute
+  '/orchestrator': typeof OrchestratorRoute
   '/squad/$id': typeof SquadIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/me': typeof MeRoute
+  '/orchestrator': typeof OrchestratorRoute
   '/squad/$id': typeof SquadIdRoute
 }
 export interface FileRoutesById {
@@ -52,20 +60,22 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/me': typeof MeRoute
+  '/orchestrator': typeof OrchestratorRoute
   '/squad/$id': typeof SquadIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/admin' | '/me' | '/squad/$id'
+  fullPaths: '/' | '/admin' | '/me' | '/orchestrator' | '/squad/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/me' | '/squad/$id'
-  id: '__root__' | '/' | '/admin' | '/me' | '/squad/$id'
+  to: '/' | '/admin' | '/me' | '/orchestrator' | '/squad/$id'
+  id: '__root__' | '/' | '/admin' | '/me' | '/orchestrator' | '/squad/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
   MeRoute: typeof MeRoute
+  OrchestratorRoute: typeof OrchestratorRoute
   SquadIdRoute: typeof SquadIdRoute
 }
 
@@ -92,6 +102,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/orchestrator': {
+      id: '/orchestrator'
+      path: '/orchestrator'
+      fullPath: '/orchestrator'
+      preLoaderRoute: typeof OrchestratorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/squad/$id': {
       id: '/squad/$id'
       path: '/squad/$id'
@@ -106,6 +123,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   MeRoute: MeRoute,
+  OrchestratorRoute: OrchestratorRoute,
   SquadIdRoute: SquadIdRoute,
 }
 export const routeTree = rootRouteImport

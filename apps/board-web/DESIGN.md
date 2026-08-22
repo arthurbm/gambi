@@ -20,10 +20,12 @@ On phones, the city stays first. Navigation becomes a fixed bottom route bar; sq
 
 One short survey-sheet unfold introduces the city without moving readable content afterward. Reduced-motion preferences collapse it to an effectively static transition. Keyboard focus uses the survey-teal ring. The room register reports the real SSE state as connected, reconnecting, or offline through a polite live region. Admin phase changes are disabled before state is known and require an explicit current-to-next confirmation because the audit transition cannot be undone.
 
-## Issue boundary
+## Workflow surfaces
 
-Issue #73 renders recoverable lobby state: people, squad membership, phases, configuration, and audit events. `hostedHarnessCount` is stored now, but harness spawning, assignment, steerer rotation, `/squad/:id`, harness streams, and richer city tiles belong to #74 and later work. The measured empty lots are intentional placeholders, not missing #73 UI.
+Interior routes keep the same field-book material at a smaller working scale. Proposed challenges sit in a measured register, seeded and human drafts read as adjacent paper slips, and the four Decision answers share one continuous interview. The "Use" action copies draft text into the local Decision form without changing the source. Dispatch and review remain in document order below the interview, while the live harness ledger keeps its dark terminal treatment.
+
+Issue #75 adds the recoverable round workflow and `/orchestrator`. Rich city tiles remain the boundary of #76, and metro dependencies plus the finale remain later work. The measured empty lots on the city route are still intentional placeholders.
 
 ## Finish evidence
 
-The final visual proof is in `.impeccable/review/desktop.png` and `.impeccable/review/mobile.png`. The desktop capture follows the approved map topology; the 390×844 capture keeps the city first with no horizontal overflow. The Impeccable finish review informed the complete mobile ledger, guarded admin transitions, connection-state copy, and mobile touch targets.
+The base visual proof is in `.impeccable/review/desktop.png` and `.impeccable/review/mobile.png`. Issue #75 responsive evidence lives in `.impeccable/review/issue-75/`. The desktop workflow keeps the measured register readable at projector scale; the 390×844 capture reflows it into one column above the fixed four-route bar.
