@@ -52,6 +52,8 @@ export interface OrchestratorOptions {
   squads: Squad[];
   rounds: Round[];
   transports: Record<string, HarnessTransport>;
+  initialState?: WorldState;
+  restoredSessions?: Record<string, string>;
   maxReturns?: number;
   generateId?: (kind: string) => string;
 }
@@ -151,6 +153,7 @@ export class Orchestrator {
       });
     this.#model = options.model;
     this.#agent = this.createAgent(options.model);
+    this.hydrate(options.initialState, options.restoredSessions);
 
     for (const squad of options.squads) {
       const transport = options.transports[squad.id];
@@ -357,15 +360,14 @@ export class Orchestrator {
 
     const returnCount = this.returnCount(dispatch.squadId, dispatch.roundId);
     if (returnCount >= this.maxReturns) {
-      const question = this.createHumanQuestion({
+      const escalation = this.createEscalation({
         squadId: dispatch.squadId,
         roundId: dispatch.roundId,
         reason: review.reason ?? "Repeated return",
         returnCount,
         question: `Squad ${dispatch.squadId} has returned work ${returnCount} times. How should the orchestrator proceed?`,
       });
-      const humanResponse = await question.answer;
-      return { review, escalation: question.escalation, humanResponse };
+      return { review, escalation };
     }
 
     await this.requireTransport(dispatch.squadId).prompt(
@@ -380,6 +382,18 @@ export class Orchestrator {
   }
 
   private createHumanQuestion(input: AskHumanInput): HumanQuestion {
+    const escalation = this.createEscalation(input);
+    const answer = new Promise<string>((resolve, reject) => {
+      this.#pendingHumanAnswers.set(escalation.id, {
+        escalation,
+        resolve,
+        reject,
+      });
+    });
+    return { answer, escalation };
+  }
+
+  private createEscalation(input: AskHumanInput): Escalation {
     this.requireSquad(input.squadId);
     this.requireRound(input.roundId);
     const escalation: Escalation = {
@@ -393,29 +407,79 @@ export class Orchestrator {
     };
     this.#escalations.set(escalation.id, escalation);
     this.emit({ type: "escalation.raised", escalation });
-
-    const answer = new Promise<string>((resolve, reject) => {
-      this.#pendingHumanAnswers.set(escalation.id, {
-        escalation,
-        resolve,
-        reject,
-      });
-    });
-    return { answer, escalation };
+    return escalation;
   }
 
   answerHuman(escalationId: string, response: string): void {
-    const pending = this.#pendingHumanAnswers.get(escalationId);
-    if (!pending) {
+    const escalation = this.#escalations.get(escalationId);
+    if (!escalation || escalation.status !== "pending") {
       throw new Error(`No pending human question ${escalationId}.`);
     }
+    const pending = this.#pendingHumanAnswers.get(escalationId);
     if (!response.trim()) {
       throw new Error("A human response cannot be empty.");
     }
-    pending.escalation.status = "answered";
-    pending.escalation.response = response;
+    escalation.status = "answered";
+    escalation.response = response;
     this.#pendingHumanAnswers.delete(escalationId);
-    pending.resolve(response);
+    pending?.resolve(response);
+    this.emit({ type: "escalation.answered", escalation });
+  }
+
+  private hydrate(
+    initialState?: WorldState,
+    restoredSessions: Record<string, string> = {}
+  ) {
+    if (!initialState) {
+      for (const [squadId, sessionId] of Object.entries(restoredSessions)) {
+        this.requireSquad(squadId);
+        this.#sessions.set(squadId, sessionId);
+      }
+      return;
+    }
+    for (const challenge of initialState.challenges) {
+      this.requireSquad(challenge.squadId);
+      this.requireRound(challenge.roundId);
+      this.#challenges.set(challenge.id, structuredClone(challenge));
+    }
+    for (const draft of initialState.drafts) {
+      if (!this.#challenges.has(draft.challengeId)) {
+        throw new Error(`Draft ${draft.id} references an unknown challenge.`);
+      }
+      this.#drafts.set(draft.id, structuredClone(draft));
+    }
+    for (const decision of initialState.decisions) {
+      if (!this.#challenges.has(decision.challengeId)) {
+        throw new Error(
+          `Decision ${decision.id} references an unknown challenge.`
+        );
+      }
+      this.#decisions.set(decision.challengeId, structuredClone(decision));
+    }
+    for (const dispatch of initialState.dispatches) {
+      if (!this.#challenges.has(dispatch.challengeId)) {
+        throw new Error(
+          `Dispatch ${dispatch.id} references an unknown challenge.`
+        );
+      }
+      this.#dispatches.set(dispatch.id, structuredClone(dispatch));
+      this.#sessions.set(dispatch.squadId, dispatch.sessionId);
+    }
+    for (const review of initialState.reviews) {
+      if (!this.#dispatches.has(review.dispatchId)) {
+        throw new Error(`Review ${review.id} references an unknown dispatch.`);
+      }
+      this.#reviews.set(review.id, structuredClone(review));
+    }
+    for (const escalation of initialState.escalations) {
+      this.requireSquad(escalation.squadId);
+      this.requireRound(escalation.roundId);
+      this.#escalations.set(escalation.id, structuredClone(escalation));
+    }
+    for (const [squadId, sessionId] of Object.entries(restoredSessions)) {
+      this.requireSquad(squadId);
+      this.#sessions.set(squadId, sessionId);
+    }
   }
 
   swapModel(model: LanguageModel): string {

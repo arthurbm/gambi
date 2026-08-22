@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-
+import { RoundWorkflow } from "@/components/round-workflow";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -131,6 +131,13 @@ function SquadPage() {
           no harness nesta rodada.
         </p>
       </header>
+
+      <RoundWorkflow
+        actorIsMember={Boolean(actorIsMember)}
+        isSteerer={isSteerer}
+        personId={personId}
+        squadId={squadId}
+      />
 
       <div className="squad-workbench">
         <Card>

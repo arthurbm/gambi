@@ -107,6 +107,11 @@ export type DomainEvent =
     }
   | {
       sequence: number;
+      type: "escalation.answered";
+      escalation: Escalation;
+    }
+  | {
+      sequence: number;
       type: "model.swapped";
       previousModel: string;
       nextModel: string;

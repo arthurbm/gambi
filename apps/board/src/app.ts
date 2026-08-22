@@ -1,9 +1,11 @@
+import { MemoryHarnessTransport, Orchestrator } from "@gambi/agents";
 import type { Client } from "@libsql/client";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
 import { OpenAPIReferencePlugin } from "@orpc/openapi/plugins";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
+import { createGambi } from "gambi-sdk";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
@@ -11,6 +13,7 @@ import { streamSSE } from "hono/streaming";
 import { createBoardDatabase } from "./db/client";
 import { migrateBoardDatabase } from "./db/migrate";
 import { BoardRepository } from "./db/repository";
+import { WorkflowRepository } from "./db/workflow-repository";
 import { DEFAULT_BOARD_DATABASE_URL } from "./env";
 import {
   type BoardHarnessRuntime,
@@ -27,12 +30,15 @@ export interface CreateBoardAppOptions {
   eventBus?: BoardEventBus;
   onError?: (error: unknown) => void;
   harness?: false | Omit<BoardHarnessRuntimeOptions, "events" | "repository">;
+  harnessRuntime?: BoardHarnessRuntime;
 }
 
 export interface BoardRuntime {
   app: Hono;
   client: Client;
   repository: BoardRepository;
+  workflow: WorkflowRepository;
+  orchestrator?: Orchestrator;
   events: BoardEventBus;
   harness?: BoardHarnessRuntime;
   close: () => Promise<void>;
@@ -53,6 +59,8 @@ export async function createBoardApp(
 
   const repository = new BoardRepository(db);
   await repository.initialize();
+  const workflow = new WorkflowRepository(db);
+  await workflow.initialize();
   const events = options.eventBus ?? new BoardEventBus();
   const appRouter = createAppRouter();
   const reportError = options.onError ?? console.error;
@@ -71,14 +79,37 @@ export async function createBoardApp(
                   : "opencode",
             }
           : undefined));
-  const harness = harnessOptions
-    ? await createBoardHarnessRuntime({
-        ...harnessOptions,
-        events,
-        repository,
-        onError: harnessOptions.onError ?? reportError,
-      })
-    : undefined;
+  const harness =
+    options.harnessRuntime ??
+    (harnessOptions
+      ? await createBoardHarnessRuntime({
+          ...harnessOptions,
+          events,
+          repository,
+          onError: harnessOptions.onError ?? reportError,
+        })
+      : undefined);
+  let orchestrator: Orchestrator | undefined;
+  if (harnessOptions) {
+    const world = await workflow.toWorldState();
+    const transports = Object.fromEntries(
+      world.squads.map((squad) => [squad.id, new MemoryHarnessTransport()])
+    );
+    const restoredSessions = Object.fromEntries(
+      world.dispatches.map((dispatch) => [dispatch.squadId, dispatch.sessionId])
+    );
+    orchestrator = new Orchestrator({
+      model: createGambi({
+        hubUrl: harnessOptions.hubUrl,
+        roomCode: harnessOptions.roomCode,
+      }).any(),
+      squads: world.squads,
+      rounds: world.rounds,
+      transports,
+      initialState: world,
+      restoredSessions,
+    });
+  }
 
   app.use(
     "/*",
@@ -137,9 +168,11 @@ export async function createBoardApp(
     const rpcContext = createContext({
       context,
       repository,
+      workflow,
       events,
       adminToken,
       harness,
+      orchestrator,
     });
     const rpcResult = await rpcHandler.handle(context.req.raw, {
       prefix: "/rpc",
@@ -167,9 +200,12 @@ export async function createBoardApp(
     app,
     client,
     repository,
+    workflow,
+    orchestrator,
     events,
     harness,
     close: async () => {
+      await orchestrator?.close();
       await harness?.close();
       client.close();
     },

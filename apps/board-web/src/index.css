@@ -307,6 +307,145 @@
   gap: 1rem;
 }
 
+.round-workflow {
+  display: flex;
+  margin-bottom: 2.5rem;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.workflow-heading {
+  display: grid;
+  padding: 1rem 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  grid-template-columns: minmax(220px, 0.65fr) minmax(280px, 1.35fr);
+  gap: 2rem;
+}
+
+.workflow-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.workflow-heading h2,
+.escalation-ledger h2 {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
+  text-transform: uppercase;
+}
+
+.workflow-heading p {
+  margin: 0;
+  white-space: pre-line;
+  line-height: 1.55;
+}
+
+.proposal-ledger {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  border: 1px solid var(--border);
+}
+
+.proposal-slip {
+  display: flex;
+  min-width: 0;
+  padding: 1rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.8rem;
+  border-right: 1px dashed var(--border);
+  background: color-mix(in srgb, var(--card) 72%, transparent);
+}
+
+.proposal-slip:last-child {
+  border-right: 0;
+}
+
+.proposal-slip > div {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.proposal-slip p {
+  flex: 1;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.workflow-columns {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.72fr) minmax(360px, 1.28fr);
+  gap: 1rem;
+}
+
+.draft-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.draft-checklist label {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 0.7rem;
+  font-size: 0.78rem;
+}
+
+.review-actions {
+  display: flex;
+  gap: 0.7rem;
+}
+
+.dispatch-slip [data-slot="card-content"] {
+  max-width: 760px;
+}
+
+.objective-slip {
+  max-width: 760px;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+}
+
+.challenge-register {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.publish-round {
+  margin: 1rem 0 2rem;
+}
+
+.escalation-ledger {
+  display: flex;
+  padding-top: 1rem;
+  flex-direction: column;
+  gap: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.escalation-ledger > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.escalation-ledger > p {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
 .harness-console [data-slot="card-content"] {
   display: flex;
   flex-direction: column;
@@ -772,6 +911,11 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .workflow-columns,
+  .challenge-register {
+    grid-template-columns: 1fr;
+  }
+
   .event-ledger {
     order: 4;
   }
@@ -818,6 +962,10 @@ code {
     border-right: 1px solid var(--border);
     border-left: 0;
     font-size: 0.62rem;
+  }
+
+  .route-mark {
+    display: none;
   }
 
   .board-shell,
@@ -870,6 +1018,24 @@ code {
   .phase-margin,
   .form-ledger {
     grid-template-columns: 1fr;
+  }
+
+  .workflow-heading,
+  .proposal-ledger {
+    grid-template-columns: 1fr;
+  }
+
+  .proposal-slip {
+    border-right: 0;
+    border-bottom: 1px dashed var(--border);
+  }
+
+  .proposal-slip:last-child {
+    border-bottom: 0;
+  }
+
+  .review-actions {
+    flex-direction: column;
   }
 
   .ledger-table {

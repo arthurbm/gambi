@@ -195,7 +195,7 @@ describe("Orchestrator", () => {
     });
   });
 
-  test("pauses for askHuman at maxReturns instead of prompting again", async () => {
+  test("returns an escalation immediately at maxReturns", async () => {
     const { alphaTransport, orchestrator } = createFixture({ maxReturns: 2 });
     const challenge = createChallenge(orchestrator);
     recordDecision(orchestrator, challenge.id);
@@ -211,21 +211,12 @@ describe("Orchestrator", () => {
       reviewerName: "Ana",
     });
 
-    let settled = false;
-    const secondReview = orchestrator
-      .recordReview({
-        dispatchId: dispatch.id,
-        outcome: "returned",
-        reason: "Second revision",
-        reviewerName: "Ana",
-      })
-      .then((result) => {
-        settled = true;
-        return result;
-      });
-    await Promise.resolve();
-
-    expect(settled).toBe(false);
+    const secondReview = await orchestrator.recordReview({
+      dispatchId: dispatch.id,
+      outcome: "returned",
+      reason: "Second revision",
+      reviewerName: "Ana",
+    });
     expect(alphaTransport.prompts).toHaveLength(2);
     const escalation = orchestrator.world.escalations[0];
     expect(escalation).toMatchObject({
@@ -235,13 +226,11 @@ describe("Orchestrator", () => {
       status: "pending",
     });
 
+    expect(secondReview.escalation).toEqual(escalation);
     orchestrator.answerHuman(
       escalation?.id ?? "",
       "Accept the constrained scope"
     );
-    await expect(secondReview).resolves.toMatchObject({
-      humanResponse: "Accept the constrained scope",
-    });
     expect(alphaTransport.prompts).toHaveLength(2);
   });
 
@@ -348,16 +337,13 @@ describe("Orchestrator", () => {
       input: "starter",
       expectedOutput: "artifact",
     });
-    const reviewPromise = orchestrator.recordReview({
+    await orchestrator.recordReview({
       dispatchId: dispatch.id,
       outcome: "returned",
       reason: "Needs human judgment",
       reviewerName: "Ana",
     });
-    await Promise.resolve();
-    const escalation = orchestrator.world.escalations[0];
-    orchestrator.answerHuman(escalation?.id ?? "", "Proceed");
-    await reviewPromise;
+    const _escalation = orchestrator.world.escalations[0];
     orchestrator.swapModel(
       new MockLanguageModelV3({
         modelId: "replacement",
@@ -379,5 +365,39 @@ describe("Orchestrator", () => {
     expect(events.map((event) => event.sequence)).toEqual([
       1, 2, 3, 4, 5, 6, 7, 8,
     ]);
+  });
+
+  test("hydrates world state and reuses restored sessions without replay", async () => {
+    const first = createFixture();
+    const challenge = createChallenge(first.orchestrator);
+    recordDecision(first.orchestrator, challenge.id);
+    const dispatch = await first.orchestrator.dispatch({
+      challengeId: challenge.id,
+      input: "starter",
+      expectedOutput: "artifact",
+    });
+    const restoredTransport = new MemoryHarnessTransport();
+    await restoredTransport.open({ squadId: "alpha" });
+    const restored = new Orchestrator({
+      model: new MockLanguageModelV3({ doGenerate: textResult() }),
+      squads,
+      rounds,
+      transports: {
+        alpha: restoredTransport,
+        beta: new MemoryHarnessTransport(),
+      },
+      initialState: first.orchestrator.world,
+      restoredSessions: { alpha: dispatch.sessionId },
+    });
+
+    expect(restored.world.dispatches).toEqual([dispatch]);
+    expect(restoredTransport.prompts).toHaveLength(0);
+    await restored.recordReview({
+      dispatchId: dispatch.id,
+      outcome: "returned",
+      reason: "Adjust the entrance",
+      reviewerName: "Ana",
+    });
+    expect(restoredTransport.prompts[0]?.sessionId).toBe(dispatch.sessionId);
   });
 });

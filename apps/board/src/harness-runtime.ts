@@ -38,6 +38,13 @@ export interface BoardHarnessRuntime {
     prompt: string;
     squadId: string;
   }) => Promise<{ sessionId: string; revision: number }>;
+  promptSession: (input: {
+    participantId: string;
+    prompt: string;
+    roundId: string;
+    sessionId: string;
+    squadId: string;
+  }) => Promise<void>;
   reconcileHosted: (desiredCount?: number) => Promise<void>;
   subscribeArtifacts: (
     listener: (
@@ -164,6 +171,18 @@ class HarnessGateway {
       prompt: input.prompt,
     });
     return { sessionId: session.sessionId, revision };
+  }
+
+  async promptSession(input: {
+    participantId: string;
+    prompt: string;
+    roundId: string;
+    sessionId: string;
+    squadId: string;
+  }) {
+    const entry = this.ensureEntry(input);
+    await entry.open;
+    await entry.transport.prompt(input.sessionId, input.prompt);
   }
 
   async restore() {
@@ -479,6 +498,7 @@ export async function createBoardHarnessRuntime(
       await reconcileParticipants().catch(onError);
     },
     prompt: (input) => gateway.prompt(input),
+    promptSession: (input) => gateway.promptSession(input),
     subscribeArtifacts: (listener) => gateway.subscribeArtifacts(listener),
     close: async () => {
       abort.abort();
