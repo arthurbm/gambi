@@ -405,6 +405,29 @@
   gap: 0.7rem;
 }
 
+.review-history {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 0.5rem;
+  list-style: none;
+}
+
+.review-history li {
+  display: grid;
+  padding: 0.6rem;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+  border: 1px solid var(--border);
+  font-size: 0.74rem;
+}
+
+.review-history small {
+  color: var(--muted-foreground);
+}
+
 .dispatch-slip [data-slot="card-content"] {
   max-width: 760px;
 }
@@ -421,6 +444,107 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
+}
+
+.model-handoff {
+  max-width: 760px;
+  margin-bottom: 1.5rem;
+  border-color: var(--primary);
+}
+
+.handoff-slip {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px dashed var(--border);
+}
+
+.handoff-slip h3 {
+  margin: 0 0 0.7rem;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+}
+
+.handoff-slip dl {
+  display: grid;
+  margin: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.handoff-slip dl div {
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+}
+
+.handoff-slip dt {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+}
+
+.handoff-slip dd {
+  margin: 0.2rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 1.35rem;
+}
+
+.handoff-slip pre {
+  max-width: 100%;
+  margin: 0;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+.handoff-details {
+  display: grid;
+  margin-top: 0.8rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.handoff-details section:first-child {
+  grid-column: 1 / -1;
+}
+
+.handoff-details h4,
+.handoff-details p,
+.handoff-details ul {
+  margin: 0;
+}
+
+.handoff-details h4 {
+  margin-bottom: 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+}
+
+.handoff-details p,
+.handoff-details li {
+  font-size: 0.74rem;
+}
+
+.handoff-details ul {
+  display: flex;
+  padding: 0;
+  flex-direction: column;
+  gap: 0.25rem;
+  list-style: none;
+}
+
+.crisis-dependency {
+  margin-bottom: 1rem;
+  border-color: var(--accent);
+}
+
+.dispatch-dependency {
+  margin: 0 0 1rem;
+  padding: 0.65rem;
+  border: 1px dashed var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--card));
+  font-size: 0.78rem;
 }
 
 .publish-round {
@@ -596,6 +720,159 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
   gap: 0.7rem;
+}
+
+.metro-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.metro-overlay svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.metro-line {
+  fill: none;
+  stroke: var(--primary);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 4;
+}
+
+.metro-stop circle {
+  fill: var(--card);
+  stroke: var(--primary);
+  stroke-width: 4;
+}
+
+.metro-stop path {
+  fill: none;
+  stroke: var(--destructive);
+  stroke-width: 3;
+}
+
+.metro-stop text {
+  fill: var(--foreground);
+  stroke: var(--card);
+  stroke-width: 4;
+  paint-order: stroke fill;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.metro-stop.offline text {
+  fill: var(--destructive);
+}
+
+.finale-page {
+  min-height: 100svh;
+  padding: clamp(1rem, 3vw, 3rem);
+}
+
+.finale-heading {
+  display: flex;
+  margin-bottom: 1.5rem;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 2rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.finale-heading p,
+.finale-ledger > header p {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+}
+
+.finale-heading h1 {
+  max-width: 18ch;
+  margin: 0.25rem 0 1rem;
+  font-size: clamp(1.75rem, 4vw, 3.4rem);
+}
+
+.finale-heading dl {
+  display: flex;
+  margin: 0 0 1rem;
+  gap: 1.5rem;
+}
+
+.finale-heading dl div {
+  min-width: 5rem;
+}
+
+.finale-heading dt {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  text-transform: uppercase;
+}
+
+.finale-heading dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 1.55rem;
+}
+
+.finale-ledger {
+  margin-top: 2rem;
+}
+
+.finale-ledger > header {
+  display: flex;
+  margin-bottom: 1rem;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.finale-ledger > header h2 {
+  margin: 0;
+}
+
+.finale-squads {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.finale-decisions {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 1rem;
+  list-style: none;
+}
+
+.finale-decisions li {
+  padding-left: 0.8rem;
+  border-left: 2px solid var(--accent);
+}
+
+.finale-decisions h3,
+.finale-decisions p {
+  margin: 0.4rem 0;
+}
+
+.finale-decisions h3 {
+  font-size: 0.92rem;
+}
+
+.finale-decisions p,
+.finale-decisions small {
+  font-size: 0.74rem;
+}
+
+.finale-decisions small {
+  color: var(--muted-foreground);
 }
 
 .parcel-grid[data-count="1"] {
@@ -1106,7 +1383,8 @@ code {
   }
 
   .workflow-columns,
-  .challenge-register {
+  .challenge-register,
+  .finale-squads {
     grid-template-columns: 1fr;
   }
 
@@ -1225,6 +1503,31 @@ code {
 
   .review-actions {
     flex-direction: column;
+  }
+
+  .finale-heading,
+  .finale-ledger > header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .finale-heading dl {
+    width: 100%;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .handoff-slip dl {
+    grid-template-columns: 1fr;
+  }
+
+  .handoff-details {
+    grid-template-columns: 1fr;
+  }
+
+  .handoff-details section:first-child {
+    grid-column: auto;
   }
 
   .ledger-table {

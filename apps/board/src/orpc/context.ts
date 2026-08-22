@@ -21,7 +21,11 @@ interface HarnessActions {
 }
 
 interface OrchestratorActions {
+  listModels: () => Promise<
+    Array<{ id: string; nickname: string; model: string }>
+  >;
   run: (prompt: string) => Promise<unknown>;
+  swapModel: (participantId: string, handoff: string) => string;
 }
 
 export interface CreateContextOptions {

@@ -5,10 +5,11 @@ import {
   RotateCcwIcon,
   SendIcon,
   SparklesIcon,
+  WaypointsIcon,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -98,6 +99,29 @@ export function RoundWorkflow({
             : "O orquestrador ainda está preparando este desafio."}
         </p>
       </header>
+
+      {challenge.dependsOnSquad ? (
+        <Alert className="crisis-dependency">
+          <WaypointsIcon aria-hidden="true" />
+          <AlertTitle>
+            Crise ligada a {challenge.dependsOnSquad.name}
+          </AlertTitle>
+          <AlertDescription>
+            O squad vizinho faz parte da solução. Esta dependência também segue
+            no payload do harness.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      {!challenge.dependsOnSquad && workflow.data?.roundId === "round-5" ? (
+        <Alert className="crisis-dependency">
+          <WaypointsIcon aria-hidden="true" />
+          <AlertTitle>Sem vizinho disponível</AlertTitle>
+          <AlertDescription>
+            A crise precisa de pelo menos dois squads ativos para formar uma
+            dependência sem apontar para o próprio lote.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <div className="proposal-ledger">
         {challenge.drafts.map((item) => (
@@ -320,6 +344,12 @@ export function RoundWorkflow({
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {challenge.dependsOnSquad ? (
+            <p className="dispatch-dependency">
+              Esta ordem inclui coordenação obrigatória com o squad{" "}
+              <strong>{challenge.dependsOnSquad.name}</strong>.
+            </p>
+          ) : null}
           {challenge.dispatch ? (
             <FieldGroup>
               <Field data-disabled={!isSteerer}>
@@ -337,10 +367,29 @@ export function RoundWorkflow({
                 />
                 <FieldDescription>
                   {lastReview
-                    ? `Última revisão: ${lastReview.outcome} por ${lastReview.reviewerName}.`
+                    ? `Última revisão: ${lastReview.outcome} por ${lastReview.reviewerName}. O rework continua na sessão ${challenge.dispatch.sessionId}.`
                     : "Aceite ou devolva. A devolução volta à mesma sessão."}
                 </FieldDescription>
               </Field>
+              {challenge.dispatch.reviews.length ? (
+                <ol className="review-history">
+                  {challenge.dispatch.reviews.map((review, index) => (
+                    <li key={review.id}>
+                      <Badge
+                        variant={
+                          review.outcome === "returned"
+                            ? "destructive"
+                            : "outline"
+                        }
+                      >
+                        {index + 1} · {review.outcome}
+                      </Badge>
+                      <span>{review.reason ?? "Sem observação"}</span>
+                      <small>{review.reviewerName}</small>
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
               <div className="review-actions">
                 <Button
                   disabled={

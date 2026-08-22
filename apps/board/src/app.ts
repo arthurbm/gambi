@@ -114,23 +114,33 @@ export async function createBoardApp(
     }
   });
   let orchestrator: Orchestrator | undefined;
+  let orchestratorProvider: ReturnType<typeof createGambi> | undefined;
   if (harnessOptions) {
-    const world = await workflow.toWorldState();
+    const [world, persistedModel] = await Promise.all([
+      workflow.toWorldState(),
+      workflow.getOrchestratorModel(),
+    ]);
     const transports = Object.fromEntries(
       world.squads.map((squad) => [squad.id, new MemoryHarnessTransport()])
     );
     const restoredSessions = Object.fromEntries(
       world.dispatches.map((dispatch) => [dispatch.squadId, dispatch.sessionId])
     );
+    orchestratorProvider = createGambi({
+      hubUrl: harnessOptions.hubUrl,
+      roomCode: harnessOptions.roomCode,
+    });
     orchestrator = new Orchestrator({
-      model: createGambi({
-        hubUrl: harnessOptions.hubUrl,
-        roomCode: harnessOptions.roomCode,
-      }).any(),
+      model: persistedModel
+        ? orchestratorProvider.participant(persistedModel.participantId)
+        : orchestratorProvider.any(),
       squads: world.squads,
       rounds: world.rounds,
       transports,
       initialState: world,
+      initialHandoff: persistedModel?.consumedAt
+        ? undefined
+        : persistedModel?.handoff,
       restoredSessions,
     });
   }
@@ -226,7 +236,18 @@ export async function createBoardApp(
       events,
       adminToken,
       harness,
-      orchestrator,
+      orchestrator:
+        orchestrator && orchestratorProvider
+          ? {
+              listModels: () => orchestratorProvider.listModels(),
+              run: (prompt) => orchestrator.run(prompt),
+              swapModel: (participantId, handoff) =>
+                orchestrator.swapModel(
+                  orchestratorProvider.participant(participantId),
+                  handoff
+                ),
+            }
+          : undefined,
     });
     const rpcResult = await rpcHandler.handle(context.req.raw, {
       prefix: "/rpc",

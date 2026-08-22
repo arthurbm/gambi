@@ -53,6 +53,7 @@ export interface OrchestratorOptions {
   rounds: Round[];
   transports: Record<string, HarnessTransport>;
   initialState?: WorldState;
+  initialHandoff?: string;
   restoredSessions?: Record<string, string>;
   maxReturns?: number;
   generateId?: (kind: string) => string;
@@ -154,6 +155,7 @@ export class Orchestrator {
     this.#model = options.model;
     this.#agent = this.createAgent(options.model);
     this.hydrate(options.initialState, options.restoredSessions);
+    this.#handoff = options.initialHandoff;
 
     for (const squad of options.squads) {
       const transport = options.transports[squad.id];
@@ -482,9 +484,9 @@ export class Orchestrator {
     }
   }
 
-  swapModel(model: LanguageModel): string {
+  swapModel(model: LanguageModel, durableHandoff?: string): string {
     const previousModel = describeModel(this.#model);
-    const handoff = this.createHandoff();
+    const handoff = durableHandoff ?? this.createHandoff();
     this.#model = model;
     this.#agent = this.createAgent(model);
     this.#handoff = handoff;

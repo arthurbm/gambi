@@ -359,6 +359,41 @@ export const orchestratorSteerers = sqliteTable("orchestrator_steerers", {
   selectedAt: text("selected_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const challengeDependencies = sqliteTable("challenge_dependencies", {
+  challengeId: text("challenge_id")
+    .primaryKey()
+    .references(() => challenges.id, { onDelete: "cascade" }),
+  dependsOnSquadId: text("depends_on_squad_id")
+    .notNull()
+    .references(() => squads.id),
+  kind: text("kind").notNull().default("neighbor_crisis"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const orchestratorModelHandoffs = sqliteTable(
+  "orchestrator_model_handoffs",
+  {
+    sequence: integer("sequence").primaryKey({ autoIncrement: true }),
+    id: text("id").notNull().unique(),
+    participantId: text("participant_id").notNull(),
+    modelLabel: text("model_label").notNull(),
+    previousModelLabel: text("previous_model_label").notNull(),
+    handoff: text("handoff").notNull(),
+    actorPersonId: text("actor_person_id")
+      .notNull()
+      .references(() => people.id),
+    actorName: text("actor_name").notNull(),
+    roundId: text("round_id")
+      .notNull()
+      .references(() => rounds.id),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    consumedAt: text("consumed_at"),
+  },
+  (table) => [
+    index("orchestrator_model_handoffs_created_idx").on(table.createdAt),
+  ]
+);
+
 export const tiles = sqliteTable(
   "tiles",
   {

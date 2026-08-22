@@ -6,6 +6,7 @@
   "main": "src/index.ts",
   "exports": {
     ".": "./src/app.ts",
+    "./metro": "./src/domain/metro.ts",
     "./router": "./src/orpc/routers/index.ts"
   },
   "scripts": {
