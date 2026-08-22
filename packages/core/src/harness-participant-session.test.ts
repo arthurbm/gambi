@@ -3,6 +3,7 @@ import { Buffer } from "node:buffer";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getHarnessAdapter } from "./harness-adapters.ts";
 import {
   createHarnessParticipantSession,
   HarnessDependencyError,
@@ -132,6 +133,55 @@ describe("HarnessParticipantSession", () => {
         "OpenCode is not installed. Install it from https://opencode.ai/docs and retry."
       )
     );
+  });
+
+  test("rejects hosted Claude Code before touching the hub", async () => {
+    await expect(
+      createHarnessParticipantSession({
+        roomCode: "ABC123",
+        participantId: "hosted-claude",
+        nickname: "Hosted Claude",
+        harnessId: "claude-code",
+        hosted: true,
+      })
+    ).rejects.toEqual(
+      new HarnessDependencyError(
+        "Claude Code cannot run as a Gambi-hosted harness for third parties. Each end user must run the unmodified binary with their own local authentication."
+      )
+    );
+  });
+
+  test("registers the selected adapter id and model for board consumers", async () => {
+    const hub = createTestHub();
+    hubs.push(hub);
+    const createResponse = await fetch(`${hub.url}/v1/rooms`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Adapter metadata" }),
+    });
+    const createBody = (await createResponse.json()) as {
+      data: { room: { code: string } };
+    };
+    const gambiHome = await mkdtemp(join(tmpdir(), "gambi metadata home "));
+    temporaryDirectories.push(gambiHome);
+    const fakeAdapter = getHarnessAdapter("fake");
+
+    const session = await createHarnessParticipantSession({
+      hubUrl: hub.url,
+      roomCode: createBody.data.room.code,
+      participantId: "codex-participant",
+      nickname: "Codex participant",
+      harnessId: "codex",
+      model: "gpt-5.6",
+      gambiHome,
+      adapter: { ...fakeAdapter, id: "codex" },
+    });
+
+    expect(session.participant.harness).toEqual({
+      id: "codex",
+      model: "gpt-5.6",
+    });
+    await session.close();
   });
 
   test("bridges a real fake ACP process and publishes workspace artifacts", async () => {

@@ -1,6 +1,9 @@
 import { password as passwordPrompt, select, text } from "@clack/prompts";
 import { probeEndpoint } from "@gambi/core/endpoint";
-import type { SupportedHarnessId } from "@gambi/core/harness-adapters";
+import {
+  getHarnessAdapter,
+  type SupportedHarnessId,
+} from "@gambi/core/harness-adapters";
 import {
   createHarnessParticipantSession,
   type HarnessParticipantLifecycleEvent,
@@ -38,11 +41,16 @@ export function parseHeaderAssignment(input: string): {
 }
 
 export function parseHarnessId(input: string): SupportedHarnessId {
-  if (input === "opencode" || input === "fake") {
+  if (
+    input === "opencode" ||
+    input === "claude-code" ||
+    input === "codex" ||
+    input === "fake"
+  ) {
     return input;
   }
   throw new Error(
-    `Unsupported harness '${input}'. Use one of: opencode, fake.`
+    `Unsupported harness '${input}'. Use one of: opencode, claude-code, codex, fake.`
   );
 }
 
@@ -146,7 +154,7 @@ export class ParticipantJoinCommand extends AgentCommand {
   });
 
   harness = Option.String("--harness", {
-    description: "Local ACP harness: opencode or fake",
+    description: "Local ACP harness: opencode, claude-code, codex, or fake",
     required: false,
   });
 
@@ -546,6 +554,11 @@ export class ParticipantJoinCommand extends AgentCommand {
     let nickname = this.nickname ?? this.name;
     let participantId = this.participantId;
     const model = this.model ?? harnessId;
+    const adapter = getHarnessAdapter(harnessId);
+
+    for (const note of adapter.notes) {
+      this.context.stderr.write(`${note}\n`);
+    }
 
     if (this.allowInteractive(true)) {
       if (!room) {
@@ -619,7 +632,7 @@ export class ParticipantJoinCommand extends AgentCommand {
       payload: {
         nickname: displayName,
         model,
-        harness: { id: harnessId },
+        harness: { id: harnessId, model: this.model },
         password: password ? "[redacted]" : undefined,
         specs,
         config: runtimeConfig,
@@ -694,6 +707,7 @@ export class ParticipantJoinCommand extends AgentCommand {
         nickname: displayName,
         model: this.model,
         harnessId,
+        adapter,
         password,
         specs,
         config: runtimeConfig,

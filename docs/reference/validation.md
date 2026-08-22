@@ -15,7 +15,7 @@ For the day-to-day command set (install, dev, build, check-types, lint), see the
 | `apps/tui` | `bun run --cwd apps/tui test` |
 | HTTP contracts or public types | quick test of affected endpoint(s); see `docs/reference/docs-update.md` for required doc updates |
 | Tunnel protocol | `bun test packages/core/src` (tunnel tests); see `docs/reference/docs-update.md` |
-| Harness participant runtime | `bun test packages/core/src/harness-participant-session.test.ts`, then the OpenCode smoke below |
+| Harness participant runtime | `bun test packages/core/src/harness-adapters.test.ts packages/core/src/harness-participant-session.test.ts`, then the installed-adapter smokes below |
 | Distribution / release | `bun run --cwd packages/cli check-types`, `bun run --cwd packages/cli build`, `npm pack --dry-run --cache /tmp/npm-cache ./packages/cli/dist/npm/gambi`, `node ./packages/cli/dist/npm/gambi/bin/gambi --version` |
 
 ## Quick validation set
@@ -41,7 +41,19 @@ checks the artifact snapshot. It does not call a model:
 bun test packages/core/src/harness-participant-session.test.ts
 ```
 
-Run this once with a logged-in OpenCode before an event release:
+Run the applicable check for each locally installed adapter before an event
+release. These commands stop before a paid model prompt:
+
+```bash
+opencode auth list --pure
+claude auth status --json
+codex login status
+claude-agent-acp --help
+codex-acp --help
+```
+
+Then run one full-round smoke only for the harnesses budgeted for the event.
+OpenCode example:
 
 ```bash
 opencode auth list --pure
@@ -64,3 +76,9 @@ Check these facts before pressing Ctrl+C:
 
 Do not copy authentication output into the ticket. Record only the adapter,
 model label, operating system, command exit code, and which checks passed.
+
+For Claude Code, also confirm that the join prints the terms warning. Never run
+Claude Code as a hosted harness for third parties; every end user runs the
+unmodified binary with their own local authentication. For Codex, confirm that
+the registered participant and the board `/me` response contain
+`harness.id: "codex"` (and the optional model label when supplied).
