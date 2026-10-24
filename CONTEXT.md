@@ -87,40 +87,14 @@ A participant that contributes a harness to a room instead of a bare model endpo
 _Avoid_: Agent participant, worker.
 
 **Harness session**:
-One conversation inside a harness, with its own working directory and native history. A harness participant may hold several. Distinct from a **Room** (which `CONTEXT.md` already forbids calling "session").
+One conversation inside a harness, running in a **Workspace**, with its own native history. A harness participant may hold several. Distinct from a **Room** (which `CONTEXT.md` already forbids calling "session").
 _Avoid_: Session (bare), thread, chat.
 
-**Orchestrator**:
-A harness whose tools are other harness participants: it decomposes an objective, dispatches work to squads, and integrates what comes back. It always has one human steering it. Orchestration lives above the hub, never inside it.
-_Avoid_: Coordinator, manager, supervisor, mayor.
+**Workspace**:
+The folder on a participant's machine where a harness session runs and from which its artifacts are collected. It belongs to the participant runtime; the hub never sees it. A participant may point a harness at a folder of their own; otherwise the runtime creates an empty one.
+_Avoid_: Sandbox (implies isolation Gambi does not provide), cwd, working dir.
 
-**Steerer**:
-The one human currently responsible for a harness: the only person who writes to it, and the one who accepts or returns its output with a reason. The role rotates; it is not tied to a machine.
-_Avoid_: Operator, supervisor, owner, driver.
-
-**Squad**:
-A group of people, each possibly with their own harness participant, with one steerer at a time. Per round the squad designates which harness participant receives dispatches (normally the steerer's). The unit of social participation in a shared experience.
-_Avoid_: Team, group, crew.
-
-**Dispatch** (harness dispatch):
-The orchestrator handing a typed task (objective, input, expected output, constraints) to one harness participant's session. Distinct from inference-plane **routing** of a single model request.
-_Avoid_: Assign, delegate (fine in prose, not as the term).
-
-**Draft**:
-A proposal a squad member offers to the current steerer, written by hand or produced by the member's own harness; the orchestrator also seeds two or three per challenge. Only the steerer can turn a draft into input for the dispatched harness.
-_Avoid_: Suggestion, comment, vote.
-
-**Decision**:
-The squad's recorded answer to a challenge before any dispatch: what it builds, what it cuts, why, which drafts it considered, and who steered. Decisions are first-class and visible; they are the evidence that humans deliberated.
-_Avoid_: Plan, choice, vote.
-
-**Challenge**:
-What the orchestrator hands a squad per round, together with seeded drafts. A squad answers a challenge with a decision, then dispatches.
-_Avoid_: Task (reserve for the typed dispatch payload), mission.
-
-**Return** (returned output):
-The steerer sending a harness's output back with a reason instead of accepting it. Returns are logged; their count per squad is the first divergence signal.
-_Avoid_: Reject, veto, fail.
+Orchestration vocabulary (orchestrator, steerer, squad, dispatch, draft, decision, challenge, return) belongs to the experiences built on top of Gambi and lives in the `CONTEXT.md` of [gambiarra-lab](https://github.com/arthurbm/gambiarra-lab). No code in this repo uses those terms.
 
 ## Relationships
 
@@ -131,9 +105,7 @@ _Avoid_: Reject, veto, fail.
 - Every operational call (create room, register participant, send heartbeat, watch events) goes through the **Management plane**.
 - A **Participant** has a **Status** and a **Connection**; both must be healthy for it to receive routes.
 - A **Harness participant** is a **Participant**; it holds one-to-many **Harness sessions**.
-- A **Squad** is people, zero-to-many **Harness participants** (one designated per round for dispatch), exactly one **Steerer** at a time, and any number of **Drafts**.
-- Per round: a **Challenge** gathers **Drafts**, the steerer records a **Decision**, then the orchestrator **dispatches**; output is accepted or **returned**.
-- An **Orchestrator** is a harness; it **dispatches** to harness participants and receives accepted or **returned** output.
+- A **Harness session** runs in exactly one **Workspace**; a **Workspace** lives on the participant's machine and never on the hub.
 
 ## Example dialogue
 
@@ -151,7 +123,7 @@ _Avoid_: Reject, veto, fail.
 - **"Agent"** is heavily overloaded in this repo:
   - **`docs/agents/`** — files that configure engineering skills (issue tracker, triage labels, domain doc layout). Not for AI agents specifically; the folder name comes from the `setup-matt-pocock-skills` convention.
   - **"Agent-first"** — the design adjective applied to the CLI, HTTP, and SDK surfaces (ADR-0002). Means "structured for non-interactive automation," not "for AI agents specifically."
-  - **"`gambi agents`"** — the future product layer described in `docs/product/vision.md`, currently out of scope.
+  - **"`gambi agents`"** — the future product layer described in `docs/product/vision.md`, currently out of scope. The layer is being explored in `gambiarra-lab`; nothing there is "Gambi Agents" until two experiences share a primitive.
   - _Rule_: never say just "agent" without a qualifier. Say "an automation client," "the agent-first redesign," or "Gambi Agents (the future product)."
 
 - **"Endpoint"** is overloaded between *provider endpoint* (the participant's local URL the hub never reaches) and *HTTP endpoint / route* (a path on the hub). The codebase uses bare `endpoint` to mean **provider endpoint**. When you mean a hub route, say **route** or **HTTP endpoint** explicitly.
@@ -164,6 +136,3 @@ _Avoid_: Reject, veto, fail.
 
 - **"Heartbeat"** is reserved for the management-plane HTTP heartbeat. The tunnel's keepalive is **ping/pong** (`tunnel.ping` / `tunnel.pong`). Saying "the heartbeat failed" implicitly means management; tunnel failures are "ping/pong stopped" or "tunnel closed."
 
-- **"Steerer"** is a role, not a person or a machine. "The steerer of squad B" changes every round. Never say "the steerer's laptop"; say "the squad's harness participant".
-
-- **"Orchestrator"** names the harness, not the human steering it. Say "the orchestrator's steerer" for the person.
