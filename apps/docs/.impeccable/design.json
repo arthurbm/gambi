@@ -1,0 +1,744 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-24T13:47:25+00:00",
+  "title": "Design System: Gambi",
+  "extensions": {
+    "colorMeta": {
+      "lona": {
+        "role": "primary",
+        "displayName": "Tarp Blue (Lona)",
+        "canonical": "#1e4fb4",
+        "oklch": "oklch(45.9% 0.169 262.4)",
+        "tonalRamp": [
+          "#000729",
+          "#051f58",
+          "#183c87",
+          "#2d5bb9",
+          "#4d7edf",
+          "#77a4f8",
+          "#adcafe",
+          "#e6effe"
+        ]
+      },
+      "lona-deep": {
+        "role": "primary",
+        "displayName": "Deep Tarp (Lona Deep)",
+        "canonical": "#133679",
+        "oklch": "oklch(35.1% 0.122 261.7)",
+        "tonalRamp": [
+          "#010924",
+          "#0e234a",
+          "#244074",
+          "#3c5fa1",
+          "#5c81c6",
+          "#84a5e1",
+          "#aecafc",
+          "#e6efff"
+        ]
+      },
+      "stripe": {
+        "role": "neutral",
+        "displayName": "Stripe White",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "ovo": {
+        "role": "secondary",
+        "displayName": "Egg-Yolk Yellow (Ovo)",
+        "canonical": "#f5c11b",
+        "oklch": "oklch(83.4% 0.166 88.3)",
+        "tonalRamp": [
+          "#110a00",
+          "#2f2302",
+          "#523f08",
+          "#785d03",
+          "#a17d01",
+          "#c6a033",
+          "#e6c676",
+          "#feedc4"
+        ]
+      },
+      "tomate": {
+        "role": "tertiary",
+        "displayName": "Tomato Red (Tomate)",
+        "canonical": "#c8281c",
+        "oklch": "oklch(54.1% 0.197 29.5)",
+        "tonalRamp": [
+          "#1f0000",
+          "#4d0000",
+          "#800200",
+          "#b21f15",
+          "#da4a3b",
+          "#f67b6a",
+          "#fdb4a8",
+          "#ffe9e5"
+        ]
+      },
+      "folha": {
+        "role": "tertiary",
+        "displayName": "Leaf Green (Folha)",
+        "canonical": "#11804a",
+        "oklch": "oklch(52.9% 0.125 155.1)",
+        "tonalRamp": [
+          "#001005",
+          "#012e17",
+          "#04502b",
+          "#107443",
+          "#3e9763",
+          "#70b78a",
+          "#a0d9b3",
+          "#cffbdd"
+        ]
+      },
+      "ground": {
+        "role": "neutral",
+        "displayName": "Lime-Wash Ground",
+        "canonical": "#eef0ea",
+        "oklch": "oklch(95.2% 0.008 121.6)",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#252523",
+          "#41433f",
+          "#60625d",
+          "#81837e",
+          "#a4a6a1",
+          "#c8cac6",
+          "#eeefec"
+        ]
+      },
+      "ground-2": {
+        "role": "neutral",
+        "displayName": "Shaded Wall",
+        "canonical": "#e2e6dc",
+        "oklch": "oklch(91.9% 0.014 124.6)",
+        "tonalRamp": [
+          "#0a0c09",
+          "#242621",
+          "#41433d",
+          "#5f635b",
+          "#80847b",
+          "#a3a69f",
+          "#c8cac4",
+          "#edefea"
+        ]
+      },
+      "board": {
+        "role": "neutral",
+        "displayName": "Board White",
+        "canonical": "#fbfbf6",
+        "oklch": "oklch(98.7% 0.007 106.5)",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#252523",
+          "#42423f",
+          "#61615e",
+          "#83837e",
+          "#a5a5a2",
+          "#c9c9c6",
+          "#efefec"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Sign Ink",
+        "canonical": "#161a22",
+        "oklch": "oklch(21.7% 0.017 264.1)",
+        "tonalRamp": [
+          "#090b0f",
+          "#22252a",
+          "#3e4249",
+          "#5d616a",
+          "#7e828c",
+          "#a1a5ae",
+          "#c6c9d0",
+          "#eceef4"
+        ]
+      },
+      "ink-soft": {
+        "role": "neutral",
+        "displayName": "Faded Ink",
+        "canonical": "#3d4452",
+        "oklch": "oklch(38.6% 0.026 264.2)",
+        "tonalRamp": [
+          "#090b11",
+          "#21252d",
+          "#3d424d",
+          "#5a616f",
+          "#7b8391",
+          "#9fa5b2",
+          "#c4c9d4",
+          "#eaeff7"
+        ]
+      },
+      "code-ink": {
+        "role": "neutral",
+        "displayName": "Chalk",
+        "canonical": "#e9ecf2",
+        "oklch": "oklch(94.3% 0.009 264.5)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#242528",
+          "#404246",
+          "#5f6166",
+          "#808287",
+          "#a3a5a9",
+          "#c7c9cd",
+          "#edeef1"
+        ]
+      },
+      "code-dim": {
+        "role": "neutral",
+        "displayName": "Dim Chalk",
+        "canonical": "#9aa3b5",
+        "oklch": "oklch(71.4% 0.028 264.4)",
+        "tonalRamp": [
+          "#080b11",
+          "#21252e",
+          "#3c424e",
+          "#5a6171",
+          "#7b8393",
+          "#9ea5b3",
+          "#c3c9d5",
+          "#eaeff8"
+        ]
+      },
+      "night-ground": {
+        "role": "neutral",
+        "displayName": "Night-Market Navy",
+        "canonical": "#14244f",
+        "oklch": "oklch(27.4% 0.082 265.8)",
+        "tonalRamp": [
+          "#040a1c",
+          "#19243e",
+          "#324164",
+          "#4d608d",
+          "#6d81b1",
+          "#92a5ce",
+          "#b9c9ec",
+          "#e7effe"
+        ]
+      },
+      "night-ground-2": {
+        "role": "neutral",
+        "displayName": "Night Shaded Wall",
+        "canonical": "#1a2d5e",
+        "oklch": "oklch(31.1% 0.091 265.5)",
+        "tonalRamp": [
+          "#040a1e",
+          "#172441",
+          "#304168",
+          "#4a6091",
+          "#6a81b5",
+          "#90a5d2",
+          "#b7c9f0",
+          "#e7efff"
+        ]
+      },
+      "night-board": {
+        "role": "neutral",
+        "displayName": "Night Board",
+        "canonical": "#20356a",
+        "oklch": "oklch(34.3% 0.096 265.4)",
+        "tonalRamp": [
+          "#03091f",
+          "#162343",
+          "#2e406a",
+          "#495f94",
+          "#6881b8",
+          "#8ea5d5",
+          "#b6c9f2",
+          "#e7effe"
+        ]
+      },
+      "night-ink-soft": {
+        "role": "neutral",
+        "displayName": "Night Faded Ink",
+        "canonical": "#b9c1d0",
+        "oklch": "oklch(80.9% 0.023 263.2)",
+        "tonalRamp": [
+          "#090b10",
+          "#21252c",
+          "#3d424c",
+          "#5b616e",
+          "#7c838f",
+          "#9fa5b1",
+          "#c4c9d3",
+          "#eaeff6"
+        ]
+      },
+      "night-lona": {
+        "role": "primary",
+        "displayName": "Night Tarp Blue",
+        "canonical": "#2a5fd0",
+        "oklch": "oklch(51.8% 0.184 262.8)",
+        "tonalRamp": [
+          "#00062b",
+          "#031d5c",
+          "#143a8d",
+          "#2859c0",
+          "#497de7",
+          "#74a3ff",
+          "#afcafb",
+          "#e6effe"
+        ]
+      },
+      "night-lona-deep": {
+        "role": "primary",
+        "displayName": "Night Deep Tarp",
+        "canonical": "#0d1a3d",
+        "oklch": "oklch(23.0% 0.070 265.8)",
+        "tonalRamp": [
+          "#050a19",
+          "#1b243b",
+          "#34415f",
+          "#506086",
+          "#7082aa",
+          "#95a5c8",
+          "#bcc9e7",
+          "#e7effe"
+        ]
+      },
+      "night-stripe": {
+        "role": "neutral",
+        "displayName": "Night Stripe",
+        "canonical": "#d6dbe6",
+        "oklch": "oklch(89.1% 0.016 266.3)",
+        "tonalRamp": [
+          "#0a0b0f",
+          "#23252a",
+          "#3f4249",
+          "#5d616a",
+          "#7e828c",
+          "#a1a5ad",
+          "#c6c9d0",
+          "#eceef4"
+        ]
+      },
+      "night-tomate": {
+        "role": "tertiary",
+        "displayName": "Night Tomato",
+        "canonical": "#d43a22",
+        "oklch": "oklch(57.8% 0.194 31.7)",
+        "tonalRamp": [
+          "#1e0100",
+          "#4a0701",
+          "#7c1303",
+          "#b1230b",
+          "#d94c36",
+          "#f57d67",
+          "#fcb5a6",
+          "#fee9e5"
+        ]
+      },
+      "night-alarm": {
+        "role": "tertiary",
+        "displayName": "Night Warning Red",
+        "canonical": "#ff6b55",
+        "oklch": "oklch(70.8% 0.185 30.7)",
+        "tonalRamp": [
+          "#1e0100",
+          "#4b0501",
+          "#7d0f03",
+          "#ad2919",
+          "#d5503d",
+          "#f27f6c",
+          "#fdb4a7",
+          "#ffe9e5"
+        ]
+      },
+      "night-folha": {
+        "role": "tertiary",
+        "displayName": "Night Leaf Green",
+        "canonical": "#4fd08a",
+        "oklch": "oklch(76.9% 0.152 156.1)",
+        "tonalRamp": [
+          "#000f05",
+          "#012e18",
+          "#054f2d",
+          "#107445",
+          "#169a5d",
+          "#5fbb85",
+          "#94dcaf",
+          "#c6feda"
+        ]
+      },
+      "night-line-harness": {
+        "role": "primary",
+        "displayName": "Night Tunnel Blue (text)",
+        "canonical": "#8fb0ff",
+        "oklch": "oklch(76.4% 0.120 266.3)",
+        "tonalRamp": [
+          "#030823",
+          "#14224a",
+          "#2b3f73",
+          "#445ea0",
+          "#6380c5",
+          "#8aa4e0",
+          "#b2c9fc",
+          "#e7efff"
+        ]
+      },
+      "night-line-keys": {
+        "role": "tertiary",
+        "displayName": "Night Keys Green (hero line)",
+        "canonical": "#3cc27a",
+        "oklch": "oklch(72.5% 0.156 155.3)",
+        "tonalRamp": [
+          "#001005",
+          "#012e17",
+          "#03502c",
+          "#0f7443",
+          "#139b5b",
+          "#5ebc83",
+          "#93ddad",
+          "#c6ffd9"
+        ]
+      },
+      "night-sombra": {
+        "role": "neutral",
+        "displayName": "Night Sombra",
+        "canonical": "#04070d",
+        "oklch": "oklch(12.7% 0.016 257.8)",
+        "tonalRamp": [
+          "#090b0f",
+          "#22252a",
+          "#3e4249",
+          "#5c626a",
+          "#7d838b",
+          "#a0a5ad",
+          "#c5c9d0",
+          "#ebeff4"
+        ]
+      },
+      "night-code-bg": {
+        "role": "neutral",
+        "displayName": "Night Code Board",
+        "canonical": "#0a1330",
+        "oklch": "oklch(19.8% 0.059 267.7)",
+        "tonalRamp": [
+          "#060a17",
+          "#1d2438",
+          "#37415b",
+          "#546081",
+          "#7482a4",
+          "#98a5c3",
+          "#bec9e3",
+          "#e8eeff"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Pencil Rule",
+        "canonical": "rgb(22 26 34 / 0.2)"
+      },
+      "night-rule": {
+        "role": "neutral",
+        "displayName": "Night Pencil Rule",
+        "canonical": "rgb(238 240 234 / 0.18)"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Hero only: three stacked painted lines, each in its own ink."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section titles with a two-step sombra (yolk by day, tarp blue by night)."
+      },
+      "headline-board": {
+        "displayName": "Headline Board",
+        "purpose": "Title painted on a menu board, three-step sombra."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Sub-board titles: stall detail, warning, recipes."
+      },
+      "title-text": {
+        "displayName": "Title Text",
+        "purpose": "Setup step titles in Archivo bold."
+      },
+      "lead": {
+        "displayName": "Lead",
+        "purpose": "Hero lede and section leads, max 62ch."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Running text."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Nav links, stall kind/state, price-list keys; narrowed width axis."
+      },
+      "label-caps": {
+        "displayName": "Label Caps",
+        "purpose": "Column headings inside boards and footer; status tags."
+      },
+      "button": {
+        "displayName": "Button",
+        "purpose": "Bungee on painted buttons."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Commands, frame types, paths, file names only."
+      }
+    },
+    "shadows": [
+      {
+        "name": "sombra-display",
+        "value": "text-shadow: 0.02em 0.02em 0 var(--f-sombra), 0.035em 0.035em 0 var(--f-sombra), 0.05em 0.05em 0 var(--f-sombra)",
+        "purpose": "Painted drop shadow on display type. Type only."
+      },
+      {
+        "name": "sombra-headline",
+        "value": "text-shadow: 0.03em 0.03em 0 var(--f-ovo), 0.055em 0.055em 0 var(--f-ovo)",
+        "purpose": "Section titles; var(--f-lona) at night."
+      },
+      {
+        "name": "sombra-wordmark",
+        "value": "text-shadow: 1px 1px 0 #000, 2px 2px 0 #000, 3px 3px 0 #000",
+        "purpose": "Yolk wordmark in nav and footer; board titles use the same steps in white or #0a1a40."
+      },
+      {
+        "name": "canopy-cast",
+        "value": "filter: drop-shadow(0 6px 8px rgb(0 0 0 / 0.16))",
+        "purpose": "The scalloped canopy beam."
+      },
+      {
+        "name": "tarp-fold",
+        "value": "box-shadow: inset 0 -4px 6px -2px rgb(0 0 0 / 0.18)",
+        "purpose": "Crease where tarp meets valance."
+      },
+      {
+        "name": "ledger-rest",
+        "value": "box-shadow: 0 10px 30px -18px rgb(0 0 0 / 0.45)",
+        "purpose": "The ledger book; the only board with an ambient shadow."
+      },
+      {
+        "name": "paint-rest",
+        "value": "box-shadow: 0 2px 4px rgb(0 0 0 / 0.18)",
+        "purpose": "Primary paint button at rest."
+      },
+      {
+        "name": "paint-lift",
+        "value": "box-shadow: 0 6px 14px rgb(0 0 0 / 0.2)",
+        "purpose": "Primary paint button on hover, with translateY(-1px)."
+      },
+      {
+        "name": "focus-ring",
+        "value": "outline: 3px solid var(--f-ovo); outline-offset: 3px; box-shadow: 0 0 0 6px var(--f-ink)",
+        "purpose": "Every focus-visible element."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-feira",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "The single easing for every transition and keyframe."
+      },
+      {
+        "name": "state-fast",
+        "value": "160ms",
+        "purpose": "Button, command chip, link chevron, and hint color transitions."
+      },
+      {
+        "name": "state-stall",
+        "value": "200ms",
+        "purpose": "Stall background on hover/select."
+      },
+      {
+        "name": "cord-rise",
+        "value": "720ms, delay 240ms + index * 95ms",
+        "purpose": "Cords scale up from each stall to the canopy on load (scaleX below 56rem)."
+      },
+      {
+        "name": "token-down",
+        "value": "820ms",
+        "purpose": "Dispatch token travels down the selected stall's cord; first auto-run at 1150ms + stalls * 95ms."
+      },
+      {
+        "name": "copy-feedback",
+        "value": "1600ms",
+        "purpose": "Copy-success check and announcement duration."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "prefers-reduced-motion: reduce",
+        "purpose": "Cords drawn, no token travel, no button lift."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "footer-3col",
+        "value": "68rem"
+      },
+      {
+        "name": "aisle-rail",
+        "value": "56rem"
+      },
+      {
+        "name": "single-column",
+        "value": "44rem"
+      }
+    ],
+    "scope": {
+      "selector": ":root[data-has-hero]",
+      "darkSelector": ":root[data-has-hero][data-theme=\"dark\"]",
+      "source": "src/components/Lander.astro",
+      "legacy": "src/styles/custom.css governs all non-splash docs pages (warm paper + orange, Inter); not reconciled."
+    }
+  },
+  "components": [
+    {
+      "name": "Paint Button",
+      "kind": "button",
+      "refersTo": "button-paint",
+      "description": "The primary action. One per action row; the only red button.",
+      "html": "<a class=\"ds-btn-paint\" href=\"#\">Quick start</a>",
+      "css": ".ds-btn-paint { display: inline-flex; align-items: center; padding: 0.85rem 1.35rem; border-radius: 10px; background: var(--f-tomate, #c8281c); color: #fff; font-family: var(--f-display, \"Bungee\", \"Archivo Variable\", sans-serif); font-size: 0.95rem; line-height: 1; letter-spacing: 0.01em; text-decoration: none; text-shadow: 1px 1px 0 rgb(0 0 0 / 0.45); box-shadow: 0 2px 4px rgb(0 0 0 / 0.18); transition: background 160ms var(--f-ease, cubic-bezier(0.16, 1, 0.3, 1)), transform 160ms var(--f-ease, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow 160ms var(--f-ease, cubic-bezier(0.16, 1, 0.3, 1)); } .ds-btn-paint:hover { background: color-mix(in oklab, var(--f-tomate, #c8281c) 86%, #000); transform: translateY(-1px); box-shadow: 0 6px 14px rgb(0 0 0 / 0.2); } .ds-btn-paint:active { transform: translateY(0); } .ds-btn-paint:focus-visible { outline: 3px solid var(--f-ovo, #f5c11b); outline-offset: 3px; box-shadow: 0 0 0 6px var(--f-ink, #161a22); border-radius: 4px; }"
+    },
+    {
+      "name": "Filete Button",
+      "kind": "button",
+      "refersTo": "button-filete",
+      "description": "Secondary action framed with the double pinstripe.",
+      "html": "<a class=\"ds-btn-filete\" href=\"#\">Bring your harness</a>",
+      "css": ".ds-btn-filete { display: inline-flex; align-items: center; padding: 0.85rem 1.35rem; border-radius: 10px; color: var(--f-ink, #161a22); border: 1.5px solid var(--f-ink, #161a22); outline: 1px solid var(--f-ink, #161a22); outline-offset: -5px; font-family: var(--f-display, \"Bungee\", \"Archivo Variable\", sans-serif); font-size: 0.95rem; line-height: 1; letter-spacing: 0.01em; text-decoration: none; transition: background 160ms var(--f-ease, cubic-bezier(0.16, 1, 0.3, 1)); } .ds-btn-filete:hover { background: color-mix(in oklab, var(--f-ink, #161a22) 8%, transparent); } .ds-btn-filete:focus-visible { outline: 3px solid var(--f-ovo, #f5c11b); outline-offset: 3px; box-shadow: 0 0 0 6px var(--f-ink, #161a22); border-radius: 4px; }"
+    },
+    {
+      "name": "Install Till",
+      "kind": "custom",
+      "refersTo": "till",
+      "description": "Yellow painted board holding the one working copy-to-clipboard command.",
+      "html": "<div class=\"ds-till\"><span class=\"ds-till-label\">Install</span><button class=\"ds-cmd\" type=\"button\"><code>curl -fsSL https://gambi.sh/install | bash</code><span class=\"ds-copy\"><svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"9\" y=\"9\" width=\"12\" height=\"12\" rx=\"2\"/><path d=\"M5 15V5a2 2 0 0 1 2-2h10\"/></svg></span></button></div>",
+      "css": ".ds-till { display: inline-flex; align-items: center; gap: 0.9rem; padding: 0.5rem 0.6rem 0.5rem 1.05rem; border-radius: 10px; background: var(--f-ovo, #f5c11b); color: var(--f-ovo-ink, #161a22); outline: 1.5px solid var(--f-ovo-ink, #161a22); outline-offset: -5px; } .ds-till-label { font-family: var(--f-display, \"Bungee\", \"Archivo Variable\", sans-serif); font-size: 0.85rem; letter-spacing: 0.02em; } .ds-cmd { display: inline-flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0.75rem; border: 0; border-radius: 6px; background: var(--f-code-bg, #161a22); color: var(--f-code-ink, #e9ecf2); cursor: pointer; transition: background 160ms var(--f-ease, cubic-bezier(0.16, 1, 0.3, 1)); } .ds-cmd code { font-family: var(--f-mono, \"JetBrains Mono Variable\", ui-monospace, monospace); font-size: 0.88rem; white-space: nowrap; } .ds-cmd:hover { background: #000; } .ds-cmd:focus-visible { outline: 3px solid var(--f-ovo, #f5c11b); outline-offset: 3px; box-shadow: 0 0 0 6px var(--f-ink, #161a22); border-radius: 4px; } .ds-copy { display: inline-grid; color: var(--f-ovo, #f5c11b); }"
+    },
+    {
+      "name": "Stall",
+      "kind": "custom",
+      "refersTo": "stall",
+      "description": "A selectable participant stall with a scalloped roof (yellow for models, blue for harnesses) and a live tunnel lamp.",
+      "html": "<div class=\"ds-stalls\"><button class=\"ds-stall ds-model\" type=\"button\" aria-pressed=\"true\"><span class=\"ds-roof\"></span><span class=\"ds-stall-name\">Arthur</span><code class=\"ds-offer\">llama3</code><span class=\"ds-kind\">Model</span><span class=\"ds-state\"><span class=\"ds-lamp\"></span>tunnel open</span></button><button class=\"ds-stall ds-harness\" type=\"button\" aria-pressed=\"false\"><span class=\"ds-roof\"></span><span class=\"ds-stall-name\">Bia</span><code class=\"ds-offer\">claude-code</code><span class=\"ds-kind\">Harness · ACP</span><span class=\"ds-state\"><span class=\"ds-lamp\"></span>tunnel open</span></button></div>",
+      "css": ".ds-stalls { display: grid; grid-template-columns: repeat(2, 11rem); } .ds-stall { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 0.3rem; min-height: 9rem; padding: 1.6rem 1rem 1rem; border: 0; border-inline-end: 1px solid var(--f-rule, rgb(22 26 34 / 0.2)); background: var(--f-board, #fbfbf6); color: var(--f-ink, #161a22); font-family: var(--f-text, \"Archivo Variable\", system-ui, sans-serif); text-align: left; cursor: pointer; transition: background 200ms var(--f-ease, cubic-bezier(0.16, 1, 0.3, 1)); } .ds-model { --roof: var(--f-ovo, #f5c11b); } .ds-harness { --roof: var(--f-lona, #1e4fb4); } .ds-roof { position: absolute; inset: 0 0 auto; height: 0.85rem; background: var(--roof); -webkit-mask: radial-gradient(circle at 50% 0, #000 0.62rem, transparent 0.65rem) 0 0 / 1.25rem 0.85rem repeat-x; mask: radial-gradient(circle at 50% 0, #000 0.62rem, transparent 0.65rem) 0 0 / 1.25rem 0.85rem repeat-x; } .ds-stall-name { font-family: var(--f-display, \"Bungee\", \"Archivo Variable\", sans-serif); font-size: 1.5rem; line-height: 1.05; } .ds-offer { font-family: var(--f-mono, \"JetBrains Mono Variable\", ui-monospace, monospace); font-size: 0.82rem; font-weight: 600; } .ds-kind { font-size: 0.85rem; font-stretch: 90%; color: var(--f-ink-soft, #3d4452); } .ds-state { display: inline-flex; align-items: center; gap: 0.4rem; margin-top: auto; padding-top: 0.6rem; font-size: 0.8rem; font-weight: 600; color: var(--f-folha, #11804a); } .ds-lamp { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: currentColor; } .ds-stall:hover { background: color-mix(in oklab, var(--f-ovo, #f5c11b) 22%, var(--f-board, #fbfbf6)); } .ds-stall[aria-pressed=\"true\"] { background: var(--f-ovo, #f5c11b); color: var(--f-ovo-ink, #161a22); } .ds-stall[aria-pressed=\"true\"] .ds-roof { background: var(--f-ovo-ink, #161a22); } .ds-stall[aria-pressed=\"true\"] .ds-kind { color: var(--f-ovo-ink, #161a22); } .ds-stall[aria-pressed=\"true\"] .ds-state { color: #0b5a33; } .ds-stall:focus-visible { outline: 3px solid var(--f-ovo, #f5c11b); outline-offset: 3px; box-shadow: 0 0 0 6px var(--f-ink, #161a22); border-radius: 4px; }"
+    },
+    {
+      "name": "Menu Board (Models)",
+      "kind": "card",
+      "refersTo": "board-model",
+      "description": "Solid yolk board with filete frame, painted title, and a dotted-leader price list.",
+      "html": "<article class=\"ds-board\"><h3 class=\"ds-board-title\">Models</h3><p>Any OpenAI-compatible endpoint.</p><dl class=\"ds-price\"><div><dt>Serves</dt><dd><code>/chat/completions</code></dd></div><div><dt>Picked by</dt><dd><code>model:&lt;name&gt;</code></dd></div></dl><a class=\"ds-board-link\" href=\"#\">Share a model</a></article>",
+      "css": ".ds-board { display: flex; flex-direction: column; gap: 1.1rem; max-width: 26rem; padding: 2rem; border-radius: 14px; outline: 1.5px solid currentColor; outline-offset: -9px; background: var(--f-ovo, #f5c11b); color: var(--f-ovo-ink, #161a22); font-family: var(--f-text, \"Archivo Variable\", system-ui, sans-serif); } .ds-board h3, .ds-board p, .ds-board dl, .ds-board dd { margin: 0; } .ds-board-title { font-family: var(--f-display, \"Bungee\", \"Archivo Variable\", sans-serif); font-weight: 400; font-size: 2.4rem; line-height: 1; text-shadow: 1px 1px 0 #fff, 2px 2px 0 #fff, 3px 3px 0 #fff; } .ds-price { display: grid; gap: 0.55rem; } .ds-price > div { display: flex; align-items: baseline; gap: 0.5rem; } .ds-price dt { flex: none; font-weight: 700; font-stretch: 90%; } .ds-price dd { flex: 1; display: flex; align-items: baseline; gap: 0.5rem; justify-content: flex-end; } .ds-price dd::before { content: \"\"; flex: 1 1 1.5rem; border-bottom: 2px dotted currentColor; opacity: 0.55; transform: translateY(-0.25em); } .ds-price code { font-family: var(--f-mono, \"JetBrains Mono Variable\", ui-monospace, monospace); font-size: 0.84rem; font-weight: 600; } .ds-board-link { align-self: flex-start; color: inherit; font-weight: 700; text-decoration-thickness: 2px; text-underline-offset: 0.2em; } .ds-board-link::after { content: \"\"; display: inline-block; width: 0.55em; height: 0.55em; margin-left: 0.45em; border-top: 2px solid currentColor; border-right: 2px solid currentColor; transform: rotate(45deg) translateY(-0.08em); transition: transform 160ms var(--f-ease, cubic-bezier(0.16, 1, 0.3, 1)); } .ds-board-link:hover::after { transform: translateX(3px) rotate(45deg) translateY(-0.08em); } .ds-board-link:focus-visible { outline: 3px solid var(--f-ovo, #f5c11b); outline-offset: 3px; box-shadow: 0 0 0 6px var(--f-ink, #161a22); border-radius: 4px; }"
+    },
+    {
+      "name": "Trust Warning (Aviso)",
+      "kind": "custom",
+      "refersTo": "aviso",
+      "description": "The trusted-network notice; the only red-bordered element.",
+      "html": "<aside class=\"ds-aviso\"><h3 class=\"ds-aviso-title\">Trusted networks only</h3><p>The hub has no built-in authentication. <a href=\"#\">How the tunnel works</a></p></aside>",
+      "css": ".ds-aviso { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 1.25rem; padding: 1.1rem 1.4rem; border: 2px solid var(--f-alarm, #c8281c); border-radius: 12px; outline: 1px solid var(--f-alarm, #c8281c); outline-offset: -7px; color: var(--f-ink, #161a22); font-family: var(--f-text, \"Archivo Variable\", system-ui, sans-serif); } .ds-aviso h3, .ds-aviso p { margin: 0; } .ds-aviso-title { font-family: var(--f-display, \"Bungee\", \"Archivo Variable\", sans-serif); font-weight: 400; font-size: 1.35rem; color: var(--f-alarm, #c8281c); } .ds-aviso a { color: inherit; font-weight: 700; text-underline-offset: 0.2em; } .ds-aviso a:focus-visible { outline: 3px solid var(--f-ovo, #f5c11b); outline-offset: 3px; box-shadow: 0 0 0 6px var(--f-ink, #161a22); border-radius: 4px; }"
+    },
+    {
+      "name": "Canopy Nav",
+      "kind": "nav",
+      "refersTo": "nav-bar",
+      "description": "Plain deep-tarp bar with a painted yolk wordmark and white links.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-mark\" href=\"#\">Gambi</a><ul><li><a href=\"#\">Docs</a></li><li><a href=\"#\">Harness guide</a></li><li><a href=\"#\">GitHub</a></li></ul></nav>",
+      "css": ".ds-nav { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.7rem 1.5rem; background: var(--f-lona-deep, #133679); color: #fff; font-family: var(--f-text, \"Archivo Variable\", system-ui, sans-serif); } .ds-mark { font-family: var(--f-display, \"Bungee\", \"Archivo Variable\", sans-serif); font-size: 1.65rem; line-height: 1; color: var(--f-ovo, #f5c11b); text-decoration: none; text-shadow: 1px 1px 0 #000, 2px 2px 0 #000, 3px 3px 0 #000; } .ds-nav ul { display: flex; gap: 1.6rem; margin: 0; padding: 0; list-style: none; font-weight: 600; font-stretch: 92%; font-size: 0.98rem; } .ds-nav ul a { color: #fff; text-decoration: none; padding: 0.35rem 0.15rem; } .ds-nav ul a:hover { text-decoration: underline; text-decoration-color: var(--f-ovo, #f5c11b); text-decoration-thickness: 2px; } .ds-nav a:focus-visible { outline: 3px solid var(--f-ovo, #f5c11b); outline-offset: 3px; box-shadow: 0 0 0 6px var(--f-ink, #161a22); border-radius: 4px; }"
+    },
+    {
+      "name": "Status Tags",
+      "kind": "chip",
+      "refersTo": "tag-shipping",
+      "description": "Pill tags: solid green for shipping, outlined faded ink for being explored.",
+      "html": "<span class=\"ds-tag ds-tag-today\">Shipping</span> <span class=\"ds-tag ds-tag-sketch\">Being explored</span>",
+      "css": ".ds-tag { display: inline-block; padding: 0.2rem 0.55rem; border-radius: 999px; font-family: var(--f-text, \"Archivo Variable\", system-ui, sans-serif); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; } .ds-tag-today { background: #11804a; color: #fff; } .ds-tag-sketch { border: 1.5px solid currentColor; color: var(--f-ink-soft, #3d4452); }"
+    },
+    {
+      "name": "Painted Headline",
+      "kind": "custom",
+      "description": "Section title in Bungee with the two-step yolk sombra.",
+      "html": "<h2 class=\"ds-painted\">Put up the canopy</h2>",
+      "css": ".ds-painted { margin: 0; max-width: 22ch; font-family: var(--f-display, \"Bungee\", \"Archivo Variable\", sans-serif); font-weight: 400; font-size: 2.6rem; line-height: 1.02; letter-spacing: 0; color: var(--f-ink, #161a22); text-shadow: 0.03em 0.03em 0 var(--f-ovo, #f5c11b), 0.055em 0.055em 0 var(--f-ovo, #f5c11b); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Painted Feira",
+    "overview": "Gambi looks like a Brazilian street market painted by an abridor de letras, the sign painter who letters stall boards by hand. The hub is the canopy: a tarp-blue striped awning with a painted valance and a scalloped hem. Participants are stalls that pack edge to edge underneath it, each wired up by its own cord. Fat sign capitals carry a stepped drop shadow (the painter's *sombra*). Boards are framed with a double pinstripe (*filete*), and price lists run dotted leaders out to the value. The gambiarra spirit shows up as confident, legible hand-painted signs, not as mess.\n\nDaylight is lime-washed wall over cool off-white board. Night is market navy, with the yellow and the green turned up to read under lamps. Density is moderate. Each section is one board making one statement, separated by generous vertical rhythm, and each board is a flat, solid field of color. Monospace appears only where the content is literal: commands, frame types, file paths, code.\n\nThe world rejects the dark terminal dev-tool hero and the cream-and-orange editorial page this site used before. Neither gets reintroduced on surfaces that adopt this system.",
+    "keyCharacteristics": [
+      "Flat, saturated sign-board fields (egg-yolk yellow, tarp blue) on a pale lime-wash ground.",
+      "Bungee sign capitals with a three-step painted drop shadow for every display line.",
+      "Double-pinstripe borders made from a solid border plus an inset outline.",
+      "Dotted leaders that run from a label to its value, price-board style.",
+      "Tomato red reserved for the primary action and the trust warning.",
+      "Leaf green means live or yours: open tunnels, and what stays on your machine.",
+      "One literal motion story: cords rise from the stalls to the canopy, then a token travels down one cord."
+    ],
+    "rules": [
+      {
+        "name": "The Red Is Spent Rule",
+        "body": "Red appears on the primary action and the trust warning only, one red button per action row. Red never colors a heading, a stall, a tag, or a decoration.",
+        "section": "colors"
+      },
+      {
+        "name": "The Green Means Yours Rule",
+        "body": "Leaf green marks things that are live or that stay with the participant: open tunnels, local keys, logins, and anything shipping. Don't use it as a generic success or brand accent.",
+        "section": "colors"
+      },
+      {
+        "name": "The Ink on Yolk Rule",
+        "body": "Text on egg yolk is always sign ink (`ink`), in both themes. Yellow never carries white text.",
+        "section": "colors"
+      },
+      {
+        "name": "The Sombra Rule",
+        "body": "Every Bungee line at headline size or larger carries a painted drop shadow made of hard, stepped, zero-blur offsets: `0.02em / 0.035em / 0.05em` for display, `0.03em / 0.055em` for headlines, or 1px/2px/3px for wordmarks and boards. The sombra is a sign-painting technique and belongs to the world. It applies to type only, never to boxes.",
+        "section": "typography"
+      },
+      {
+        "name": "The Literal Mono Rule",
+        "body": "Monospace is for text a person could copy or a machine would parse: commands, frame types, paths, file names, package names. Prose never switches into mono for emphasis.",
+        "section": "typography"
+      },
+      {
+        "name": "The No Tracking Rule",
+        "body": "Bungee runs at 0 letter-spacing (0.01–0.02em at button and till sizes). Its capitals are already spaced for signage.",
+        "section": "typography"
+      },
+      {
+        "name": "The Paint Not Plastic Rule",
+        "body": "Boards are flat at rest and do not lift on hover. State is shown by a paint change (yellow wash, selected yolk fill), not by elevation. The primary button is the one exception.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** set every display or headline line in Bungee at weight 400 with its stepped, zero-blur sombra (`0.02em / 0.035em / 0.05em` for display).",
+      "**Do** put sign ink (`ink`) on egg yolk in both themes, and white on tarp blue and tomato.",
+      "**Do** frame painted boards with the filete: a solid edge plus a 1–1.5px outline inset 5–9px.",
+      "**Do** run dotted leaders between a label and its value on price-list style content.",
+      "**Do** keep red to one primary action per action row and to the trust warning.",
+      "**Do** use leaf green for anything live or anything that stays on the participant's machine.",
+      "**Do** show interactive state with paint (yolk wash, yolk fill) and focus with the 3px yolk ring on a 6px ink halo.",
+      "**Do** keep motion literal to the tunnel: things rise from the participant toward the hub, and work travels down. Use `cubic-bezier(0.16, 1, 0.3, 1)`, and give every animation a reduced-motion state that shows the end frame."
+    ],
+    "donts": [
+      "**Don't** bring back the dark terminal dev-tool hero or the cream-and-orange editorial page.",
+      "**Don't** use red for headings, decoration, tags, or a second button.",
+      "**Don't** put box shadows on boards or lift cards on hover. The canopy cast, tarp fold, ledger rest, and paint button are the whole shadow vocabulary.",
+      "**Don't** apply the hard stepped sombra to boxes. It belongs to painted letters.",
+      "**Don't** set prose, labels, or emphasis in monospace.",
+      "**Don't** add letter-spacing to Bungee beyond 0.02em, or set it in a weight other than 400.",
+      "**Don't** place an eyebrow or kicker line above section titles. Section titles stand alone, and uppercase labels exist only as column headings inside a board or footer.",
+      "**Don't** use gradients as fills. The only gradients are the stripe pattern and the scallop masks."
+    ]
+  }
+}

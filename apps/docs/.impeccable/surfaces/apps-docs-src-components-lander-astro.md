@@ -23,7 +23,7 @@ THESIS: Gambi is a feira. Every stall arrives on its own and plugs into the shar
 
 OWN-WORLD: Hand-painted feira signage by an abridor de letras. Lime-wash wall by day, night-market navy after dark. Tarp-blue striped canopy with a scalloped valance, egg-yolk yellow boards, tomato red reserved for the primary action and the trust warning, and nothing else, leaf green for live tunnels. Fat sign capitals with a painted drop shadow ("sombra"), double pinstripe filete borders, dotted price-board leaders, mono only for real commands and frames.
 
-STORY: The visitor reads three painted lines (bring your model, bring your harness, keep your keys), sees five stalls dial up to the canopy, learns which stall type serves what, sees exactly what crosses the tunnel and what never leaves, then copies the install command.
+STORY: The visitor reads three painted lines (bring your model, bring your harness, keep your keys), sees six stalls dial up to the canopy, learns which stall type serves what, sees exactly what crosses the tunnel and what never leaves, then copies the install command.
 
 FIRST VIEWPORT: A plain navy nav bar. The H1 sits left-aligned in three painted lines at display scale. The subcopy and an action row follow: a yellow command board with a working copy control, a red Quick start, and a filete-outlined Bring your harness. The aisle starts at the bottom: the hub is one canopy (striped tarp, valance painted GAMBI HUB, scalloped hem), and six stalls (three models, the three supported harnesses) pack edge to edge below it, each with a tunnel cord rising to the hem.
 
