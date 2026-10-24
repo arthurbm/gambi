@@ -79,11 +79,11 @@ A participant is "available" only when its tunnel is connected, its status is no
 ### Harness layer
 
 **Harness**:
-A runtime that turns a model into an agent: it supplies a system prompt, tools, an agentic loop, and a translation layer across models (OpenCode, Claude Code, Codex, Pi). A harness runs on a person's machine, in that person's own context and authentication.
+A runtime that turns a model into an agent: it supplies a system prompt, tools, an agentic loop, and a translation layer across models. Supported today: OpenCode, Claude Code, and Codex (plus `fake`, a test adapter). Pi is a candidate, not supported yet. A harness runs on a person's machine, in that person's own context and authentication.
 _Avoid_: Agent runtime, coding agent (too narrow), "agent" alone.
 
 **Harness participant**:
-A participant that contributes a harness to a room instead of a bare model endpoint. Usually one per person (their own OpenCode, Claude Code, Codex or Pi, under their own login); the room host may also contribute **hosted** harness participants for people who bring none. Like every participant it speaks to the hub only through its tunnel; the hub never reaches the harness directly.
+A participant that contributes a harness to a room instead of a bare model endpoint. Usually one per person (their own OpenCode, Claude Code or Codex, under their own login); the room host may also contribute **hosted** harness participants for people who bring none. Like every participant it speaks to the hub only through its tunnel; the hub never reaches the harness directly.
 _Avoid_: Agent participant, worker.
 
 **Harness session**:
