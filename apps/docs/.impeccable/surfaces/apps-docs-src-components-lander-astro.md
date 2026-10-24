@@ -15,7 +15,7 @@ related_targets: ["apps/docs/src/content/docs/index.mdx","apps/docs/src/componen
 - Job: understand in one viewport that each participant dials out to the hub, that models and harnesses both join, and that keys stay home; then install.
 - Action: copy the working install command, then the quick start or the harness guide.
 - Proof: real CLI commands and SDK calls checked against `packages/*`; an example room labelled as an example.
-- Constraints: English copy (ADR-0001); hero names no category (no "room", "gateway", "substrate"); trusted network only, never suggest public exposure; board/agents are not part of the product; the lab repo is "coming soon" with no link; no promises about the layer above beyond "being explored".
+- Constraints: English copy (ADR-0001); hero names no category (no "room", "gateway", "substrate"); trusted network only, never suggest public exposure; board/agents are not part of the product; the club's experiments (board, orchestrator) live in github.com/arthurbm/gambiarra-lab and are linked as such; no promises about the layer above beyond "being explored".
 
 ## Direction contract
 

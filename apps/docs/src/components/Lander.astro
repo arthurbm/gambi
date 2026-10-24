@@ -117,7 +117,8 @@ const stalls: Stall[] = [
   --room ABC123 \\
   --participant-id caio-codex \\
   --name Caio \\
-  --harness codex`,
+  --harness codex \\
+  --workspace ./my-project`,
     down: [
       [
         "tunnel.harness.control",
@@ -130,7 +131,7 @@ const stalls: Stall[] = [
     ],
     stays: [
       "His Codex login, verified with codex login status.",
-      "Every tool call the harness runs, on his machine.",
+      "./my-project, the checkout he chose. The hub cannot write files into it.",
     ],
   },
   {
@@ -453,7 +454,7 @@ const deployDate = new Date().toISOString().slice(0, 10);
           </p>
           <dl class="price-list">
             <div><dt>Speaks</dt><dd>ACP v1, relayed opaque</dd></div>
-            <div><dt>Works in</dt><dd><code>~/.gambi/workspaces/&lt;room&gt;/&lt;id&gt;/</code></dd></div>
+            <div><dt>Works in</dt><dd>a folder you pick with <code>--workspace</code>, or an empty one under <code>~/.gambi/workspaces/</code></dd></div>
             <div><dt>Sends back</dt><dd>versioned workspace artifacts</dd></div>
             <div><dt>Reached by</dt><dd>apps calling <code>client.harness.attach()</code></dd></div>
           </dl>
@@ -511,8 +512,8 @@ const deployDate = new Date().toISOString().slice(0, 10);
             <tr>
               <td data-label="Goes to the hub">ACP messages for an attached session, plus the workspace files your harness writes.</td>
               <td data-label="Stays at your stall">
-                The harness process, its tools, and everything outside
-                <code>~/.gambi/workspaces/</code>.
+                The harness process, its tools, and everything outside its
+                workspace folder. The hub cannot write files into that folder.
               </td>
             </tr>
           </tbody>
@@ -594,8 +595,8 @@ const deployDate = new Date().toISOString().slice(0, 10);
           <p class="layer-body">
             Turn-taking, shared context, and orchestration across harnesses.
             Nothing here is promised yet. The club's experiments, such as the
-            event board, are moving to their own repository,
-            <span class="lab">gambiarra-lab</span> (coming soon).
+            event board and its orchestrator, live in their own repository,
+            <a class="lab" href="https://github.com/arthurbm/gambiarra-lab" rel="noopener">gambiarra-lab</a>.
           </p>
         </li>
         <li class="layer layer-today">
