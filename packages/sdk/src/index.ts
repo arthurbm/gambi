@@ -21,6 +21,29 @@ export {
   type ResolveGambiTargetOptions,
   resolveGambiTarget,
 } from "./discovery.ts";
+// Harness participants: run a local ACP harness as a room participant
+export {
+  createFakeHarnessAdapter,
+  createHarnessParticipantSession,
+  createLocalDirectoryWorkspace,
+  defaultWorkspacePath,
+  type FakeHarnessCommand,
+  getHarnessAdapter,
+  type HarnessAdapter,
+  HarnessDependencyError,
+  type HarnessDetection,
+  type HarnessParticipantLifecycleEvent,
+  type HarnessParticipantSession,
+  type HarnessParticipantSessionCloseEvent,
+  type HarnessParticipantSessionOptions,
+  type LocalDirectoryWorkspaceOptions,
+  type PreparedWorkspace,
+  runFakeAcpAgent,
+  type SupportedHarnessId,
+  type Workspace,
+  type WorkspaceArtifactFile,
+  type WorkspaceContext,
+} from "./harness-participant-session.ts";
 // Hub types (re-exported from core)
 export type {
   ChatCompletionRequest,

@@ -69,6 +69,7 @@ describe("HTTP Client", () => {
   });
 
   afterAll(() => {
+    globalThis.fetch = originalFetch;
     hub.close();
   });
 
