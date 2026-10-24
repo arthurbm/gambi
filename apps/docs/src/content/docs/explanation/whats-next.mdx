@@ -1,0 +1,44 @@
+---
+title: What's Next
+description: What Gambi handles today, what is still your code, and where the layer above it is being explored.
+---
+
+Gambi is deliberately narrow. This page says what it does today, what it leaves to you, and where the work above it happens.
+
+## What Gambi handles today
+
+- A hub that holds rooms and the participants in them.
+- Participants that share an OpenAI-compatible model or a coding harness (Claude Code, Codex, OpenCode), each through a tunnel its owner opened.
+- Routing of inference calls by participant id, `model:<name>`, or `*`.
+- Harness sessions relayed over ACP v1, with workspace artifacts sent back to the attached app.
+- Live room events with timing and token counts for every request.
+
+## What is still your code
+
+Gambi moves work between participants. It does not decide how that work is organized:
+
+- who talks when, and in what order
+- what context participants share, and who keeps track of it
+- how a task is split across harnesses, and who reviews the result
+
+The [patterns guide](/guides/patterns/) shows how to write these on top of the SDK today.
+
+## The layer above
+
+Turn-taking, shared context, and orchestration across harnesses are being explored. Nothing there is promised, and none of it has a fixed shape yet.
+
+One case where that exploration happens is [`gambiarra-lab`](https://github.com/arthurbm/gambiarra-lab), where the Gambiarra Club keeps the experiments from its in-person events, such as an event board and an orchestrator for harnesses. The lab consumes `gambi` and `gambi-sdk` from the outside, like any other app:
+
+- Gambi never imports anything from the lab.
+- Nothing from the lab is published while it has a single consumer.
+- An idea moves closer to Gambi only after two separate experiences need it.
+
+## What stays out of the hub
+
+Whatever the layer above becomes, the hub stays a transport. Scheduling, workflow graphs, shared memory, task delegation, and agent identity do not go into it. Keeping them out is what lets plain OpenAI-compatible tools keep working against a room.
+
+## Related
+
+- [How Tunnels Work](/explanation/tunnel-first/)
+- [Bring Your Harness](/guides/bring-your-harness/)
+- [Patterns](/guides/patterns/)

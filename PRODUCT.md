@@ -18,13 +18,17 @@ Secondary, confirmed audiences:
 
 ## Product Purpose
 
-Gambi is a local-first hub for sharing OpenAI-compatible LLM endpoints across a trusted local network: a central hub tracks rooms and participants, proxies inference through participant-opened tunnels, and publishes real-time events.
+Gambi is a local-first hub for sharing OpenAI-compatible LLM endpoints and coding harnesses across a trusted local network: a central hub tracks rooms and participants, proxies inference through participant-opened tunnels, relays harness sessions over ACP v1 through the same tunnels, and publishes real-time events.
+
+A participant brings one of two things: a model endpoint (Ollama, vLLM, LM Studio, OpenRouter, any OpenAI-compatible server) or a harness already logged in on its own machine (Claude Code, Codex, OpenCode; ADR-0006). Apps reach models through the room's inference endpoints and reach harnesses by attaching to a participant id.
 
 Success (confirmed): **substrate adoption first** — outside builders adopt Gambi instead of rebuilding the stack, with frictionless onboarding — and on that base, **field validation at the Gambiarra LLM Club and the maintainer's research (TCC)** on social experiences between LLMs. The known failure mode to beat is the "adoptability wall" documented in `docs/product/research-direction.md` (issues #54, #55).
 
 ## Positioning
 
-"Put your friends' LLMs in a room." Gambi is a **social-ready inference substrate**: room-scoped multi-participant sharing where providers never need to be reachable — the participant opens a tunnel to the hub (tunnel-first, ADR-0003). Neighboring gateways (OpenRouter-style) aggregate providers for one consumer; they do not offer people-contributed participants, rooms, presence, and events as a base for shared multi-LLM experiences.
+"Bring your model. Bring your harness. Keep your keys." Gambi is a **social-ready inference substrate**: room-scoped multi-participant sharing where providers and harnesses never need to be reachable — the participant opens a tunnel to the hub (tunnel-first, ADR-0003). Neighboring gateways (OpenRouter-style) aggregate providers for one consumer; they do not offer people-contributed participants, rooms, presence, and events as a base for shared multi-LLM experiences.
+
+The trust argument is part of the positioning: each person's provider keys (`ParticipantAuthHeaders`) and harness login stay on their own machine and are never sent to the hub, and the hub has no channel to write files into a participant's workspace. What crosses the tunnel is registration metadata, inference traffic, ACP messages for an attached session, and the workspace artifacts the harness produces.
 
 ## Operating Context
 
@@ -32,12 +36,14 @@ Success (confirmed): **substrate adoption first** — outside builders adopt Gam
 - Two API planes: management plane (`/v1/*`, native envelope, CLI/SDK/TUI) and inference plane (`/rooms/:code/v1/*`, OpenAI-compatible, default protocol OpenAI Responses).
 - Product surfaces: `gambi` CLI (agent-first, `--format text|json|ndjson`), `gambi-sdk` (inference provider + management client), `gambi-tui` (human-first monitoring), docs site (`apps/docs`, Astro Starlight), install via `gambi.sh` script or npm.
 - Builders integrate via the Vercel AI SDK (`createGambi()`) or any OpenAI-compatible client.
-- The Gambiarra LLM Club (gambiarra.club) is the field-validation venue: real events, real people plugging local LLMs into shared rooms.
+- The Gambiarra LLM Club (gambiarra.club) is the field-validation venue: real events, real people plugging local LLMs and harnesses into shared rooms. In public copy it appears **as a case** of Gambi in use, not as product identity (ADR-0001 § 7, E10).
+- Experiments built above the hub (event board, harness orchestrator) live in [`gambiarra-lab`](https://github.com/arthurbm/gambiarra-lab). The lab consumes `gambi` and `gambi-sdk` from outside; this repo never imports from it (ADR-0006, revision 2026-10-24).
 
 ## Capabilities and Constraints
 
 - Confirmed capabilities: room lifecycle, participant registration, tunnel-backed dispatch, model-selector routing (`participantId`, `model:<name>`, `*`), management heartbeats vs tunnel ping/pong, SSE room events with baseline metrics (TTFT, duration, tokens, tokens/s), dry-run + NDJSON on operational commands, local network hub/room discovery.
-- Invariants future work must preserve: tunnel-first (hub never originates a connection to a participant); `ParticipantAuthHeaders` never leave the participant runtime; trusted-network only — no native auth, no public exposure without an external proxy/auth layer.
+- Harness participants (ADR-0006): `gambi participant join --harness opencode|claude-code|codex` checks the local login, spawns the harness's ACP agent, and relays ACP v1 frames opaquely; apps attach with `client.harness.attach()`. Harness participants never take inference calls and model routing never picks them. Each session runs in a **Workspace** — a folder the participant picks with `--workspace <dir>`, or an empty one under `~/.gambi/workspaces/<room>/<participantId>/` — and changed files come back as versioned artifacts. `gambi-sdk` exports `createHarnessParticipantSession` for hosted harnesses (Claude Code cannot be hosted for third parties).
+- Invariants future work must preserve: tunnel-first (hub never originates a connection to a participant); `ParticipantAuthHeaders` and harness logins never leave the participant runtime; the hub never writes into a participant's workspace; trusted-network only — no native auth, no public exposure without an external proxy/auth layer.
 - Canonical vocabulary lives in `CONTEXT.md` (hub, room, participant, provider, tunnel, status vs connection). "Agent" is overloaded — never use it unqualified.
 - Out of scope today (parked for "Gambi Agents", `docs/product/vision.md`): agent scheduling, workflow graphs, shared memory, task delegation, multi-agent planning, agent identity/trust.
 - Undecided: scope and timing of the social-primitives layer (turns, shared context, personal-agent interaction) — research-frontier material, not product commitment.

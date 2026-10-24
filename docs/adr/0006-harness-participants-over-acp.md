@@ -5,6 +5,8 @@
 **Escopo:** `packages/core` (tunnel frame), `packages/cli` (`join --harness`), `packages/sdk`, novo `packages/agents`, novo `apps/board`  
 **Revisado:** 2026-10-24 (ver fim do documento)
 
+> **Nota (2026-10-24):** o Contexto cita Pi entre os harnesses como exemplo da época. O CLI só aceita `opencode`, `claude-code`, `codex` e `fake` (`packages/core/src/harness-adapters.ts`). O schema de registro (`HarnessParticipant` em `packages/core/src/types.ts`) ainda aceita `pi`, mas não existe adapter. Pi segue como candidato. O corpo desta ADR não foi alterado.
+
 ---
 
 ## Contexto
