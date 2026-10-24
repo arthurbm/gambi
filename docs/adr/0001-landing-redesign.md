@@ -48,6 +48,8 @@ Esta iteração **não** transforma a landing em página de marca-guarda-chuva. 
 ### D3 — Hero: framing híbrido (canvas-first, fabric-anchored)
 
 > **Emendado em 2026-08-16** (§ 7, E4): a hero não nomeia categoria — nem "room", nem "gateway".
+>
+> **Substituído em 2026-10-24** (§ 7, E7): a hero atual é "Bring your model. Bring your harness. Keep your keys.".
 
 **Tagline (h1):** "A room where many LLMs collaborate."
 
@@ -61,6 +63,8 @@ Esta iteração **não** transforma a landing em página de marca-guarda-chuva. 
 - Texto acima é **rascunho de tom**; polish exato cabe na implementação.
 
 ### D4 — Use cases canônicos (6 cards, grid 3×2)
+
+> **Emendado em 2026-10-24** (§ 7, E9): os seis use cases seguem, mas como lista de receitas, não cards.
 
 **Fileira A — Build with many LLMs:**
 1. **Model arena** — mesmo prompt em N modelos, comparação lado a lado.
@@ -81,6 +85,8 @@ Esta iteração **não** transforma a landing em página de marca-guarda-chuva. 
 ### D5 — Arquitetura de informação
 
 > **Emendado em 2026-08-16** (§ 7, E3): entra a seção `04 Layers`; install, specs e footer descem um.
+>
+> **Substituído em 2026-10-24** (§ 7, E8): nova ordem, com corredor de barracas e livro-caixa.
 
 Ordem de seções (substitui a ordem atual Hero → Install → Features → How → Use Cases → Code → Footer):
 
@@ -103,6 +109,8 @@ Ordem de seções (substitui a ordem atual Hero → Install → Features → How
 
 ### D6 — Profundidade e formato dos cards de use case
 
+> **Substituído em 2026-10-24** (§ 7, E9): sem cards; cada receita é título + link para o pattern.
+
 Cada card: **título + 2-3 frases concretas** (incluindo exemplo prático e 1 linha de "como você implementa") + link **"See pattern →"** pro guia consolidado (ver D8).
 
 **Sem código inline nos cards.** Página fica leve; quem quer código clica no link.
@@ -115,6 +123,8 @@ Cada card: **título + 2-3 frases concretas** (incluindo exemplo prático e 1 li
 ### D7 — Seção "Built for builders" (ex-Features, 4 cards)
 
 > **Reafirmado em 2026-08-16** (§ 7, E4): a reprovação de "gateway" vale também para a hero, que divergira na implementação.
+>
+> **Emendado em 2026-10-24** (§ 7, E9): a seção sai; o conteúdo vai para o livro-caixa e para os quadros de modelo e harness.
 
 1. **Bring any provider, mix freely** — BYO + tunnel + multi-source. Credenciais ficam na máquina do participante; o hub não as vê.
 2. **Real-time observability, out of the box** — eventos SSE com TTFT, duração, tokens. Sem bolt-on de Langfuse pra começar.
@@ -288,6 +298,8 @@ O link de profundidade aponta para **`apps/docs/src/content/docs/explanation/wha
 
 #### E3 — Emenda o D5: nova ordem de seções
 
+> **Substituída em 2026-10-24** (E8).
+
 ```text
 01 Hero · 02 Use Cases · 03 How It Works · 04 Layers ·
 05 Install + Quickstart · 06 Built for builders · 07 Footer
@@ -298,6 +310,8 @@ A seção de camadas entra **depois** da How It Works: o leitor acabou de ver on
 **Rejeitados:** logo após a hero (pede fé antes de dar prova, desfaz o D5); antes do footer (enterra a peça visual central da página).
 
 #### E4 — Emenda o D3 e reafirma o D7: a hero não nomeia categoria
+
+> **Emendada em 2026-10-24** (E7): o princípio segue; a frase desce para a seção de código.
 
 ```diff
 -Gambi ships the gateway. You ship the experience.
@@ -310,6 +324,8 @@ O `Lander.astro` implementado dizia "gateway", termo que o D7 já reprovava — 
 
 #### E5 — Gambiarra Club fora desta iteração
 
+> **Revogada em 2026-10-24** (E10): o clube entra como case, não como identidade do produto.
+
 A landing **não** menciona o [Gambiarra Club](https://gambiarra.club). A menção volta quando houver exemplos concretos do que aconteceu nas edições — procedência com evidência, não link de comunidade.
 
 #### E6 — Vocabulário interno vs. copy pública
@@ -321,3 +337,64 @@ A landing **não** menciona o [Gambiarra Club](https://gambiarra.club). A menç�
 - `apps/docs/src/components/Lander.astro` — nova seção 04 + reordenação (E1, E3) + hero (E4). **Nota:** a repaginação em curso ([#58](https://github.com/arthurbm/gambi/issues/58)) move a landing para `apps/docs/src/pages/index.astro`; a emenda vale para onde a landing viver.
 - **Criar** `apps/docs/src/content/docs/explanation/whats-next.mdx` (E2).
 - `why-gambi.mdx` sai do mapa de arquivos — não é mais tocado (E2).
+
+### 2026-10-24 — Landing da feira: participantes com harness, nova ordem e o clube como case
+
+**Origem:** PR [#84](https://github.com/arthurbm/gambi/pull/84) (redesign da landing em torno de harness participants, direção visual "feira de letreiros", sistema em `apps/docs/DESIGN.md`), depois do PR #81, que levou board e orquestração para o [`gambiarra-lab`](https://github.com/arthurbm/gambiarra-lab).
+**Motivação:** a Gambi passou a aceitar harnesses (Claude Code, Codex, OpenCode) como participantes via ACP (ADR-0006). A landing implementada no #84 já não bate com D3/E4, D4/D6, D5/E3, D7 e E5. Esta emenda registra a página como ela está e decide o que ficou em aberto.
+
+#### E7 — Emenda o D3 e a E4: nova hero
+
+```text
+h1:   Bring your model. Bring your harness. Keep your keys.
+lede: Gambi is a local-first hub for a network you trust. Each participant
+      dials out to it from its own machine and shares an OpenAI-compatible
+      model or a coding harness such as Claude Code, Codex, or OpenCode. The
+      hub sends work down that tunnel. It never opens a connection to you.
+CTAs: comando de install copiável · Quick start · Bring your harness
+```
+
+A hero passa a falar do que o participante traz e do que ele guarda, em vez da experiência multi-LLM do D3. O princípio da E4 continua valendo: a primeira tela não nomeia categoria (sem "room", sem "gateway"). A frase da E4 ("Gambi connects the models. You write what happens between them.") desce para o título da seção de código, como "Gambi connects them. You write what happens between them.". A divisão de trabalho do D3 continua na página, só que fora da hero.
+
+**Motivo:** depois da ADR-0006, a diferença que a Gambi tem para um gateway é que modelos e harnesses chegam de máquinas diferentes, cada um pelo túnel que o dono abriu, e as credenciais não saem dessas máquinas. A hero antiga não dizia nada sobre harness nem sobre chaves.
+
+#### E8 — Substitui o D5 e a E3: ordem de seções
+
+```text
+Canopy (nav) · Hero · Corredor de barracas · Dois tipos de barraca ·
+Livro-caixa · Código + receitas · Camadas · Setup · Footer
+```
+
+1. **Corredor de barracas** (`.aisle`): uma sala de exemplo (`ABC123`) com seis barracas inventadas, três de modelo e três de harness. Escolher uma barraca mostra os frames que descem pelo túnel, o que fica na máquina da pessoa e o comando `gambi participant join` real que a coloca na sala.
+2. **Dois tipos de barraca** (`.menu`): modelo e harness lado a lado, com o que cada um serve, como é escolhido, como é observado e por onde é alcançado.
+3. **Livro-caixa** (`.ledger`): tabela do que vai ao hub e do que fica na máquina (`ParticipantAuthHeaders`, login do harness, a pasta do workspace), seguida do aviso "Trusted networks only".
+4. **Código + receitas** (`.build`): dois snippets (modelos pelo AI SDK, harness por `client.harness.attach()`) e a lista de receitas que linka o `patterns.mdx`.
+5. **Camadas** (`.layers`): as três faixas da E1. A faixa do meio usa o badge "Being explored" (no lugar do `coming soon` da E1; a faixa de baixo usa "Shipping"), aponta o `gambiarra-lab` como um dos lugares onde a camada de cima está sendo testada e linka `/explanation/whats-next/` (E2).
+6. **Setup** (`.setup`): install, `gambi hub serve`, `gambi room create`, `gambi participant join --harness`.
+
+O princípio do D5 (prova antes do pitch) continua valendo. Aqui a prova é o corredor, que mostra o túnel antes de qualquer explicação. A posição da E3 também continua: camadas depois de mostrar onde a Gambi encaixa, e não logo após a hero.
+
+**"Room" fora da hero:** a palavra aparece no corredor ("Example room `ABC123`"), no setup (`gambi room create`) e no aviso de rede confiável. Nesses lugares ela nomeia uma coisa concreta, com código e comando. Não é o rótulo de categoria que a E4 tirou da primeira tela.
+
+#### E9 — Emenda o D4, o D6 e o D7: cards viram receitas e livro-caixa
+
+- Os seis use cases do D4 continuam os mesmos e na mesma ordem, mas viram uma lista de receitas ("Recipes on the board") com título e "see the pattern", apontando para as âncoras do `patterns.mdx` (D8). O card de 2–3 frases do D6 sai.
+- A seção "Built for builders" do D7 sai como seção própria. O conteúdo se espalha: "Bring any provider" e "credenciais ficam na máquina" vão para o livro-caixa e para o painel "Stays at …" de cada barraca; "OpenAI-compatible everywhere" e "Real-time observability" vão para o quadro de modelos (`/responses`, `/chat/completions`, `llm.request`/`llm.complete`/`llm.error`). "Many rooms, one hub" não tem lugar na página atual.
+- A reprovação de "gateway" do D7 continua valendo. A landing atual não usa o termo.
+
+#### E10 — Revoga a E5: o Gambiarra Club entra como case
+
+A E5 tirava o Gambiarra Club da landing até existir evidência concreta. Essa evidência agora é pública: o `gambiarra-lab` guarda os experimentos das edições (board de evento, orquestrador). A E5 cai, com um limite:
+
+- O clube aparece **como case de uso**, não como parte da identidade do produto. A landing diz que o `gambiarra-lab` é *um* dos lugares onde a camada de cima está sendo testada e que o clube guarda ali os experimentos dos seus eventos. A página não diz que a Gambi existe para o clube, que é do clube ou que depende dele.
+- "The room your club meets in", no aviso de rede confiável, fala do clube de quem lê, como exemplo de rede confiável. Não é referência ao Gambiarra Club.
+- A mesma regra vale para `whats-next.mdx` e para o `PRODUCT.md`.
+
+**Rejeitado:** tirar o clube da landing (manter a E5). O lab é público e é a única prova concreta de uso acima do hub. Escondê-lo deixaria a faixa "Being explored" sem nada para mostrar.
+
+#### Impacto no mapa de arquivos (seção 4)
+
+- A landing continua em `apps/docs/src/components/Lander.astro`, renderizada pelo override `apps/docs/src/components/Hero.astro`. A mudança para `apps/docs/src/pages/index.astro`, citada na nota de impacto da emenda de 2026-08-16, não aconteceu.
+- `apps/docs/src/content/docs/index.mdx` já traz `tagline` e `description` alinhados à E7.
+- `apps/docs/src/content/docs/explanation/whats-next.mdx` foi criado (E2), linkado a partir da faixa `.layer-above`.
+- O sistema visual é o de `apps/docs/DESIGN.md`. Só a rota `/` usa esse sistema; as páginas de docs ainda usam `custom.css` (drift registrado em "Scope and Known Drift", fora desta emenda).
