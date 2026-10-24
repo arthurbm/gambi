@@ -134,7 +134,7 @@ describe("HarnessParticipantSession", () => {
     );
   });
 
-  test("registers the selected adapter id and model for board consumers", async () => {
+  test("registers the selected adapter id and model for attached clients", async () => {
     const hub = createTestHub();
     hubs.push(hub);
     const createResponse = await fetch(`${hub.url}/v1/rooms`, {
