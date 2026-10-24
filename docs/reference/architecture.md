@@ -58,7 +58,7 @@ Key responsibilities:
 - room and participant registry
 - management HTTP handlers
 - inference proxying
-- participant tunnel runtime (canonical `createParticipantSession()`)
+- model and harness participant tunnel runtimes
 - SSE room events
 - mDNS discovery support
 - shared transport and domain schemas (Zod)
@@ -68,6 +68,10 @@ Important files:
 - `packages/core/src/hub.ts` — HTTP server, tunnel upgrade, routing
 - `packages/core/src/room.ts` — room and participant state
 - `packages/core/src/participant-session.ts` — participant runtime
+- `packages/core/src/harness-participant-session.ts` — ACP relay, tunnel, and artifact runtime
+- `packages/core/src/harness-process.ts` — harness child process and PATH lookup on Node APIs, so the SDK runs under Node
+- `packages/core/src/harness-adapters.ts` — local harness command and readiness checks
+- `packages/core/src/harness-workspace.ts` — the `Workspace` seam (prepare, watch, collect) and the default local directory workspace
 - `packages/core/src/tunnel-protocol.ts` — tunnel messages
 - `packages/core/src/types.ts` — public Zod schemas and runtime constants
 
@@ -80,6 +84,7 @@ The CLI is resource-oriented:
 - `gambi hub serve`
 - `gambi room create|list|get`
 - `gambi participant join|leave|heartbeat`
+- `gambi participant join` as the canonical resource-oriented participant command
 - `gambi events watch`
 - `gambi self update`
 
@@ -92,6 +97,7 @@ Split by audience:
 - `createGambi()` — inference through the OpenAI-compatible room endpoints
 - `createClient()` — operational control over rooms, participants, and room events
 - `createParticipantSession()` — participant runtime with tunnel (re-exported from `packages/core`)
+- `createHarnessParticipantSession()` — harness participant runtime with a pluggable `Workspace`, plus the deterministic fake ACP agent (re-exported from `packages/core`)
 - discovery helpers (`discoverHubs`, `discoverRooms`, `resolveGambiTarget`) — explicit; never invoked implicitly inside `createGambi()` or `createClient()`
 
 The management client maps directly to `/v1` instead of inventing a parallel contract.
@@ -99,6 +105,14 @@ The management client maps directly to `/v1` instead of inventing a parallel con
 ### `apps/tui`
 
 Human-first monitoring interface (OpenTUI + React). It consumes the management plane and the room event stream, but remains a separate package from `gambi`. Published as `gambi-tui` on npm.
+
+### Experiences above the hub
+
+Orchestration and the event board from 2026-08-23 live in
+[`arthurbm/gambiarra-lab`](https://github.com/arthurbm/gambiarra-lab), a
+separate repository of club experiments. They consume `gambi` and `gambi-sdk`
+like any external client. Nothing in this repository imports from there
+(ADR-0006, revision 2026-10-24).
 
 ## Participant lifecycle
 
@@ -112,7 +126,9 @@ Behavior:
 - return a stable `200` or `201` path for retries
 - update the existing participant when the payload changes
 
-The registration response also returns the tunnel bootstrap data (`participant`, `roomId`, `tunnel`). The participant then opens the bootstrap WebSocket route, after which the hub dispatches inference into the tunnel.
+The registration response also returns the tunnel bootstrap data (`participant`, `roomId`, `tunnel`). Model participants include an `endpoint`; harness participants instead include `harness` metadata and may omit it. The participant then opens the bootstrap WebSocket route.
+
+In harness mode, the participant runtime creates a local workspace and starts an ACP process there. It negotiates only ACP v1. A one-second watcher publishes versioned workspace snapshots through the participant-opened tunnel. The hub sees ACP envelopes and artifact bytes, but it never sees the harness login or provider credentials.
 
 This idempotent shape is the foundation for retry-safe automation and the CLI's `participant join --participant-id`.
 
@@ -135,6 +151,8 @@ The participant tunnel is the canonical (and only) hub↔participant transport. 
 - provider auth headers stay local to the participant runtime — they are never uploaded to the hub
 - the hub dispatches inference operations across a WebSocket tunnel opened by the participant
 - the public client-facing API remains HTTP + SSE; tunnel is internal control path
+- harness participants carry opaque ACP v1 frames and artifacts over that same participant-opened tunnel
+- management clients initiate a separate attach WebSocket to the hub; the hub relays between it and the existing participant tunnel, and never connects back to the participant
 
 For the rationale and rejected alternatives behind this inversion of connection direction, see [`docs/adr/0003-tunnel-first-transport.md`](../adr/0003-tunnel-first-transport.md). For the tunnel message catalog, see [`docs/reference/contracts.md`](./contracts.md).
 
@@ -146,7 +164,7 @@ Routing happens on the `model` field at request time:
 - `model:<name>` routes to the first available participant matching that model
 - `*` or `any` routes to a random available participant
 
-Specific participant targeting returns explicit errors when the participant is busy or its tunnel is disconnected. Routing only considers participants whose tunnel is connected, whose status is not offline, and which are not already handling another request.
+Specific participant targeting returns explicit errors when the participant is busy or its tunnel is disconnected. Routing only considers model participants whose tunnel is connected, whose status is not offline, and which are not already handling another request. Harness participants are visible through management but never selected by inference routing.
 
 ## Discovery
 
@@ -165,6 +183,12 @@ Optimized for code-driven operational workflows. Namespaces:
 - `client.rooms.*`
 - `client.participants.*`
 - `client.events.watchRoom()`
+- `client.harness.attach()`
+
+`client.harness.attach()` opens one ACP harness session per channel and
+streams ACP updates, status, and versioned artifact frames. Orchestration
+policy (retries, deadlines per prompt, review) belongs to the consumer; the hub
+remains a relay.
 
 ### TUI
 
@@ -185,7 +209,8 @@ Gambi is designed for trusted local networks. The hub does not include native au
 
 ## Forward path
 
-The current architecture is meant to stay narrow: transport, routing, and operability.
+The hub stays narrow: transport, routing, and operability. Coordination lives
+above those contracts, outside this repository, in `gambiarra-lab`.
 
 Related internal docs:
 

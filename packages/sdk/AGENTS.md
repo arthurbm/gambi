@@ -2,15 +2,16 @@
 
 SDK pública do Gambi. Publicada como `gambi-sdk` no npm. Roda tanto em Node.js quanto em Bun.
 
-## Quatro superfícies
+## Cinco superfícies
 
-A SDK expõe exatamente quatro superfícies públicas. Cada uma tem um papel distinto — não mesclar:
+A SDK expõe exatamente cinco superfícies públicas. Cada uma tem um papel distinto — não mesclar:
 
 | Superfície | Finalidade | Transporte |
 | --- | --- | --- |
 | `createGambi()` | inferência via AI SDK | `/rooms/:code/v1/*` (OpenAI-compatible) |
 | `createClient()` | operação do management plane | `/v1/*` |
 | `createParticipantSession()` | runtime de participante com túnel | management API + WebSocket |
+| `createHarnessParticipantSession()` | runtime de harness participant (ACP local) com `Workspace` plugável | management API + WebSocket |
 | discovery helpers | descoberta de hub/sala em rede local | mDNS + management API |
 
 Arquivos correspondentes:
@@ -19,6 +20,7 @@ Arquivos correspondentes:
 - `src/client.ts` — `createClient()`, namespaces (`rooms`, `participants`, `events`), `ClientError`.
 - `src/rooms.ts`, `src/participants.ts`, `src/hub.ts` — implementações dos namespaces e chamadas ao management plane.
 - `src/participant-session.ts` — reexport de `createParticipantSession()` e `ParticipantSession` implementados em `@gambi/core/participant-session` (close reasons: `"closed"`, `"heartbeat_failed"`, `"tunnel_closed"`).
+- `src/harness-participant-session.ts` — reexport de `createHarnessParticipantSession()`, da costura `Workspace` (`createLocalDirectoryWorkspace()`), de `runFakeAcpAgent()` e `createFakeHarnessAdapter()`, implementados em `@gambi/core` (close reason extra: `"harness_exited"`).
 - `src/discovery.ts` — `discoverHubs()`, `discoverRooms()`, `resolveGambiTarget()`, `DiscoveryError`.
 - `src/protocol.ts`, `src/protocol-adapters.ts` — seleção Responses vs Chat Completions.
 - `src/types.ts` — tipos públicos reexportados (inclui `HEALTH_CHECK_INTERVAL` para runtimes custom).

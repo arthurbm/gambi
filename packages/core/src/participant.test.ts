@@ -20,6 +20,29 @@ describe("Participant", () => {
       expect(participant.lastSeen).toBeLessThanOrEqual(Date.now());
     });
 
+    test("creates a harness participant without an endpoint", () => {
+      const participant = Participant.create({
+        nickname: "harness-user",
+        model: "agent-model",
+        harness: { id: "fake", model: "fixture", hosted: true },
+        capabilities: {
+          openResponses: "supported",
+          chatCompletions: "supported",
+        },
+      });
+
+      expect(participant.endpoint).toBeUndefined();
+      expect(participant.harness).toEqual({
+        id: "fake",
+        model: "fixture",
+        hosted: true,
+      });
+      expect(participant.capabilities).toEqual({
+        openResponses: "unknown",
+        chatCompletions: "unknown",
+      });
+    });
+
     test("creates participant with default empty specs", () => {
       const participant = Participant.create({
         nickname: "test-user",

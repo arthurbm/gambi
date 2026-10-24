@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { readFileSync } from "node:fs";
+import { runFakeAcpAgent } from "@gambi/core/fake-acp-agent";
 import { EventsWatchCommand } from "./commands/events-watch.ts";
 import { HubServeCommand } from "./commands/hub-serve.ts";
 import { ParticipantHeartbeatCommand } from "./commands/participant-heartbeat.ts";
@@ -76,8 +77,17 @@ cli.register(SelfUpdateCommand);
 cli.register(Builtins.HelpCommand);
 cli.register(Builtins.VersionCommand);
 
-const args = process.argv.slice(2);
-if (
+const rawArgs = process.argv.slice(2).filter((arg) => {
+  if (arg !== "--no-interactive") {
+    return true;
+  }
+  process.env.GAMBI_NO_INTERACTIVE = "1";
+  return false;
+});
+const args = rawArgs;
+if (args[0] === "__fake-acp-agent") {
+  await runFakeAcpAgent();
+} else if (
   args.length === 0 ||
   (args.length === 1 && (args[0] === "--help" || args[0] === "-h"))
 ) {

@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import type { EventEmitter } from "node:events";
 import { chmod, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -36,7 +35,9 @@ export interface StandaloneUpdateResult {
   kind: "scheduled" | "updated";
 }
 
-interface SpawnedProcess extends EventEmitter {
+interface SpawnedProcess {
+  once(event: "error", listener: (error: Error) => void): this;
+  once(event: "spawn", listener: () => void): this;
   unref(): void;
 }
 
@@ -53,6 +54,9 @@ type SpawnLike = (
     windowsHide: true;
   }
 ) => SpawnedProcess;
+
+const spawnProcess: SpawnLike = (command, args, options) =>
+  spawn(command, args, options) as unknown as SpawnedProcess;
 
 interface StandaloneUpdateRuntime {
   fetchImpl?: FetchLike;
@@ -75,10 +79,8 @@ const DEFAULT_RELEASE_BASE_URL = `https://github.com/${REPO}/releases/latest/dow
 const MANUAL_UPDATE_COMMANDS = {
   packageManagers: ["bun add -g gambi@latest", "npm install -g gambi@latest"],
   standalone: {
-    posix:
-      "curl -fsSL https://gambi.sh/install | bash",
-    windows:
-      'powershell -Command "irm https://gambi.sh/install.ps1 | iex"',
+    posix: "curl -fsSL https://gambi.sh/install | bash",
+    windows: 'powershell -Command "irm https://gambi.sh/install.ps1 | iex"',
   },
 } as const;
 const STANDALONE_RELEASE_TARGETS: Record<
@@ -380,7 +382,7 @@ async function cleanupWindowsStandaloneUpdateArtifacts(
   ]);
 }
 
-function waitForSpawnedProcess(childProcess: EventEmitter) {
+function waitForSpawnedProcess(childProcess: SpawnedProcess) {
   return new Promise<void>((resolve, reject) => {
     let settled = false;
 
@@ -456,7 +458,7 @@ export async function executeStandaloneUpdate(
   runtime: StandaloneUpdateRuntime = {}
 ): Promise<StandaloneUpdateResult> {
   const fetchImpl = runtime.fetchImpl ?? fetch;
-  const spawnImpl = runtime.spawnImpl ?? spawn;
+  const spawnImpl = runtime.spawnImpl ?? spawnProcess;
 
   await stat(dirname(plan.binaryPath));
 

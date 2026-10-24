@@ -272,7 +272,11 @@ function findParticipantByModel(
   }
 
   for (const entry of room.participants.values()) {
-    if (entry.info.model === model && entry.info.status === "online") {
+    if (
+      !entry.info.harness &&
+      entry.info.model === model &&
+      entry.info.status === "online"
+    ) {
       return entry.info;
     }
   }
@@ -290,7 +294,9 @@ function getRandomOnlineParticipant(
   const online = Array.from(
     room.participants.values(),
     (entry) => entry.info
-  ).filter((participant) => participant.status === "online");
+  ).filter(
+    (participant) => !participant.harness && participant.status === "online"
+  );
 
   if (online.length === 0) {
     return undefined;

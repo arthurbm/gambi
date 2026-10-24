@@ -17,9 +17,10 @@ export default defineConfig({
         starlightLlmsTxt({
           projectName: "Gambi",
           description:
-            "Local-first LLM sharing hub. Pool Ollama, LM Studio, or any OpenAI-compatible endpoint with your team via rooms and an HTTP proxy. Expose a single OpenAI-compatible API that routes to any participant.",
+            "Local-first hub for sharing OpenAI-compatible model endpoints and local coding harnesses. Model requests and ACP messages travel through participant-opened tunnels.",
           promote: [
             "guides/quickstart*",
+            "guides/bring-your-harness*",
             "guides/patterns*",
             "reference/api*",
             "reference/sdk*",
@@ -46,6 +47,10 @@ export default defineConfig({
           label: "Guides",
           items: [
             { label: "Quick Start", slug: "guides/quickstart" },
+            {
+              label: "Bring Your Harness",
+              slug: "guides/bring-your-harness",
+            },
             { label: "Multi-LLM Patterns", slug: "guides/patterns" },
             { label: "Using with AI Tools", slug: "guides/ai-tools" },
             { label: "Remote Providers", slug: "guides/remote-providers" },

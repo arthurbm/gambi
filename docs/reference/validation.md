@@ -15,6 +15,7 @@ For the day-to-day command set (install, dev, build, check-types, lint), see the
 | `apps/tui` | `bun run --cwd apps/tui test` |
 | HTTP contracts or public types | quick test of affected endpoint(s); see `docs/reference/docs-update.md` for required doc updates |
 | Tunnel protocol | `bun test packages/core/src` (tunnel tests); see `docs/reference/docs-update.md` |
+| Harness participant runtime | `bun test packages/core/src/harness packages/sdk/src/harness-participant-session.test.ts`, then the installed-adapter smokes below. If you touched `harness-process.ts` or the SDK exports, also run the Node smoke below. |
 | Distribution / release | `bun run --cwd packages/cli check-types`, `bun run --cwd packages/cli build`, `npm pack --dry-run --cache /tmp/npm-cache ./packages/cli/dist/npm/gambi`, `node ./packages/cli/dist/npm/gambi/bin/gambi --version` |
 
 ## Quick validation set
@@ -29,3 +30,68 @@ bun run --cwd apps/tui test
 - Tests in `core` and `sdk` start a hub on fixed ports (e.g., 3998 / 3999) and may fail if the port is busy. Report this as an environmental failure, not a product failure.
 - `packages/core/src/endpoint-capabilities.test.ts` has a historically-flaky test (`probeEndpoint > does not detect protected endpoints without auth headers`). Pre-existing; not introduced by recent work.
 - No Docker, database, or external service is required — all state is in-memory.
+
+## Harness participant smoke
+
+The automated test starts the deterministic fake ACP process, negotiates ACP
+v1, prompts it through a real hub attach socket, observes its file write, and
+checks the artifact snapshot. It does not call a model:
+
+```bash
+bun test packages/core/src/harness-participant-session.test.ts
+```
+
+Run the applicable check for each locally installed adapter before an event
+release. These commands stop before a paid model prompt:
+
+```bash
+opencode auth list --pure
+claude auth status --json
+codex login status
+claude-agent-acp --help
+codex-acp --help
+```
+
+Then run one full-round smoke only for the harnesses budgeted for the event.
+OpenCode example:
+
+```bash
+opencode auth list --pure
+bun run dev:cli -- participant join \
+  --room <ROOM_CODE> \
+  --participant-id opencode-smoke \
+  --name "OpenCode smoke" \
+  --harness opencode \
+  --model <MODEL_LABEL> \
+  --format ndjson
+```
+
+Check these facts before pressing Ctrl+C:
+
+1. Output contains `registered`, `tunnel_connected`, `harness_spawned`, and `session_opened`.
+2. `~/.gambi/workspaces/<ROOM_CODE>/opencode-smoke/` exists and holds only `.gambi.json` until the harness writes something.
+3. An attached harness client can send `session/prompt` and receive ACP updates.
+4. Editing `README.md` produces `artifact_sent` after about one second.
+5. Ctrl+C produces `harness_exited` and `left`, and no `opencode acp` child remains.
+
+Do not copy authentication output into the ticket. Record only the adapter,
+model label, operating system, command exit code, and which checks passed.
+
+For Claude Code, also confirm that the join prints the terms warning. Never run
+Claude Code as a hosted harness for third parties; every end user runs the
+unmodified binary with their own local authentication. For Codex, confirm that
+the participant returned by `GET /v1/rooms/:code/participants` contains
+`harness.id: "codex"` (and the optional model label when supplied).
+
+## Harness runtime under Node
+
+`gambi-sdk` is used from Node as well as Bun. After touching the harness
+process code or the SDK harness exports, build the SDK, start a hub with Bun,
+and host a fake harness from Node with `createHarnessParticipantSession()`,
+passing `createFakeHarnessAdapter({ command: process.execPath, args: [script] })`
+where `script` imports `runFakeAcpAgent` from `packages/sdk/dist/index.js` and
+awaits it. Confirm the session opens, `close()` resolves with `"closed"`, and
+`harnessExited` resolves (143 after SIGTERM).
+
+The event board rehearsal and the orchestration demo moved with the board to
+[`arthurbm/gambiarra-lab`](https://github.com/arthurbm/gambiarra-lab).

@@ -49,6 +49,7 @@ For the per-area validation matrix and test gotchas, see [`docs/reference/valida
 | Issue tracker conventions | `docs/agents/issue-tracker.md` |
 | Triage labels | `docs/agents/triage-labels.md` |
 | Domain glossary (canonical vocabulary, flagged ambiguities) | `CONTEXT.md` |
+| Club experiments built on Gambi: event board, orchestrator, orchestration glossary, event records, *As três inteligências* notes. Nothing here imports from there. | [`github.com/arthurbm/gambiarra-lab`](https://github.com/arthurbm/gambiarra-lab) |
 
 ## Agent skills
 

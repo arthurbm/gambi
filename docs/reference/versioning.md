@@ -30,6 +30,7 @@ Important details:
 - The npm package named `gambi` is generated under `packages/cli/dist/npm/gambi`.
 - Platform packages are generated under `packages/cli/dist/npm/gambi-<platform>-<arch>`.
 - All published packages share the same version on every release (synchronized — see ADR-0005).
+- `@gambi/agents`, `apps/board`, and `apps/board-web` moved to [`arthurbm/gambiarra-lab`](https://github.com/arthurbm/gambiarra-lab) on 2026-10-24 and are no longer part of this release train.
 
 ## Rules for Everyday Development
 

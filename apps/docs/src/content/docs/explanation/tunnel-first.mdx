@@ -47,6 +47,21 @@ What changes:
 - authentication headers stay on the participant runtime
 - the hub routes by `participant-id`, `model:<name>`, or `*`, and forwards the request through the tunnel the participant already opened
 
+Harness participants use the same connection direction. Their ACP agent stays local and sends messages and artifacts through the participant-opened tunnel. A harness client opens its own management WebSocket to the hub and attaches to that participant. The hub only relays between connections it did not originate. Harness participants are not candidates for inference routing.
+
+## The opaque ACP relay
+
+```text
+┌────────────────┐   management WebSocket   ┌───────┐   participant tunnel   ┌────────────────┐
+│ Harness client │ ────────────────────────▶ │  Hub  │ ◀───────────────────── │ Local harness  │
+│ or application │ ◀──────────────────────── │       │ ─────────────────────▶ │ ACP v1 process │
+└────────────────┘                           └───────┘                         └────────────────┘
+```
+
+The tunnel frame has a `sessionId` and a `message` object. The hub validates that envelope, then forwards `message` without reading the ACP JSON-RPC method or parameters. Session open and close commands use the same relay. Workspace artifacts cross in separate versioned frames.
+
+The local harness login never enters participant registration, lifecycle events, or tunnel frames. This is separate from workspace artifacts, which the participant sends deliberately so an attached application can use the harness output.
+
 ## What you gain
 
 - **Localhost stays localhost.** The provider URL you pass to `gambi participant join` or `createParticipantSession()` can be `http://localhost:11434`, even when the hub runs on another machine. The hub never needs to reach that address.
@@ -67,9 +82,12 @@ The tunnel is not a clever trick layered on top of HTTP. It is the only transpor
 1. If a participant is not connected, it is not available. No stale DNS, no half-open sockets pretending to be live. Availability is a property of an active tunnel session.
 2. If the hub receives a request for a participant whose tunnel has dropped, it returns an explicit error (`PARTICIPANT_TUNNEL_NOT_CONNECTED`) instead of silently timing out.
 
+Attached harness clients are deliberately decoupled from tunnel reconnects. If Wi-Fi drops and the participant establishes a new tunnel, existing attach sockets stay open and resume relaying.
+
 ## Further reading
 
 - [Architecture Overview](/architecture/overview/) — the full picture, including the tunnel protocol shape.
 - [API Reference — Tunnel](/reference/api/#tunnel) — the exact HTTP and WebSocket contract.
 - [SDK Reference — `createParticipantSession()`](/reference/sdk/#createparticipantsessionoptions) — the programmatic runtime that manages a tunnel for you.
+- [Bring your harness](/guides/bring-your-harness/) explains how to join with OpenCode, Claude Code, or Codex.
 - [Custom participant runtime](/guides/custom-participant/) — how to build your own runtime on top of `createParticipantSession()`.

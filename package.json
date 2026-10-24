@@ -7,7 +7,7 @@
   ],
   "type": "module",
   "scripts": {
-    "dev": "bun run --cwd packages/cli dev -- hub serve",
+    "dev": "bun run dev:hub",
     "dev:hub": "bun run --cwd packages/cli dev -- hub serve",
     "dev:cli": "bun run --cwd packages/cli dev --",
     "dev:tui": "bun run --cwd apps/tui src/index.tsx",
@@ -18,7 +18,6 @@
     "clean-deps": "bun run scripts/clean-deps.ts"
   },
   "dependencies": {
-    "dotenv": "^17.2.2",
     "zod": "^4.1.13"
   },
   "devDependencies": {

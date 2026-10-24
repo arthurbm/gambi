@@ -10,6 +10,10 @@
     "./room": "./src/room.ts",
     "./participant": "./src/participant.ts",
     "./participant-session": "./src/participant-session.ts",
+    "./harness-participant-session": "./src/harness-participant-session.ts",
+    "./harness-adapters": "./src/harness-adapters.ts",
+    "./harness-workspace": "./src/harness-workspace.ts",
+    "./fake-acp-agent": "./src/fake-acp-agent.ts",
     "./endpoint": "./src/endpoint-capabilities.ts",
     "./discovery": "./src/discovery.ts",
     "./mdns": "./src/mdns.ts",
@@ -20,6 +24,7 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "1.4.0",
     "bonjour-service": "^1.3.0",
     "nanoid": "^5.1.5",
     "zod": "^4.1.13"

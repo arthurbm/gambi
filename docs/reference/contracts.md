@@ -66,6 +66,7 @@ All under `/v1`:
 | `DELETE` | `/v1/rooms/:code/participants/:id` | |
 | `POST` | `/v1/rooms/:code/participants/:id/heartbeat` | |
 | `GET` | `/v1/rooms/:code/participants/:id/tunnel?token=...` | WebSocket upgrade. Token is single-use, TTL 60 s. Internal bootstrap route — not the public inference surface. |
+| `GET` | `/v1/rooms/:code/participants/:id/harness` | WebSocket attach for management clients controlling a harness participant. |
 | `GET` | `/v1/rooms/:code/events` | SSE stream. |
 
 ### Public room summary fields
@@ -86,6 +87,8 @@ connection: { kind: "tunnel", connected: boolean, lastTunnelSeenAt: number | nul
 ```
 
 `status` and `connection.connected` are orthogonal — a participant can be registered but have no tunnel.
+
+Harness participants also expose `harness: { id, model?, hosted? }` and may omit `endpoint`. Valid harness ids are `opencode`, `claude-code`, `codex`, `pi`, and `fake`. Their advertised inference capabilities are ignored because they do not participate in model routing.
 
 ## Inference plane endpoints
 
@@ -111,7 +114,7 @@ The `model` field selects the participant:
 - `model:<name>` — route to the first available participant exposing that model.
 - `*` or `any` — route to any available participant.
 
-A participant is "available" only when its tunnel is connected, its status is not offline, and it is not currently handling another request.
+A model participant is "available" only when its tunnel is connected, its status is not offline, and it is not currently handling another request. Harness participants are excluded from `<participant-id>`, `model:<name>`, and `*`/`any` inference routing; targeting one by id returns a clear client error and callers should use the harness attach route instead.
 
 ## SSE room events
 
@@ -128,6 +131,11 @@ Current types:
 - `llm.request`
 - `llm.complete`
 - `llm.error`
+- `harness.session.opened`
+- `harness.session.closed`
+- `harness.artifact`
+
+Harness session events contain `participantId` and `sessionId`. `harness.artifact` additionally contains `version`; artifact file contents are intentionally omitted from SSE.
 
 ### `llm.request` payload
 
@@ -156,6 +164,12 @@ WebSocket messages, validated with Zod on both ends. Defined in `packages/core/s
 | `tunnel.response.error` | participant → hub | streaming error |
 | `tunnel.ping` | both | keepalive |
 | `tunnel.pong` | both | keepalive ack |
+| `tunnel.harness.message` | both | opaque ACP v1 JSON-RPC object plus `sessionId` |
+| `tunnel.harness.control` | hub → participant | `open` (optionally with `cwd`) or `close` for `sessionId` |
+| `tunnel.harness.artifact` | participant → hub | versioned workspace files and `watch`/`final` reason |
+| `tunnel.harness.status` | participant → hub | `opened`, `closed`, or `error` lifecycle status |
+
+The hub validates only these harness envelopes. It does not interpret the `message` object. Attached management clients receive `message`, `artifact`, and `status` frames from the participant; their `message` and `control` frames are forwarded to the participant. Multiple attached clients fan out from one participant tunnel and remain attached when that tunnel reconnects.
 
 ### Participant runtime close reasons
 
@@ -164,6 +178,31 @@ Surfaced by `createParticipantSession()` (canonical implementation in `packages/
 - `"closed"`
 - `"heartbeat_failed"`
 - `"tunnel_closed"`
+
+`createHarnessParticipantSession()` adds `"harness_exited"`. It also starts the
+selected local ACP process, negotiates protocol version `1`, opens a session in
+the participant workspace, and kills the child process during `close()`.
+
+### Harness participant workspace and artifacts
+
+A harness session runs in a **Workspace** on the participant's machine. The
+runtime prepares it, watches it, and collects artifacts from it; the hub never
+sees it. `createHarnessParticipantSession({ workspace })` accepts any
+`Workspace`. Without one, and in `gambi participant join --harness <id>`
+without `--workspace <folder>`, the runtime uses:
+
+```text
+~/.gambi/workspaces/<room>/<participant-id>/
+```
+
+The default workspace starts empty: the runtime writes only local metadata to
+`.gambi.json`, which never appears in an artifact. Seeding starter content is
+the consumer's job, by composing a `Workspace` or by pointing `--workspace` at
+a folder. The tunnel has no frame that writes files on the participant's
+machine. The watcher waits one second after the last change,
+then sends a complete workspace snapshot with the next positive `version`.
+Text files use `utf8`; other files use `base64`. `.git` and `node_modules`
+directories are omitted.
 
 ## Runtime constants
 
@@ -213,7 +252,20 @@ Inherited from the `AgentCommand` base by every subcommand:
 - `--interactive` / `--no-interactive`
 - `--verbose` / `--quiet`
 
-`gambi participant join` requires `--participant-id` for retry-safe non-interactive flows and is implemented on top of `createParticipantSession()`.
+`gambi participant join` requires `--participant-id` for retry-safe non-interactive flows. Model mode uses `createParticipantSession()`. Passing `--harness opencode|claude-code|codex|fake` selects `createHarnessParticipantSession()` and makes `--model` optional. `--workspace <folder>` (harness mode only) runs the harness in that folder instead of the default workspace; passing it without `--harness` exits `2`. `--name` aliases `--nickname`.
+
+Harness mode rejects `--endpoint`, `--header`, and `--header-env` with exit code `2`. A missing binary, missing local authentication, failed ACP negotiation, or lost tunnel returns exit code `3`. Structured output adds `harness_spawned`, `session_opened`, `artifact_sent`, and `harness_exited` lifecycle events.
+
+Adapter commands and readiness checks are local:
+
+| Harness id | ACP command | Readiness check |
+| --- | --- | --- |
+| `opencode` | `opencode acp` | `opencode auth list --pure` |
+| `claude-code` | `claude-agent-acp` from `@agentclientprotocol/claude-agent-acp` | `claude auth status --json` |
+| `codex` | `codex-acp` from `@agentclientprotocol/codex-acp` | `codex login status` |
+| `fake` | bundled deterministic agent (`gambi __fake-acp-agent` in the binary; SDK consumers pass a command that runs `runFakeAcpAgent()` to `createFakeHarnessAdapter()`) | bundled script exists |
+
+No readiness output or credential is registered or tunneled. The participant's public `harness.id` is the selected id and `harness.model` is the optional `--model` label. Claude Code additionally prints Anthropic's terms warning on join and rejects `hosted: true`: every end user must run the unmodified binary with their own local authentication; Gambi never intermediates subscription login or hosts Claude Code for third parties.
 
 `gambi self update` updates via `bun`, `npm`, or the standalone binary depending on installation mode.
 

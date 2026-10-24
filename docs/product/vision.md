@@ -70,6 +70,12 @@ Gambi today is a local-first shared inference fabric.
 
 `gambi agents` could become the orchestration fabric built on top of that base.
 
+The layer above is being explored, without commitment to its shape, in
+[`gambiarra-lab`](https://github.com/arthurbm/gambiarra-lab): club experiments
+that consume `gambi` and `gambi-sdk` from outside. A primitive graduates toward
+`gambi agents` only when two experiences share it (ADR-0006, revision
+2026-10-24). Meira et al.'s patterns are a reference there, not a spec.
+
 ## Related
 
 - [`research-direction.md`](./research-direction.md) — exploratory research/TCC framing that builds on the `gambi agents` layer: Gambi as the practical substrate for social experiences between LLMs, validated through the Gambiarra LLM Club.
