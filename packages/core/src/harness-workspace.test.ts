@@ -1,11 +1,11 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-  createHarnessWorkspace,
-  deriveHarnessTilePalette,
+  createLocalDirectoryWorkspace,
+  defaultWorkspacePath,
 } from "./harness-workspace";
 
 const temporaryDirectories: string[] = [];
@@ -18,38 +18,73 @@ afterEach(async () => {
   );
 });
 
-test("creates a fixed-fit city starter with a deterministic harness palette", async () => {
-  const gambiHome = await mkdtemp(join(tmpdir(), "gambi-workspace-starter-"));
-  temporaryDirectories.push(gambiHome);
-  const palette = deriveHarnessTilePalette("OpenCode", "Alpha");
-  expect(palette).toEqual(deriveHarnessTilePalette(" opencode ", " alpha "));
-  expect(palette).not.toEqual(deriveHarnessTilePalette("codex", "gpt-5.6"));
+async function temporaryDirectory(prefix: string): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), prefix));
+  temporaryDirectories.push(directory);
+  return directory;
+}
 
-  const workspace = await createHarnessWorkspace({
-    gambiHome,
-    roomCode: "CITY76",
-    participantId: "starter-fixture",
-    harness: "OpenCode",
-    model: "Alpha",
-  });
-  const index = await Bun.file(join(workspace, "index.html")).text();
-  const readme = await Bun.file(join(workspace, "README.md")).text();
-  const manifest = await Bun.file(join(workspace, "manifest.json")).json();
+const context = {
+  roomCode: "ROOM42",
+  participantId: "ana",
+  harness: "opencode",
+  model: "alpha",
+};
 
-  expect(index).toContain(
-    "new THREE.OrthographicCamera(-6, 6, 6, -6, 0.1, 100)"
+test("the default workspace holds only participant metadata", async () => {
+  const gambiHome = await temporaryDirectory("gambi-workspace-default-");
+
+  const workspace = await createLocalDirectoryWorkspace({ gambiHome }).prepare(
+    context
   );
-  expect(index).toContain("camera.position.set(8, 8, 8)");
-  expect(index).toContain("new THREE.BoxGeometry(10, 0.25, 10)");
-  expect(index).toContain("Resize only the renderer");
-  expect(index).toContain(`--accent: ${palette.accent}`);
-  expect(readme).toContain("x/z -4.5 through 4.5");
-  expect(readme).toContain("python3 -m http.server 4173");
-  expect(readme).toContain("status bridge");
-  expect(manifest).toEqual({
-    name: "New neighborhood",
-    description: "Describe what this neighborhood does.",
-    station: null,
-    palette,
-  });
+
+  expect(workspace.path).toBe(defaultWorkspacePath(context, gambiHome));
+  expect(await readdir(workspace.path)).toEqual([".gambi.json"]);
+  expect(await Bun.file(join(workspace.path, ".gambi.json")).json()).toEqual(
+    context
+  );
+  expect(await workspace.collect()).toEqual([]);
+});
+
+test("a chosen folder keeps its files and publishes them as the artifact", async () => {
+  const folder = await temporaryDirectory("gambi-workspace-chosen-");
+  await Bun.write(join(folder, "index.html"), "<h1>mine</h1>\n");
+  await Bun.write(join(folder, "node_modules", "dep", "index.js"), "ignored");
+  await Bun.write(join(folder, "assets", "pixel.bin"), new Uint8Array([255]));
+
+  const workspace = await createLocalDirectoryWorkspace({
+    path: folder,
+  }).prepare(context);
+
+  expect(workspace.path).toBe(folder);
+  expect(await workspace.collect()).toEqual([
+    { path: "assets/pixel.bin", content: "/w==", encoding: "base64" },
+    { path: "index.html", content: "<h1>mine</h1>\n", encoding: "utf8" },
+  ]);
+});
+
+test("unsafe room and participant ids cannot escape the workspace root", () => {
+  const path = defaultWorkspacePath(
+    { roomCode: "..", participantId: "../x" },
+    "/gambi"
+  );
+
+  expect(path).toBe(join("/gambi", "workspaces", "%2E%2E", "..%2Fx"));
+});
+
+test("a composed workspace can seed starter content", async () => {
+  const gambiHome = await temporaryDirectory("gambi-workspace-seeded-");
+  const local = createLocalDirectoryWorkspace({ gambiHome });
+
+  const workspace = await {
+    async prepare(seedContext: typeof context) {
+      const prepared = await local.prepare(seedContext);
+      await Bun.write(join(prepared.path, "README.md"), "# starter\n");
+      return prepared;
+    },
+  }.prepare(context);
+
+  expect(await workspace.collect()).toEqual([
+    { path: "README.md", content: "# starter\n", encoding: "utf8" },
+  ]);
 });

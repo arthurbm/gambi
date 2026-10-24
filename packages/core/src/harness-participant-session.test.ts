@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { Buffer } from "node:buffer";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getHarnessAdapter } from "./harness-adapters.ts";
@@ -8,7 +8,7 @@ import {
   createHarnessParticipantSession,
   HarnessDependencyError,
 } from "./harness-participant-session.ts";
-import { createHarnessWorkspace } from "./harness-workspace.ts";
+import { createLocalDirectoryWorkspace } from "./harness-workspace.ts";
 import { createHub, type Hub } from "./hub.ts";
 
 function randomPort(): number {
@@ -90,23 +90,6 @@ describe("HarnessParticipantSession", () => {
       await rm(directory, { recursive: true, force: true });
     }
     temporaryDirectories.length = 0;
-  });
-
-  test("keeps room and participant identifiers inside the workspace root", async () => {
-    const gambiHome = await mkdtemp(join(tmpdir(), "gambi safe workspace "));
-    temporaryDirectories.push(gambiHome);
-    const workspacePath = await createHarnessWorkspace({
-      gambiHome,
-      roomCode: "..",
-      participantId: "../outside",
-      harness: "fake",
-      model: "fixture",
-    });
-
-    expect(workspacePath).toBe(
-      join(gambiHome, "workspaces", "%2E%2E", "..%2Foutside")
-    );
-    expect(workspacePath.startsWith(join(gambiHome, "workspaces"))).toBe(true);
   });
 
   test("reports an actionable dependency error before touching the hub", async () => {
@@ -215,17 +198,7 @@ describe("HarnessParticipantSession", () => {
     expect(session.workspacePath).toBe(
       join(gambiHome, "workspaces", roomCode, "fake-participant")
     );
-    expect(
-      await Bun.file(join(session.workspacePath, "index.html")).text()
-    ).toContain("OrthographicCamera");
-    expect(
-      await Bun.file(join(session.workspacePath, "README.md")).text()
-    ).toContain("Neighborhood sign");
-    expect(
-      await Bun.file(join(session.workspacePath, "manifest.json")).json()
-    ).toMatchObject({
-      station: null,
-    });
+    expect(await readdir(session.workspacePath)).toEqual([".gambi.json"]);
     expect(lifecycle).toEqual(["harness_spawned", "session_opened"]);
 
     const attachUrl = new URL(
@@ -329,5 +302,37 @@ describe("HarnessParticipantSession", () => {
     await expect(session.harnessExited).resolves.toBeNumber();
     expect(lifecycle).toContain("artifact_sent");
     expect(lifecycle).toContain("harness_exited");
+  }, 15_000);
+
+  test("runs the harness in a workspace supplied by the caller", async () => {
+    const hub = createTestHub();
+    hubs.push(hub);
+    const createResponse = await fetch(`${hub.url}/v1/rooms`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Chosen workspace" }),
+    });
+    const createBody = (await createResponse.json()) as {
+      data: { room: { code: string } };
+    };
+    const folder = await mkdtemp(join(tmpdir(), "gambi chosen workspace "));
+    temporaryDirectories.push(folder);
+    await Bun.write(join(folder, "starter.md"), "# seeded by the caller\n");
+
+    const session = await createHarnessParticipantSession({
+      hubUrl: hub.url,
+      roomCode: createBody.data.room.code,
+      participantId: "chosen-workspace",
+      nickname: "Chosen workspace",
+      harnessId: "fake",
+      workspace: createLocalDirectoryWorkspace({ path: folder }),
+    });
+
+    expect(session.workspacePath).toBe(folder);
+    expect((await readdir(folder)).sort()).toEqual([
+      ".gambi.json",
+      "starter.md",
+    ]);
+    await session.close();
   }, 15_000);
 });

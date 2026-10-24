@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 
@@ -77,7 +77,7 @@ async function handleRequest(request: JsonRpcRequest): Promise<void> {
     }
     const prompt = textFromPrompt(request.params?.prompt);
     const responseText = `Fake ACP response: ${prompt}`;
-    await Bun.write(join(cwd, "fake-output.txt"), `${responseText}\n`);
+    await writeFile(join(cwd, "fake-output.txt"), `${responseText}\n`);
     send({
       jsonrpc: "2.0",
       method: "session/update",

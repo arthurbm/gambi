@@ -1,4 +1,6 @@
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { runCommand, whichCommand } from "./harness-process.ts";
 import type { HarnessParticipant } from "./types.ts";
 
 export type SupportedHarnessId = Extract<
@@ -31,19 +33,8 @@ export interface HarnessDetectionTools {
 }
 
 const defaultDetectionTools: HarnessDetectionTools = {
-  which: (command) => Bun.which(command) ?? undefined,
-  run: async (command, args) => {
-    const process = Bun.spawn([command, ...args], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(process.stdout).text(),
-      new Response(process.stderr).text(),
-      process.exited,
-    ]);
-    return { stdout, stderr, exitCode };
-  },
+  which: whichCommand,
+  run: runCommand,
 };
 
 const CLAUDE_TERMS_WARNING =
@@ -192,23 +183,51 @@ export function getHarnessAdapter(
     };
   }
 
+  return createFakeHarnessAdapter();
+}
+
+export interface FakeHarnessCommand {
+  args?: readonly string[];
+  command: string;
+}
+
+/**
+ * The deterministic fake ACP agent, for tests that should not call a model.
+ * Inside this repo and the compiled `gambi` binary it finds the agent on its
+ * own. Bundled consumers (such as `gambi-sdk` users) pass a command that runs
+ * `runFakeAcpAgent()`, e.g. `{ command: "bun", args: ["scripts/fake-acp-agent.ts"] }`.
+ */
+export function createFakeHarnessAdapter(
+  override?: FakeHarnessCommand
+): HarnessAdapter {
+  const notes = ["Deterministic test agent; it does not call a model."];
+  if (override) {
+    return {
+      id: "fake",
+      command: override.command,
+      args: override.args ?? [],
+      detect: () => Promise.resolve({ ok: true }),
+      notes,
+    };
+  }
+
   const scriptPath = fakeAgentPath();
   const isCompiledBinary = scriptPath.includes("$bunfs");
   return {
-    id,
+    id: "fake",
     command: isCompiledBinary
       ? process.execPath
-      : (Bun.which("bun") ?? process.execPath),
+      : (whichCommand("bun") ?? process.execPath),
     args: isCompiledBinary ? ["__fake-acp-agent"] : [scriptPath],
-    detect: async () => {
-      if (!(isCompiledBinary || (await Bun.file(scriptPath).exists()))) {
-        return {
+    detect: () => {
+      if (!(isCompiledBinary || existsSync(scriptPath))) {
+        return Promise.resolve({
           ok: false,
-          message: `The deterministic fake ACP agent was not found at ${scriptPath}.`,
-        };
+          message: `The deterministic fake ACP agent was not found at ${scriptPath}. Pass a command that runs runFakeAcpAgent() to createFakeHarnessAdapter().`,
+        });
       }
-      return { ok: true };
+      return Promise.resolve({ ok: true });
     },
-    notes: ["Deterministic test agent; it does not call a model."],
+    notes,
   };
 }

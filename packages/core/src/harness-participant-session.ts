@@ -1,7 +1,5 @@
 import { Buffer } from "node:buffer";
-import { type FSWatcher, watch } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
-import { relative, resolve, sep } from "node:path";
+import { resolve, sep } from "node:path";
 import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
 import { nanoid } from "nanoid";
 import {
@@ -9,7 +7,12 @@ import {
   type HarnessAdapter,
   type SupportedHarnessId,
 } from "./harness-adapters.ts";
-import { createHarnessWorkspace } from "./harness-workspace.ts";
+import { type HarnessProcess, spawnHarnessProcess } from "./harness-process.ts";
+import {
+  createLocalDirectoryWorkspace,
+  type PreparedWorkspace,
+  type Workspace,
+} from "./harness-workspace.ts";
 import {
   type TunnelHarnessControlMessage,
   type TunnelHarnessMessage,
@@ -30,14 +33,8 @@ const TRAILING_SLASH_REGEX = /\/$/;
 const ARTIFACT_DEBOUNCE_MS = 1000;
 const PROCESS_EXIT_TIMEOUT_MS = 2000;
 const INTERNAL_REQUEST_TIMEOUT_MS = 10_000;
-const EXCLUDED_ARTIFACT_DIRECTORIES = new Set([".git", "node_modules"]);
-const PATH_SEPARATOR_REGEX = /[\\/]/;
 
 type JsonRecord = Record<string, unknown>;
-type HarnessProcess = Bun.Subprocess<"pipe", "pipe", "pipe">;
-type ErrorAwareFsWatcher = FSWatcher & {
-  on: (event: "error", listener: (error: Error) => void) => FSWatcher;
-};
 
 interface HubApiResult<T> {
   data: T;
@@ -75,6 +72,7 @@ export interface HarnessParticipantSessionOptions {
   adapter?: HarnessAdapter;
   artifactDebounceMs?: number;
   config?: RuntimeConfig;
+  /** Base directory for the default workspace. Ignored when `workspace` is set. */
   gambiHome?: string;
   harnessId: SupportedHarnessId;
   hosted?: boolean;
@@ -86,6 +84,8 @@ export interface HarnessParticipantSessionOptions {
   password?: string;
   roomCode: string;
   specs?: MachineSpecs;
+  /** Where the harness runs. Defaults to an empty local directory workspace. */
+  workspace?: Workspace;
 }
 
 export interface HarnessParticipantSessionCloseEvent {
@@ -256,52 +256,6 @@ function openHarnessTunnel(bootstrap: TunnelBootstrap): Promise<WebSocket> {
   });
 }
 
-async function collectArtifactFiles(workspacePath: string) {
-  const files: Array<{
-    content: string;
-    encoding: "base64" | "utf8";
-    path: string;
-  }> = [];
-
-  async function visit(directory: string): Promise<void> {
-    const entries = await readdir(directory, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.name === ".gambi.json") {
-        continue;
-      }
-      const absolutePath = resolve(directory, entry.name);
-      if (entry.isDirectory()) {
-        if (!EXCLUDED_ARTIFACT_DIRECTORIES.has(entry.name)) {
-          await visit(absolutePath);
-        }
-        continue;
-      }
-      if (!entry.isFile()) {
-        continue;
-      }
-      const bytes = await readFile(absolutePath);
-      let content: string;
-      let encoding: "base64" | "utf8";
-      try {
-        content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-        encoding = "utf8";
-      } catch {
-        content = bytes.toString("base64");
-        encoding = "base64";
-      }
-      files.push({
-        path: relative(workspacePath, absolutePath).split(sep).join("/"),
-        content,
-        encoding,
-      });
-    }
-  }
-
-  await visit(workspacePath);
-  files.sort((left, right) => left.path.localeCompare(right.path));
-  return files;
-}
-
 function replaceSessionId(message: JsonRecord, sessionId: string): JsonRecord {
   if (!(isJsonRecord(message.params) && "sessionId" in message.params)) {
     return message;
@@ -334,12 +288,12 @@ class ManagedHarnessParticipantSession implements HarnessParticipantSession {
   readonly #pendingRequests = new Map<string, PendingRequest>();
   readonly #pingInterval: ReturnType<typeof setInterval>;
   readonly #process: HarnessProcess;
-  #processStderr = "";
   #resolveClose!: (event: HarnessParticipantSessionCloseEvent) => void;
   readonly #roomCode: string;
   readonly #participantId: string;
   #stopping = false;
-  #watcher?: FSWatcher;
+  #stopWatching?: () => void;
+  readonly #workspace: PreparedWorkspace;
   readonly #ws: WebSocket;
 
   private constructor(params: {
@@ -353,7 +307,7 @@ class ManagedHarnessParticipantSession implements HarnessParticipantSession {
     roomId: string;
     sessionId: string;
     tunnel: TunnelBootstrap;
-    workspacePath: string;
+    workspace: PreparedWorkspace;
     ws: WebSocket;
   }) {
     this.#artifactDebounceMs = params.artifactDebounceMs;
@@ -367,7 +321,8 @@ class ManagedHarnessParticipantSession implements HarnessParticipantSession {
     this.roomId = params.roomId;
     this.sessionId = params.sessionId;
     this.tunnel = params.tunnel;
-    this.workspacePath = params.workspacePath;
+    this.#workspace = params.workspace;
+    this.workspacePath = params.workspace.path;
     this.#ws = params.ws;
     this.harnessExited = params.process.exited;
     this.#closePromise = new Promise((resolveClose) => {
@@ -393,11 +348,10 @@ class ManagedHarnessParticipantSession implements HarnessParticipantSession {
     }, HEALTH_CHECK_INTERVAL);
 
     ignorePromise(this.#readProcessOutput());
-    ignorePromise(this.#readProcessStderr());
     this.harnessExited.then((exitCode) => {
       this.#emit({ type: "harness_exited", exitCode });
       if (!this.#stopping) {
-        const detail = this.#processStderr.trim();
+        const detail = this.#process.stderrTail().trim();
         ignorePromise(
           this.#stop(
             "harness_exited",
@@ -419,17 +373,16 @@ class ManagedHarnessParticipantSession implements HarnessParticipantSession {
     registration: HarnessRegistration;
     roomCode: string;
     sessionId: string;
-    workspacePath: string;
+    workspace: PreparedWorkspace;
     ws: WebSocket;
   }): Promise<ManagedHarnessParticipantSession> {
     let process: HarnessProcess;
     try {
-      process = Bun.spawn([params.adapter.command, ...params.adapter.args], {
-        cwd: params.workspacePath,
-        stdin: "pipe",
-        stdout: "pipe",
-        stderr: "pipe",
-      });
+      process = await spawnHarnessProcess(
+        params.adapter.command,
+        params.adapter.args,
+        params.workspace.path
+      );
     } catch (error) {
       throw new HarnessDependencyError(
         `Failed to start ${params.adapter.id}: ${error instanceof Error ? error.message : String(error)}`
@@ -447,7 +400,7 @@ class ManagedHarnessParticipantSession implements HarnessParticipantSession {
 
     try {
       await session.#initializeAgent();
-      await session.#openAgentSession(params.sessionId, params.workspacePath);
+      await session.#openAgentSession(params.sessionId, params.workspace.path);
       session.#startWatcher();
       return session;
     } catch (error) {
@@ -478,8 +431,7 @@ class ManagedHarnessParticipantSession implements HarnessParticipantSession {
   }
 
   #writeAgent(message: JsonRecord): void {
-    this.#process.stdin.write(`${JSON.stringify(message)}\n`);
-    this.#process.stdin.flush();
+    this.#process.writeLine(JSON.stringify(message));
   }
 
   async #requestAgent(method: string, params: JsonRecord): Promise<JsonRecord> {
@@ -572,36 +524,12 @@ class ManagedHarnessParticipantSession implements HarnessParticipantSession {
   }
 
   async #readProcessOutput(): Promise<void> {
-    const reader = this.#process.stdout.getReader();
-    const decoder = new TextDecoder();
-    let buffered = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      buffered += decoder.decode(value, { stream: true });
-      while (true) {
-        const newline = buffered.indexOf("\n");
-        if (newline < 0) {
-          break;
-        }
-        const line = buffered.slice(0, newline).trim();
-        buffered = buffered.slice(newline + 1);
-        if (line) {
-          this.#handleAgentLine(line);
-        }
+    for await (const rawLine of this.#process.lines) {
+      const line = rawLine.trim();
+      if (line) {
+        this.#handleAgentLine(line);
       }
     }
-    const finalLine = `${buffered}${decoder.decode()}`.trim();
-    if (finalLine) {
-      this.#handleAgentLine(finalLine);
-    }
-  }
-
-  async #readProcessStderr(): Promise<void> {
-    const text = await new Response(this.#process.stderr).text();
-    this.#processStderr = text.slice(-4000);
   }
 
   #handleAgentLine(line: string): void {
@@ -737,26 +665,16 @@ class ManagedHarnessParticipantSession implements HarnessParticipantSession {
   }
 
   #startWatcher(): void {
-    this.#watcher = watch(
-      this.workspacePath,
-      { recursive: true },
-      (_eventType, filename) => {
-        if (
-          !filename ||
-          filename.split(PATH_SEPARATOR_REGEX).includes(".gambi.json")
-        ) {
-          return;
-        }
-        this.#scheduleArtifact();
+    this.#stopWatching = this.#workspace.watch(
+      () => this.#scheduleArtifact(),
+      (error) => {
+        this.#sendStatus(
+          this.sessionId,
+          "error",
+          `Workspace watcher: ${error.message}`
+        );
       }
     );
-    (this.#watcher as ErrorAwareFsWatcher).on("error", (error) => {
-      this.#sendStatus(
-        this.sessionId,
-        "error",
-        `Workspace watcher: ${error.message}`
-      );
-    });
   }
 
   #scheduleArtifact(): void {
@@ -773,7 +691,7 @@ class ManagedHarnessParticipantSession implements HarnessParticipantSession {
     if (this.#ws.readyState !== WebSocket.OPEN) {
       return;
     }
-    const files = await collectArtifactFiles(this.workspacePath);
+    const files = await this.#workspace.collect();
     this.#artifactVersion += 1;
     this.#sendTunnel({
       type: "tunnel.harness.artifact",
@@ -815,7 +733,7 @@ class ManagedHarnessParticipantSession implements HarnessParticipantSession {
     if (this.#artifactTimer) {
       clearTimeout(this.#artifactTimer);
     }
-    this.#watcher?.close();
+    this.#stopWatching?.();
 
     if (reason === "closed") {
       try {
@@ -831,7 +749,7 @@ class ManagedHarnessParticipantSession implements HarnessParticipantSession {
     }
     this.#pendingRequests.clear();
 
-    if (this.#process.exitCode === null) {
+    if (this.#process.exitCode() === null) {
       this.#process.kill();
       await Promise.race([
         this.harnessExited,
@@ -839,8 +757,8 @@ class ManagedHarnessParticipantSession implements HarnessParticipantSession {
           setTimeout(resolveTimeout, PROCESS_EXIT_TIMEOUT_MS)
         ),
       ]);
-      if (this.#process.exitCode === null) {
-        this.#process.kill(9);
+      if (this.#process.exitCode() === null) {
+        this.#process.kill("SIGKILL");
         await this.harnessExited;
       }
     }
@@ -884,8 +802,10 @@ export async function createHarnessParticipantSession(
   }
 
   const model = options.model ?? options.harnessId;
-  const workspacePath = await createHarnessWorkspace({
-    gambiHome: options.gambiHome,
+  const workspace = await (
+    options.workspace ??
+    createLocalDirectoryWorkspace({ gambiHome: options.gambiHome })
+  ).prepare({
     roomCode: options.roomCode,
     participantId: options.participantId,
     harness: options.harnessId,
@@ -911,7 +831,7 @@ export async function createHarnessParticipantSession(
       registration,
       roomCode: options.roomCode,
       sessionId: nanoid(),
-      workspacePath,
+      workspace,
       ws,
     });
   } catch (error) {
