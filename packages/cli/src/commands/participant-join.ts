@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { select } from "@clack/prompts";
 import { probeEndpoint } from "@gambi/core/endpoint";
 import {
@@ -9,6 +10,10 @@ import {
   type HarnessParticipantLifecycleEvent,
   type HarnessParticipantSession,
 } from "@gambi/core/harness-participant-session";
+import {
+  createLocalDirectoryWorkspace,
+  defaultWorkspacePath,
+} from "@gambi/core/harness-workspace";
 import {
   createParticipantSession,
   type ParticipantSession,
@@ -112,7 +117,7 @@ export class ParticipantJoinCommand extends AgentCommand {
   static override usage = Command.Usage({
     description: "Join a room with a model endpoint or local ACP harness",
     details:
-      "Registers the participant, opens its outbound tunnel, and keeps the session alive until interrupted. Harness mode starts a local ACP agent in a Gambi workspace.",
+      "Registers the participant, opens its outbound tunnel, and keeps the session alive until interrupted. Harness mode starts a local ACP agent in a workspace folder on this machine: an empty one under ~/.gambi/workspaces/ by default, or the folder passed to --workspace.",
     examples: [
       [
         "Join a room",
@@ -129,6 +134,10 @@ export class ParticipantJoinCommand extends AgentCommand {
       [
         "Join with OpenCode",
         "gambi participant join --room ABC123 --participant-id worker-1 --name Arthur --harness opencode",
+      ],
+      [
+        "Join with Codex in a folder you choose",
+        "gambi participant join --room ABC123 --participant-id worker-1 --harness codex --workspace ./my-project",
       ],
     ],
   });
@@ -156,6 +165,11 @@ export class ParticipantJoinCommand extends AgentCommand {
   harness = Option.String("--harness", {
     description: "Local ACP harness: opencode, claude-code, codex, or fake",
     required: false,
+  });
+
+  workspace = Option.String("--workspace", {
+    description:
+      "Harness mode: folder the harness runs in and publishes from (default: an empty folder under ~/.gambi/workspaces/<room>/<participant>)",
   });
 
   model = Option.String("--model,-m", {
@@ -216,6 +230,12 @@ export class ParticipantJoinCommand extends AgentCommand {
         hubUrl,
         noSpecsFromEnv: envConfig?.noSpecs ?? false,
       });
+    }
+    if (this.workspace !== undefined) {
+      this.context.stderr.write(
+        "Error: --workspace only applies with --harness.\nHint: model participants have no workspace.\n"
+      );
+      return 2;
     }
 
     const endpoint =
@@ -538,7 +558,9 @@ export class ParticipantJoinCommand extends AgentCommand {
       room,
       participantId,
       connection: { kind: "tunnel" },
-      workspace: `~/.gambi/workspaces/${room}/${participantId}`,
+      workspace: this.workspace
+        ? resolve(this.workspace)
+        : defaultWorkspacePath({ roomCode: room, participantId }),
       payload: {
         nickname: displayName,
         model,
@@ -622,6 +644,7 @@ export class ParticipantJoinCommand extends AgentCommand {
         specs,
         config: runtimeConfig,
         onEvent: writeLifecycle,
+        workspace: createLocalDirectoryWorkspace({ path: this.workspace }),
       });
     } catch (error) {
       this.context.stderr.write(
