@@ -75,10 +75,10 @@ Participants no longer need to publish a network-reachable provider endpoint. In
 - powers the TUI and operational clients
 - keeps operational visibility separate from inference transport
 
-Optional applications can build coordination above these contracts. The
-repository event board uses `gambi-sdk` to attach to harness participants and
-stores its own workflow in SQLite. Its local `/events` stream is not the hub
-room stream and does not change the public hub API.
+Optional applications can build coordination above these contracts with
+`gambi-sdk`: attach to harness participants, host their own, and keep their own
+state. Their streams are not the hub room stream and do not change the public
+hub API.
 
 ## Routing Rules
 

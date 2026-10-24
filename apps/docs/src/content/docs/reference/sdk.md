@@ -25,6 +25,7 @@ bun add gambi-sdk
 | `createGambi()` | application inference | `/rooms/:code/v1/*` |
 | `createClient()` | operational control | `/v1/*` |
 | `createParticipantSession()` | participant runtime | management API + participant tunnel |
+| `createHarnessParticipantSession()` | harness participant runtime | management API + participant tunnel |
 | discovery helpers | local-network room and hub resolution | mDNS + management API |
 
 ## `createGambi(options)`
@@ -353,6 +354,100 @@ Close reasons:
 - `"closed"` — shutdown initiated by `close()` or a received signal
 - `"heartbeat_failed"` — the management heartbeat loop failed repeatedly
 - `"tunnel_closed"` — the WebSocket tunnel was closed from either side
+
+## `createHarnessParticipantSession(options)`
+
+Run a local ACP harness as a room participant from your own application, for
+example to host harnesses for people who did not bring one. It is the same
+runtime `gambi participant join --harness` uses, and it runs under Node and Bun.
+
+```ts
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import {
+  createHarnessParticipantSession,
+  createLocalDirectoryWorkspace,
+  type Workspace,
+} from "gambi-sdk";
+
+const local = createLocalDirectoryWorkspace();
+
+// Optional: seed starter content before the harness starts.
+const workspace: Workspace = {
+  async prepare(context) {
+    const prepared = await local.prepare(context);
+    await writeFile(join(prepared.path, "README.md"), "# Brief\n");
+    return prepared;
+  },
+};
+
+const session = await createHarnessParticipantSession({
+  hubUrl: "http://localhost:3000",
+  roomCode: "ABC123",
+  participantId: "hosted-opencode-1",
+  nickname: "Hosted OpenCode",
+  harnessId: "opencode",
+  hosted: true,
+  workspace,
+});
+
+console.log(session.workspacePath);
+await session.waitUntilClosed();
+```
+
+Options beyond the shared `hubUrl`, `roomCode`, `participantId`, `nickname`,
+`password`, `specs`, and `config`:
+
+| Option | Description |
+| --- | --- |
+| `harnessId` | `opencode`, `claude-code`, `codex`, or `fake` |
+| `model` | optional label shown with the participant |
+| `hosted` | marks a harness the room host runs for others. Rejected for `claude-code`. |
+| `workspace` | where the harness runs; defaults to `createLocalDirectoryWorkspace()` |
+| `gambiHome` | base directory of the default workspace (`~/.gambi`) |
+| `adapter` | replace the command and readiness check for `harnessId` |
+| `onEvent` | lifecycle events: `harness_spawned`, `session_opened`, `artifact_sent`, `harness_exited` |
+| `artifactDebounceMs` | wait after the last file change before sending an artifact (default `1000`) |
+
+A missing binary or login throws `HarnessDependencyError` before anything is
+registered. The session adds `processPid`, `sessionId`, `workspacePath`, and
+`harnessExited` to the participant session shape, and the close reason
+`"harness_exited"`.
+
+### Workspace
+
+A `Workspace` is the folder on the participant's machine where the harness
+runs. `prepare(context)` returns a prepared workspace with `path`,
+`watch(onChange, onError)`, and `collect()`; the runtime watches it and sends a
+full snapshot as each new artifact version. `createLocalDirectoryWorkspace({ path? })`
+uses `path`, or an empty folder under `~/.gambi/workspaces/<room>/<participant>/`.
+It writes only `.gambi.json`, which never appears in an artifact.
+
+### Testing without a model
+
+`runFakeAcpAgent()` is a deterministic ACP agent: it answers each prompt with
+`Fake ACP response: <prompt>` and writes `fake-output.txt` in the workspace.
+Because a bundled SDK cannot locate its own script, wrap it in one of yours and
+point the adapter at it:
+
+```ts
+// scripts/fake-acp-agent.ts
+import { runFakeAcpAgent } from "gambi-sdk";
+await runFakeAcpAgent();
+```
+
+```ts
+import { createFakeHarnessAdapter } from "gambi-sdk";
+
+await createHarnessParticipantSession({
+  // ...
+  harnessId: "fake",
+  adapter: createFakeHarnessAdapter({
+    command: process.execPath,
+    args: ["scripts/fake-acp-agent.ts"],
+  }),
+});
+```
 
 ## Discovery helpers
 

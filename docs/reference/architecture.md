@@ -68,9 +68,10 @@ Important files:
 - `packages/core/src/hub.ts` — HTTP server, tunnel upgrade, routing
 - `packages/core/src/room.ts` — room and participant state
 - `packages/core/src/participant-session.ts` — participant runtime
-- `packages/core/src/harness-participant-session.ts` — ACP process, workspace watcher, and artifact runtime
+- `packages/core/src/harness-participant-session.ts` — ACP relay, tunnel, and artifact runtime
+- `packages/core/src/harness-process.ts` — harness child process and PATH lookup on Node APIs, so the SDK runs under Node
 - `packages/core/src/harness-adapters.ts` — local harness command and readiness checks
-- `packages/core/src/harness-workspace.ts` — city tile starter and workspace metadata
+- `packages/core/src/harness-workspace.ts` — the `Workspace` seam (prepare, watch, collect) and the default local directory workspace
 - `packages/core/src/tunnel-protocol.ts` — tunnel messages
 - `packages/core/src/types.ts` — public Zod schemas and runtime constants
 
@@ -96,6 +97,7 @@ Split by audience:
 - `createGambi()` — inference through the OpenAI-compatible room endpoints
 - `createClient()` — operational control over rooms, participants, and room events
 - `createParticipantSession()` — participant runtime with tunnel (re-exported from `packages/core`)
+- `createHarnessParticipantSession()` — harness participant runtime with a pluggable `Workspace`, plus the deterministic fake ACP agent (re-exported from `packages/core`)
 - discovery helpers (`discoverHubs`, `discoverRooms`, `resolveGambiTarget`) — explicit; never invoked implicitly inside `createGambi()` or `createClient()`
 
 The management client maps directly to `/v1` instead of inventing a parallel contract.
@@ -104,19 +106,13 @@ The management client maps directly to `/v1` instead of inventing a parallel con
 
 Human-first monitoring interface (OpenTUI + React). It consumes the management plane and the room event stream, but remains a separate package from `gambi`. Published as `gambi-tui` on npm.
 
-### `packages/agents` and the event board
+### Experiences above the hub
 
-`@gambi/agents` adds typed coordination above the SDK attach channel. It owns
-decisions, dispatches, reviews, returns, model handoff, and the rule that only a
-selected human steerer may resolve judgment calls. It does not add behavior to
-the hub.
-
-`apps/board` persists the event workflow, tile versions, claims, steerers, and
-an append-only audit log in SQLite. `apps/board-web` is its local-network UI.
-The board attaches to participant-opened harness tunnels through the SDK and
-starts hosted harness sessions from its saved configuration. Restarting the
-board keeps the hub and participant connections alive. The hosted supervisor
-recreates its sessions and reconciles them by stable participant ID.
+Orchestration and the event board from 2026-08-23 live in
+[`arthurbm/gambiarra-lab`](https://github.com/arthurbm/gambiarra-lab), a
+separate repository of club experiments. They consume `gambi` and `gambi-sdk`
+like any external client. Nothing in this repository imports from there
+(ADR-0006, revision 2026-10-24).
 
 ## Participant lifecycle
 
@@ -189,43 +185,20 @@ Optimized for code-driven operational workflows. Namespaces:
 - `client.events.watchRoom()`
 - `client.harness.attach()`
 
-`@gambi/agents` supplies `TunnelHarnessTransport` above this SDK channel. It
-opens an ACP harness session, turns ACP updates, status, and versioned artifact
-frames into UI-independent `HarnessEvent` values, and republishes them through
-the orchestrator as ordered `harness.event` domain events. A prompt is complete
-only when its ACP JSON-RPC response arrives. A channel close or response timeout
-is an explicit recoverable error; the orchestrator drops the cached harness
-session so a retried dispatch opens a new session after reconnection. The hub
-remains a relay and does not take part in that recovery policy.
-
-Control operations and prompt turns use separate deadlines. Session open and
-close keep a 10-second default. A full ACP prompt turn gets five minutes by
-default because its response marks completion, not receipt. Both deadlines are
-transport options so deterministic tests and event applications can choose
-smaller or larger bounds without changing the hub protocol.
+`client.harness.attach()` opens one ACP harness session per channel and
+streams ACP updates, status, and versioned artifact frames. Orchestration
+policy (retries, deadlines per prompt, review) belongs to the consumer; the hub
+remains a relay.
 
 ### TUI
 
 Optimized for human monitoring. It is not the canonical operational contract — automation should target the management plane (`/v1`) directly via CLI or SDK.
-
-### Event supervisor
-
-`scripts/event.ts` owns the live event processes. `bun run event` starts the
-hub, creates one room, chooses a room-specific SQLite file, then starts the
-board and web UI. `bun run board:e2e` swaps hosted OpenCode for the deterministic
-fake ACP adapter, uses a temporary database, and adds two ordinary fixture
-model participants to the inference plane. `SIGUSR1` restarts only the board.
-Ctrl+C stops children in reverse order so hosted ACP processes exit before the
-hub.
 
 ## Repository map
 
 - `packages/core` — hub runtime and contracts
 - `packages/cli` — operational CLI source
 - `packages/sdk` — inference provider and management client
-- `packages/agents`: UI-independent coordination rules and harness transports
-- `apps/board`: SQLite-backed event server and hosted harness supervisor
-- `apps/board-web`: local-network event UI and city projector
 - `apps/tui` — monitoring interface
 - `apps/docs` — documentation site (Astro Starlight)
 - `packages/config` — shared TypeScript configs
@@ -237,7 +210,7 @@ Gambi is designed for trusted local networks. The hub does not include native au
 ## Forward path
 
 The hub stays narrow: transport, routing, and operability. Coordination lives
-in the optional agents package and board app above those contracts.
+above those contracts, outside this repository, in `gambiarra-lab`.
 
 Related internal docs:
 

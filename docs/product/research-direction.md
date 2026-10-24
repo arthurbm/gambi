@@ -12,6 +12,8 @@ Gambi como a **infraestrutura/protocolo prático onde experiências sociais entr
 
 O [**Gambiarra LLM Club**](https://gambiarra.club) é o campo de experimentação e validação: eventos reais, com pessoas reais plugando seus LLMs locais numa sala compartilhada.
 
+O código e o registro dessas experiências ficam em [`gambiarra-lab`](https://github.com/arthurbm/gambiarra-lab), com o board do evento de 2026-08-23, o orquestrador e as notas sobre *As três inteligências*. O TCC usa o lab como campo de validação, mas não se reduz a ele.
+
 ## Duas camadas (e onde a pesquisa mora)
 
 ```

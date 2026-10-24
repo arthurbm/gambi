@@ -49,11 +49,9 @@ Current signals:
 
 Harness lifecycle events use `participantId` and `sessionId`. `harness.artifact` adds the incremental `version`, but never includes artifact files or their contents. Consumers that need the artifact subscribe through `client.harness.attach()` instead of SSE.
 
-The event board exposes a second, app-local SSE stream at `/events`. It sends
-`board.snapshot`, `board.changed`, `harness.presence`, and `harness.stream`.
-Board events use the SQLite audit sequence as their revision and survive a
-board restart. This does not make hub room SSE persistent. Do not combine the
-two streams or claim replay guarantees for `/v1/rooms/:code/events`.
+Applications above the hub may keep their own event streams (the event board
+in `gambiarra-lab` keeps one backed by SQLite). That never makes hub room SSE
+persistent. Do not claim replay guarantees for `/v1/rooms/:code/events`.
 
 ## Metrics Model
 

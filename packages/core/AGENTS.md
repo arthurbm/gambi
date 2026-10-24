@@ -10,6 +10,8 @@ Core do hub: servidor HTTP, estado de sala/participante, protocolo do túnel, SS
 - `src/types.ts` — schemas Zod **autoritativos** (`ParticipantInfo`, `ParticipantConnection`, `ParticipantCapabilities`, `RuntimeConfig`, etc.) e constantes `HEALTH_CHECK_INTERVAL` / `PARTICIPANT_TIMEOUT`.
 - `src/tunnel-protocol.ts` — mensagens do túnel: `tunnel.request`, `tunnel.response.start/chunk/end/error`, `tunnel.ping/pong`. Validação Zod usada nos dois lados.
 - `src/participant-session.ts` — runtime canônico de participante usado pelo CLI e reexportado pela SDK como `createParticipantSession()`.
+- `src/harness-participant-session.ts` — runtime de harness participant (relay ACP, túnel, artefatos), reexportado pela SDK. Roda em Node e Bun: processo e PATH ficam em `src/harness-process.ts` sobre APIs Node.
+- `src/harness-workspace.ts` — a costura `Workspace` (prepare, watch, collect) e o workspace padrão em pasta local. O core nunca semeia conteúdo inicial; isso é do consumidor.
 - `src/protocol.ts` / `src/protocol-adapters.ts` — adapter Responses ↔ Chat Completions.
 - `src/sse.ts` — publicação de eventos SSE.
 - `src/mdns.ts` / `src/discovery.ts` — anúncio mDNS do hub e helpers de descoberta usados pela SDK.

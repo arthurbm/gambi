@@ -123,15 +123,75 @@ The startup events are `registered`, `tunnel_connected`, `harness_spawned`, and 
 
 ## Understand the workspace
 
-Gambi starts the harness in:
+The workspace is the folder on your machine where the harness runs. By default Gambi creates an empty one:
 
 ```text
 ~/.gambi/workspaces/<room>/<participant-id>/
 ```
 
+To work in a folder you already have, such as a project checkout or a starter someone shared with you, pass it with `--workspace`:
+
+```bash
+gambi participant join \
+  --room ABC123 \
+  --participant-id arthur-opencode \
+  --harness opencode \
+  --workspace ./my-project
+```
+
 The participant watches this directory and sends a versioned snapshot one second after file changes settle. It excludes `.git`, `node_modules`, and Gambi's local runtime metadata.
 
-The harness login remains local. It is not part of participant registration, lifecycle events, or tunnel frames. Workspace files are different. The participant sends them deliberately as artifacts so the attached application can consume the harness output.
+The harness login remains local. It is not part of participant registration, lifecycle events, or tunnel frames. Workspace files are different. The participant sends them deliberately as artifacts so the attached application can consume the harness output. Nothing travels the other way: the hub cannot write files into your workspace.
+
+## Use the harness from an application
+
+Any application on the network can attach to your harness with `gambi-sdk`, send it a prompt, and read what it answers and writes:
+
+```ts
+import { createClient } from "gambi-sdk";
+
+const client = createClient({ hubUrl: "http://192.168.1.10:3000" });
+const channel = await client.harness.attach({
+  roomCode: "ABC123",
+  participantId: "arthur-opencode",
+});
+
+const sessionId = "demo";
+channel.send({ type: "tunnel.harness.control", sessionId, action: "open" });
+
+for await (const frame of channel.messages) {
+  if (frame.type === "tunnel.harness.status" && frame.status === "opened") {
+    channel.send({
+      type: "tunnel.harness.message",
+      sessionId,
+      message: {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "session/prompt",
+        params: {
+          sessionId,
+          prompt: [{ type: "text", text: "Write a README for this folder." }],
+        },
+      },
+    });
+  }
+  if (frame.type === "tunnel.harness.message") {
+    const { update } = (frame.message.params ?? {}) as {
+      update?: { sessionUpdate?: string; content?: { text?: string } };
+    };
+    if (update?.sessionUpdate === "agent_message_chunk") {
+      process.stdout.write(update.content?.text ?? "");
+    }
+  }
+  if (frame.type === "tunnel.harness.artifact") {
+    console.log(`\nartifact v${frame.version}: ${frame.files.map((file) => file.path).join(", ")}`);
+  }
+}
+```
+
+The `message` payload is plain ACP v1, so every update type in the [ACP schema](https://agentclientprotocol.com/protocol/schema) can arrive here. The SDK reference also shows how an application can [host harness participants itself](/reference/sdk/#createharnessparticipantsessionoptions).
+
+For a complete application that orchestrates several harness participants with people steering them, see the experiments in [gambiarra-lab](https://github.com/arthurbm/gambiarra-lab).
 
 ## Preview without starting the harness
 
@@ -154,6 +214,7 @@ This preview does not start the ACP process and does not verify the local harnes
 | --- | --- |
 | exit code `2` and "unsupported harness" | use `opencode`, `claude-code`, or `codex` |
 | exit code `2` for `--endpoint` or auth headers | remove model-provider flags from the harness command |
+| exit code `2` for `--workspace` | add `--harness`; model participants have no workspace |
 | exit code `3` before registration | run the install or login command printed by the CLI, then retry |
 | tunnel disconnects immediately | confirm that the hub is reachable and every proxy forwards WebSocket upgrades |
 | an inference request rejects the participant ID | use `client.harness.attach()` instead; harness participants are not model endpoints |

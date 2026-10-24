@@ -135,9 +135,11 @@ gambi participant join \
   --harness opencode
 ```
 
-This creates `~/.gambi/workspaces/ABC123/arthur-opencode/`, starts
-`opencode acp` there, and publishes workspace changes through the same outbound
-tunnel. OpenCode credentials stay on the participant machine.
+This creates an empty `~/.gambi/workspaces/ABC123/arthur-opencode/` (or uses
+the folder passed to `--workspace`), starts `opencode acp` there, and publishes
+workspace changes through the same outbound tunnel. OpenCode credentials stay on
+the participant machine. Applications can also host harness participants
+themselves with `createHarnessParticipantSession()` from `gambi-sdk`.
 
 Claude Code and Codex can join through their published ACP bridges as
 `--harness claude-code` and `--harness codex`. Install the matching bridge
@@ -439,17 +441,12 @@ bun run check-types
 Root dev workflow:
 
 - `bun run dev` and `bun run dev:hub` start the hub with `gambi hub serve`
-- `bun run event` supervises the hub, event board, web UI, and the hosted harnesses saved in the board database
-- `bun run board:e2e` starts the same stack with an isolated database, deterministic model participants, and fake ACP harnesses; it never calls a paid model
 - `bun run dev:cli -- <subcommand...>` forwards any CLI command from the repo root
 - `bun run dev:monitor` is a TUI alias for human-first monitoring
 - Prefer `bun run dev:cli -- room create --help` and `bun run dev:cli -- participant join --help` for CLI discovery during development
 
-Both event commands bind ports `3000`, `3001`, and `3002`. They print the room,
-admin, projector, and database details after every child reports ready. Press
-Ctrl+C once to stop the stack in reverse order. See the
-[event validation route](docs/reference/validation.md#full-event-board-rehearsal)
-before using it with a room.
+The event board and the orchestration experiments built on Gambi live in
+[gambiarra-lab](https://github.com/arthurbm/gambiarra-lab).
 
 Workspace-specific:
 

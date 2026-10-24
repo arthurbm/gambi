@@ -185,38 +185,24 @@ the participant workspace, and kills the child process during `close()`.
 
 ### Harness participant workspace and artifacts
 
-`gambi participant join --harness <id>` uses this path:
+A harness session runs in a **Workspace** on the participant's machine. The
+runtime prepares it, watches it, and collects artifacts from it; the hub never
+sees it. `createHarnessParticipantSession({ workspace })` accepts any
+`Workspace`. Without one, and in `gambi participant join --harness <id>`
+without `--workspace <folder>`, the runtime uses:
 
 ```text
 ~/.gambi/workspaces/<room>/<participant-id>/
 ```
 
-The runtime creates missing `index.html`, `README.md`, and `manifest.json`
-starter files. It writes local runtime metadata to `.gambi.json`, which never
-appears in an artifact. The watcher waits one second after the last change,
+The default workspace starts empty: the runtime writes only local metadata to
+`.gambi.json`, which never appears in an artifact. Seeding starter content is
+the consumer's job, by composing a `Workspace` or by pointing `--workspace` at
+a folder. The tunnel has no frame that writes files on the participant's
+machine. The watcher waits one second after the last change,
 then sends a complete workspace snapshot with the next positive `version`.
 Text files use `utf8`; other files use `base64`. `.git` and `node_modules`
 directories are omitted.
-
-### Event board boundary
-
-The event board is an internal app contract, not a new hub endpoint. It serves
-oRPC under `/rpc`, board updates under `/events`, and accepted tile documents at
-`/tiles/:squadId/live/index.html` on port `3001`. Vite proxies those paths on
-port `3002`. Board SSE has `board.snapshot`, `board.changed`,
-`harness.presence`, and `harness.stream`; it is separate from the room SSE
-contract above. SQLite stores board audit history. The hub room stream remains
-in-memory and does not gain replay semantics.
-
-The root process entrypoints are repository operations:
-
-- `bun run event` starts the live stack with hosted OpenCode.
-- `bun run board:e2e` uses fake ACP, fixture model participants, and an isolated
-  SQLite file.
-- `SIGUSR1` sent to the printed supervisor PID restarts only the board with the
-  same room code and database.
-
-These commands do not change the published CLI contract.
 
 ## Runtime constants
 
@@ -226,13 +212,6 @@ Defined in `packages/core/src/types.ts`:
 |---|---|---|
 | `HEALTH_CHECK_INTERVAL` | `10_000` ms | Cadence of management heartbeat and tunnel ping/pong. |
 | `PARTICIPANT_TIMEOUT` | `30_000` ms (`HEALTH_CHECK_INTERVAL * 3`) | Window after which the hub marks a participant offline. |
-
-`TunnelHarnessTransport` keeps two application-side deadlines outside the hub
-protocol: `operationTimeoutMs` defaults to 10 seconds for session open and close,
-while `promptTimeoutMs` defaults to five minutes for a complete ACP
-`session/prompt` turn. A prompt timeout is recoverable but delivery is uncertain:
-the caller records `delivery_unknown`, discards the session, and retries only
-after an explicit human or application decision.
 
 ## Runtime defaults merge order
 
@@ -273,7 +252,7 @@ Inherited from the `AgentCommand` base by every subcommand:
 - `--interactive` / `--no-interactive`
 - `--verbose` / `--quiet`
 
-`gambi participant join` requires `--participant-id` for retry-safe non-interactive flows. Model mode uses `createParticipantSession()`. Passing `--harness opencode|claude-code|codex|fake` selects `createHarnessParticipantSession()` and makes `--model` optional. `--name` aliases `--nickname`.
+`gambi participant join` requires `--participant-id` for retry-safe non-interactive flows. Model mode uses `createParticipantSession()`. Passing `--harness opencode|claude-code|codex|fake` selects `createHarnessParticipantSession()` and makes `--model` optional. `--workspace <folder>` (harness mode only) runs the harness in that folder instead of the default workspace; passing it without `--harness` exits `2`. `--name` aliases `--nickname`.
 
 Harness mode rejects `--endpoint`, `--header`, and `--header-env` with exit code `2`. A missing binary, missing local authentication, failed ACP negotiation, or lost tunnel returns exit code `3`. Structured output adds `harness_spawned`, `session_opened`, `artifact_sent`, and `harness_exited` lifecycle events.
 
@@ -284,9 +263,9 @@ Adapter commands and readiness checks are local:
 | `opencode` | `opencode acp` | `opencode auth list --pure` |
 | `claude-code` | `claude-agent-acp` from `@agentclientprotocol/claude-agent-acp` | `claude auth status --json` |
 | `codex` | `codex-acp` from `@agentclientprotocol/codex-acp` | `codex login status` |
-| `fake` | bundled deterministic agent | bundled script exists |
+| `fake` | bundled deterministic agent (`gambi __fake-acp-agent` in the binary; SDK consumers pass a command that runs `runFakeAcpAgent()` to `createFakeHarnessAdapter()`) | bundled script exists |
 
-No readiness output or credential is registered or tunneled. The participant's board-facing `harness.id` is the selected id and `harness.model` is the optional `--model` label. Claude Code additionally prints Anthropic's terms warning on join and rejects `hosted: true`: every end user must run the unmodified binary with their own local authentication; Gambi never intermediates subscription login or hosts Claude Code for third parties.
+No readiness output or credential is registered or tunneled. The participant's public `harness.id` is the selected id and `harness.model` is the optional `--model` label. Claude Code additionally prints Anthropic's terms warning on join and rejects `hosted: true`: every end user must run the unmodified binary with their own local authentication; Gambi never intermediates subscription login or hosts Claude Code for third parties.
 
 `gambi self update` updates via `bun`, `npm`, or the standalone binary depending on installation mode.
 
