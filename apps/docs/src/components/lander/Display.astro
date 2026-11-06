@@ -632,10 +632,10 @@ const ticks = Array.from({ length: 72 }, (_, i) => {
 
 <script>
   import { BEND, BUNDLE, OUTER, R_LABEL, toPercent, trackPath, YOU } from "./geometry";
+  import { isStill, onMotionChange } from "./motion";
 
   type Mode = "one" | "many";
 
-  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
   const EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
   const EASE_IN_OUT = "cubic-bezier(0.77, 0, 0.175, 1)";
 
@@ -681,6 +681,7 @@ const ticks = Array.from({ length: 72 }, (_, i) => {
     let e = 1;
     let mode: Mode = "many";
     let frame = 0;
+    let introTimer = 0;
     let focusId: string | null = null;
     let userTookOver = false;
     let visible = true;
@@ -742,15 +743,16 @@ const ticks = Array.from({ length: 72 }, (_, i) => {
 
     const setMode = (next: Mode, animate: boolean) => {
       if (next === mode && animate) return;
+      // Settling in place (a pause) keeps the person the visitor picked.
+      if (next !== mode) setFocus(null);
       mode = next;
       display.dataset.mode = next;
       modeButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.setMode === next)));
-      setFocus(null);
       cancelAnimationFrame(frame);
       const from = e;
       const to = next === "many" ? 1 : 0;
       let flipped = false;
-      if (!animate || reduce.matches) {
+      if (!animate || isStill()) {
         e = to;
         render();
         setReadouts(next);
@@ -777,7 +779,7 @@ const ticks = Array.from({ length: 72 }, (_, i) => {
     const TAIL = 110;
 
     const comet = (i: number, outward: boolean, delay = 0) => {
-      if (reduce.matches) return;
+      if (isStill()) return;
       const [tail, head] = [...comets[i].querySelectorAll<SVGPathElement>("path")];
       const len = tracks[i].getTotalLength();
       const gap = len + TAIL + 40;
@@ -821,9 +823,9 @@ const ticks = Array.from({ length: 72 }, (_, i) => {
     let ambient = 0;
     const startAmbient = () => {
       window.clearInterval(ambient);
-      if (reduce.matches) return;
+      if (isStill()) return;
       ambient = window.setInterval(() => {
-        if (!visible || document.hidden || mode !== "many") return;
+        if (!visible || document.hidden || mode !== "many" || isStill()) return;
         const pool = focusId ? [ids.indexOf(focusId)] : ids.map((_, i) => i);
         const pick = pool[Math.floor(Math.random() * pool.length)];
         if (pick !== undefined && pick >= 0) roundTrip(pick);
@@ -856,7 +858,7 @@ const ticks = Array.from({ length: 72 }, (_, i) => {
     /* intro: one person's bundle draws in, then it opens to many people */
 
     const intro = () => {
-      if (reduce.matches) {
+      if (isStill()) {
         display.classList.add("is-ready");
         return;
       }
@@ -882,11 +884,25 @@ const ticks = Array.from({ length: 72 }, (_, i) => {
       );
       // Your one machine sends work down all six of its tracks at once.
       tracks.forEach((_, i) => comet(i, true, 1350 + i * 40));
-      window.setTimeout(() => {
+      introTimer = window.setTimeout(() => {
         if (!userTookOver) setMode("many", true);
         startAmbient();
       }, 2900);
     };
+
+    // Pausing settles the hero on its end frame: the pending intro switch is
+    // dropped, and any morph in flight jumps to where it was heading (N ↔ N
+    // unless the visitor picked a mode). Resuming brings back the traffic.
+    onMotionChange((still) => {
+      if (still) {
+        window.clearInterval(ambient);
+        window.clearTimeout(introTimer);
+        setMode(userTookOver ? mode : "many", false);
+        return;
+      }
+      display.classList.add("is-ready");
+      startAmbient();
+    });
 
     if (document.readyState === "complete") intro();
     else window.addEventListener("load", intro, { once: true });
