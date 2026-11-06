@@ -51,7 +51,9 @@ Esta iteração **não** transforma a landing em página de marca-guarda-chuva. 
 >
 > **Substituído em 2026-10-24** (§ 7, E7): a hero atual é "Bring your model. Bring your harness. Keep your keys.".
 >
-> **Substituído em 2026-11-06** (§ 7, E11): a hero atual é "Agent tools are built for one person. Gambi is built for many.".
+> **Substituído em 2026-11-06** (§ 7, E11): a hero passa a ser "Agent tools are built for one person. Gambi is built for many.".
+>
+> **Emendado em 2026-11-06** (§ 7, E14): a hero atual é "Agent tools are built for one person. Gambi lets you build for many.".
 
 **Tagline (h1):** "A room where many LLMs collaborate."
 
@@ -438,6 +440,15 @@ Exemplos selecionáveis · Código (abas) + links da documentação · Fechament
 #### E13 — Emenda a E10: o lab aparece sem ser citado
 
 O exemplo "Squads" mostra a dinâmica do experimento do `gambiarra-lab` (decisão registrada antes do despacho, steerer que aceita ou devolve com motivo), marcado "Being explored" e linkado para `/explanation/whats-next/`. A landing não cita o repositório pelo nome. O lab continua citado em `whats-next.mdx`.
+
+#### E14 — Emenda a E11: a segunda frase da hero
+
+```text
+h1 (EN):    Agent tools are built for one person. Gambi lets you build for many.
+h1 (pt-BR): Agentes são feitos para uma pessoa. O Gambi deixa você construir para muitas.
+```
+
+Troca pedida pelo dono: a segunda frase deixa de descrever o Gambi ("is built for many") e passa a falar com quem constrói nele ("lets you build for many"). Lede e CTAs da E11 não mudam. O cartão `og.png`, as meta descriptions e o `PRODUCT.md` acompanham a troca.
 
 #### Impacto no mapa de arquivos (seção 4)
 
