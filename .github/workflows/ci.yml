@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run check-types
+
+      # Only the files this change touches: the repo predates the lint rules
+      # and still carries pre-existing errors elsewhere. `ultracite check`
+      # exits 0 on errors, so call Biome (same config) directly.
+      - name: Lint changed files
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          git diff --name-only -z --diff-filter=ACMR "$base"...HEAD -- \
+            '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs' '*.json' '*.jsonc' '*.css' '*.astro' \
+            > changed-files.txt
+          if [ -s changed-files.txt ]; then
+            xargs -0 bun x biome check --no-errors-on-unmatched --files-ignore-unknown=true < changed-files.txt
+          else
+            echo "No lintable files changed."
+          fi
+
+      - name: Docs translations in sync
+        run: bun run --cwd apps/docs check:i18n
+
+      # Also validates every internal link and #anchor (starlight-links-validator).
+      - name: Build docs
+        run: bun run --cwd apps/docs build
