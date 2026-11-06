@@ -125,6 +125,7 @@ Orchestration vocabulary (orchestrator, steerer, squad, dispatch, draft, decisio
   - **"Agent-first"** — the design adjective applied to the CLI, HTTP, and SDK surfaces (ADR-0002). Means "structured for non-interactive automation," not "for AI agents specifically."
   - **"`gambi agents`"** — the future product layer described in `docs/product/vision.md`, currently out of scope. The layer is being explored in `gambiarra-lab`; nothing there is "Gambi Agents" until two experiences share a primitive.
   - _Rule_: never say just "agent" without a qualifier. Say "an automation client," "the agent-first redesign," or "Gambi Agents (the future product)."
+  - _Exception (2026-11-06)_: public marketing copy (the landing, the link card) may say **agents** for coding harnesses such as Claude Code, Codex, and OpenCode, because that is the word visitors recognise. Product facts still name the concrete thing (harness participant, model endpoint), and docs keep **harness** as the canonical term.
 
 - **"Endpoint"** is overloaded between *provider endpoint* (the participant's local URL the hub never reaches) and *HTTP endpoint / route* (a path on the hub). The codebase uses bare `endpoint` to mean **provider endpoint**. When you mean a hub route, say **route** or **HTTP endpoint** explicitly.
 

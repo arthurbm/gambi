@@ -26,7 +26,7 @@ Success (confirmed): **substrate adoption first** — outside builders adopt Gam
 
 ## Positioning
 
-"Bring your model. Bring your harness. Keep your keys." Gambi is a **social-ready inference substrate**: room-scoped multi-participant sharing where providers and harnesses never need to be reachable — the participant opens a tunnel to the hub (tunnel-first, ADR-0003). Neighboring gateways (OpenRouter-style) aggregate providers for one consumer; they do not offer people-contributed participants, rooms, presence, and events as a base for shared multi-LLM experiences.
+"Agent tools are built for one person. Gambi is built for many." Most orchestrators connect one person to many agents (1→N); Gambi is the base for many people, each with their own models and harnesses, working in one session (N↔N), and each keeping their own keys. Gambi is a **social-ready inference substrate**: room-scoped multi-participant sharing where providers and harnesses never need to be reachable — the participant opens a tunnel to the hub (tunnel-first, ADR-0003). Neighboring gateways (OpenRouter-style) aggregate providers for one consumer; they do not offer people-contributed participants, rooms, presence, and events as a base for shared multi-LLM experiences.
 
 The trust argument is part of the positioning: each person's provider keys (`ParticipantAuthHeaders`) and harness login stay on their own machine and are never sent to the hub, and the hub has no channel to write files into a participant's workspace. What crosses the tunnel is registration metadata, inference traffic, ACP messages for an attached session, and the workspace artifacts the harness produces.
 
@@ -50,7 +50,9 @@ The trust argument is part of the positioning: each person's provider keys (`Par
 
 ## Brand Commitments
 
-**Binding (confirmed 2026-08-10): the "gambiarra" identity — creative improvisation under constraints, with a Brazilian tone — governs product voice and communication** across docs, site, and TUI. "Gambi" is the short form of "gambiarra", meaning the good kind: improvisation turned into a practical tool.
+**Binding (revised 2026-11-06): the name and its origin stay; the visual and the voice are serious and direct.** "Gambi" is the short form of "gambiarra", meaning the good kind: improvisation turned into a practical tool. That story lives in the name and in the "Why gambi?" page, not in a playful visual or a joking tone. The 2026-08-10 commitment, which made the gambiarra identity govern voice and look across docs, site, and TUI, is superseded: the hand-painted "feira" landing it produced read as childish.
+
+Public copy may say **agents** for the coding harnesses people share (Claude Code, Codex, OpenCode). It is the word visitors recognise. See the "Agent" entry in `CONTEXT.md`.
 
 Fixed assets: the name **Gambi**, package names (`gambi`, `gambi-sdk`, `gambi-tui`), the `gambi.sh` domain, the ASCII-art wordmark in the README, and the Gambiarra LLM Club (gambiarra.club) affiliation.
 

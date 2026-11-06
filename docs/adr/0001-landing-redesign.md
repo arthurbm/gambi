@@ -50,6 +50,8 @@ Esta iteração **não** transforma a landing em página de marca-guarda-chuva. 
 > **Emendado em 2026-08-16** (§ 7, E4): a hero não nomeia categoria — nem "room", nem "gateway".
 >
 > **Substituído em 2026-10-24** (§ 7, E7): a hero atual é "Bring your model. Bring your harness. Keep your keys.".
+>
+> **Substituído em 2026-11-06** (§ 7, E11): a hero atual é "Agent tools are built for one person. Gambi is built for many.".
 
 **Tagline (h1):** "A room where many LLMs collaborate."
 
@@ -87,6 +89,8 @@ Esta iteração **não** transforma a landing em página de marca-guarda-chuva. 
 > **Emendado em 2026-08-16** (§ 7, E3): entra a seção `04 Layers`; install, specs e footer descem um.
 >
 > **Substituído em 2026-10-24** (§ 7, E8): nova ordem, com corredor de barracas e livro-caixa.
+>
+> **Substituído em 2026-11-06** (§ 7, E12): ordem do event display.
 
 Ordem de seções (substitui a ordem atual Hero → Install → Features → How → Use Cases → Code → Footer):
 
@@ -398,3 +402,45 @@ A E5 tirava o Gambiarra Club da landing até existir evidência concreta. Essa e
 - `apps/docs/src/content/docs/index.mdx` já traz `tagline` e `description` alinhados à E7.
 - `apps/docs/src/content/docs/explanation/whats-next.mdx` foi criado (E2), linkado a partir da faixa `.layer-above`.
 - O sistema visual é o de `apps/docs/DESIGN.md`. Só a rota `/` usa esse sistema; as páginas de docs ainda usam `custom.css` (drift registrado em "Scope and Known Drift", fora desta emenda).
+
+### 2026-11-06 — Landing do event display: visão primeiro, 1→N contra N↔N
+
+**Origem:** a feira de letreiros do PR #84 foi lida como infantil. O dono pediu uma página mais séria e direta, que abrisse pela visão.
+**Motivação:** dezenas de orquestradores já rodam muitos agents para uma pessoa só (1→N). O que quase não existe é N↔N: várias pessoas, cada uma com seus agents e modelos, trabalhando na mesma sessão sem entregar chaves nem abrir a máquina. A página passa a argumentar essa diferença.
+
+#### E11 — Substitui a E7: hero e CTAs
+
+```text
+h1:   Agent tools are built for one person. Gambi is built for many.
+lede: Each person connects the agents and models already running on their
+      own machine, such as Claude Code, Codex, OpenCode, Ollama, or vLLM.
+      Your app reaches all of them through one hub. Keys and logins never
+      leave the machine they live on.
+CTAs: comando de install copiável · Get started (único botão) · link "How it works" que desce na página
+```
+
+A hero continua sem nomear categoria (nem "room", nem "gateway"). "Agents" entra na copy pública para os harnesses, por ser a palavra que o visitante reconhece (exceção registrada no `CONTEXT.md`). O par "Quick start" + "Bring your harness" sai: os dois levavam para fora da página sem explicar nada.
+
+#### E12 — Substitui a E8 e a E9: ordem de seções
+
+```text
+Nav · Hero (display de anéis 1→N / N↔N) · Comparação (uma pessoa × muitas) ·
+Um request de ponta a ponta (corte dos anéis + livro-caixa + aviso) ·
+Exemplos selecionáveis · Código (abas) + links da documentação · Fechamento · Footer
+```
+
+1. **Display de anéis** (`lander/Display.astro`): sessão de exemplo `ABC123` com seis pessoas. A intro mostra um feixe saindo de "You" (1→N) que se abre em seis máquinas (N↔N). Clicar numa pessoa mostra o que cruza o túnel dela e o que fica em casa.
+2. **Comparação** (`lander/Compare.astro`): quatro perguntas (onde os agents rodam, de quem são as chaves, onde um agent escreve, quem abre a conexão), cada uma com um mini-anel por lado.
+3. **Request de ponta a ponta** (`lander/Wiring.astro`): corte dos anéis alinhado às quatro colunas (hub, app, túnel, máquina), o livro-caixa e o aviso "Trusted networks only".
+4. **Exemplos** (`lander/Examples.astro`): abas Model arena, Jury panel, Debate, Draft/critique/polish e Squads, cada uma com um palco animado e um log de eventos ilustrativo. Os cinco primeiros apontam para `patterns.mdx`.
+5. **Código** (`lander/CodeSection.astro`): um snippet com abas Models | Agents e links para Quick start, Bring your agent, Patterns e SDK reference. O passo a passo de setup sai da landing e fica no quick start.
+
+#### E13 — Emenda a E10: o lab aparece sem ser citado
+
+O exemplo "Squads" mostra a dinâmica do experimento do `gambiarra-lab` (decisão registrada antes do despacho, steerer que aceita ou devolve com motivo), marcado "Being explored" e linkado para `/explanation/whats-next/`. A landing não cita o repositório pelo nome. O lab continua citado em `whats-next.mdx`.
+
+#### Impacto no mapa de arquivos (seção 4)
+
+- A landing passa a ser composta por `apps/docs/src/components/Lander.astro` (casca) e `apps/docs/src/components/lander/*`. O override `Hero.astro` continua.
+- `apps/docs/public/og.png` é o cartão de prévia de link, renderizado a partir de `apps/docs/og/card.html` e declarado em `astro.config.mjs` (`head`).
+- O sistema visual está em `apps/docs/DESIGN.md` (event display). As páginas de docs ainda usam `custom.css`; a adaptação delas e a troca dos diagramas em texto por Mermaid ficam para um PR seguinte.
