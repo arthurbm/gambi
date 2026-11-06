@@ -420,7 +420,7 @@ const CY = 100;
 </style>
 
 <script>
-  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+  import { isStill, onMotionChange } from "./motion";
 
   const easeInOut = (() => {
     const [p1x, p1y, p2x, p2y] = [0.77, 0, 0.175, 1];
@@ -446,7 +446,7 @@ const CY = 100;
   const slice = document.querySelector<HTMLElement>("[data-slice]");
   const packet = slice?.querySelector<SVGCircleElement>(".cut-packet");
 
-  if (slice && packet && !reduce.matches) {
+  if (slice && packet) {
     const layers = [...slice.querySelectorAll<HTMLElement>("[data-layer]")];
     // x on the cut. Zone edges sit at the column edges: 250, 500, 750.
     const APP = 125;
@@ -501,19 +501,34 @@ const CY = 100;
       frame = requestAnimationFrame(tick);
     };
 
+    let inView = false;
+
+    // Runs only while the cut is on screen and motion is allowed. Stopping
+    // clears the packet and highlights, leaving the static diagram.
+    const sync = () => {
+      const run = inView && !isStill();
+      if (run && !live) {
+        live = true;
+        t0 = performance.now();
+        frame = requestAnimationFrame(tick);
+      } else if (!run && live) {
+        live = false;
+        cancelAnimationFrame(frame);
+        packet.style.opacity = "0";
+        slice.classList.remove("is-back");
+        slice.dataset.at = "";
+        lastZone = "";
+        layers.forEach((l) => l.classList.remove("is-on"));
+      }
+    };
+
     new IntersectionObserver(
       (entries) => {
-        const on = entries.some((en) => en.isIntersecting);
-        if (on && !live) {
-          live = true;
-          t0 = performance.now();
-          frame = requestAnimationFrame(tick);
-        } else if (!on && live) {
-          live = false;
-          cancelAnimationFrame(frame);
-        }
+        inView = entries.some((en) => en.isIntersecting);
+        sync();
       },
       { threshold: 0.35 }
     ).observe(slice);
+    onMotionChange(sync);
   }
 </script>

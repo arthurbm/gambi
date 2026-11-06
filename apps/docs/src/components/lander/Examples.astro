@@ -357,7 +357,7 @@ const label = (a: number) => {
 
       <div class="ex-stage" aria-hidden="true">
         {examples.map((ex, i) => (
-          <svg class="stage" viewBox="-240 -222 480 470" data-stage={ex.id} hidden={i !== 0}>
+          <svg class="stage" viewBox="-300 -222 600 470" data-stage={ex.id} hidden={i !== 0}>
             <circle class="st-band" r={BAND}></circle>
             <circle class="st-hair" r={BAND - 8}></circle>
             <circle class="st-hair" r={BAND + 8}></circle>
@@ -640,26 +640,34 @@ const label = (a: number) => {
   }
 
   .log-frame {
-    height: 17rem;
     padding: 0.9rem 1rem;
     border-radius: 12px;
     background: var(--e-code-bg);
   }
 
-  /* The fade lives on the list, so the panel keeps a clean edge. */
+  /* Still (no JS, reduced motion, or paused): the whole log, every step. */
   .log {
     list-style: none;
     margin: 0;
     padding: 0;
-    height: 100%;
     display: flex;
     flex-direction: column;
-    justify-content: flex-end;
     gap: 0.45rem;
-    overflow: hidden;
     font-size: 0.82rem;
     line-height: 1.4;
     color: var(--e-code-ink);
+  }
+
+  /* Playing: a fixed window where new lines push old ones up and out. The
+     fade lives on the list, so the panel keeps a clean edge. */
+  .log-frame.is-playing {
+    height: 17rem;
+  }
+
+  .log-frame.is-playing .log {
+    height: 100%;
+    justify-content: flex-end;
+    overflow: hidden;
     mask-image: linear-gradient(to bottom, transparent 0, #000 2.5rem);
   }
 
@@ -700,7 +708,7 @@ const label = (a: number) => {
       grid-template-columns: minmax(0, 1fr);
     }
 
-    .log-frame {
+    .log-frame.is-playing {
       height: 13rem;
     }
 
@@ -711,6 +719,8 @@ const label = (a: number) => {
 </style>
 
 <script>
+  import { isStill, onMotionChange } from "./motion";
+
   interface Move {
     n: number;
     dir: "out" | "back";
@@ -729,7 +739,6 @@ const label = (a: number) => {
   }
 
   const NS = "http://www.w3.org/2000/svg";
-  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
   const root = document.querySelector<HTMLElement>("[data-examples]");
 
   if (root) {
@@ -738,6 +747,7 @@ const label = (a: number) => {
     const panels = [...root.querySelectorAll<HTMLElement>("[role=tabpanel]")];
     const stages = [...root.querySelectorAll<SVGSVGElement>("[data-stage]")];
     const log = root.querySelector<HTMLOListElement>("[data-log]");
+    const frame = root.querySelector<HTMLElement>(".log-frame");
 
     let current = data[0]?.id ?? "";
     let run = 0;
@@ -853,6 +863,19 @@ const label = (a: number) => {
       }
     };
 
+    // Still shows the full log at once; playing runs the stage in a loop.
+    const show = (id: string) => {
+      const stage = data.find((s) => s.id === id);
+      if (isStill()) {
+        run++;
+        frame?.classList.remove("is-playing");
+        if (stage) fillLog(stage);
+        return;
+      }
+      frame?.classList.add("is-playing");
+      void play(id);
+    };
+
     const select = (id: string, focus = false) => {
       current = id;
       tabs.forEach((t) => {
@@ -866,13 +889,7 @@ const label = (a: number) => {
       });
       // SVG elements have no .hidden property; toggle the attribute.
       stages.forEach((s) => s.toggleAttribute("hidden", s.dataset.stage !== id));
-      const stage = data.find((s) => s.id === id);
-      if (reduce.matches) {
-        run++;
-        if (stage) fillLog(stage);
-      } else {
-        void play(id);
-      }
+      show(id);
     };
 
     tabs.forEach((t, i) => {
@@ -893,6 +910,7 @@ const label = (a: number) => {
       { threshold: 0.3 }
     ).observe(root);
 
-    if (!reduce.matches) void play(current);
+    onMotionChange(() => show(current));
+    show(current);
   }
 </script>

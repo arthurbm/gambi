@@ -17,6 +17,14 @@ const deployDate = new Date().toISOString().slice(0, 10);
 
 <script is:inline>
   document.documentElement.classList.add("ed-js");
+  // Restore the visitor's pause choice before any figure starts moving.
+  try {
+    if (localStorage.getItem("gambi-motion") === "paused") {
+      document.documentElement.dataset.motion = "paused";
+    }
+  } catch {
+    // Storage blocked: figures move until paused on this page.
+  }
 </script>
 
 <div class="ed">
@@ -35,8 +43,18 @@ const deployDate = new Date().toISOString().slice(0, 10);
         <li class="hide-sm"><a href="/guides/patterns/">Patterns</a></li>
         <li class="hide-sm"><a href="/reference/sdk/">SDK</a></li>
         <li><a href="https://github.com/arthurbm/gambi" rel="noopener">GitHub</a></li>
+        <li class="motion-item">
+          <button class="nav-icon motion-toggle" type="button" aria-pressed="false" aria-label="Pause animations" title="Pause animations">
+            <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9 6.5v11M15 6.5v11"></path>
+            </svg>
+            <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8.5 6.2v11.6L18 12Z"></path>
+            </svg>
+          </button>
+        </li>
         <li>
-          <button class="theme-toggle" type="button" aria-label="Switch between light and dark" title="Switch between light and dark">
+          <button class="nav-icon theme-toggle" type="button" aria-label="Switch between light and dark" title="Switch between light and dark">
             <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="12" cy="12" r="4.2"></circle>
               <path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3l1.7 1.7M17 17l1.7 1.7M5.3 18.7 7 17M17 7l1.7-1.7"></path>
@@ -494,7 +512,7 @@ const deployDate = new Date().toISOString().slice(0, 10);
     color: var(--e-ink);
   }
 
-  .theme-toggle {
+  .nav-icon {
     display: grid;
     place-items: center;
     width: 2.1rem;
@@ -507,12 +525,12 @@ const deployDate = new Date().toISOString().slice(0, 10);
     transition: color 160ms ease, border-color 160ms ease;
   }
 
-  .theme-toggle:hover {
+  .nav-icon:hover {
     color: var(--e-ink);
     border-color: var(--e-ink-3);
   }
 
-  .theme-toggle svg {
+  .nav-icon svg {
     width: 1rem;
     height: 1rem;
     fill: none;
@@ -521,8 +539,28 @@ const deployDate = new Date().toISOString().slice(0, 10);
     stroke-linecap: round;
   }
 
-  .i-moon {
+  .i-moon,
+  .i-play {
     display: none;
+  }
+
+  .motion-toggle svg {
+    stroke-linejoin: round;
+  }
+
+  .motion-toggle[aria-pressed="true"] .i-pause {
+    display: none;
+  }
+
+  .motion-toggle[aria-pressed="true"] .i-play {
+    display: block;
+  }
+
+  /* Nothing moves under reduced motion, so there is nothing to pause. */
+  @media (prefers-reduced-motion: reduce) {
+    .motion-item {
+      display: none;
+    }
   }
 
   :global(:root[data-theme="dark"]) .i-sun {
@@ -738,6 +776,23 @@ const deployDate = new Date().toISOString().slice(0, 10);
 </style>
 
 <script>
+  import { isPaused, setPaused } from "./lander/motion";
+
+  const motionToggle = document.querySelector<HTMLButtonElement>(".ed .motion-toggle");
+  const syncMotionToggle = () => {
+    if (!motionToggle) return;
+    const paused = isPaused();
+    motionToggle.setAttribute("aria-pressed", String(paused));
+    const label = paused ? "Play animations" : "Pause animations";
+    motionToggle.setAttribute("aria-label", label);
+    motionToggle.title = label;
+  };
+  syncMotionToggle();
+  motionToggle?.addEventListener("click", () => {
+    setPaused(!isPaused());
+    syncMotionToggle();
+  });
+
   for (const button of document.querySelectorAll<HTMLButtonElement>(".ed button.cmd")) {
     button.addEventListener("click", async () => {
       const command = button.dataset.command;
