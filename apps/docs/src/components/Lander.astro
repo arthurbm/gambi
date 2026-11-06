@@ -74,11 +74,23 @@ const deployDate = new Date().toISOString().slice(0, 10);
           <span class="ht-many">Gambi is built for many.</span>
         </h1>
         <p class="lede">
-          Each person connects the agents and models already running on their
-          own machine, such as Claude Code, Codex, OpenCode, Ollama, or vLLM.
-          Your app reaches all of them through one hub. Keys and logins never
-          leave the machine they live on.
+          Each person connects the agents and models on their own machine.
+          Your app reaches all of them through one hub.
         </p>
+        <dl class="brings">
+          <div class="bring bring-harness">
+            <dt>Agents</dt>
+            <dd>Claude Code, Codex, OpenCode</dd>
+          </div>
+          <div class="bring bring-model">
+            <dt>Models</dt>
+            <dd>Ollama, vLLM, <span class="bring-more">or any OpenAI-compatible server</span></dd>
+          </div>
+          <div class="bring bring-stop">
+            <dt>Stays local</dt>
+            <dd>Keys and logins</dd>
+          </div>
+        </dl>
         <div class="actions">
           <button class="cmd" type="button" data-command={install} aria-label="Copy the install command">
             <span class="cmd-prompt" aria-hidden="true">$</span>
@@ -559,8 +571,72 @@ const deployDate = new Date().toISOString().slice(0, 10);
     text-wrap: pretty;
   }
 
+  /* What each person brings, keyed by the display's track colors. */
+  .brings {
+    margin: 1.5rem 0 0;
+    max-width: 34rem;
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    column-gap: 1.4rem;
+    border-top: 1px solid var(--e-line-2);
+  }
+
+  .bring {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+    align-items: baseline;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--e-line);
+  }
+
+  .bring dt {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.74rem;
+    font-weight: 700;
+    font-variation-settings: "wdth" 80;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--e-ink-3);
+  }
+
+  .bring dt::before {
+    content: "";
+    flex: none;
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 999px;
+  }
+
+  .bring-harness dt::before {
+    background: var(--e-harness);
+  }
+
+  .bring-model dt::before {
+    background: var(--e-model);
+  }
+
+  .bring-stop dt::before {
+    border-radius: 2px;
+    background: var(--e-stop);
+  }
+
+  .bring dd {
+    margin: 0;
+    font-size: 1.02rem;
+    font-weight: 600;
+    color: var(--e-ink);
+  }
+
+  .bring-more {
+    font-weight: 400;
+    color: var(--e-ink-2);
+  }
+
   .actions {
-    margin-top: 2.1rem;
+    margin-top: 2rem;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 1rem;
@@ -700,6 +776,15 @@ const deployDate = new Date().toISOString().slice(0, 10);
   @media (max-width: 44rem) {
     .hide-sm {
       display: none;
+    }
+
+    .brings {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .bring {
+      grid-template-columns: minmax(0, 1fr);
+      row-gap: 0.2rem;
     }
 
     .actions .cmd,

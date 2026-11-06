@@ -273,14 +273,14 @@ Surfaces are flat and drawn with hairlines. One variable family, Archivo, covers
 A neutral ink-and-steel base with three signal colors whose meanings never change. Each token maps to the CSS custom property `--e-<name>` on `:root` in `src/styles/tokens.css` (paper, the default), which the landing and every docs page load through Starlight's `customCss`. Keys ending in `-dark` are the values the same properties take under `[data-theme="dark"]` (graphite). Tokens without a `-dark` twin keep their paper value in graphite.
 
 ### Primary
-- **Signal Yellow** (`model`, `model-dark`): model tracks, the model offer under a person's name, model dots in the comparison glyphs and example stages, model spokes, the outbound packet in the section cut, and the lit top rule of the active section-cut column. In graphite it is also the primary action fill (`primary-dark`).
+- **Signal Yellow** (`model`, `model-dark`): model tracks, the model offer under a person's name, model dots in the comparison glyphs, example stages, and the hero inventory, model spokes, the outbound packet in the section cut, and the lit top rule of the active section-cut column. In graphite it is also the primary action fill (`primary-dark`).
 - **Bright Signal** (`model-strong`): the hub dot in the wordmark and text selection. In graphite it equals `model-dark`.
 
 ### Secondary
-- **Track Cyan** (`harness`, `harness-dark`): agent tracks and offers, harness dots and spokes, the "Crosses" label in the inspect panel, the "Crosses the tunnel" ledger header, the return packet in the section cut, the copy-success check, and the focus ring on every interactive element.
+- **Track Cyan** (`harness`, `harness-dark`): agent tracks and offers, harness dots and spokes, the agent dot in the hero inventory, the "Crosses" label in the inspect panel, the "Crosses the tunnel" ledger header, the return packet in the section cut, the copy-success check, and the focus ring on every interactive element.
 
 ### Tertiary
-- **Stop Red** (`stop`, `stop-dark`): the key wedges on the machine band, the wall at the outer edge of the section cut and its "key added here" label, the "Stays" and "Never leaves the machine" labels, the small square after "Their machine", the trusted-network warning, and a rejected step in an example (red packet and red log line).
+- **Stop Red** (`stop`, `stop-dark`): the key wedges on the machine band, the wall at the outer edge of the section cut and its "key added here" label, the "Stays" and "Never leaves the machine" labels, the small square after "Their machine" and before "Stays local" in the hero inventory, the trusted-network warning, and a rejected step in an example (red packet and red log line).
 
 ### Neutral
 - **Ground** (`ground`, `ground-dark`): page background and the color of every text halo.
@@ -357,7 +357,7 @@ Content sits in one centered measure (`spacing.measure`) with a fluid side gutte
 - **60rem:** the examples body stacks.
 - **56rem:** the section cut's labels grow to 40 viewBox units so they stay legible on the scaled strip, "key added here" hides, and the layers stack; the code section stacks.
 - **52rem:** the comparison grid drops its header row, puts the question on its own line, and labels each cell "One person" or "Many people" with a condensed caption; glyphs shrink to 3.6rem.
-- **44rem:** Patterns and SDK leave the nav, command buttons go full width and their command fades at the right edge to show it scrolls, the footer becomes two columns, ring labels grow to stay legible on the scaled board, readouts shrink, and the ledger turns each row into a stacked card with inline labels.
+- **44rem:** Patterns and SDK leave the nav, command buttons go full width and their command fades at the right edge to show it scrolls, the footer becomes two columns, ring labels grow to stay legible on the scaled board, the hero inventory stacks each label above its value, readouts shrink, and the ledger turns each row into a stacked card with inline labels.
 - **40rem:** the example stage and its log stack, the log shortens to 13rem, and the example tab row fades at the right edge to show it scrolls.
 
 ### Named Rules
@@ -385,6 +385,9 @@ Ring strokes follow one grammar: solid for the machine edges and dotted for tunn
 
 ### Ring display (signature)
 The hero figure. A square board holds an SVG in a 1160-unit viewBox centred on the hub, built from `src/components/lander/geometry.ts`: machine ring at radius 392 with a 30-unit steel band, dotted tunnel rings at 300 and 210, and the hub at 46 with a faint outer ring. Six tracks start at 60° spacing on the machine ring; each owner has a red key wedge on the band at the track's origin. Ring labels (machines, tunnels) sit on one radial line at -79°, haloed in ground. Above the board: a condensed "Session" label, the session code in mono, an "example" tag, and the mode switch. Below it: three readouts in ink (People, Machines, Key holders) and an inspect panel. Picking a person dims every other track to 14% opacity, thickens theirs from 3.4 to 5 units, sends one comet round trip down it, and shows what crosses their tunnel and what stays home.
+
+### Hero inventory
+Under the hero lede, a definition list states what each person brings: "Agents" (Claude Code, Codex, OpenCode), "Models" (Ollama, vLLM, or any OpenAI-compatible server), and "Stays local" (keys and logins). A Line 2 rule marks its top edge and Line separates the rows. Each label uses the label recipe in ink 3 behind a 0.55rem marker: a cyan dot for agents, a yellow dot for models, and the 2px-radius red square for what stays local. Values are ink at 600; the trailing "or any OpenAI-compatible server" drops to ink 2 at 400. Labels and values share one column line through subgrid; under 44rem each label sits above its value.
 
 ### Mode switch
 A pill track in sheet with a Line 2 border and 3px inset, holding two segments: "1 → N" and "N ↔ N". The pressed segment fills with primary (ink on paper, signal yellow in graphite); the other is ink 3. Text is condensed (width 90) with tabular numerals. Switching morphs every track's origin between a tight bundle at the bottom ("You · 6 agents") and six separate people, flips the readouts between 1 and 6 halfway through, and moves the hero headline's emphasis.
