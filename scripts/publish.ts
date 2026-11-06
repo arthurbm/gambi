@@ -78,21 +78,33 @@ async function ensureCliDistribution() {
   return rebuilt;
 }
 
+// npm 12 prints `["x.y.z"]` for `npm view <pkg>@<version> version --json`;
+// older npm prints `"x.y.z"`.
+function parseNpmViewVersion(output: string) {
+  const text = output.trim();
+  if (text === "") {
+    return "";
+  }
+
+  const parsed = JSON.parse(text) as string | string[];
+  return Array.isArray(parsed) ? (parsed.at(-1) ?? "") : parsed;
+}
+
 async function verifyNpmPackage(
   packageName: string,
   tag: string
 ): Promise<NpmVerificationResult> {
-  const retryAttempts = 10;
-  const retryDelayMs = 5000;
+  // Large binary packages have taken over a minute to appear in
+  // `npm view` after a successful publish (v0.3.2, v0.7.0).
+  const retryAttempts = 30;
+  const retryDelayMs = 10_000;
   let lastError: Error | undefined;
 
   for (let attempt = 1; attempt <= retryAttempts; attempt++) {
     try {
-      const publishedVersion = JSON.parse(
-        (
-          await $`npm view ${`${packageName}@${VERSION}`} version --json`.text()
-        ).trim()
-      ) as string;
+      const publishedVersion = parseNpmViewVersion(
+        await $`npm view ${`${packageName}@${VERSION}`} version --json`.text()
+      );
       const distTags = JSON.parse(
         (await $`npm view ${packageName} dist-tags --json`.text()).trim()
       ) as Record<string, string>;
@@ -218,30 +230,57 @@ async function writeReleaseReport(status: string, error?: string) {
   console.log(`\nWrote release report (${status}) to ${releaseReportPath}`);
 }
 
-try {
-  console.log("\n--- gambi-sdk ---");
-  await $`cd packages/sdk && npm publish --access public --tag ${NPM_TAG}`;
-  npmVerificationResults.push(await verifyNpmPackage("gambi-sdk", NPM_TAG));
-  console.log("  ✓ verified npm metadata");
+async function isAlreadyPublished(packageName: string) {
+  const result = await $`npm view ${`${packageName}@${VERSION}`} version --json`
+    .quiet()
+    .nothrow();
+  const output = `${result.stdout.toString()}${result.stderr.toString()}`;
 
-  console.log("\n--- gambi-tui ---");
-  await $`cd apps/tui && npm publish --access public --tag ${NPM_TAG}`;
-  npmVerificationResults.push(await verifyNpmPackage("gambi-tui", NPM_TAG));
-  console.log("  ✓ verified npm metadata");
-
-  for (const binaryPackage of cliManifest.binaryPackages) {
-    console.log(`\n--- ${binaryPackage.packageName} ---`);
-    await $`cd ${resolveCliDistributionPath(binaryPackage.packageDir)} && npm publish --access public --tag ${NPM_TAG}`;
-    npmVerificationResults.push(
-      await verifyNpmPackage(binaryPackage.packageName, NPM_TAG)
-    );
-    console.log("  ✓ verified npm metadata");
+  if (result.exitCode === 0) {
+    return parseNpmViewVersion(result.stdout.toString()) === VERSION;
   }
 
-  console.log("\n--- gambi ---");
-  await $`cd ${resolveCliDistributionPath(cliManifest.wrapperPackageDir)} && npm publish --access public --tag ${NPM_TAG}`;
-  npmVerificationResults.push(await verifyNpmPackage("gambi", NPM_TAG));
+  if (output.includes("E404")) {
+    return false;
+  }
+
+  throw new Error(
+    `Could not check whether ${packageName}@${VERSION} is on npm: ${output.trim()}`
+  );
+}
+
+// Skipping versions that are already on npm lets a re-run resume a release
+// that stopped partway, instead of failing on the first package it published.
+async function publishPackage(packageName: string, packageDir: string) {
+  console.log(`\n--- ${packageName} ---`);
+
+  if (await isAlreadyPublished(packageName)) {
+    console.log(
+      `  ${packageName}@${VERSION} is already on npm; skipping npm publish`
+    );
+  } else {
+    await $`cd ${packageDir} && npm publish --access public --tag ${NPM_TAG}`;
+  }
+
+  npmVerificationResults.push(await verifyNpmPackage(packageName, NPM_TAG));
   console.log("  ✓ verified npm metadata");
+}
+
+try {
+  await publishPackage("gambi-sdk", resolve("packages/sdk"));
+  await publishPackage("gambi-tui", resolve("apps/tui"));
+
+  for (const binaryPackage of cliManifest.binaryPackages) {
+    await publishPackage(
+      binaryPackage.packageName,
+      resolveCliDistributionPath(binaryPackage.packageDir)
+    );
+  }
+
+  await publishPackage(
+    "gambi",
+    resolveCliDistributionPath(cliManifest.wrapperPackageDir)
+  );
 
   await writeReleaseReport("success");
   console.log(`\n=== Published v${VERSION} successfully ===\n`);

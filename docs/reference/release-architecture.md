@@ -118,6 +118,14 @@ The workflow always publishes the synchronized package set (`gambi-sdk`, `gambi-
 
 Run it only after the release changes have merged and the required validation is green on `main`. A feature branch must prepare release notes and validation instructions, but must not dispatch this workflow.
 
+### Resuming a partial release
+
+`scripts/publish.ts` skips `npm publish` for any package whose target version is already on npm, then verifies it like the others. Each verification waits up to 5 minutes (30 attempts × 10 s) for the version and dist-tag to show up in `npm view`. Large packages have taken more than a minute.
+
+If the `publish` job fails after some packages reached npm and before `Commit and tag`, nothing was committed or tagged. Dispatch the workflow again on `main` with the same bump: the `version` job calculates the same version from the unchanged `package.json` files, and the publish step continues from the first package that is missing.
+
+If the job failed after `Commit and tag`, do not re-run with the same bump; the next version would be calculated. Recover the GitHub Release manually instead.
+
 ## Manual Binary Rebuilds
 
 The `Build Binaries` workflow exists only for maintenance cases where you need to rebuild and attach CLI assets to an existing release tag.
