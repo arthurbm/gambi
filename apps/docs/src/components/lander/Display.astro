@@ -743,10 +743,11 @@ const ticks = Array.from({ length: 72 }, (_, i) => {
 
     const setMode = (next: Mode, animate: boolean) => {
       if (next === mode && animate) return;
+      // Settling in place (a pause) keeps the person the visitor picked.
+      if (next !== mode) setFocus(null);
       mode = next;
       display.dataset.mode = next;
       modeButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.setMode === next)));
-      setFocus(null);
       cancelAnimationFrame(frame);
       const from = e;
       const to = next === "many" ? 1 : 0;
