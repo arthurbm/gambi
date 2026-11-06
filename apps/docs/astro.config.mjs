@@ -1,11 +1,82 @@
-import starlight from "@astrojs/starlight";
 // @ts-check
+import { satteri } from "@astrojs/markdown-satteri";
+import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
 import starlightLlmsTxt from "starlight-llms-txt";
+import { mermaidDiagrams } from "./src/plugins/mermaid.mjs";
+
+/**
+ * Code blocks sit on the dark slab in both themes (DESIGN.md, "The Printed
+ * Display Rule"), so Expressive Code gets one theme built from the syntax
+ * tokens in src/styles/tokens.css.
+ */
+const slab = {
+  name: "gambi-slab",
+  type: "dark",
+  colors: {
+    "editor.background": "#16181b",
+    "editor.foreground": "#dfe6ef",
+    "editor.selectionBackground": "#3a3f46",
+  },
+  tokenColors: [
+    {
+      scope: ["comment", "punctuation.definition.comment"],
+      settings: { foreground: "#858d99" },
+    },
+    {
+      scope: [
+        "keyword",
+        "storage",
+        "storage.type",
+        "storage.modifier",
+        "keyword.operator.new",
+      ],
+      settings: { foreground: "#ff8f7a" },
+    },
+    {
+      scope: ["string", "string.template", "markup.inline.raw"],
+      settings: { foreground: "#f2cf3a" },
+    },
+    {
+      scope: [
+        "entity.name.function",
+        "support.function",
+        "meta.function-call",
+        "entity.name.tag",
+      ],
+      settings: { foreground: "#6fdcf0" },
+    },
+    {
+      scope: [
+        "constant",
+        "constant.numeric",
+        "constant.language",
+        "support.constant",
+        "variable.other.constant",
+        "entity.name.type",
+        "support.type",
+        "entity.other.attribute-name",
+        "support.type.property-name",
+      ],
+      settings: { foreground: "#b9c7ff" },
+    },
+    {
+      scope: ["punctuation", "meta.brace", "keyword.operator"],
+      settings: { foreground: "#a7b0bc" },
+    },
+    {
+      scope: ["variable", "variable.parameter"],
+      settings: { foreground: "#dfe6ef" },
+    },
+  ],
+};
 
 // https://astro.build/config
 export default defineConfig({
   site: "https://gambi.sh",
+  markdown: {
+    processor: satteri({ mdastPlugins: [mermaidDiagrams] }),
+  },
   vite: {
     ssr: {
       noExternal: ["zod"],
@@ -52,9 +123,51 @@ export default defineConfig({
           attrs: { name: "twitter:image", content: "https://gambi.sh/og.png" },
         },
       ],
-      customCss: ["./src/styles/custom.css"],
+      customCss: [
+        "@fontsource-variable/archivo/wdth.css",
+        "@fontsource-variable/jetbrains-mono/index.css",
+        "./src/styles/tokens.css",
+        "./src/styles/docs.css",
+      ],
       components: {
         Hero: "./src/components/Hero.astro",
+        SiteTitle: "./src/components/SiteTitle.astro",
+      },
+      expressiveCode: {
+        themes: [slab],
+        useStarlightUiThemeColors: false,
+        styleOverrides: {
+          borderRadius: "12px",
+          borderColor: "var(--e-line)",
+          codeBackground: "var(--e-code-bg)",
+          codeFontFamily: "var(--e-mono)",
+          codeFontSize: "0.86rem",
+          codeLineHeight: "1.65",
+          codePaddingBlock: "0.95rem",
+          codePaddingInline: "1.15rem",
+          uiFontFamily: "var(--e-text)",
+          focusBorder: "#4fd1e8",
+          scrollbarThumbColor: "var(--e-code-scrollbar)",
+          frames: {
+            frameBoxShadowCssValue: "none",
+            editorBackground: "var(--e-code-bg)",
+            editorTabBarBackground: "var(--e-code-bg)",
+            editorTabBarBorderBottomColor: "var(--e-code-line)",
+            editorActiveTabBackground: "var(--e-code-bg)",
+            editorActiveTabForeground: "var(--e-code-ink)",
+            editorActiveTabIndicatorTopColor: "transparent",
+            editorActiveTabIndicatorBottomColor: "var(--e-code-accent)",
+            editorActiveTabIndicatorHeight: "2px",
+            terminalBackground: "var(--e-code-bg)",
+            terminalTitlebarBackground: "var(--e-code-bg)",
+            terminalTitlebarForeground: "var(--e-code-dim)",
+            terminalTitlebarBorderBottomColor: "var(--e-code-line)",
+            terminalTitlebarDotsForeground: "var(--e-code-dim)",
+            terminalTitlebarDotsOpacity: "0.45",
+            inlineButtonForeground: "var(--e-code-ink)",
+            inlineButtonBorder: "var(--e-code-dim)",
+          },
+        },
       },
       social: [
         {
@@ -67,16 +180,16 @@ export default defineConfig({
         {
           label: "Guides",
           items: [
-            { label: "Quick Start", slug: "guides/quickstart" },
+            { label: "Quick start", slug: "guides/quickstart" },
             {
-              label: "Bring Your Harness",
+              label: "Bring your harness",
               slug: "guides/bring-your-harness",
             },
-            { label: "Multi-LLM Patterns", slug: "guides/patterns" },
-            { label: "Using with AI Tools", slug: "guides/ai-tools" },
-            { label: "Remote Providers", slug: "guides/remote-providers" },
+            { label: "Multi-LLM patterns", slug: "guides/patterns" },
+            { label: "Using with AI tools", slug: "guides/ai-tools" },
+            { label: "Remote providers", slug: "guides/remote-providers" },
             {
-              label: "Custom Participant Runtime",
+              label: "Custom participant runtime",
               slug: "guides/custom-participant",
             },
             {
@@ -88,23 +201,23 @@ export default defineConfig({
         {
           label: "Reference",
           items: [
-            { label: "API Reference", slug: "reference/api" },
-            { label: "CLI Reference", slug: "reference/cli" },
-            { label: "SDK Reference", slug: "reference/sdk" },
+            { label: "API reference", slug: "reference/api" },
+            { label: "CLI reference", slug: "reference/cli" },
+            { label: "SDK reference", slug: "reference/sdk" },
             { label: "Observability", slug: "reference/observability" },
           ],
         },
         {
           label: "Architecture",
-          autogenerate: { directory: "architecture" },
+          items: [{ autogenerate: { directory: "architecture" } }],
         },
         {
           label: "Explanation",
-          autogenerate: { directory: "explanation" },
+          items: [{ autogenerate: { directory: "explanation" } }],
         },
         {
           label: "Troubleshooting",
-          autogenerate: { directory: "troubleshooting" },
+          items: [{ autogenerate: { directory: "troubleshooting" } }],
         },
       ],
     }),

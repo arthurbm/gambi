@@ -1,6 +1,4 @@
 ---
-import "@fontsource-variable/archivo/wdth.css";
-import "@fontsource-variable/jetbrains-mono/index.css";
 import CheckIcon from "../assets/lander/check.svg";
 import CopyIcon from "../assets/lander/copy.svg";
 import CodeSection from "./lander/CodeSection.astro";
@@ -160,71 +158,9 @@ const deployDate = new Date().toISOString().slice(0, 10);
 </div>
 
 <style is:global>
-  /* World tokens live on the splash route only; docs pages keep theirs. */
+  /* Tokens and fonts come from src/styles/tokens.css (Starlight customCss). */
   :root[data-has-hero] {
-    --e-ground: #f1f3f5;
-    --e-panel: #e8ecf0;
-    --e-sheet: #fbfcfd;
-    --e-ink: #0c131d;
-    --e-ink-2: #3c4859;
-    --e-ink-3: #5d6a7c;
-    --e-line: rgb(12 19 29 / 0.14);
-    --e-line-2: rgb(12 19 29 / 0.24);
-    --e-steel: #8a9bb1;
-    --e-model: #8a6500;
-    --e-model-strong: #c99a12;
-    --e-harness: #086f88;
-    --e-stop: #c2382a;
-    --e-hub: #0c131d;
-    --e-hub-ink: #f1f3f5;
-    --e-primary: #0c131d;
-    --e-primary-ink: #f6f7f9;
-    --e-code-bg: #16181b;
-    --e-code-ink: #dfe6ef;
-    --e-code-dim: #8a929d;
-
-    --astro-code-foreground: #dfe6ef;
-    --astro-code-background: var(--e-code-bg);
-    --astro-code-token-keyword: #ff8f7a;
-    --astro-code-token-string: #f2cf3a;
-    --astro-code-token-string-expression: #f2cf3a;
-    --astro-code-token-function: #6fdcf0;
-    --astro-code-token-constant: #b9c7ff;
-    --astro-code-token-parameter: #dfe6ef;
-    --astro-code-token-comment: #858d99;
-    --astro-code-token-punctuation: #a7b0bc;
-    --astro-code-token-link: #6fdcf0;
-
-    --e-text: "Archivo Variable", system-ui, sans-serif;
-    --e-mono: "JetBrains Mono Variable", ui-monospace, monospace;
-    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
-
-    color-scheme: light;
     background: var(--e-ground);
-  }
-
-  :root[data-has-hero][data-theme="dark"] {
-    --e-ground: #17191c;
-    --e-panel: #1d2024;
-    --e-sheet: #22262b;
-    --e-ink: #eceef1;
-    --e-ink-2: #b4bac3;
-    --e-ink-3: #939aa5;
-    --e-line: rgb(236 238 241 / 0.1);
-    --e-line-2: rgb(236 238 241 / 0.2);
-    --e-steel: #56626f;
-    --e-model: #f2cf3a;
-    --e-model-strong: #f2cf3a;
-    --e-harness: #4fd1e8;
-    --e-stop: #ef5a44;
-    --e-hub: #e7ecf3;
-    --e-hub-ink: #17191c;
-    --e-primary: #f2cf3a;
-    --e-primary-ink: #17191c;
-    --e-code-bg: #121417;
-
-    color-scheme: dark;
   }
 
   :root[data-has-hero] body {
@@ -246,9 +182,17 @@ const deployDate = new Date().toISOString().slice(0, 10);
     display: none;
   }
 
-  :root[data-has-hero] ::selection {
-    background: var(--e-model-strong);
-    color: #17191c;
+  /* The landing draws its own nav; drop Starlight's chrome on this route. */
+  :root[data-has-hero] header.header {
+    display: none;
+  }
+
+  :root[data-has-hero] .main-frame {
+    padding-top: 0;
+  }
+
+  :root[data-has-hero] .main-pane > main {
+    padding: 0 !important;
   }
 
   /* Shared by every landing section component. */

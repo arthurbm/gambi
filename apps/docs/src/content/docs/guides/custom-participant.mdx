@@ -1,17 +1,17 @@
 ---
-title: Build a Custom Participant Runtime
+title: Build a custom participant runtime
 description: Use createParticipantSession() to run your own participant process when the CLI is not enough.
 ---
 
-The `gambi participant join` CLI covers the common case: pick a model, point at a hub, stay online. When you need more control — embedding the participant in a long-running service, adding custom shutdown logic, or running multiple participants in one process — build your own runtime on top of `createParticipantSession()`.
+The `gambi participant join` CLI covers the common case: pick a model, point at a hub, stay online. When you need more control, build your own runtime on top of `createParticipantSession()`. Examples: embedding the participant in a long-running service, adding custom shutdown logic, or running several participants in one process.
 
-This guide shows the minimum runtime that produces the same behavior as the CLI, and then points out the common extensions.
+This guide shows the minimum runtime that behaves like the CLI, then the common extensions.
 
 ## Before you start
 
 You need:
 
-- a reachable Gambi hub (`gambi hub serve` on a machine you can reach)
+- a Gambi hub you can reach (`gambi hub serve`)
 - an existing room code (`gambi room create --name "Demo"`)
 - a local OpenAI-compatible provider endpoint (Ollama, LM Studio, vLLM, or anything else that serves `/v1/models` and `/v1/chat/completions`)
 - `gambi-sdk` installed
@@ -54,15 +54,17 @@ Three close reasons, each with a different meaning:
 
 | Reason | Meaning | Suggested action |
 | --- | --- | --- |
-| `"closed"` | you or a received signal asked the session to stop | exit cleanly |
-| `"heartbeat_failed"` | the management heartbeat loop failed repeatedly | the hub is unreachable — exit and let your supervisor reschedule |
-| `"tunnel_closed"` | the WebSocket tunnel closed from either side | usually transient network trouble — safe to reconnect with a new session |
+| `"closed"` | your code called `session.close()` | exit cleanly |
+| `"heartbeat_failed"` | a management heartbeat request failed; one failure closes the session | the hub is probably unreachable. Exit and let your supervisor restart the runtime |
+| `"tunnel_closed"` | the WebSocket tunnel closed or errored, from either side | often transient network trouble. Create a new session with the same participant ID |
 
-`closeEvent.error` holds the underlying `Error` when one was observed, which is worth logging.
+`closeEvent.error` holds the underlying `Error` when there is one. Log it.
+
+The session never reconnects by itself. On `"closed"` and `"heartbeat_failed"` it tries to remove the participant from the room before it resolves. On `"tunnel_closed"` it does not: the registration stays, and the hub marks the participant offline as soon as its tunnel closes. Calling `createParticipantSession()` again with the same participant ID updates that registration and opens a new tunnel.
 
 ## Step 3: Shut down cleanly
 
-Wire `session.close()` to your process signals so `SIGINT` and `SIGTERM` drain gracefully. `close()` removes the participant from the room and closes the tunnel before returning.
+The SDK does not install signal handlers. Wire `session.close()` to `SIGINT` and `SIGTERM` yourself. `close()` closes the tunnel and removes the participant from the room before it returns.
 
 ```ts
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
@@ -72,11 +74,11 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 ```
 
-If the tunnel is already gone when `close()` is called, the helper still best-effort removes the registration.
+If the session already ended with `"tunnel_closed"`, `close()` returns that close event and does not remove the registration. Call `client.participants.remove()` from the [management client](/reference/sdk/#clientparticipantsremoveroomcode-participantid) if you need it gone at once.
 
 ## Step 4: Forward provider auth
 
-`authHeaders` apply only when the runtime calls your local provider endpoint. They never leave the participant runtime. Use this for API keys or bearer tokens that your local provider needs.
+`authHeaders` apply only when the runtime calls your provider endpoint. They never leave the participant runtime. Use them for API keys or bearer tokens your provider needs.
 
 ```ts
 const session = await createParticipantSession({
@@ -98,14 +100,14 @@ The hub never sees `PROVIDER_TOKEN`.
 
 ### Declare machine specs
 
-Specs are shown in the TUI and passed to event consumers. Pass them when you know them:
+The TUI shows specs, and room events include them. Pass them when you know them. The fields are `cpu`, `gpu`, `ram` (GB), and `vram` (GB), all optional:
 
 ```ts
 await createParticipantSession({
   // ...
   specs: {
     cpu: "Apple M2 Pro",
-    memoryGb: 32,
+    ram: 32,
     gpu: "Apple M2 Pro integrated",
   },
 });
@@ -184,6 +186,6 @@ process.exit(reason === "closed" ? 0 : 1);
 
 ## Further reading
 
-- [SDK Reference — `createParticipantSession()`](/reference/sdk/#createparticipantsessionoptions) — full option and return shape.
-- [How Tunnels Work](/explanation/tunnel-first/) — why the runtime opens a WebSocket instead of exposing an HTTP endpoint.
-- [CLI Reference — `gambi participant join`](/reference/cli/#gambi-participant-join) — the CLI variant, useful as a reference implementation.
+- [SDK reference: `createParticipantSession()`](/reference/sdk/#createparticipantsessionoptions): full option and return shape.
+- [How tunnels work](/explanation/tunnel-first/): why the runtime opens a WebSocket instead of exposing an HTTP endpoint.
+- [CLI reference: `gambi participant join`](/reference/cli/#gambi-participant-join): the CLI version of this runtime.

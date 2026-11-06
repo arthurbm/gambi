@@ -1,0 +1,88 @@
+/*
+ * Event-display tokens, shared by the landing and the docs.
+ * Source of truth: apps/docs/DESIGN.md. Paper is the default; graphite
+ * applies under [data-theme="dark"], which Starlight sets before paint.
+ */
+
+:root {
+  --e-ground: #f1f3f5;
+  --e-panel: #e8ecf0;
+  --e-sheet: #fbfcfd;
+  --e-ink: #0c131d;
+  --e-ink-2: #3c4859;
+  --e-ink-3: #5d6a7c;
+  --e-line: rgb(12 19 29 / 0.14);
+  --e-line-2: rgb(12 19 29 / 0.24);
+  --e-steel: #8a9bb1;
+  --e-model: #8a6500;
+  --e-model-strong: #c99a12;
+  --e-harness: #086f88;
+  --e-stop: #c2382a;
+  --e-hub: #0c131d;
+  --e-hub-ink: #f1f3f5;
+  --e-primary: #0c131d;
+  --e-primary-ink: #f6f7f9;
+
+  /* The code slab is dark in both themes. */
+  --e-code-bg: #16181b;
+  --e-code-ink: #dfe6ef;
+  --e-code-dim: #8a929d;
+  --e-code-line: rgb(255 255 255 / 0.08);
+  --e-code-accent: #f2cf3a;
+  --e-code-scrollbar: #56626f;
+  --e-selection-ink: #17191c;
+  --e-syntax-keyword: #ff8f7a;
+  --e-syntax-string: #f2cf3a;
+  --e-syntax-function: #6fdcf0;
+  --e-syntax-constant: #b9c7ff;
+  --e-syntax-comment: #858d99;
+  --e-syntax-punctuation: #a7b0bc;
+
+  /* Astro's css-variables Shiki theme (the landing's <Code> blocks). */
+  --astro-code-foreground: var(--e-code-ink);
+  --astro-code-background: var(--e-code-bg);
+  --astro-code-token-keyword: var(--e-syntax-keyword);
+  --astro-code-token-string: var(--e-syntax-string);
+  --astro-code-token-string-expression: var(--e-syntax-string);
+  --astro-code-token-function: var(--e-syntax-function);
+  --astro-code-token-constant: var(--e-syntax-constant);
+  --astro-code-token-parameter: var(--e-code-ink);
+  --astro-code-token-comment: var(--e-syntax-comment);
+  --astro-code-token-punctuation: var(--e-syntax-punctuation);
+  --astro-code-token-link: var(--e-syntax-function);
+
+  --e-text: "Archivo Variable", system-ui, sans-serif;
+  --e-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --e-ground: #17191c;
+  --e-panel: #1d2024;
+  --e-sheet: #22262b;
+  --e-ink: #eceef1;
+  --e-ink-2: #b4bac3;
+  --e-ink-3: #939aa5;
+  --e-line: rgb(236 238 241 / 0.1);
+  --e-line-2: rgb(236 238 241 / 0.2);
+  --e-steel: #56626f;
+  --e-model: #f2cf3a;
+  --e-model-strong: #f2cf3a;
+  --e-harness: #4fd1e8;
+  --e-stop: #ef5a44;
+  --e-hub: #e7ecf3;
+  --e-hub-ink: #17191c;
+  --e-primary: #f2cf3a;
+  --e-primary-ink: #17191c;
+  --e-code-bg: #121417;
+
+  color-scheme: dark;
+}
+
+::selection {
+  background: var(--e-model-strong);
+  color: var(--e-selection-ink);
+}

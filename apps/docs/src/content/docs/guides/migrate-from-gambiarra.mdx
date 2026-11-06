@@ -5,9 +5,9 @@ description: Move from gambiarra to gambi with the shortest possible path for in
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-The project is now called **Gambi**. This guide covers everything you need to update.
+The project is now called **Gambi**. This guide lists what to update.
 
-## What Changed
+## What changed
 
 | Before | After |
 |--------|-------|
@@ -19,7 +19,7 @@ The project is now called **Gambi**. This guide covers everything you need to up
 
 `Gambi` is the official abbreviation of `gambiarra`. For the naming background, read [Why Gambi?](/explanation/why-gambi/).
 
-## Fastest Migration
+## Fastest migration
 
 Run the automated script for your platform:
 
@@ -36,7 +36,7 @@ Run the automated script for your platform:
   </TabItem>
 </Tabs>
 
-## Manual CLI Migration
+## Manual CLI migration
 
 <Tabs>
   <TabItem label="npm" icon="seti:npm">
@@ -66,7 +66,7 @@ Run the automated script for your platform:
   </TabItem>
 </Tabs>
 
-## SDK Migration
+## SDK migration
 
 Replace imports and provider names:
 
@@ -80,30 +80,33 @@ const gambi = createGambi({
 
 What changed:
 
-- `gambiarra-sdk` → `gambi-sdk`
-- `createGambiarra` → `createGambi`
-- `Gambiarra*` types → `Gambi*` types
-- response metadata key `gambiarra` → `gambi`
+- `gambiarra-sdk` becomes `gambi-sdk`
+- `createGambiarra` becomes `createGambi`
+- `Gambiarra*` types become `Gambi*` types
+- the response metadata key `gambiarra` becomes `gambi`
 
-## Local Config Migration
+## Local config migration
 
-The CLI and TUI now use:
+The TUI reads its settings from:
 
 ```text
 ~/.gambi/config.json
 ```
 
-If you already have `~/.gambiarra/config.json`, the migration script copies it into the new location when possible.
+If you already have `~/.gambiarra/config.json`, the migration script copies it to that location when possible.
 
-## Service and Network Names
+The CLI uses a separate file for named environments, `$XDG_CONFIG_HOME/gambi/config.json` (by default `~/.config/gambi/config.json`). See [Named environments](/reference/cli/#named-environments).
 
-If you run Gambi as a service or rely on discovery, update these names too:
+## Service and network names
+
+If you rely on mDNS discovery, update these names:
 
 | Before | After |
 |--------|-------|
-| `gambiarra-hub.service` | `gambi-hub.service` |
 | `_gambiarra._tcp.local` | `_gambi._tcp.local` |
 | `gambiarra-hub-{port}` | `gambi-hub-{port}` |
+
+Gambi does not ship a service unit. If you wrote your own, for example `gambiarra-hub.service`, rename it and change its command to `gambi hub serve`.
 
 ## Verify
 
@@ -114,8 +117,8 @@ gambi --help
 
 If you use the SDK, also update your app imports and run your normal build or typecheck.
 
-## Next Steps
+## Next steps
 
-- [Quick Start](/guides/quickstart/) — set up a hub and room from scratch
-- [CLI Reference](/reference/cli/) — full list of commands and flags
-- [SDK Reference](/reference/sdk/) — routing methods and provider options
+- [Quick start](/guides/quickstart/): set up a hub and room from scratch
+- [CLI reference](/reference/cli/): full list of commands and flags
+- [SDK reference](/reference/sdk/): routing methods and provider options

@@ -1,22 +1,18 @@
 ---
-title: Using Gambi with AI Tools
-description: Use Gambi as an OpenAI-compatible LLM backend in app builders, editors, SDKs, and scripts.
+title: Using Gambi with AI tools
+description: Use a Gambi room as an OpenAI-compatible model backend in editors, SDKs, and scripts.
 ---
 
-## What is Gambi?
+Every Gambi room is an OpenAI-compatible API. Any tool or library that lets you set a custom OpenAI base URL can send requests to the model participants in a room. Harness participants (Claude Code, Codex, OpenCode) do not serve these requests; applications reach them through the [harness attach channel](#programmatic-management).
 
-Gambi is a local-first system for sharing LLM endpoints through a room-scoped hub. The hub does not run models itself. It routes requests to registered participants.
-
-Participants now join through a tunnel-backed runtime, so their provider endpoint can stay local to their own machine.
-
-## Connection Details
+## Connection details
 
 Every Gambi room exposes an OpenAI-compatible base URL:
 
 | Setting | Value |
 | --- | --- |
 | Base URL | `http://<hub-ip>:<port>/rooms/<ROOM_CODE>/v1` |
-| API Key | any non-empty string |
+| API key | any non-empty string (the hub ignores it) |
 | Model | `*`, `model:<name>`, or `<participant-id>` |
 
 Supported protocols:
@@ -37,17 +33,17 @@ gambi room create --name "My Room"
 gambi participant join --room ABC123 --participant-id bot-1 --model llama3
 ```
 
-## App Builders and Editors
+## Editors and chat apps
 
 Any tool that supports a custom OpenAI-compatible endpoint can point at Gambi:
 
 - Base URL: `http://<hub-ip>:3000/rooms/<CODE>/v1`
-- API Key: `gambi`
+- API key: `gambi`
 - Model: `*` or `model:<name>`
 
-That includes tools such as Cursor, Cline, Lovable, v0, Open WebUI, and similar products.
+This works for tools that send requests from your machine or your network, such as Cline or a self-hosted Open WebUI. Hosted products that call the model from their own servers cannot reach a hub on a private network, and the hub must not be exposed to the internet without your own authentication layer in front of it.
 
-## Python Example
+## Python example
 
 ```python
 from openai import OpenAI
@@ -65,7 +61,7 @@ response = client.responses.create(
 print(response.output_text)
 ```
 
-## TypeScript Example
+## TypeScript example
 
 ```ts
 import { createGambi } from "gambi-sdk";
@@ -86,7 +82,7 @@ console.log(result.text);
 
 Use `defaultProtocol: "chatCompletions"` only if your tools or participants explicitly require it.
 
-## OpenAI SDK Example
+## OpenAI SDK example
 
 ```ts
 import OpenAI from "openai";
@@ -104,7 +100,7 @@ const response = await client.responses.create({
 console.log(response.output_text);
 ```
 
-## curl Example
+## curl example
 
 ```bash
 curl -X POST http://localhost:3000/rooms/ABC123/v1/responses \
@@ -126,7 +122,7 @@ curl -X POST http://localhost:3000/rooms/ABC123/v1/chat/completions \
   }'
 ```
 
-## Programmatic Management
+## Programmatic management
 
 ```ts
 import { createClient } from "gambi-sdk";
@@ -155,4 +151,4 @@ for await (const frame of channel.messages) {
 
 They stay out of `*`, `model:<name>`, and participant-id inference routing.
 
-See the reference docs for the full SDK and HTTP surfaces.
+See the [SDK reference](/reference/sdk/) and the [API reference](/reference/api/) for the full contracts.

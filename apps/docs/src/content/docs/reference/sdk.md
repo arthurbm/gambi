@@ -1,14 +1,15 @@
 ---
-title: SDK Reference
+title: SDK reference
 description: Reference for the Gambi SDK provider, management client, participant session runtime, and discovery helpers.
 ---
 
-The Gambi SDK exposes four distinct surfaces:
+The Gambi SDK has five entry points:
 
-- `createGambi()` for inference through the room-scoped OpenAI-compatible endpoints
+- `createGambi()` for inference through the room-scoped OpenAI-compatible routes
 - `createClient()` for management operations against the native `/v1` API
-- `createParticipantSession()` for running a tunnel-backed participant session
-- discovery helpers for local-network hub and room resolution
+- `createParticipantSession()` for running a model participant over a tunnel
+- `createHarnessParticipantSession()` for running a harness participant over a tunnel
+- discovery helpers for finding hubs and rooms on the local network
 
 ## Installation
 
@@ -18,9 +19,9 @@ npm install gambi-sdk
 bun add gambi-sdk
 ```
 
-## SDK surfaces
+## Entry points
 
-| Surface | Primary use | Transport |
+| Entry point | Primary use | Transport |
 | --- | --- | --- |
 | `createGambi()` | application inference | `/rooms/:code/v1/*` |
 | `createClient()` | operational control | `/v1/*` |
@@ -43,13 +44,13 @@ const gambi = createGambi({
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `roomCode` | `string` | — | room code to connect to |
+| `roomCode` | `string` | none (required) | room code to connect to |
 | `hubUrl` | `string` | `http://localhost:3000` | hub URL |
 | `defaultProtocol` | `"openResponses" \| "chatCompletions"` | `"openResponses"` | default protocol for top-level routing helpers |
 
 ### Model routing
 
-The provider offers three routing strategies, all compatible with AI SDK v5.
+The provider offers three routing helpers. Each returns a `LanguageModelV3`, the model interface of AI SDK 6, so pass it to `generateText()`, `streamText()`, and the other AI SDK 6 functions. The package declares `ai` as an optional peer dependency (`^4 || ^5 || ^6`) and is built and tested against AI SDK 6.
 
 ```ts
 import { generateText } from "ai";
@@ -61,11 +62,11 @@ await generateText({ model: gambi.participant("worker-1"), prompt: "..." });
 
 | Helper | Selects | Use when |
 | --- | --- | --- |
-| `gambi.any()` | a random available participant | any online participant is acceptable |
+| `gambi.any()` | a random available participant | any available participant is acceptable |
 | `gambi.model(name)` | the first available participant exposing `name` | you need a specific model but not a specific machine |
 | `gambi.participant(id)` | the participant with that id | you need exact targeting (affinity, debugging, benchmarking) |
 
-A participant is available only when its tunnel is connected, it is not offline, and it is not already handling another request.
+A participant is available only when its tunnel is connected, it is not offline, and it is not already handling another request. Harness participants are never selected. When no participant is available, the request fails with HTTP `404`, so a burst of concurrent `any()` calls larger than the number of free participants gets some `404` responses. See [Model routing](/reference/api/#model-routing) and [Inference errors](/reference/api/#inference-errors).
 
 ### Protocol selection
 
@@ -103,17 +104,26 @@ You can also call the inference API directly with `fetch` and `stream: true` aga
 
 ### `gambi.listModels()`
 
-Return room models in an OpenAI-compatible list shape.
+Fetch `GET /rooms/:code/v1/models` and return a flat array, one entry per available model participant:
 
-Each `GambiModel` includes a `gambi` extension with:
+```ts
+const models = await gambi.listModels();
+// [{ id, nickname, model, endpoint, capabilities }, ...]
 
-- `nickname`
-- `model`
-- `endpoint`
-- `capabilities`
-- `connection`
+for (const m of models) {
+  console.log(m.id, m.model);
+}
+```
 
-`connection` exposes the participant tunnel state seen by the hub.
+| Field | Description |
+| --- | --- |
+| `id` | participant ID; pass it to `gambi.participant(id)` |
+| `nickname` | participant display name |
+| `model` | model name the participant serves |
+| `endpoint` | participant-local provider endpoint (informational; the hub never calls it) |
+| `capabilities` | `openResponses` and `chatCompletions` support |
+
+The list leaves out harness participants and participants that are offline or have no connected tunnel. It does not exclude busy participants. On a non-2xx response it throws a plain `Error`. For tunnel state, use `gambi.listParticipants()`.
 
 ### `gambi.listParticipants()`
 
@@ -341,23 +351,25 @@ For a walkthrough, see [Custom participant runtime](/guides/custom-participant/)
 
 ### Session return shape
 
-| Field | Type | Description |
-| --- | --- | --- |
+| Field | Description |
+| --- | --- |
 | `participant` | registered participant summary |
 | `roomId` | room identifier |
 | `tunnel` | tunnel bootstrap details |
-| `close()` | best-effort graceful shutdown |
-| `waitUntilClosed()` | await final session close reason |
+| `close()` | stop the session and remove the registration (best effort) |
+| `waitUntilClosed()` | resolves with the close event |
 
 Close reasons:
 
-- `"closed"` — shutdown initiated by `close()` or a received signal
-- `"heartbeat_failed"` — the management heartbeat loop failed repeatedly
-- `"tunnel_closed"` — the WebSocket tunnel was closed from either side
+- `"closed"`: `close()` was called. The SDK installs no signal handlers; wire them yourself.
+- `"heartbeat_failed"`: a management heartbeat request failed. One failure is enough to close the session.
+- `"tunnel_closed"`: the WebSocket tunnel closed or errored, from either side. The session does not reconnect and does not remove the registration; the hub marks the participant offline as soon as the tunnel closes.
+
+On `"closed"` and `"heartbeat_failed"`, the session tries to remove the participant from the room before it resolves.
 
 ## `createHarnessParticipantSession(options)`
 
-Run a local ACP harness as a room participant from your own application, for
+Run a local harness as a room participant from your own application, for
 example to host harnesses for people who did not bring one. It is the same
 runtime `gambi participant join --harness` uses, and it runs under Node and Bun.
 
@@ -425,7 +437,7 @@ It writes only `.gambi.json`, which never appears in an artifact.
 
 ### Testing without a model
 
-`runFakeAcpAgent()` is a deterministic ACP agent: it answers each prompt with
+`runFakeAcpAgent()` runs a deterministic harness process that calls no model. It answers each prompt with
 `Fake ACP response: <prompt>` and writes `fake-output.txt` in the workspace.
 Because a bundled SDK cannot locate its own script, wrap it in one of yours and
 point the adapter at it:
@@ -451,7 +463,7 @@ await createHarnessParticipantSession({
 
 ## Discovery helpers
 
-Discovery remains optional. `createGambi()` and `createClient()` stay explicit — they never perform implicit discovery.
+Discovery is optional. `createGambi()` and `createClient()` never discover anything on their own; pass them a hub URL.
 
 Available helpers:
 
@@ -497,17 +509,29 @@ Codes:
 - `ROOM_NOT_FOUND`
 - `AMBIGUOUS_ROOM_MATCH` (inspect `error.matches`)
 
+## Lower-level exports
+
+Most applications do not need these. They exist for tests, embedding, and custom runtimes.
+
+| Export | Description |
+| --- | --- |
+| `hub.create(options)` | start a hub in the current process, the same hub `gambi hub serve` runs. Options: `port` (default `3000`), `hostname` (default `0.0.0.0`), `mdns`. Returns `{ server, url, mdnsName?, close() }`. Requires Bun. |
+| `rooms` | direct access to the in-process room registry of a hub started with `hub.create()` in the same process. It does not talk to a remote hub; use `createClient()` for that. |
+| `participants` | helpers that build participant records and merge runtime config, used by the hub. |
+| `getHarnessAdapter(id)` | the built-in adapter for `opencode`, `claude-code`, `codex`, or `fake`: the command it runs and its readiness check. Use it as a base when you pass a custom `adapter`. |
+| `defaultWorkspacePath({ roomCode, participantId }, gambiHome?)` | the default workspace folder, `~/.gambi/workspaces/<room>/<participant>`. |
+
 ## Errors
 
 Management operations throw `ClientError`.
 
-Important fields:
+Fields:
 
-- `status` — HTTP status
-- `code` — Gambi error code (e.g. `ROOM_NOT_FOUND`, `PARTICIPANT_TUNNEL_NOT_CONNECTED`)
-- `hint` — operator-readable next step
-- `details` — optional structured payload from the hub
-- `requestId` — correlates with hub logs and SSE events
+- `status`: HTTP status
+- `code`: Gambi error code, such as `ROOM_NOT_FOUND`
+- `hint`: operator-readable next step
+- `details`: optional structured payload from the hub
+- `requestId`: correlates with hub logs and SSE events
 
 ```ts
 import { ClientError } from "gambi-sdk";

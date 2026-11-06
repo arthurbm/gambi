@@ -1,9 +1,11 @@
 ---
-title: How Tunnels Work
+title: How tunnels work
 description: Why Gambi participants open a tunnel to the hub instead of publishing a network-reachable provider endpoint.
+sidebar:
+  order: 2
 ---
 
-This page explains the mental model behind Gambi's tunnel-first transport: why the participant, not the hub, opens the connection.
+This page explains Gambi's tunnel-first transport: why the participant, not the hub, opens the connection.
 
 ## The old shape
 
@@ -17,7 +19,7 @@ This worked on a flat LAN, but it leaked several constraints into the participan
 
 - the participant had to be reachable from the hub
 - NAT, Wi-Fi isolation, and VPN split-tunneling often blocked that path
-- the participant had to expose a port, which is a non-trivial ask for a teammate on a laptop
+- the participant had to expose a port, which is a lot to ask of a teammate on a laptop
 - the hub had to rewrite or trust provider addresses it never owned
 
 The result was a system that demanded network symmetry where there wasn't any.
@@ -26,18 +28,19 @@ The result was a system that demanded network symmetry where there wasn't any.
 
 Gambi now inverts the connection. The participant opens a WebSocket to the hub. Inference requests travel over that tunnel.
 
-```text
-┌──────────────┐   WebSocket   ┌─────────┐
-│ Participant  │ ────────────▶ │   Hub   │
-│  runtime     │ ◀──────────── │         │
-└──────────────┘               └─────────┘
-       │
-       │ HTTP (loopback)
-       ▼
-┌──────────────────┐
-│ Local provider   │
-│ (Ollama / etc.)  │
-└──────────────────┘
+```mermaid title="Both connections point at the hub. The provider stays on localhost."
+flowchart LR
+  app["Your app"]
+  hub(("Hub")):::hub
+  subgraph machine["Participant machine"]
+    rt["Participant runtime"]
+    prov[("Local provider<br/>Ollama, LM Studio, vLLM")]:::model
+  end
+  app -->|HTTP| hub
+  rt ==>|opens WebSocket| hub
+  rt -->|HTTP on localhost| prov
+  classDef hub stroke-width:1px
+  classDef model stroke-width:1.5px
 ```
 
 What changes:
@@ -47,15 +50,23 @@ What changes:
 - authentication headers stay on the participant runtime
 - the hub routes by `participant-id`, `model:<name>`, or `*`, and forwards the request through the tunnel the participant already opened
 
-Harness participants use the same connection direction. Their ACP agent stays local and sends messages and artifacts through the participant-opened tunnel. A harness client opens its own management WebSocket to the hub and attaches to that participant. The hub only relays between connections it did not originate. Harness participants are not candidates for inference routing.
+Harness participants use the same connection direction. Their harness process stays local and sends messages and artifacts through the participant-opened tunnel. A harness client opens its own management WebSocket to the hub and attaches to that participant. The hub only relays between connections it did not originate. Harness participants are not candidates for inference routing.
 
 ## The opaque ACP relay
 
-```text
-┌────────────────┐   management WebSocket   ┌───────┐   participant tunnel   ┌────────────────┐
-│ Harness client │ ────────────────────────▶ │  Hub  │ ◀───────────────────── │ Local harness  │
-│ or application │ ◀──────────────────────── │       │ ─────────────────────▶ │ ACP v1 process │
-└────────────────┘                           └───────┘                         └────────────────┘
+```mermaid title="The hub relays ACP messages between two connections it did not open."
+flowchart LR
+  client["Harness client<br/>or application"]
+  hub(("Hub")):::hub
+  subgraph machine["Participant machine"]
+    rt["Participant runtime"]
+    acp["Harness<br/>ACP v1 process"]:::harness
+  end
+  client ==>|management WebSocket| hub
+  rt ==>|participant tunnel| hub
+  rt <-->|stdio| acp
+  classDef hub stroke-width:1px
+  classDef harness stroke-width:1.5px
 ```
 
 The tunnel frame has a `sessionId` and a `message` object. The hub validates that envelope, then forwards `message` without reading the ACP JSON-RPC method or parameters. Session open and close commands use the same relay. Workspace artifacts cross in separate versioned frames.
@@ -66,28 +77,28 @@ The local harness login never enters participant registration, lifecycle events,
 
 - **Localhost stays localhost.** The provider URL you pass to `gambi participant join` or `createParticipantSession()` can be `http://localhost:11434`, even when the hub runs on another machine. The hub never needs to reach that address.
 - **Credentials stay local.** `authHeaders` and API keys only leave the participant runtime when the runtime itself calls the provider, never through the hub.
-- **Fewer network pre-requisites for participants.** A participant needs outbound connectivity to the hub. That's it. No port forwarding, no mDNS advertising, no firewall exceptions.
-- **Retry-safe registration.** Participant registration is idempotent, and the tunnel bootstrap token is single-use. Reconnecting is a safe operation.
+- **Fewer network prerequisites for participants.** A participant needs outbound connectivity to the hub, and nothing else. No port forwarding, no mDNS advertising, no firewall exceptions.
+- **Retry-safe registration.** Participant registration is idempotent, and the tunnel bootstrap token is single-use. Restarting a participant with the same ID is safe.
 
 ## What you give up
 
 - **WebSocket upgrade must pass.** Any proxy between the participant and the hub has to forward `Upgrade: websocket`. Some corporate proxies block it.
 - **One direction, not two.** The participant needs to reach the hub. The hub does not need to reach the participant, but nothing gets through if outbound is blocked.
-- **Tunnel failures are now a first-class thing.** You will see `tunnel_failed` and `heartbeat_failed` events in participant runtimes. Monitor them.
+- **Tunnel failures need handling.** A participant runtime does not reconnect on its own. When the tunnel closes, the SDK session ends with the close reason `tunnel_closed`, and `gambi participant join` emits a `tunnel_failed` NDJSON event and exits with code `3`. A failed management heartbeat ends the session with `heartbeat_failed` in both. Monitor these and restart the participant.
 
-## Sticky guarantees
+## Guarantees
 
-The tunnel is not a clever trick layered on top of HTTP. It is the only transport the hub uses to reach participants. That gives you two durable guarantees:
+The tunnel is the only transport the hub uses to reach participants. That gives you two guarantees:
 
 1. If a participant is not connected, it is not available. No stale DNS, no half-open sockets pretending to be live. Availability is a property of an active tunnel session.
-2. If the hub receives a request for a participant whose tunnel has dropped, it returns an explicit error (`PARTICIPANT_TUNNEL_NOT_CONNECTED`) instead of silently timing out.
+2. If a request names a participant whose tunnel has closed, the hub answers at once with HTTP `503` and `{"error": "Participant tunnel is not connected."}` instead of waiting for a timeout.
 
-Attached harness clients are deliberately decoupled from tunnel reconnects. If Wi-Fi drops and the participant establishes a new tunnel, existing attach sockets stay open and resume relaying.
+Attached harness clients do not depend on the participant tunnel. If the participant is restarted and opens a new tunnel, existing attach sockets stay open and relaying resumes. Frames a client sends while no tunnel is open are dropped.
 
 ## Further reading
 
-- [Architecture Overview](/architecture/overview/) — the full picture, including the tunnel protocol shape.
-- [API Reference — Tunnel](/reference/api/#tunnel) — the exact HTTP and WebSocket contract.
-- [SDK Reference — `createParticipantSession()`](/reference/sdk/#createparticipantsessionoptions) — the programmatic runtime that manages a tunnel for you.
-- [Bring your harness](/guides/bring-your-harness/) explains how to join with OpenCode, Claude Code, or Codex.
-- [Custom participant runtime](/guides/custom-participant/) — how to build your own runtime on top of `createParticipantSession()`.
+- [Architecture overview](/architecture/overview/#tunnel-protocol): the full picture, including the tunnel message types.
+- [API reference: the tunnel route](/reference/api/#get-v1roomscodeparticipantsidtunnel): the exact HTTP and WebSocket contract.
+- [SDK reference: `createParticipantSession()`](/reference/sdk/#createparticipantsessionoptions): the programmatic runtime that manages a tunnel for you.
+- [Bring your harness](/guides/bring-your-harness/): how to join with OpenCode, Claude Code, or Codex.
+- [Custom participant runtime](/guides/custom-participant/): how to build your own runtime on top of `createParticipantSession()`.

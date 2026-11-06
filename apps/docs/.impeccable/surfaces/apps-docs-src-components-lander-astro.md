@@ -33,4 +33,4 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
 ## Unresolved
 
-- Docs pages (Starlight) keep the legacy `custom.css` until the user approves the landing; then a docs pass adopts the world and moves text diagrams to Mermaid rendered by Pele.
+- None. The docs pass adopted the world (see the docs surface brief, `apps-docs-src-styles-docs-css.md`).

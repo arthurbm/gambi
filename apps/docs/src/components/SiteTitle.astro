@@ -1,0 +1,44 @@
+---
+/**
+ * SiteTitle.astro - Override Starlight's site title with the landing's
+ * wordmark: the display reduced to a ring, a yellow hub dot, and three tracks.
+ */
+const { siteTitle, siteTitleHref } = Astro.locals.starlightRoute;
+---
+
+<a href={siteTitleHref} class="site-title">
+  <svg viewBox="0 0 24 24" aria-hidden="true" class="site-mark">
+    <circle cx="12" cy="12" r="10.5"></circle>
+    <circle cx="12" cy="12" r="2.6"></circle>
+    <path d="M3.6 7.4Q8 9 10 11M20.4 7.4Q16 9 14 11M12 22V14.6"></path>
+  </svg>
+  <span translate="no">{siteTitle}</span>
+</a>
+
+<style>
+  .site-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    color: var(--e-ink);
+    font-size: 1.15rem;
+    font-weight: 700;
+    font-variation-settings: "wdth" 118;
+    letter-spacing: -0.01em;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .site-mark {
+    width: 1.35rem;
+    height: 1.35rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+  }
+
+  .site-mark circle:nth-child(2) {
+    fill: var(--e-model-strong);
+    stroke: none;
+  }
+</style>
