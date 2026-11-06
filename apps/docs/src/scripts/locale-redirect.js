@@ -3,7 +3,8 @@
 // so it runs before the page paints; keep it small and dependency-free.
 //
 // - Arriving from another site (or typing the URL): go to the saved
-//   language, or to the device language when nothing is saved yet.
+//   language, or to the device language when nothing is saved yet. A link
+//   to a section (#anchor) is never redirected.
 // - Moving between pages of this site, including through the language
 //   picker: never redirect, and remember the language being read.
 (() => {
@@ -42,11 +43,13 @@
     .find((lang) => lang.startsWith("pt") || lang.startsWith("en"));
   const device = first?.startsWith("pt") ? "pt-br" : "en";
   const wanted = saved === "en" || saved === "pt-br" ? saved : device;
-  if (wanted === current) {
+  // A link to a section (#anchor) stays put: heading ids differ between the
+  // translations, so the same fragment would miss in the other language.
+  if (wanted === current || location.hash !== "") {
     return;
   }
 
   const target =
     wanted === "pt-br" ? PREFIX + path : path.slice(PREFIX.length) || "/";
-  location.replace(target + location.search + location.hash);
+  location.replace(target + location.search);
 })();
