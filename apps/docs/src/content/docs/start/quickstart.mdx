@@ -35,6 +35,8 @@ gambi hub serve --port 3000 --mdns
 
 The `--mdns` flag advertises the hub so other machines on the network can discover it.
 
+Other machines reach the hub at `http://<hub-ip>:3000`, where `<hub-ip>` is this machine's address on your network, such as `192.168.1.10`. Every other command takes that URL as `--hub`. Without `--hub`, the CLI uses `http://localhost:3000`, which only works on the hub machine itself.
+
 :::caution[Trusted networks only]
 The hub has no built-in authentication. Anyone who can reach its port can create rooms and send inference requests to any room. A room password only protects joining. Run it only on a network you trust. If you need to expose it beyond that, put it behind your own proxy and authentication layer.
 :::
@@ -70,6 +72,16 @@ Each person with a model endpoint joins the room:
 
 ```bash
 gambi participant join \
+  --room ABC123 \
+  --participant-id joao-1 \
+  --model llama3
+```
+
+On any machine other than the hub, add the hub URL:
+
+```bash
+gambi participant join \
+  --hub http://192.168.1.10:3000 \
   --room ABC123 \
   --participant-id joao-1 \
   --model llama3
@@ -122,6 +134,8 @@ const result = await generateText({
 
 console.log(result.text);
 ```
+
+If your code runs on another machine, set `hubUrl` to the hub's network address, such as `http://192.168.1.10:3000`.
 
 You can also target a model or a participant:
 
