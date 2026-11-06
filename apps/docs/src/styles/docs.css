@@ -1,0 +1,626 @@
+/*
+ * Starlight in the event-display world (Read mode).
+ * Tokens: ./tokens.css. Rules: apps/docs/DESIGN.md ("Docs pages").
+ * Starlight's own styles live in cascade layers, so these unlayered rules win
+ * without !important.
+ */
+
+/* ---------- Starlight variables ---------- */
+
+:root {
+  --sl-font: var(--e-text);
+  --sl-font-mono: var(--e-mono);
+
+  --sl-color-white: var(--e-ink);
+  --sl-color-gray-1: var(--e-ink);
+  --sl-color-gray-2: var(--e-ink-2);
+  --sl-color-gray-3: var(--e-ink-3);
+  --sl-color-gray-4: var(--e-steel);
+  --sl-color-gray-5: var(--e-line-2);
+  --sl-color-gray-6: var(--e-panel);
+  --sl-color-gray-7: var(--e-sheet);
+  --sl-color-black: var(--e-ground);
+
+  --sl-color-accent-low: var(--e-panel);
+  --sl-color-accent: var(--e-primary);
+  --sl-color-accent-high: var(--e-ink);
+
+  --sl-color-text: var(--e-ink-2);
+  --sl-color-text-accent: var(--e-ink);
+  --sl-color-text-invert: var(--e-primary-ink);
+  --sl-color-bg: var(--e-ground);
+  --sl-color-bg-nav: var(--e-ground);
+  --sl-color-bg-sidebar: var(--e-ground);
+  --sl-color-bg-inline-code: var(--e-panel);
+  --sl-color-bg-accent: var(--e-primary);
+  --sl-color-hairline-light: var(--e-line);
+  --sl-color-hairline: var(--e-line);
+  --sl-color-hairline-shade: var(--e-line);
+  --sl-color-backdrop-overlay: rgb(12 19 29 / 0.55);
+
+  /* The Hairline Rule: no drop shadows. */
+  --sl-shadow-sm: none;
+  --sl-shadow-md: none;
+  --sl-shadow-lg: none;
+
+  --sl-text-body: 1.0625rem;
+  --sl-text-code: 0.86rem;
+  --sl-line-height: 1.65;
+  --sl-line-height-headings: 1.12;
+  --sl-text-h1: clamp(2rem, 4.4vw, 2.6rem);
+  --sl-text-h2: 1.55rem;
+  --sl-text-h3: 1.2rem;
+  --sl-text-h4: 1.05rem;
+  --sl-text-h5: 1rem;
+  --sl-content-width: 46rem;
+}
+
+/* ---------- page and browser surfaces ---------- */
+
+body {
+  background: var(--e-ground);
+  color: var(--e-ink-2);
+  font-family: var(--e-text);
+  font-variation-settings: "wdth" 100;
+  -webkit-font-smoothing: antialiased;
+  scrollbar-color: var(--e-steel) transparent;
+}
+
+:root:not([data-has-hero]) :focus-visible {
+  outline: 2px solid var(--e-harness);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ---------- header ---------- */
+
+header.header {
+  border-bottom: 1px solid var(--e-line);
+}
+
+site-search > button[data-open-modal] {
+  color: var(--e-ink-2);
+}
+
+@media (min-width: 50rem) {
+  site-search > button[data-open-modal] {
+    border: 1px solid var(--e-line-2);
+    border-radius: 10px;
+    background: var(--e-sheet);
+    color: var(--e-ink-3);
+    font-size: 0.92rem;
+    transition:
+      border-color 160ms ease,
+      color 160ms ease;
+  }
+
+  site-search > button[data-open-modal]:hover {
+    border-color: var(--e-ink-3);
+    color: var(--e-ink-2);
+  }
+}
+
+site-search > button[data-open-modal] kbd {
+  border-radius: 4px;
+  background: var(--e-panel);
+  color: var(--e-ink-3);
+  font-family: var(--e-text);
+  font-variation-settings: "wdth" 90;
+  font-weight: 650;
+}
+
+/* The landing's round theme toggle, reused for the mobile menu button. */
+.sl-menu-button,
+:root[data-theme="light"] .sl-menu-button {
+  border: 1px solid var(--e-line-2);
+  background: var(--e-ground);
+  color: var(--e-ink-2);
+  box-shadow: none;
+}
+
+.sl-menu-button:has(~ :popover-open),
+:root[data-theme="light"] .sl-menu-button:has(~ :popover-open) {
+  background: var(--e-panel);
+  color: var(--e-ink);
+}
+
+site-search dialog {
+  border: 1px solid var(--e-line-2);
+  border-radius: 12px;
+  background: var(--e-ground);
+}
+
+site-search mark {
+  background: var(--e-model-strong);
+  color: var(--e-selection-ink);
+}
+
+starlight-theme-select select,
+starlight-lang-select select {
+  font-variation-settings: "wdth" 90;
+  font-weight: 650;
+}
+
+.social-icons a {
+  color: var(--e-ink-2);
+}
+
+.social-icons a:hover {
+  color: var(--e-ink);
+}
+
+/* ---------- sidebar ---------- */
+
+.sidebar-pane {
+  border-inline-end: 1px solid var(--e-line);
+}
+
+.sidebar-content .large,
+.sidebar-content .group-label {
+  color: var(--e-ink-3);
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variation-settings: "wdth" 80;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.sidebar-content ul ul li {
+  border-inline-start-color: var(--e-line);
+}
+
+.sidebar-content a {
+  color: var(--e-ink-2);
+  font-size: 0.94rem;
+  border-radius: 6px;
+  transition: color 160ms ease;
+}
+
+.sidebar-content a:hover {
+  color: var(--e-ink);
+}
+
+.sidebar-content a[aria-current="page"],
+.sidebar-content a[aria-current="page"]:hover,
+.sidebar-content a[aria-current="page"]:focus {
+  background: var(--e-panel);
+  color: var(--e-ink);
+  font-weight: 600;
+}
+
+/* ---------- table of contents ---------- */
+
+starlight-toc h2,
+mobile-starlight-toc .toggle {
+  color: var(--e-ink-3);
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variation-settings: "wdth" 80;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+mobile-starlight-toc .toggle {
+  border-color: var(--e-line-2);
+  border-radius: 8px;
+}
+
+mobile-starlight-toc .display-current {
+  color: var(--e-ink);
+  font-size: 0.9rem;
+  letter-spacing: 0;
+  text-transform: none;
+  font-variation-settings: "wdth" 100;
+}
+
+starlight-toc a,
+mobile-starlight-toc a {
+  color: var(--e-ink-3);
+  font-size: 0.9rem;
+  text-decoration: none;
+  transition: color 160ms ease;
+}
+
+starlight-toc a:hover {
+  color: var(--e-ink);
+}
+
+starlight-toc a[aria-current="true"] {
+  color: var(--e-ink);
+  font-weight: 600;
+}
+
+/* ---------- content ---------- */
+
+.content-panel + .content-panel {
+  border-top-color: var(--e-line);
+}
+
+.sl-markdown-content {
+  color: var(--e-ink-2);
+}
+
+h1#_top {
+  color: var(--e-ink);
+  font-weight: 650;
+  font-variation-settings: "wdth" 112;
+  letter-spacing: -0.025em;
+  line-height: 1.06;
+  text-wrap: balance;
+}
+
+.sl-markdown-content :is(h2, h3, h4, h5, h6):not(:where(.not-content *)) {
+  color: var(--e-ink);
+  text-wrap: balance;
+}
+
+.sl-markdown-content h2:not(:where(.not-content *)) {
+  font-weight: 650;
+  font-variation-settings: "wdth" 110;
+  letter-spacing: -0.015em;
+}
+
+/* A hairline marks where each h2 section starts. */
+.sl-markdown-content .sl-heading-wrapper.level-h2:not(:first-child) {
+  margin-top: 2.75rem;
+  padding-top: 1.6rem;
+  border-top: 1px solid var(--e-line);
+}
+
+.sl-markdown-content h3:not(:where(.not-content *)) {
+  font-weight: 650;
+  font-variation-settings: "wdth" 106;
+  letter-spacing: -0.01em;
+}
+
+.sl-markdown-content .sl-heading-wrapper.level-h3:not(:first-child) {
+  margin-top: 2rem;
+}
+
+.sl-markdown-content :is(h4, h5, h6):not(:where(.not-content *)) {
+  font-weight: 700;
+  font-variation-settings: "wdth" 104;
+}
+
+.sl-markdown-content .sl-anchor-link {
+  color: var(--e-ink-3);
+}
+
+.sl-markdown-content strong:not(:where(.not-content *)) {
+  color: var(--e-ink);
+  font-weight: 650;
+}
+
+.sl-markdown-content a:not(:where(.not-content *)) {
+  color: var(--e-ink);
+  text-decoration-line: underline;
+  text-decoration-color: var(--e-line-2);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.22em;
+  transition: text-decoration-color 160ms ease;
+}
+
+.sl-markdown-content a:not(:where(.not-content *)):hover {
+  color: var(--e-ink);
+  text-decoration-color: currentColor;
+}
+
+.sl-markdown-content code:not(:where(.not-content *)) {
+  padding: 0.08em 0.32em;
+  border: 1px solid var(--e-line);
+  border-radius: 4px;
+  background: var(--e-panel);
+  color: var(--e-ink);
+  font-family: var(--e-mono);
+  font-size: 0.86em;
+  font-variant-ligatures: none;
+  overflow-wrap: anywhere;
+}
+
+/* In tables a column sizes to its longest identifier instead of splitting it. */
+.sl-markdown-content :is(th, td) code:not(:where(.not-content *)) {
+  overflow-wrap: normal;
+}
+
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) code {
+  font-size: 0.86em;
+  font-weight: 500;
+}
+
+.sl-markdown-content :is(ul, ol) > li::marker {
+  color: var(--e-ink-3);
+}
+
+.sl-markdown-content blockquote:not(:where(.not-content *)) {
+  border-inline-start: 1px solid var(--e-line-2);
+  color: var(--e-ink-2);
+}
+
+.sl-markdown-content hr:not(:where(.not-content *)) {
+  border-top: 1px solid var(--e-line);
+}
+
+/* Tables: a Line 2 top edge, Line between rows, condensed uppercase headers. */
+.sl-markdown-content table:not(:where(.not-content *)) {
+  border-collapse: collapse;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+.sl-markdown-content :is(th, td):not(:where(.not-content *)) {
+  border: 0;
+  border-bottom: 1px solid var(--e-line);
+  padding: 0.6rem 0.9rem;
+  vertical-align: top;
+  background: none;
+}
+
+.sl-markdown-content
+  :is(th:first-child, td:first-child):not(:where(.not-content *)) {
+  padding-inline-start: 0;
+}
+
+.sl-markdown-content th:not(:where(.not-content *)) {
+  border-top: 1px solid var(--e-line-2);
+  border-bottom-color: var(--e-line-2);
+  color: var(--e-ink-3);
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variation-settings: "wdth" 80;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/* ---------- asides ---------- */
+
+.starlight-aside {
+  --sl-color-asides-text-accent: var(--e-ink);
+  border: 1px solid var(--e-line-2);
+  border-radius: 12px;
+  background: var(--e-sheet);
+  color: var(--e-ink-2);
+  padding: 1rem 1.2rem;
+}
+
+.starlight-aside__title {
+  font-size: 1rem;
+  font-weight: 700;
+  font-variation-settings: "wdth" 108;
+}
+
+.starlight-aside__icon {
+  font-size: 1.1em;
+}
+
+.starlight-aside__content a {
+  color: var(--e-ink);
+}
+
+/* The Red Stops Rule: caution and danger are the warning recipe. */
+.starlight-aside--caution,
+.starlight-aside--danger {
+  --sl-color-asides-text-accent: var(--e-stop);
+  border-color: color-mix(in oklab, var(--e-stop) 55%, transparent);
+  background: color-mix(in oklab, var(--e-stop) 7%, var(--e-ground));
+}
+
+/* ---------- tabs ---------- */
+
+starlight-tabs .tablist-wrapper {
+  border-bottom: 1px solid var(--e-line-2);
+}
+
+starlight-tabs [role="tablist"] {
+  border-bottom: 0;
+}
+
+starlight-tabs .tab > [role="tab"] {
+  border-bottom: 0;
+  color: var(--e-ink-3);
+  font-size: 0.94rem;
+  font-weight: 600;
+  font-variation-settings: "wdth" 96;
+  transition: color 160ms ease;
+}
+
+starlight-tabs .tab > [role="tab"]:hover {
+  color: var(--e-ink);
+}
+
+starlight-tabs .tab > [role="tab"][aria-selected="true"] {
+  color: var(--e-ink);
+  box-shadow: inset 0 -2px 0 var(--e-primary);
+}
+
+/* ---------- cards, badges, steps ---------- */
+
+.sl-markdown-content :is(.card, .sl-link-card) {
+  border: 1px solid var(--e-line-2);
+  border-radius: 12px;
+  background: var(--e-sheet);
+  box-shadow: none;
+}
+
+.sl-markdown-content .sl-link-card:hover {
+  border-color: var(--e-ink-3);
+  background: var(--e-sheet);
+}
+
+.sl-markdown-content .card .title,
+.sl-markdown-content .sl-link-card .title {
+  color: var(--e-ink);
+  font-weight: 650;
+  font-variation-settings: "wdth" 104;
+}
+
+.sl-badge {
+  border: 1px solid var(--e-line-2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--e-ink-3);
+  font-family: var(--e-text);
+  font-weight: 700;
+  font-variation-settings: "wdth" 80;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ---------- pagination and footer ---------- */
+
+.pagination-links a {
+  border: 1px solid var(--e-line-2);
+  border-radius: 12px;
+  box-shadow: none;
+  color: var(--e-ink-3);
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variation-settings: "wdth" 80;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  transition: border-color 160ms ease;
+}
+
+.pagination-links a:hover {
+  border-color: var(--e-ink-3);
+}
+
+.pagination-links .link-title {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--e-ink);
+  font-size: 1.15rem;
+  font-weight: 650;
+  font-variation-settings: "wdth" 106;
+  letter-spacing: -0.01em;
+  text-transform: none;
+}
+
+footer .meta {
+  color: var(--e-ink-3);
+  font-size: 0.86rem;
+}
+
+/* ---------- code blocks (Expressive Code frames sit on the dark slab) ---------- */
+
+.expressive-code {
+  margin-block: 1.25rem 1.5rem;
+}
+
+/* ---------- diagrams (Mermaid rendered by Pele at build time) ---------- */
+
+.diagram {
+  --pele-bg: var(--e-ground);
+  --pele-fg: var(--e-ink);
+  --pele-muted: var(--e-ink-3);
+  --pele-line: var(--e-ink-3);
+  --pele-surface: var(--e-sheet);
+  --pele-surface-alt: var(--e-panel);
+  --pele-border: var(--e-steel);
+  --pele-accent: var(--e-harness);
+  --pele-font: var(--e-text);
+  --pele-font-mono: var(--e-mono);
+  --pele-radius: 6px;
+  container-type: inline-size;
+  margin: 1.75rem 0 2rem;
+}
+
+.diagram svg {
+  display: block;
+  margin-inline: auto;
+}
+
+/* Past MIN_SCALE in src/plugins/mermaid.mjs the drawing scrolls, not shrinks. */
+.diagram-wide {
+  overflow-x: auto;
+  scrollbar-color: var(--e-steel) transparent;
+}
+
+.diagram-wide svg {
+  min-width: var(--diagram-min, 0);
+}
+
+.diagram figcaption {
+  margin-top: 0.75rem;
+  color: var(--e-ink-3);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+/* Narrow layouts swap in a version laid out for a phone column. */
+.diagram-narrow {
+  display: none;
+}
+
+@property --diagram-fade {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 100%;
+}
+
+@keyframes diagram-scrolled {
+  from {
+    --diagram-fade: 82%;
+  }
+
+  to {
+    --diagram-fade: 100%;
+  }
+}
+
+@container (max-width: 34rem) {
+  .diagram:has(.diagram-narrow) .diagram-wide {
+    display: none;
+  }
+
+  .diagram-narrow {
+    display: block;
+  }
+
+  /* The fade says the drawing continues and clears once scrolled to the end. */
+  @supports (animation-timeline: scroll()) {
+    .diagram-scrolls {
+      mask-image: linear-gradient(
+        to right,
+        #000 var(--diagram-fade),
+        transparent
+      );
+      animation: diagram-scrolled linear both;
+      animation-timeline: scroll(self inline);
+    }
+  }
+}
+
+/* The Track Color Rule: yellow is a model, cyan is a harness, red is a stop. */
+.diagram .model > :is(rect, path, circle, polygon) {
+  stroke: var(--e-model);
+  stroke-width: 1.5;
+}
+
+.diagram .harness > :is(rect, path, circle, polygon) {
+  stroke: var(--e-harness);
+  stroke-width: 1.5;
+}
+
+.diagram .stop > :is(rect, path, circle, polygon) {
+  stroke: var(--e-stop);
+  stroke-width: 1.5;
+}
+
+.diagram .hub > :is(rect, path, circle, polygon) {
+  fill: var(--e-hub);
+  stroke: var(--e-hub);
+}
+
+.diagram .hub > text {
+  fill: var(--e-hub-ink);
+  font-weight: 650;
+}
+
+.diagram .pele-cluster-label {
+  font-size: 12px;
+  font-weight: 700;
+  font-variation-settings: "wdth" 80;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
