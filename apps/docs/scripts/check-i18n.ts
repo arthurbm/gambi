@@ -18,7 +18,8 @@ const PAGE = /\.(md|mdx|mdoc)$/;
 const pagesUnder = (dir: string): string[] =>
   readdirSync(dir, { recursive: true, encoding: "utf8" })
     .filter((file) => PAGE.test(file))
-    .map((file) => relative(dir, join(dir, file)));
+    // Forward slashes on every platform, so "pt-br/" matches on Windows too.
+    .map((file) => relative(dir, join(dir, file)).replaceAll("\\", "/"));
 
 const english = new Set(
   pagesUnder(docs).filter((page) => !page.startsWith("pt-br/"))
