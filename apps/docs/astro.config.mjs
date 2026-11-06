@@ -153,7 +153,7 @@ export default defineConfig({
           attrs: {
             property: "og:image:alt",
             content:
-              "Agent tools are built for one person. Gambi is built for many. Six people's agents and models connected to one hub.",
+              "Agent tools are built for one person. With Gambi, you build for many. Six people's agents and models connected to one hub.",
           },
         },
         {
