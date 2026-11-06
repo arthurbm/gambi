@@ -53,7 +53,7 @@ Esta iteração **não** transforma a landing em página de marca-guarda-chuva. 
 >
 > **Substituído em 2026-11-06** (§ 7, E11): a hero passa a ser "Agent tools are built for one person. Gambi is built for many.".
 >
-> **Emendado em 2026-11-06** (§ 7, E14): a hero atual é "Agent tools are built for one person. Gambi lets you build for many.".
+> **Emendado em 2026-11-06** (§ 7, E14): a hero atual é "Agent tools are built for one person. With Gambi, you build for many.".
 
 **Tagline (h1):** "A room where many LLMs collaborate."
 
@@ -444,11 +444,11 @@ O exemplo "Squads" mostra a dinâmica do experimento do `gambiarra-lab` (decisã
 #### E14 — Emenda a E11: a segunda frase da hero
 
 ```text
-h1 (EN):    Agent tools are built for one person. Gambi lets you build for many.
-h1 (pt-BR): Agentes são feitos para uma pessoa. O Gambi deixa você construir para muitas.
+h1 (EN):    Agent tools are built for one person. With Gambi, you build for many.
+h1 (pt-BR): Agentes são feitos para uma pessoa. Com o Gambi, você constrói para muitas.
 ```
 
-Troca pedida pelo dono: a segunda frase deixa de descrever o Gambi ("is built for many") e passa a falar com quem constrói nele ("lets you build for many"). Lede e CTAs da E11 não mudam. O cartão `og.png`, as meta descriptions e o `PRODUCT.md` acompanham a troca.
+Troca pedida pelo dono: a segunda frase deixa de descrever o Gambi ("Gambi is built for many") e passa a falar com quem constrói nele ("With Gambi, you build for many"). O verbo direto mantém o eco "built/build" com a primeira frase; "lets you" foi considerado e descartado por amolecer a afirmação. Lede e CTAs da E11 não mudam. O cartão `og.png`, as meta descriptions e o `PRODUCT.md` acompanham a troca.
 
 #### Impacto no mapa de arquivos (seção 4)
 
