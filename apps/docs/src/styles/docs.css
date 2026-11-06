@@ -141,6 +141,11 @@ starlight-lang-select select {
   font-weight: 650;
 }
 
+/* Starlight sizes the language select for short labels; "Português" needs more. */
+starlight-lang-select select {
+  width: calc(8.5rem + var(--sl-inline-padding) * 2);
+}
+
 .social-icons a {
   color: var(--e-ink-2);
 }

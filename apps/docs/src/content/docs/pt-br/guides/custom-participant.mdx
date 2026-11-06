@@ -1,0 +1,191 @@
+---
+title: Crie um runtime de participante customizado
+description: Use createParticipantSession() para rodar seu próprio processo de participante quando a CLI não basta.
+---
+
+A CLI `gambi participant join` cobre o caso comum: escolher um modelo, apontar para um hub e ficar online. Quando você precisa de mais controle, construa seu próprio runtime em cima de `createParticipantSession()`. Exemplos: embutir o participante num serviço de longa duração, adicionar lógica de shutdown customizada ou rodar vários participantes num mesmo processo.
+
+Este guia mostra o runtime mínimo que se comporta como a CLI e, depois, as extensões mais comuns.
+
+## Antes de começar
+
+Você precisa de:
+
+- um hub do Gambi acessível (`gambi hub serve`)
+- um código de room existente (`gambi room create --name "Demo"`)
+- um endpoint de provedor local compatível com OpenAI (Ollama, LM Studio, vLLM ou qualquer outro que sirva `/v1/models` e `/v1/chat/completions`)
+- o `gambi-sdk` instalado
+
+```bash
+bun add gambi-sdk
+```
+
+## Passo 1: Abra uma sessão
+
+`createParticipantSession()` faz quatro coisas numa única chamada: testa o seu endpoint, registra o participante, abre o túnel e inicia os loops de heartbeat e de ping.
+
+```ts
+import { createParticipantSession } from "gambi-sdk";
+
+const session = await createParticipantSession({
+  hubUrl: "http://localhost:3000",
+  roomCode: "ABC123",
+  participantId: "worker-1",
+  nickname: "worker-1",
+  endpoint: "http://localhost:11434",
+  model: "llama3",
+});
+
+console.log("registered as", session.participant.id);
+```
+
+Se o endpoint não expõe o modelo pedido, a chamada lança um erro antes de registrar qualquer coisa. Trate isso como erro de configuração e encerre.
+
+## Passo 2: Espere a sessão fechar
+
+`session.waitUntilClosed()` resolve com um evento de fechamento no momento em que o runtime para, seja qual for o motivo.
+
+```ts
+const closeEvent = await session.waitUntilClosed();
+console.log("session ended:", closeEvent.reason);
+```
+
+São três motivos de fechamento, cada um com um significado diferente:
+
+| Motivo | Significado | Ação sugerida |
+| --- | --- | --- |
+| `"closed"` | seu código chamou `session.close()` | encerre normalmente |
+| `"heartbeat_failed"` | uma requisição de heartbeat de gerenciamento falhou; uma única falha fecha a sessão | provavelmente o hub está inacessível. Encerre e deixe seu supervisor reiniciar o runtime |
+| `"tunnel_closed"` | o túnel WebSocket fechou ou deu erro, de qualquer um dos lados | muitas vezes é instabilidade passageira na rede. Crie uma nova sessão com o mesmo participant ID |
+
+`closeEvent.error` guarda o `Error` de origem quando existe um. Registre no log.
+
+A sessão nunca reconecta sozinha. Em `"closed"` e `"heartbeat_failed"`, ela tenta remover o participante da room antes de resolver. Em `"tunnel_closed"`, não: o registro continua, e o hub marca o participante como offline assim que o túnel dele fecha. Chamar `createParticipantSession()` de novo com o mesmo participant ID atualiza esse registro e abre um novo túnel.
+
+## Passo 3: Encerre de forma limpa
+
+O SDK não instala handlers de sinal. Ligue `session.close()` ao `SIGINT` e ao `SIGTERM` você mesmo. `close()` fecha o túnel e remove o participante da room antes de retornar.
+
+```ts
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.on(signal, () => {
+    void session.close();
+  });
+}
+```
+
+Se a sessão já terminou com `"tunnel_closed"`, `close()` retorna esse evento de fechamento e não remove o registro. Chame `client.participants.remove()` do [cliente de gerenciamento](/pt-br/reference/sdk/#clientparticipantsremoveroomcode-participantid) se precisar que ele suma na hora.
+
+## Passo 4: Repasse a autenticação do provedor
+
+Os `authHeaders` só são aplicados quando o runtime chama o endpoint do seu provedor. Eles nunca saem do runtime do participante. Use-os para chaves de API ou bearer tokens que o seu provedor exige.
+
+```ts
+const session = await createParticipantSession({
+  hubUrl: "http://localhost:3000",
+  roomCode: "ABC123",
+  participantId: "worker-1",
+  nickname: "worker-1",
+  endpoint: "http://localhost:11434",
+  model: "llama3",
+  authHeaders: {
+    Authorization: `Bearer ${process.env.PROVIDER_TOKEN}`,
+  },
+});
+```
+
+O hub nunca vê o `PROVIDER_TOKEN`.
+
+## Passo 5: Customizações comuns
+
+### Declare as especificações da máquina
+
+A TUI mostra as especificações, e os eventos da room as incluem. Passe-as quando você souber. Os campos são `cpu`, `gpu`, `ram` (GB) e `vram` (GB), todos opcionais:
+
+```ts
+await createParticipantSession({
+  // ...
+  specs: {
+    cpu: "Apple M2 Pro",
+    ram: 32,
+    gpu: "Apple M2 Pro integrated",
+  },
+});
+```
+
+### Sobrescreva as capacidades
+
+O probe detecta automaticamente quais superfícies compatíveis com OpenAI o seu endpoint suporta. Sobrescreva quando quiser que o hub prefira uma específica:
+
+```ts
+await createParticipantSession({
+  // ...
+  capabilities: {
+    openResponses: "supported",
+    chatCompletions: "supported",
+  },
+});
+```
+
+### Entrando numa room protegida por senha
+
+```ts
+await createParticipantSession({
+  // ...
+  password: process.env.ROOM_PASSWORD,
+});
+```
+
+### Rodando mais de um participante num processo
+
+Chame `createParticipantSession()` uma vez por participante. Cada chamada retorna uma sessão independente, com túnel, loop de heartbeat e identidade de participante próprios. Rode as promises de `waitUntilClosed()` em paralelo.
+
+```ts
+const sessions = await Promise.all([
+  createParticipantSession({ /* worker-1 */ }),
+  createParticipantSession({ /* worker-2 */ }),
+]);
+
+await Promise.allSettled(
+  sessions.map((session) => session.waitUntilClosed())
+);
+```
+
+## Um runtime completo
+
+Juntando tudo:
+
+```ts
+import { createParticipantSession } from "gambi-sdk";
+
+const session = await createParticipantSession({
+  hubUrl: process.env.GAMBI_HUB ?? "http://localhost:3000",
+  roomCode: "ABC123",
+  participantId: "worker-1",
+  nickname: "worker-1",
+  endpoint: "http://localhost:11434",
+  model: "llama3",
+  authHeaders: process.env.PROVIDER_TOKEN
+    ? { Authorization: `Bearer ${process.env.PROVIDER_TOKEN}` }
+    : undefined,
+});
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.on(signal, () => {
+    void session.close();
+  });
+}
+
+const { reason, error } = await session.waitUntilClosed();
+console.log("[gambi] session ended:", reason);
+if (error) {
+  console.error(error);
+}
+process.exit(reason === "closed" ? 0 : 1);
+```
+
+## Leitura complementar
+
+- [Referência do SDK: `createParticipantSession()`](/pt-br/reference/sdk/#createparticipantsessionoptions): todas as opções e o formato do retorno.
+- [Como os túneis funcionam](/pt-br/concepts/tunnel-first/): por que o runtime abre um WebSocket em vez de expor um endpoint HTTP.
+- [Referência da CLI: `gambi participant join`](/pt-br/reference/cli/#gambi-participant-join): a versão em CLI deste runtime.

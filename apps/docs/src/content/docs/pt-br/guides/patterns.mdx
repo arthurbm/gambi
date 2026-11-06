@@ -1,0 +1,243 @@
+---
+title: Padrões multi-LLM
+description: Monte arenas, júris, debates, NPCs com personas e cadeias de raciocínio em várias etapas com o SDK do Gambi.
+---
+
+Seis padrões para criar experiências em que vários LLMs trabalham juntos. Cada um é poucas linhas de TypeScript em cima do [SDK do Gambi](/pt-br/reference/sdk/). O Gambi cuida do roteamento, dos eventos da room e dos participantes espalhados em várias máquinas. Seu código decide quem fala e quando.
+
+Todos os trechos abaixo partem de:
+
+```ts
+import { createGambi } from "gambi-sdk";
+import { generateText } from "ai";
+
+const gambi = createGambi({
+  roomCode: "ABC123",
+  hubUrl: "http://localhost:3000",
+});
+```
+
+## Arena de modelos <a id="model-arena" />
+
+O mesmo prompt para todos os modelos da room. Use para evals, comparações A/B ou para escolher um modelo para uma tarefa.
+
+```ts
+const prompt = "Explain TLS handshakes in one sentence.";
+
+// Participantes de modelo conectados e sem requisição em andamento
+const participants = (await gambi.listParticipants()).filter(
+  (p) => !p.harness && p.connection.connected && p.status === "online"
+);
+
+const results = await Promise.all(
+  participants.map((p) =>
+    generateText({ model: gambi.participant(p.id), prompt })
+  )
+);
+
+results.forEach((r, i) => console.log(`${participants[i].model}: ${r.text}`));
+```
+
+Cada chamada mira um participante diferente, então elas rodam em paralelo. Um participante ainda pode pegar a requisição de outra pessoa entre a listagem e a sua chamada; nesse caso a chamada falha com HTTP `409`. Não monte uma arena com chamadas repetidas de `gambi.any()`. O `any()` escolhe um participante disponível aleatório, não o próximo da fila, e um participante que está atendendo uma requisição não conta como disponível. Quando há mais chamadas `any()` simultâneas do que participantes livres, as chamadas excedentes falham com HTTP `404`.
+
+## Júri / banca de juízes <a id="jury-panel" />
+
+Gere a resposta uma vez. Envie para N outros modelos com um prompt de julgamento. Conte os veredictos. Esse é o padrão LLM-as-judge (como no G-Eval).
+
+```ts
+const question = "Is this code thread-safe? <code>...</code>";
+
+const answer = await generateText({
+  model: gambi.model("llama3"),
+  prompt: question,
+});
+
+const judgePrompt = `
+Question: ${question}
+Answer: ${answer.text}
+
+Reply with YES or NO and one sentence why.
+`;
+
+const judges = ["gpt-4o-mini", "claude-haiku-4-5", "mistral"];
+
+const verdicts = await Promise.all(
+  judges.map((model) =>
+    generateText({ model: gambi.model(model), prompt: judgePrompt }),
+  ),
+);
+
+const yesVotes = verdicts.filter((v) => v.text.startsWith("YES")).length;
+console.log(`Verdict: ${yesVotes}/${judges.length} say yes`);
+```
+
+Misture provedores à vontade. A resposta pode vir de um Ollama local e os juízes de APIs na nuvem, tudo na mesma room.
+
+## Rascunho → crítica → polimento <a id="draft-critique-polish" />
+
+Um modelo pequeno e rápido escreve o rascunho, um maior faz a crítica e um terceiro dá o polimento. Em textos longos, isso custa menos do que usar o modelo mais forte em todas as etapas.
+
+```ts
+const topic = "How to write a good incident report.";
+
+const draft = await generateText({
+  model: gambi.model("llama3"),
+  prompt: `Draft a 200-word essay: ${topic}`,
+});
+
+const critique = await generateText({
+  model: gambi.model("gpt-4o"),
+  prompt: `Critique this draft. List 3 specific improvements:\n\n${draft.text}`,
+});
+
+const polished = await generateText({
+  model: gambi.model("claude-haiku-4-5"),
+  prompt: `Apply these improvements to the draft.
+
+DRAFT:
+${draft.text}
+
+FEEDBACK:
+${critique.text}
+
+Return only the revised essay.`,
+});
+
+console.log(polished.text);
+```
+
+O mesmo formato serve para code review, tradução ou qualquer ciclo de rascunho, feedback e versão final.
+
+## Clube de debate <a id="debate-club" />
+
+Dois modelos discutem e um terceiro modera. Alterne os turnos entre participantes com system prompts opostos e depois peça um veredicto ao moderador. Os eventos da room permitem que uma plateia acompanhe cada turno.
+
+```ts
+const topic = "Is it OK to lie for a good cause?";
+const turns = 4;
+const transcript: Array<{ speaker: string; text: string }> = [];
+
+const personas = {
+  pro: { id: "pro", system: "You argue strongly FOR the proposition." },
+  con: { id: "con", system: "You argue strongly AGAINST the proposition." },
+};
+
+for (let i = 0; i < turns; i++) {
+  const persona = i % 2 === 0 ? personas.pro : personas.con;
+  const prior = transcript.map((t) => `${t.speaker}: ${t.text}`).join("\n");
+
+  const turn = await generateText({
+    model: gambi.participant(persona.id),
+    system: persona.system,
+    prompt: `TOPIC: ${topic}\nDEBATE SO FAR:\n${prior}\n\nYour turn (3 sentences max).`,
+  });
+
+  transcript.push({ speaker: persona.id, text: turn.text });
+}
+
+const verdict = await generateText({
+  model: gambi.participant("moderator"),
+  prompt: `As moderator, summarize who made the stronger case:\n${transcript
+    .map((t) => `${t.speaker}: ${t.text}`)
+    .join("\n")}`,
+});
+```
+
+Acompanhe o stream SSE da room (`gambi events watch --room ABC123 --format ndjson`) para ver o `llm.request` e o `llm.complete` de cada turno em tempo real.
+
+## NPCs com várias personas <a id="multi-persona-npcs" />
+
+Um jogo em que cada personagem tem o próprio modelo. Registre um participante por persona, cada um no provedor que fizer mais sentido: um modelo pequeno e rápido para o guarda, um maior para o oráculo.
+
+```ts
+const SYSTEM_PROMPTS = {
+  merchant: "You are a greedy merchant. Always try to upsell.",
+  guard: "You are a tired city guard. You speak in 5 words or fewer.",
+  oracle: "You are an ancient oracle. Speak in cryptic verse.",
+};
+
+const npcs = {
+  merchant: gambi.participant("merchant"),
+  guard: gambi.participant("guard"),
+  oracle: gambi.participant("oracle"),
+};
+
+async function npcSays(npc: keyof typeof npcs, playerInput: string) {
+  const result = await generateText({
+    model: npcs[npc],
+    system: SYSTEM_PROMPTS[npc],
+    prompt: playerInput,
+  });
+  return result.text;
+}
+
+console.log(await npcSays("merchant", "Got any potions?"));
+console.log(await npcSays("guard", "Let me through."));
+console.log(await npcSays("oracle", "Will I survive?"));
+```
+
+A lógica do seu jogo cuida da ordem dos turnos e do estado. O Gambi transforma "este personagem fala agora" em uma única chamada.
+
+## Arena de sala de aula numa LAN <a id="lan-debate-club" />
+
+Junte os modelos de todo mundo numa room, como amigos ou alunos. Cada pessoa entra com o próprio provedor (Ollama, OpenRouter, OpenAI). Você constrói a interface; os modelos ficam nas máquinas de cada um.
+
+Suba o hub e crie uma room:
+
+```bash
+gambi hub serve --mdns
+gambi room create --name "Class arena"
+# Created room ABC123 (Class arena).
+```
+
+Cada participante entra separadamente, com o provedor que trouxe:
+
+```bash
+# alice
+gambi participant join --room ABC123 --participant-id alice --model llama3
+
+# bob
+gambi participant join --room ABC123 --participant-id bob --model mistral \
+  --endpoint http://localhost:1234
+
+# carol (usando OpenRouter)
+gambi participant join --room ABC123 --participant-id carol \
+  --endpoint https://openrouter.ai/api \
+  --model meta-llama/llama-3.1-8b-instruct:free \
+  --header-env Authorization=OPENROUTER_AUTH
+```
+
+Depois o app distribui o mesmo prompt para todos e mostra as respostas lado a lado, abre votação ou faz comparações às cegas:
+
+```ts
+// createClient cuida das operações de gerenciamento (listar participantes, rooms).
+// createGambi (da configuração acima) cuida da inferência. Este exemplo precisa dos dois.
+import { createClient } from "gambi-sdk";
+
+const client = createClient({ hubUrl: "http://localhost:3000" });
+const { data } = await client.participants.list("ABC123");
+
+// A lista inclui participantes harness, ocupados (busy) e offline.
+// Fique só com os participantes de modelo que podem atender uma requisição agora.
+const participants = data.filter(
+  (p) => !p.harness && p.connection.connected && p.status === "online"
+);
+
+const responses = await Promise.all(
+  participants.map((p) =>
+    generateText({
+      model: gambi.participant(p.id),
+      prompt: "Explain monads in one sentence.",
+    }),
+  ),
+);
+```
+
+A room é compartilhada; cada modelo fica na máquina de quem o trouxe.
+
+## Próximos passos
+
+- [Referência do SDK](/pt-br/reference/sdk/): todos os helpers e opções de roteamento
+- [Como os túneis funcionam](/pt-br/concepts/tunnel-first/): por que o endpoint do participante pode ficar em `localhost`
+- [Provedores remotos](/pt-br/guides/remote-providers/): entrar com APIs na nuvem (OpenAI, OpenRouter, Together, Groq)
+- [Observabilidade](/pt-br/reference/observability/): o formato dos eventos SSE e as métricas embutidas

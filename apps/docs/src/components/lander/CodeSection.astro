@@ -1,6 +1,12 @@
 ---
 import { Code } from "astro:components";
 
+const { t } = Astro.locals;
+const { locale } = Astro.locals.starlightRoute;
+// Internal links stay inside the visitor's locale ("/x/" -> "/pt-br/x/").
+const href = (path: string) => (locale ? `/${locale}${path}` : path);
+
+// Only the comments and the prompt string are translated; code stays as is.
 const modelSnippet = `import { generateText } from "ai";
 import { createGambi } from "gambi-sdk";
 
@@ -10,15 +16,15 @@ const gambi = createGambi({
 });
 
 const { text } = await generateText({
-  model: gambi.model("llama3"), // or gambi.any()
-  prompt: "Draft the release note for v0.7.",
+  model: gambi.model("llama3"), // ${t("landing.code.orAny")}
+  prompt: "${t("landing.code.prompt")}",
 });`;
 
 const agentSnippet = `import { createClient } from "gambi-sdk";
 
 const client = createClient({ hubUrl: "http://192.168.1.10:3000" });
 
-// Bia's Claude Code, running on Bia's laptop
+// ${t("landing.code.biaComment")}
 const channel = await client.harness.attach({
   roomCode: "ABC123",
   participantId: "bia",
@@ -31,37 +37,21 @@ for await (const frame of channel.messages) {
 }`;
 
 const links = [
-  {
-    title: "Quick start",
-    note: "Hub, room, and your first participant in four commands.",
-    href: "/start/quickstart/",
-  },
-  {
-    title: "Bring your agent",
-    note: "Share Claude Code, Codex, or OpenCode from your machine.",
-    href: "/guides/bring-your-harness/",
-  },
-  {
-    title: "Patterns",
-    note: "Arena, jury, debate, and the rest, with code.",
-    href: "/guides/patterns/",
-  },
-  {
-    title: "SDK reference",
-    note: "createGambi, createClient, and the harness channel.",
-    href: "/reference/sdk/",
-  },
-];
+  { key: "quickstart", href: "/start/quickstart/" },
+  { key: "bring", href: "/guides/bring-your-harness/" },
+  { key: "patterns", href: "/guides/patterns/" },
+  { key: "sdk", href: "/reference/sdk/" },
+].map((l) => ({
+  title: t(`landing.code.${l.key}.title`),
+  note: t(`landing.code.${l.key}.note`),
+  href: href(l.href),
+}));
 ---
 
 <section class="code" aria-labelledby="code-title">
   <div class="code-copy">
-    <h2 id="code-title" class="section-title">In your code</h2>
-    <p class="section-lead">
-      Models answer on an OpenAI-compatible endpoint, so the AI SDK or any
-      OpenAI client works. Agents are reached by attaching to the person who
-      shared them.
-    </p>
+    <h2 id="code-title" class="section-title">{t("landing.code.title")}</h2>
+    <p class="section-lead">{t("landing.code.lead")}</p>
     <ul class="doc-links">
       {links.map((l) => (
         <li>
@@ -76,9 +66,9 @@ const links = [
   </div>
 
   <div class="code-tabs" data-code-tabs>
-    <div class="ct-bar" role="tablist" aria-label="Code examples">
-      <button role="tab" type="button" id="ct-tab-models" aria-controls="ct-models" aria-selected="true" data-ct="models">Models</button>
-      <button role="tab" type="button" id="ct-tab-agents" aria-controls="ct-agents" aria-selected="false" tabindex="-1" data-ct="agents">Agents</button>
+    <div class="ct-bar" role="tablist" aria-label={t("landing.code.tabs")}>
+      <button role="tab" type="button" id="ct-tab-models" aria-controls="ct-models" aria-selected="true" data-ct="models">{t("landing.code.models")}</button>
+      <button role="tab" type="button" id="ct-tab-agents" aria-controls="ct-agents" aria-selected="false" tabindex="-1" data-ct="agents">{t("landing.code.agents")}</button>
     </div>
     <div role="tabpanel" id="ct-models" aria-labelledby="ct-tab-models">
       <Code class="ct-code" code={modelSnippet} lang="ts" theme="css-variables" />
