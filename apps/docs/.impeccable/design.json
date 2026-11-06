@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-06T13:31:04+00:00",
+  "generatedAt": "2026-11-06T13:56:25+00:00",
   "title": "Design System: Gambi",
   "extensions": {
     "colorMeta": {
@@ -737,6 +737,37 @@
           "#c4cad1",
           "#ebeff4"
         ]
+      },
+      "code-line": {
+        "role": "neutral",
+        "displayName": "Code Line",
+        "canonical": "rgb(255 255 255 / 0.08)",
+        "cssVar": "--e-code-line",
+        "theme": "both"
+      },
+      "code-accent": {
+        "role": "neutral",
+        "displayName": "Code Accent",
+        "canonical": "#f2cf3a",
+        "cssVar": "--e-code-accent",
+        "theme": "both",
+        "oklch": "oklch(86.0% 0.161 95.1)"
+      },
+      "code-scrollbar": {
+        "role": "neutral",
+        "displayName": "Code Scrollbar",
+        "canonical": "#56626f",
+        "cssVar": "--e-code-scrollbar",
+        "theme": "both",
+        "oklch": "oklch(49.1% 0.026 250.5)"
+      },
+      "selection-ink": {
+        "role": "neutral",
+        "displayName": "Selection Ink",
+        "canonical": "#17191c",
+        "cssVar": "--e-selection-ink",
+        "theme": "both",
+        "oklch": "oklch(21.3% 0.007 258.4)"
       }
     },
     "typographyMeta": {
@@ -914,7 +945,7 @@
     ],
     "focus": {
       "value": "outline: 2px solid var(--e-harness); outline-offset: 3px; border-radius: 4px",
-      "purpose": "Focus ring on every interactive element inside the landing."
+      "purpose": "Focus ring on every interactive element, landing and docs (docs use a 2px offset)."
     },
     "textHalo": {
       "html": "-webkit-text-stroke: 0.32em var(--e-ground); paint-order: stroke fill",
@@ -963,7 +994,7 @@
         ]
       }
     },
-    "scope": "Splash route only (:root[data-has-hero]). Docs pages still use legacy src/styles/custom.css."
+    "scope": "Landing (/) and every docs page. Tokens in src/styles/tokens.css, Starlight mapping in src/styles/docs.css, both loaded through Starlight customCss. Docs diagrams are Mermaid drawn by Pele at build time (src/plugins/mermaid.mjs)."
   },
   "components": [
     {
@@ -1045,6 +1076,14 @@
       "description": "Small condensed pill stating the status of what it sits next to; dashed for work being explored.",
       "html": "<span class=\"ds-tag\">example</span> <span class=\"ds-tag ds-tag-explored\">Being explored</span>",
       "css": ".ds-tag { display: inline-block; padding: 0.1rem 0.45rem; border: 1px solid var(--e-line-2, rgb(12 19 29 / 0.24)); border-radius: 999px; font-family: 'Archivo Variable', system-ui, sans-serif; font-size: 0.7rem; font-weight: 700; font-variation-settings: 'wdth' 80; letter-spacing: 0.07em; text-transform: uppercase; color: var(--e-ink-3, #5d6a7c); } .ds-tag-explored { border: 1px dashed var(--e-ink-3, #5d6a7c); color: var(--e-ink-2, #3c4859); }"
+    },
+    {
+      "name": "Docs Diagram",
+      "kind": "figure",
+      "refersTo": "docs-diagram",
+      "description": "A Mermaid diagram drawn to SVG by Pele at build time. Pele's CSS variables map to tokens; :::model, :::harness, :::stop and :::hub classes carry the track colors.",
+      "html": "<figure class=\"diagram\"><div class=\"diagram-wide\"><svg class=\"pele pele-flowchart\" viewBox=\"0 0 320 70\" role=\"img\" aria-label=\"Runtime opens a tunnel to the hub\"><g class=\"pele-node harness\"><rect x=\"8\" y=\"11\" width=\"130\" height=\"48\" rx=\"6\"/><text x=\"73\" y=\"40\" text-anchor=\"middle\">Runtime</text></g><path d=\"M138 35H236\" stroke-width=\"2.5\"/><g class=\"pele-node hub\"><circle cx=\"265\" cy=\"35\" r=\"27\"/><text x=\"265\" y=\"40\" text-anchor=\"middle\">Hub</text></g></svg></div><figcaption>The participant opens the tunnel.</figcaption></figure>",
+      "css": ".diagram { --pele-bg: var(--e-ground); --pele-fg: var(--e-ink); --pele-line: var(--e-ink-3); --pele-surface: var(--e-sheet); --pele-surface-alt: var(--e-panel); --pele-border: var(--e-steel); --pele-font: var(--e-text); margin: 1.75rem 0 2rem; } .diagram svg { display: block; margin-inline: auto; font-family: var(--e-text); fill: var(--e-ink); } .diagram rect, .diagram circle { fill: var(--e-sheet); stroke: var(--e-steel); } .diagram path { stroke: var(--e-ink-3); fill: none; } .diagram .harness > rect { stroke: var(--e-harness); stroke-width: 1.5; } .diagram .hub > circle { fill: var(--e-hub); stroke: var(--e-hub); } .diagram .hub > text { fill: var(--e-hub-ink); font-weight: 650; } .diagram figcaption { margin-top: 0.75rem; color: var(--e-ink-3); font-size: 0.9rem; text-align: center; }"
     }
   ],
   "narrative": {

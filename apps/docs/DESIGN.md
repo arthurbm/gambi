@@ -22,6 +22,10 @@ colors:
   code-bg: "#16181b"
   code-ink: "#dfe6ef"
   code-dim: "#8a929d"
+  code-line: "rgb(255 255 255 / 0.08)"
+  code-accent: "#f2cf3a"
+  code-scrollbar: "#56626f"
+  selection-ink: "#17191c"
   ground-dark: "#17191c"
   panel-dark: "#1d2024"
   sheet-dark: "#22262b"
@@ -266,7 +270,7 @@ Surfaces are flat and drawn with hairlines. One variable family, Archivo, covers
 
 ## Colors
 
-A neutral ink-and-steel base with three signal colors whose meanings never change. Each token maps to the CSS custom property `--e-<name>` on `:root[data-has-hero]` (paper, the default). Keys ending in `-dark` are the values the same properties take under `[data-theme="dark"]` (graphite). Tokens without a `-dark` twin keep their paper value in graphite.
+A neutral ink-and-steel base with three signal colors whose meanings never change. Each token maps to the CSS custom property `--e-<name>` on `:root` in `src/styles/tokens.css` (paper, the default), which the landing and every docs page load through Starlight's `customCss`. Keys ending in `-dark` are the values the same properties take under `[data-theme="dark"]` (graphite). Tokens without a `-dark` twin keep their paper value in graphite.
 
 ### Primary
 - **Signal Yellow** (`model`, `model-dark`): model tracks, the model offer under a person's name, model dots in the comparison glyphs and example stages, model spokes, the outbound packet in the section cut, and the lit top rule of the active section-cut column. In graphite it is also the primary action fill (`primary-dark`).
@@ -289,7 +293,8 @@ A neutral ink-and-steel base with three signal colors whose meanings never chang
 - **Steel** (`steel`, `steel-dark`): ring strokes, the machine band at 30% opacity, tick marks, and comparison glyph rings.
 - **Hub** (`hub`, `hub-dark`) on **Hub Ink** (`hub-ink`, `hub-ink-dark`): the hub disc and its label. On paper the hub is ink; in graphite it is a pale disc with dark text.
 - **Primary** (`primary`) on **Primary Ink** (`primary-ink`): on paper the primary button and the active mode-switch segment are filled with ink. The selected example tab's underline also uses primary, so it is ink on paper and signal yellow in graphite.
-- **Code slab** (`code-bg`, `code-bg-dark`, `code-ink`, `code-dim`): code tabs and the event log, dark in both themes. The `syntax-*` tokens color code on that slab; event names in the log use `syntax-function` and rejected steps use `syntax-keyword`.
+- **Code slab** (`code-bg`, `code-bg-dark`, `code-ink`, `code-dim`, `code-line`, `code-accent`, `code-scrollbar`): code tabs, docs code blocks, and the event log, dark in both themes. `code-line` is the hairline inside the slab, `code-accent` the selected tab's underline, `code-scrollbar` its scrollbar thumb. The `syntax-*` tokens color code on that slab; event names in the log use `syntax-function` and rejected steps use `syntax-keyword`.
+- **Selection ink** (`selection-ink`): text color on the `model-strong` selection and on search-result highlights.
 
 ### Named Rules
 **The Track Color Rule.** Yellow means a model and cyan means an agent, wherever they appear: tracks, dots, offers, spokes, packets. Neither color is used for decoration or emphasis unrelated to a participant.
@@ -420,6 +425,29 @@ The trusted-network warning: a 1px border of stop at 55% strength, a fill of sto
 ### Tags
 Small pill labels in the label recipe: "example" next to the session code (solid Line 2 border, ink 3) and "Being explored" next to an example title (dashed ink 3 border, ink 2 text). Tags state the status of what they sit next to.
 
+### Docs pages (Read mode)
+The docs are Starlight pages in the same world, tuned for reading rather than persuading. `src/styles/docs.css` maps Starlight's `--sl-*` variables to the tokens and styles the parts Starlight draws.
+
+- **Header:** ground with a Line rule under it. The site title is the landing's wordmark (`src/components/SiteTitle.astro`). Search is a sheet box with a Line 2 border at `rounded.md` on desktop and a bare icon on phones. The theme select keeps Starlight's Dark, Light, and Auto options in the control recipe. On phones the menu button is the landing's round toggle: ground fill, Line 2 border, ink 2 icon.
+- **Sidebar and table of contents:** group labels and "On this page" use the label recipe (uppercase, width 80, ink 3). Links are ink 2 at 0.94rem and turn ink on hover. The current page sits on a panel fill with `rounded.label` and 600 weight; there is no colored bar. The current heading in the table of contents is ink at 600.
+- **Content:** body is Archivo at 1.0625rem with 1.65 line height in a 46rem column. The page title is 650 at width 112. Each h2 after the first starts under a Line rule with 1.6rem above it, so long reference pages read as sections; h3 is 650 at width 106. Links are ink with a 1px Line 2 underline that turns ink on hover. Inline code is mono on a panel chip with a Line border, as on the landing.
+- **Tables:** no fills or zebra stripes. Headers use the label recipe over a Line 2 rule, rows are split by Line, and numerals are tabular.
+- **Asides:** note and tip are sheet panels with a Line 2 border at `rounded.lg` and an ink title. Caution and danger use the warning recipe (stop at 55% for the border, 7% fill, stop title), so the only red on a docs page marks a real stop, such as "Trusted networks only".
+- **Tabs:** the example-tab recipe: ink 3 labels at width 96 over a Line 2 rule; the selected tab is ink with a 2px primary underline.
+- **Code blocks:** Expressive Code on the code slab in both themes, with one theme (`gambi-slab` in `astro.config.mjs`) built from the `syntax-*` tokens, a Line border, `rounded.lg`, no shadow, a `code-line` rule under the title bar, and the `code-accent` underline on the active file tab.
+- **Pagination:** Line 2 boxes at `rounded.lg` with no shadow. "Previous" and "Next" use the label recipe and the page title sits under them at 650.
+- **Focus:** the cyan focus ring from the landing, offset 2px.
+
+### Docs diagrams
+System diagrams in the docs are written as Mermaid in Markdown and drawn to SVG at build time by Pele (`src/plugins/mermaid.mjs`, a Sätteri mdast plugin). Pele colors and fonts are CSS variables, so `.diagram` in `docs.css` maps them to tokens and one SVG serves both themes. The landing's ring figures are hand-built; the docs trade them for boxes and arrows so anyone can add a diagram in a pull request.
+
+- **Grammar:** nodes are sheet boxes with a steel border at 6px radius; clusters (a participant machine, the hub's parts) are panel boxes with a condensed uppercase label. Arrows are ink 3 and point the way a connection is opened, so every tunnel arrow points at the hub. A thick arrow (`==>`) marks the tunnel.
+- **Color:** the same meanings as the landing, applied with Mermaid classes: `:::model` strokes a node in signal yellow, `:::harness` in track cyan, `:::stop` in stop red, and `:::hub` fills a circle with the hub color. Each class needs a `classDef` with a stroke width only, because Pele's parser rejects `var()` in `classDef`; the color comes from CSS.
+- **Captions:** `title="..."` on the fence becomes the figure caption and the SVG's accessible name. State the point of the figure in one sentence.
+- **Phones:** wide flowcharts get a second drawing laid out for a 358px column, shown under a container query. A drawing that cannot re-flow (a sequence diagram, a wide flowchart) shrinks to 70% and then scrolls sideways, with a fade at the right edge that clears at the end of the scroll.
+- **Text:** Pele cannot mix fonts inside one label, so endpoints and frame names in diagrams are set in Archivo, not mono.
+- **llms.txt:** each figure carries its Mermaid source in a hidden `<pre>`, so the generated llms files keep a readable copy instead of SVG.
+
 ### Navigation and footer
 The nav is a plain bar over a Line rule: the wordmark (ring glyph with a yellow hub dot, Archivo 700 at width 118) on the left, then Docs, Patterns, SDK, GitHub in ink 2 (ink on hover), and a round theme toggle with a sun or moon icon. The footer repeats the wordmark at 1.3rem with a one-line tagline, three link columns under condensed uppercase labels, and a strip in ink 3.
 
@@ -442,7 +470,7 @@ The nav is a plain bar over a Line rule: the wordmark (ring glyph with a yellow 
 ## Do's and Don'ts
 
 ### Do:
-- **Do** draw new system diagrams from the ring vocabulary in `geometry.ts`: machines on the outside, tunnels between, the hub at the centre, and your app outside the rings.
+- **Do** draw new landing figures from the ring vocabulary in `geometry.ts`: machines on the outside, tunnels between, the hub at the centre, and your app outside the rings. Draw docs diagrams in Mermaid with the classes under "Docs diagrams".
 - **Do** color every track, dot, spoke, packet, and offer by what the participant brings: signal yellow for a model, cyan for an agent.
 - **Do** put a ground-colored halo behind any text that sits over rings or tracks (`paint-order: stroke` in SVG, `-webkit-text-stroke` with `paint-order: stroke fill` in HTML).
 - **Do** set uppercase labels condensed (width 76 to 80) with 0.08 to 0.09em tracking, and headlines expanded (width 108 to 118) with negative tracking.
@@ -463,6 +491,8 @@ The nav is a plain bar over a Line rule: the wordmark (ring glyph with a yellow 
 
 ## Scope and known drift
 
-- **Splash route only.** This world applies to the landing at `/` only. `src/components/Hero.astro` renders `Lander.astro` when the slug is empty, and the tokens are scoped to `:root[data-has-hero]`. Every docs page still uses Starlight with the legacy `src/styles/custom.css` (its own `--gambi-*` variables and older animations) until a follow-up docs pass adopts these tokens.
-- **Hard-coded code-slab colors.** The code-tab underline, event names and rejected steps in the log, the code scrollbar, and the selection text color are written as literal hex values in components instead of referencing tokens. The values match `model-dark`, `syntax-function`, `syntax-keyword`, `steel-dark`, and `hub-ink-dark`.
+- **One world, two modes.** The landing at `/` (Persuade) and every docs page (Read) share `src/styles/tokens.css` and the Archivo and JetBrains Mono files, loaded once through Starlight's `customCss`. `src/components/Hero.astro` renders `Lander.astro` on the root route only; `docs.css` styles everything Starlight draws. The legacy `custom.css` is gone.
+- **Syntax colors written twice.** Expressive Code needs literal colors for its contrast math, so the `gambi-slab` theme in `astro.config.mjs` repeats the `syntax-*` and code-slab hex values instead of reading the tokens. Change both together.
+- **Event log colors.** `lander/Examples.astro` still writes the log's event names and rejected steps as literal hex; the values match `syntax-function` and `syntax-keyword`.
+- **Two wordmarks.** The landing nav and `SiteTitle.astro` each carry the same inline SVG glyph. Change both together.
 - **Link card.** `og/card.html` redraws the display in its N ↔ N graphite state with numbers copied by hand from `geometry.ts`, so the two can drift apart. Re-render `public/og.png` after any geometry or palette change.
