@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Hub Unit sketch</title>
+<style>
+*{box-sizing:border-box;margin:0}
+body{width:1440px;height:900px;background:#cfcfcb;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;color:#1d1e20;overflow:hidden}
+nav{height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 56px;font-size:14px;letter-spacing:.02em}
+nav b{font-size:18px;letter-spacing:.08em}
+nav span{margin-left:28px;color:#4a4b4e}
+.unit{position:absolute;left:56px;right:56px;top:72px;bottom:40px;background:#e4e4e1;border-radius:28px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08),0 1px 0 rgba(255,255,255,.6) inset}
+.screw{position:absolute;width:10px;height:10px;border-radius:50%;background:#b7babd;box-shadow:inset 0 0 0 1px rgba(0,0,0,.2)}
+h1{position:absolute;left:72px;top:64px;width:760px;font-size:76px;line-height:1.02;font-weight:700;letter-spacing:-.02em}
+.lede{position:absolute;left:72px;top:318px;width:560px;font-size:19px;line-height:1.5;color:#4a4b4e}
+.grille{position:absolute;right:72px;top:64px;width:420px;height:300px;background-image:radial-gradient(circle,#1d1e20 2.6px,transparent 3px);background-size:14px 14px;opacity:.85;border-radius:8px}
+.cap{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#6b6c70}
+.slot{position:absolute;left:72px;top:470px;display:flex;align-items:center;gap:16px}
+.slot .well{background:#1d1e20;color:#e4e4e1;font-family:Menlo,monospace;font-size:16px;padding:16px 22px;border-radius:10px;width:470px}
+.key{width:64px;height:54px;border-radius:10px;background:#ff5a1f;box-shadow:0 3px 0 #c43f0e}
+.key2{width:150px;height:54px;border-radius:10px;background:#1d1e20;box-shadow:0 3px 0 #000}
+.key3{width:170px;height:54px;border-radius:10px;background:#d3d3cf;box-shadow:0 3px 0 #a9a9a5}
+.ports{position:absolute;left:72px;right:72px;bottom:56px;height:180px;border-top:1px solid rgba(0,0,0,.18);display:grid;grid-template-columns:repeat(6,1fr);gap:0}
+.port{position:relative;border-right:1px solid rgba(0,0,0,.1);padding:22px 20px}
+.port:last-child{border-right:0}
+.lamp{width:12px;height:12px;border-radius:50%;background:#2f9e52;box-shadow:0 0 0 3px rgba(47,158,82,.18)}
+.lamp.off{background:#9a9b9e;box-shadow:none}
+.jack{margin-top:18px;width:46px;height:46px;border-radius:50%;background:#1d1e20;box-shadow:inset 0 0 0 9px #2c2d30}
+.name{margin-top:16px;font-size:22px;font-weight:700}
+.kind{font-size:13px;color:#6b6c70;margin-top:4px}
+.cable{position:absolute;left:43px;top:120px;width:6px;height:100px;background:#1d1e20;border-radius:3px}
+</style></head><body>
+<nav><b>GAMBI</b><div><span>Docs</span><span>Harness guide</span><span>SDK</span><span>GitHub</span></div></nav>
+<div class="unit">
+<i class="screw" style="left:20px;top:20px"></i><i class="screw" style="right:20px;top:20px"></i><i class="screw" style="left:20px;bottom:20px"></i><i class="screw" style="right:20px;bottom:20px"></i>
+<h1>Everyone's models and agents, in one place.</h1>
+<p class="lede">Gambi is a hub for a network you trust. People connect the models and coding harnesses on their own machines. Your app reaches all of them through one endpoint. Keys never leave home.</p>
+<div class="grille"></div>
+<div class="slot"><div><div class="cap" style="margin-bottom:8px">Install</div><div class="well">curl -fsSL https://gambi.sh/install | bash</div></div><div class="key" style="margin-top:22px"></div><div class="key2" style="margin-top:22px"></div><div class="key3" style="margin-top:22px"></div></div>
+<div class="ports">
+<div class="port"><div class="lamp"></div><div class="jack"></div><div class="name">llama3</div><div class="kind">model · Ollama</div></div>
+<div class="port"><div class="lamp"></div><div class="jack"></div><div class="name">claude-code</div><div class="kind">harness · ACP</div></div>
+<div class="port"><div class="lamp"></div><div class="jack"></div><div class="name">qwen2.5-coder</div><div class="kind">model · vLLM</div></div>
+<div class="port"><div class="lamp"></div><div class="jack"></div><div class="name">codex</div><div class="kind">harness · ACP</div></div>
+<div class="port"><div class="lamp"></div><div class="jack"></div><div class="name">llama-3.3-70b</div><div class="kind">model · OpenRouter</div></div>
+<div class="port"><div class="lamp off"></div><div class="jack"></div><div class="name">open port</div><div class="kind">gambi participant join</div></div>
+</div>
+</div>
+</body></html>

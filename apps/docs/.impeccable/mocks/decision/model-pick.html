@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Concrete Grid sketch</title>
+<style>
+*{box-sizing:border-box;margin:0}
+body{width:1440px;height:900px;background:#f4f4f2;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;color:#121212;overflow:hidden;position:relative}
+nav{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 64px;border-bottom:2px solid #121212;font-size:14px}
+nav b{font-size:20px;letter-spacing:.04em}
+nav span{margin-left:28px}
+h1{position:absolute;left:64px;top:132px;width:600px;font-size:84px;line-height:.98;font-weight:800;letter-spacing:-.03em}
+.lede{position:absolute;left:64px;top:500px;width:500px;font-size:19px;line-height:1.5;color:#3a3a3a}
+.act{position:absolute;left:64px;top:660px;display:flex;gap:12px}
+.cmd{background:#121212;color:#f4f4f2;font-family:Menlo,monospace;font-size:16px;padding:18px 22px;width:420px}
+.btn{background:#e2401c;width:160px;height:58px}
+.grid{position:absolute;left:720px;top:104px;width:660px;height:660px;display:grid;grid-template-columns:repeat(6,1fr);grid-template-rows:repeat(6,1fr);gap:6px}
+.m{background:#121212}
+.b{background:#2741c4}
+.e{background:transparent;border:2px solid #121212}
+.hub{grid-column:3/5;grid-row:3/5;background:#2741c4;display:flex;align-items:center;justify-content:center;color:#f4f4f2;font-weight:800;font-size:28px;letter-spacing:.06em}
+.tri{background:linear-gradient(135deg,#121212 50%,transparent 50%)}
+.tri2{background:linear-gradient(315deg,#2741c4 50%,transparent 50%)}
+.cap{position:absolute;left:720px;top:782px;font-size:13px;color:#555;letter-spacing:.04em}
+</style></head><body>
+<nav><b>GAMBI</b><div><span>Docs</span><span>Harness guide</span><span>SDK</span><span>GitHub</span></div></nav>
+<h1>Everyone's models and agents, in one place.</h1>
+<p class="lede">Gambi is a hub for a network you trust. People connect the models and coding harnesses on their own machines. Your app reaches all of them through one endpoint. Keys never leave home.</p>
+<div class="act"><div class="cmd">curl -fsSL https://gambi.sh/install | bash</div><div class="btn"></div></div>
+<div class="grid">
+<i class="m"></i><i class="e"></i><i class="tri"></i><i class="e"></i><i class="b"></i><i class="e"></i>
+<i class="e"></i><i class="tri2"></i><i class="e"></i><i class="m"></i><i class="e"></i><i class="tri"></i>
+<i class="b"></i><i class="e"></i><div class="hub">HUB</div><i class="e"></i><i class="m"></i>
+<i class="e"></i><i class="m"></i><i class="e"></i><i class="tri2"></i>
+<i class="tri"></i><i class="e"></i><i class="b"></i><i class="e"></i><i class="e"></i><i class="m"></i>
+<i class="e"></i><i class="b"></i><i class="e"></i><i class="tri"></i><i class="m"></i><i class="e"></i>
+</div>
+<p class="cap">Black: models. Blue: harnesses. Outlined: open places.</p>
+</body></html>
