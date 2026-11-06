@@ -96,15 +96,15 @@ export default defineConfig({
         },
         {
           label: "Architecture",
-          autogenerate: { directory: "architecture" },
+          items: [{ autogenerate: { directory: "architecture" } }],
         },
         {
           label: "Explanation",
-          autogenerate: { directory: "explanation" },
+          items: [{ autogenerate: { directory: "explanation" } }],
         },
         {
           label: "Troubleshooting",
-          autogenerate: { directory: "troubleshooting" },
+          items: [{ autogenerate: { directory: "troubleshooting" } }],
         },
       ],
     }),
