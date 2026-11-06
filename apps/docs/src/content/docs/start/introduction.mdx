@@ -1,0 +1,80 @@
+---
+title: What is Gambi?
+description: What Gambi is, the pieces it is made of, and which page to read first for what you want to do.
+sidebar:
+  label: Introduction
+---
+
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+import AgentPrompt from '../../../components/AgentPrompt.astro';
+
+Gambi lets a group share the AI models and coding agents that already run on each person's machine. One machine runs a **hub**. Everyone else joins a **room** on that hub and shares what they have: a model served by Ollama, vLLM, or a cloud API, or a coding agent such as Claude Code, Codex, or OpenCode. Your app then reaches all of them through the hub.
+
+Keys and logins never leave the machine they belong to, and the hub never connects to anyone's machine. Each participant opens a connection to the hub, and the hub sends work back through it.
+
+## The pieces
+
+```mermaid title="Your app talks to the hub. Each participant opened its own tunnel to the hub."
+flowchart LR
+  app["Your app"] -->|"HTTP"| hub(("Hub")):::hub
+  subgraph room["room ABC123"]
+    m1["participant: llama3 on Ollama"]:::model
+    h1["participant: Claude Code"]:::harness
+  end
+  m1 -->|"tunnel"| hub
+  h1 -->|"tunnel"| hub
+  classDef hub stroke-width:1px
+  classDef model stroke-width:1.5px
+  classDef harness stroke-width:1.5px
+```
+
+| Piece | What it is |
+| --- | --- |
+| **Hub** | The process started by `gambi hub serve`. It keeps the list of rooms and participants and routes requests. It needs no GPU. |
+| **Room** | A group inside the hub, identified by a short code such as `ABC123`. Every request targets one room. |
+| **Participant** | One thing someone shares in a room. It is either a **model** or a **harness**. |
+| **Model participant** | A model behind an OpenAI-compatible server on that person's machine: Ollama, LM Studio, vLLM, or a cloud API such as OpenRouter. Apps call it with the OpenAI API. |
+| **Harness participant** | A coding agent (Claude Code, Codex, or OpenCode) running on that person's machine, with their own login. Apps attach to it and exchange ACP messages. |
+| **Tunnel** | The WebSocket a participant opens to the hub. All of its traffic goes through it, so the provider can stay on `localhost`. |
+| **Your app** | Your code. It calls the room through the [SDK](/reference/sdk/) or any OpenAI-compatible client, and decides what the group does. |
+
+:::caution[Trusted networks only]
+The hub has no built-in authentication. Run it on a network where you trust everyone: your home, your lab, the room your group meets in.
+:::
+
+## Where to start
+
+Everyone starts with [Installation](/start/installation/) and the [Quick start](/start/quickstart/). The quick start runs a hub, creates a room, and shares one model in four commands. Then follow the page for what you want to do:
+
+<CardGrid>
+  <LinkCard
+    title="Share a model"
+    description="Ollama, LM Studio, vLLM, or any OpenAI-compatible server on your machine."
+    href="/start/quickstart/#3-join-with-your-model"
+  />
+  <LinkCard
+    title="Share a coding agent"
+    description="Your own Claude Code, Codex, or OpenCode, with your own login."
+    href="/guides/bring-your-harness/"
+  />
+  <LinkCard
+    title="Share a cloud model"
+    description="OpenRouter, Groq, Together AI, or OpenAI, with the key kept on your machine."
+    href="/guides/remote-providers/"
+  />
+  <LinkCard
+    title="Build an app on a room"
+    description="Call the room from the AI SDK, the OpenAI SDK, Python, or curl."
+    href="/guides/ai-tools/"
+  />
+</CardGrid>
+
+To see how the parts fit together, read [How tunnels work](/concepts/tunnel-first/) and the [Architecture overview](/concepts/architecture/).
+
+## Set it up with your agent
+
+If you already use a coding agent, it can run the setup with you. It asks what you want to share and checks at the end that everything answers.
+
+<AgentPrompt />
+
+Every page of these docs is also available as Markdown: add `.md` to its address, for example [`/start/quickstart.md`](/start/quickstart.md).

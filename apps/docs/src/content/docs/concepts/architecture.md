@@ -151,4 +151,4 @@ The hub emits `llm.request`, `llm.complete`, and `llm.error` for inference, and 
 - The hub has no built-in authentication. Run it on a trusted network, or behind your own proxy and authentication layer.
 - The hub does not orchestrate models or harnesses. Applications can coordinate work through the SDK without moving that policy into the hub.
 
-For where coordination above the hub is being explored, see [What's next](/explanation/whats-next/).
+For where coordination above the hub is being explored, see [What's next](/concepts/whats-next/).

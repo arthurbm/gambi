@@ -2,6 +2,7 @@
 import { satteri } from "@astrojs/markdown-satteri";
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
+import starlightDotMd from "starlight-dot-md";
 import starlightLlmsTxt from "starlight-llms-txt";
 import { mermaidDiagrams } from "./src/plugins/mermaid.mjs";
 
@@ -74,6 +75,15 @@ const slab = {
 // https://astro.build/config
 export default defineConfig({
   site: "https://gambi.sh",
+  // Pages that moved when the sidebar was reorganized into "Start here",
+  // "Share", "Build", and "Concepts".
+  redirects: {
+    "/guides/quickstart": "/start/quickstart/",
+    "/architecture/overview": "/concepts/architecture/",
+    "/explanation/tunnel-first": "/concepts/tunnel-first/",
+    "/explanation/whats-next": "/concepts/whats-next/",
+    "/explanation/why-gambi": "/concepts/why-gambi/",
+  },
   markdown: {
     processor: satteri({ mdastPlugins: [mermaidDiagrams] }),
   },
@@ -85,12 +95,17 @@ export default defineConfig({
   integrations: [
     starlight({
       plugins: [
+        // Every page is also served as its Markdown source at <page>.md,
+        // for agents and the "Ask your agent" prompt.
+        starlightDotMd(),
         starlightLlmsTxt({
           projectName: "Gambi",
           description:
             "Local-first hub for sharing OpenAI-compatible model endpoints and local coding harnesses. Model requests and ACP messages travel through participant-opened tunnels.",
           promote: [
-            "guides/quickstart*",
+            "start/introduction*",
+            "start/installation*",
+            "start/quickstart*",
             "guides/bring-your-harness*",
             "guides/patterns*",
             "reference/api*",
@@ -98,7 +113,7 @@ export default defineConfig({
             "guides/ai-tools*",
             "guides/remote-providers*",
           ],
-          demote: ["architecture/*"],
+          demote: ["concepts/*"],
         }),
       ],
       title: "Gambi",
@@ -178,46 +193,58 @@ export default defineConfig({
       ],
       sidebar: [
         {
-          label: "Guides",
+          label: "Start here",
           items: [
-            { label: "Quick start", slug: "guides/quickstart" },
-            {
-              label: "Bring your harness",
-              slug: "guides/bring-your-harness",
-            },
-            { label: "Multi-LLM patterns", slug: "guides/patterns" },
-            { label: "Using with AI tools", slug: "guides/ai-tools" },
+            { label: "Introduction", slug: "start/introduction" },
+            { label: "Installation", slug: "start/installation" },
+            { label: "Quick start", slug: "start/quickstart" },
+          ],
+        },
+        {
+          label: "Share",
+          items: [
+            { label: "Bring your harness", slug: "guides/bring-your-harness" },
             { label: "Remote providers", slug: "guides/remote-providers" },
+          ],
+        },
+        {
+          label: "Build",
+          items: [
+            { label: "Using with AI tools", slug: "guides/ai-tools" },
+            { label: "Multi-LLM patterns", slug: "guides/patterns" },
             {
               label: "Custom participant runtime",
               slug: "guides/custom-participant",
-            },
-            {
-              label: "Migrate from Gambiarra",
-              slug: "guides/migrate-from-gambiarra",
             },
           ],
         },
         {
           label: "Reference",
           items: [
-            { label: "API reference", slug: "reference/api" },
-            { label: "CLI reference", slug: "reference/cli" },
-            { label: "SDK reference", slug: "reference/sdk" },
+            { label: "CLI", slug: "reference/cli" },
+            { label: "SDK", slug: "reference/sdk" },
+            { label: "HTTP API", slug: "reference/api" },
             { label: "Observability", slug: "reference/observability" },
           ],
         },
         {
-          label: "Architecture",
-          items: [{ autogenerate: { directory: "architecture" } }],
+          label: "Concepts",
+          items: [
+            { label: "How tunnels work", slug: "concepts/tunnel-first" },
+            { label: "Architecture overview", slug: "concepts/architecture" },
+            { label: "What's next", slug: "concepts/whats-next" },
+            { label: "Why the name Gambi", slug: "concepts/why-gambi" },
+          ],
         },
         {
-          label: "Explanation",
-          items: [{ autogenerate: { directory: "explanation" } }],
-        },
-        {
-          label: "Troubleshooting",
-          items: [{ autogenerate: { directory: "troubleshooting" } }],
+          label: "Help",
+          items: [
+            { label: "Common issues", slug: "troubleshooting/common-issues" },
+            {
+              label: "Migrate from Gambiarra",
+              slug: "guides/migrate-from-gambiarra",
+            },
+          ],
         },
       ],
     }),

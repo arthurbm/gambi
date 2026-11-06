@@ -46,7 +46,7 @@ TUNNEL_TOKEN_TTL_MS   = 60_000          // TTL do token de bootstrap do túnel
 Se for alterar qualquer uma, atualizar:
 - `apps/docs/src/content/docs/reference/api.md`
 - `apps/docs/src/content/docs/reference/sdk.md`
-- `apps/docs/src/content/docs/architecture/overview.md`
+- `apps/docs/src/content/docs/concepts/architecture.md`
 - `docs/reference/architecture.md`
 
 ## Validação
