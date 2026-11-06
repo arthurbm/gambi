@@ -8,11 +8,13 @@
 import Default from "@astrojs/starlight/components/Hero.astro";
 import Lander from "./Lander.astro";
 
-// Route id is the page slug; the landing is the root page.
-const { id } = Astro.locals.starlightRoute;
+// Route id is the page slug; the landing is the root page of each locale
+// ("" for English, "pt-br" for Portuguese).
+const { id, locale } = Astro.locals.starlightRoute;
+const isLanding = id === (locale ?? "");
 ---
 
-{id === "" ? (
+{isLanding ? (
   <Lander {...Astro.props} />
 ) : (
   <Default {...Astro.props}><slot /></Default>

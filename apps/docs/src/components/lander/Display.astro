@@ -18,6 +18,8 @@ import {
 
 type Kind = "model" | "harness";
 
+const { t } = Astro.locals;
+
 interface Person {
   id: string;
   name: string;
@@ -36,56 +38,54 @@ const people: Person[] = [
     name: "Arthur",
     kind: "model",
     offer: "llama3",
-    via: "Ollama on localhost:11434",
+    via: t("landing.display.arthur.via"),
     crosses: "tunnel.request",
-    stays: "Ollama keeps listening on loopback. The hub never calls it.",
+    stays: t("landing.display.arthur.stays"),
   },
   {
     id: "bia",
     name: "Bia",
     kind: "harness",
     offer: "claude-code",
-    via: "Claude Code over ACP",
+    via: t("landing.display.bia.via"),
     crosses: "tunnel.harness.message",
-    stays: "Her Claude login. The CLI checks it locally before joining.",
+    stays: t("landing.display.bia.stays"),
   },
   {
     id: "lu",
     name: "Lu",
     kind: "model",
     offer: "qwen2.5-coder",
-    via: "vLLM on 127.0.0.1:8000",
+    via: t("landing.display.lu.via"),
     crosses: "tunnel.response.chunk",
-    stays:
-      "The Authorization header from VLLM_AUTH, added only to the local call.",
+    stays: t("landing.display.lu.stays"),
   },
   {
     id: "caio",
     name: "Caio",
     kind: "harness",
     offer: "codex",
-    via: "Codex over ACP, in ./my-project",
+    via: t("landing.display.caio.via"),
     crosses: "tunnel.harness.artifact",
-    stays: "./my-project, the folder he chose. The hub cannot write into it.",
+    stays: t("landing.display.caio.stays"),
   },
   {
     id: "tati",
     name: "Tati",
     kind: "model",
     offer: "llama-3.3-70b",
-    via: "OpenRouter, called from her laptop",
+    via: t("landing.display.tati.via"),
     crosses: "tunnel.request",
-    stays:
-      "Her OpenRouter key, read from OPENROUTER_AUTH. It goes only to OpenRouter.",
+    stays: t("landing.display.tati.stays"),
   },
   {
     id: "duda",
     name: "Duda",
     kind: "harness",
     offer: "opencode",
-    via: "opencode acp",
+    via: t("landing.display.duda.via"),
     crosses: "tunnel.harness.status",
-    stays: "The provider credentials OpenCode already has configured.",
+    stays: t("landing.display.duda.stays"),
   },
 ];
 
@@ -105,8 +105,8 @@ const ringLabel = (r: number) => {
   return { x: fix(x), y: fix(y + 8) };
 };
 const labels = [
-  { text: "machines", ...ringLabel(R_BAND) },
-  { text: "tunnels", ...ringLabel(262) },
+  { text: t("landing.display.ringMachines"), ...ringLabel(R_BAND) },
+  { text: t("landing.display.ringTunnels"), ...ringLabel(262) },
 ];
 
 const ticks = Array.from({ length: 72 }, (_, i) => {
@@ -120,8 +120,8 @@ const ticks = Array.from({ length: 72 }, (_, i) => {
 
 <figure class="display" data-mode="many" aria-labelledby="display-caption">
   <div class="display-head">
-    <p class="readout-id"><span>Session</span> <code>ABC123</code> <span class="tag-example">example</span></p>
-    <div class="mode-switch" role="group" aria-label="Who is in the session">
+    <p class="readout-id"><span>{t("landing.display.session")}</span> <code>ABC123</code> <span class="tag-example">{t("landing.display.example")}</span></p>
+    <div class="mode-switch" role="group" aria-label={t("landing.display.modeGroup")}>
       <button type="button" data-set-mode="one" aria-pressed="false">1 → N</button>
       <button type="button" data-set-mode="many" aria-pressed="true">N ↔ N</button>
     </div>
@@ -129,12 +129,8 @@ const ticks = Array.from({ length: 72 }, (_, i) => {
 
   <div class="board">
     <svg class="rings" viewBox={viewBox} role="img" aria-labelledby="rings-title rings-desc">
-      <title id="rings-title">Six people connected to one hub</title>
-      <desc id="rings-desc">
-        Concentric rings: people's machines on the outside, the tunnels in
-        between, the hub at the centre. Each track is one person's tunnel,
-        opened from their own machine.
-      </desc>
+      <title id="rings-title">{t("landing.display.title")}</title>
+      <desc id="rings-desc">{t("landing.display.desc")}</desc>
       <g class="ring-layer">
         <circle class="ring-band" r={R_BAND}></circle>
         <circle class="ring" r={R_MACHINE + 30}></circle>
@@ -171,7 +167,7 @@ const ticks = Array.from({ length: 72 }, (_, i) => {
       <text class="hub-label" x="0" y="7" text-anchor="middle">hub</text>
     </svg>
 
-    <ul class="people" aria-label="Participants">
+    <ul class="people" aria-label={t("landing.display.participants")}>
       {tracks.map((t) => (
         <li class="person-slot" data-person-slot={t.id} style={`left:${t.left.toFixed(2)}%;top:${t.top.toFixed(2)}%`}>
           <button class:list={["person", `person-${t.kind}`]} type="button" data-person={t.id} aria-pressed="false">
@@ -181,32 +177,29 @@ const ticks = Array.from({ length: 72 }, (_, i) => {
         </li>
       ))}
       <li class="person-slot you-slot" aria-hidden="true" style={`left:${you.left.toFixed(2)}%;top:${you.top.toFixed(2)}%`}>
-        <span class="person person-you"><span class="person-name">You</span><span class="person-offer">6 agents</span></span>
+        <span class="person person-you"><span class="person-name">{t("landing.display.you")}</span><span class="person-offer">{t("landing.display.youOffer")}</span></span>
       </li>
     </ul>
   </div>
 
   <div class="display-foot">
     <dl class="readouts">
-      <div><dt>People</dt><dd data-r="people">6</dd></div>
-      <div><dt>Machines</dt><dd data-r="machines">6</dd></div>
-      <div><dt>Key holders</dt><dd data-r="keys">6</dd></div>
+      <div><dt>{t("landing.display.people")}</dt><dd data-r="people">6</dd></div>
+      <div><dt>{t("landing.display.machines")}</dt><dd data-r="machines">6</dd></div>
+      <div><dt>{t("landing.display.keys")}</dt><dd data-r="keys">6</dd></div>
     </dl>
     <div class="inspect" aria-live="polite">
-      <p class="inspect-empty" data-inspect-empty>Pick a person to see what crosses their tunnel and what stays home.</p>
-      {tracks.map((t) => (
-        <div class="inspect-card" data-inspect={t.id} hidden>
-          <p class="inspect-who"><b>{t.name}</b> · {t.via}</p>
-          <p class="inspect-row"><span class="inspect-k k-cross">Crosses</span> <code>{t.crosses}</code></p>
-          <p class="inspect-row"><span class="inspect-k k-stay">Stays</span> {t.stays}</p>
+      <p class="inspect-empty" data-inspect-empty>{t("landing.display.pick")}</p>
+      {tracks.map((p) => (
+        <div class="inspect-card" data-inspect={p.id} hidden>
+          <p class="inspect-who"><b>{p.name}</b> · {p.via}</p>
+          <p class="inspect-row"><span class="inspect-k k-cross">{t("landing.display.crosses")}</span> <code>{p.crosses}</code></p>
+          <p class="inspect-row"><span class="inspect-k k-stay">{t("landing.display.staysK")}</span> {p.stays}</p>
         </div>
       ))}
     </div>
   </div>
-  <figcaption id="display-caption" class="sr-only">
-    An example session with six people. Switch between one person running six
-    agents from one machine, and six people each bringing their own.
-  </figcaption>
+  <figcaption id="display-caption" class="sr-only">{t("landing.display.caption")}</figcaption>
 </figure>
 
 <style>

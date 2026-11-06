@@ -6,14 +6,23 @@
 // around it, only on its right, so the app stays outside them.
 const HX = 375;
 const CY = 100;
+
+const { t } = Astro.locals;
+const { locale } = Astro.locals.starlightRoute;
+// Internal links stay inside the visitor's locale ("/x/" -> "/pt-br/x/").
+const href = (path: string) => (locale ? `/${locale}${path}` : path);
+// Ledger rows; cells may hold <code>, so they render with set:html.
+const ledger = [1, 2, 3, 4].map((n) => ({
+  cross: t(`landing.wiring.row${n}.cross`),
+  stay: t(`landing.wiring.row${n}.stay`),
+}));
+const crosses = t("landing.wiring.crosses");
+const stays = t("landing.wiring.stays");
 ---
 
 <section class="wiring" id="wiring" aria-labelledby="wiring-title">
-  <h2 id="wiring-title" class="section-title">One request, end to end</h2>
-  <p class="section-lead">
-    Your app calls the hub. The hub sends the work down the tunnel the
-    participant opened, and the answer comes back the same way.
-  </p>
+  <h2 id="wiring-title" class="section-title">{t("landing.wiring.title")}</h2>
+  <p class="section-lead">{t("landing.wiring.lead")}</p>
 
   <div class="slice" data-slice>
     <svg class="cut" viewBox="0 0 1000 200" aria-hidden="true">
@@ -34,57 +43,47 @@ const CY = 100;
       <text class="cut-hub-label" x={HX} y={CY + 7} text-anchor="middle">hub</text>
       <rect class="cut-model" x="853" y="78" width="44" height="44" rx="6"></rect>
       <g class="cut-labels">
-        <text x="125" y="40" text-anchor="middle">app</text>
-        <text x="625" y="40" text-anchor="middle">tunnel</text>
-        <text x="875" y="40" text-anchor="middle">model</text>
-        <text x="875" y="172" text-anchor="middle" class="cut-key">key added here</text>
+        <text x="125" y="40" text-anchor="middle">{t("landing.wiring.cutApp")}</text>
+        <text x="625" y="40" text-anchor="middle">{t("landing.wiring.cutTunnel")}</text>
+        <text x="875" y="40" text-anchor="middle">{t("landing.wiring.cutModel")}</text>
+        <text x="875" y="172" text-anchor="middle" class="cut-key">{t("landing.wiring.cutKey")}</text>
       </g>
       <circle class="cut-packet" r="11" cx="125" cy="100"></circle>
     </svg>
 
     <ol class="layers">
       <li class="layer" data-layer="app">
-        <h3 class="layer-name">Your app</h3>
-        <p>Calls <code>/rooms/ABC123/v1/responses</code>, or attaches to an agent by participant id.</p>
+        <h3 class="layer-name">{t("landing.wiring.app.name")}</h3>
+        <p set:html={t("landing.wiring.app.body")} />
       </li>
       <li class="layer" data-layer="hub">
-        <h3 class="layer-name">Hub</h3>
-        <p>Picks a participant by id, <code>model:&lt;name&gt;</code>, or <code>*</code>, and emits <code>llm.request</code> to the room's events.</p>
+        <h3 class="layer-name">{t("landing.wiring.hub.name")}</h3>
+        <p set:html={t("landing.wiring.hub.body")} />
       </li>
       <li class="layer" data-layer="tunnel">
-        <h3 class="layer-name">Tunnel</h3>
-        <p>A WebSocket the participant opened. <code>tunnel.request</code> goes down, <code>tunnel.response.chunk</code> comes back.</p>
+        <h3 class="layer-name">{t("landing.wiring.tunnel.name")}</h3>
+        <p set:html={t("landing.wiring.tunnel.body")} />
       </li>
       <li class="layer layer-home" data-layer="machine">
-        <h3 class="layer-name">Their machine</h3>
-        <p>The runtime adds the provider key, calls the model on <code>localhost</code>, and streams the answer up.</p>
+        <h3 class="layer-name">{t("landing.wiring.machine.name")}</h3>
+        <p set:html={t("landing.wiring.machine.body")} />
       </li>
     </ol>
   </div>
 
   <div class="ledger">
     <table>
-      <caption class="sr-only">What a participant sends to the hub, and what stays on their machine</caption>
+      <caption class="sr-only">{t("landing.wiring.caption")}</caption>
       <thead>
-        <tr><th scope="col" class="th-cross">Crosses the tunnel</th><th scope="col" class="th-stay">Never leaves the machine</th></tr>
+        <tr><th scope="col" class="th-cross">{crosses}</th><th scope="col" class="th-stay">{stays}</th></tr>
       </thead>
       <tbody>
-        <tr>
-          <td data-label="Crosses the tunnel">Participant id, display name, model name, and a capability summary.</td>
-          <td data-label="Never leaves the machine">Provider auth headers set with <code>--header</code> or <code>--header-env</code>.</td>
-        </tr>
-        <tr>
-          <td data-label="Crosses the tunnel">The provider URL, as a label. The hub never calls it.</td>
-          <td data-label="Never leaves the machine">The provider itself, which can keep listening on <code>localhost</code>.</td>
-        </tr>
-        <tr>
-          <td data-label="Crosses the tunnel">Model responses, streamed back up the tunnel.</td>
-          <td data-label="Never leaves the machine">The agent's login. It is not part of registration, room events, or tunnel frames.</td>
-        </tr>
-        <tr>
-          <td data-label="Crosses the tunnel">ACP messages for an attached session, and the files the agent writes in its workspace.</td>
-          <td data-label="Never leaves the machine">The agent process, its tools, and everything outside its workspace folder.</td>
-        </tr>
+        {ledger.map((row) => (
+          <tr>
+            <td data-label={crosses} set:html={row.cross} />
+            <td data-label={stays} set:html={row.stay} />
+          </tr>
+        ))}
       </tbody>
     </table>
   </div>
@@ -92,11 +91,9 @@ const CY = 100;
   <aside class="warning" aria-labelledby="warning-title">
     <svg viewBox="0 0 24 24" aria-hidden="true" class="warning-icon"><path d="M12 3.5 21.5 20h-19Z"></path><path d="M12 10v4.6M12 17.2v.3"></path></svg>
     <div>
-      <h3 id="warning-title" class="warning-title">Trusted networks only</h3>
+      <h3 id="warning-title" class="warning-title">{t("landing.wiring.warnTitle")}</h3>
       <p>
-        The hub has no built-in authentication. Run it where you trust
-        everyone on the network: your home, your lab, the room your group
-        meets in. <a href="/concepts/tunnel-first/">How the tunnel works</a>
+        {t("landing.wiring.warnBody")} <a href={href("/concepts/tunnel-first/")}>{t("landing.wiring.warnLink")}</a>
       </p>
     </div>
   </aside>

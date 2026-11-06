@@ -455,7 +455,7 @@ System diagrams in the docs are written as Mermaid in Markdown and drawn to SVG 
 - **llms.txt:** each figure carries its Mermaid source in a hidden `<pre>`, so the generated llms files keep a readable copy instead of SVG.
 
 ### Navigation and footer
-The nav is a plain bar over a Line rule: the wordmark (ring glyph with a yellow hub dot, Archivo 700 at width 118) on the left, then Docs, Patterns, SDK, GitHub in ink 2 (ink on hover), and a round theme toggle with a sun or moon icon. The footer repeats the wordmark at 1.3rem with a one-line tagline, three link columns under condensed uppercase labels, and a strip in ink 3.
+The nav is a plain bar over a Line rule: the wordmark (ring glyph with a yellow hub dot, Archivo 700 at width 118) on the left, then Docs, Patterns, SDK, GitHub, and a two-letter language switch ("PT" on the English page, "EN" on the Portuguese one) in ink 2 (ink on hover), and a round theme toggle with a sun or moon icon. Every string comes from Starlight's UI strings (`src/content/i18n/*.json`), so the landing renders in English at `/` and in Portuguese at `/pt-br/`; Portuguese copy is written to the same length as the English, so no section re-wraps. The docs header keeps Starlight's language select, widened so "Português" fits. The footer repeats the wordmark at 1.3rem with a one-line tagline, three link columns under condensed uppercase labels, and a strip in ink 3.
 
 ### Motion
 - **Easing:** `ease-out` for entrances and state changes; `ease-in-out` for anything that travels (the mode morph, comets, packets, example tokens). The in-out curve is solved numerically in script so rAF-driven morphs match the CSS curve.

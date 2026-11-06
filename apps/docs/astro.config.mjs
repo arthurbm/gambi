@@ -1,10 +1,18 @@
 // @ts-check
+
+import { readFileSync } from "node:fs";
 import { satteri } from "@astrojs/markdown-satteri";
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
 import starlightDotMd from "starlight-dot-md";
 import starlightLlmsTxt from "starlight-llms-txt";
 import { mermaidDiagrams } from "./src/plugins/mermaid.mjs";
+
+/** Inlined into every page's <head> so it runs before first paint. */
+const localeRedirect = readFileSync(
+  new URL("./src/scripts/locale-redirect.js", import.meta.url),
+  "utf8"
+);
 
 /**
  * Code blocks sit on the dark slab in both themes (DESIGN.md, "The Printed
@@ -117,8 +125,20 @@ export default defineConfig({
         }),
       ],
       title: "Gambi",
+      // English stays at the root so existing links keep working; Portuguese
+      // lives under /pt-br/. src/scripts/locale-redirect.js picks one from
+      // the visitor's device on their first page.
+      defaultLocale: "root",
+      locales: {
+        root: { label: "English", lang: "en" },
+        "pt-br": { label: "Português", lang: "pt-BR" },
+      },
       // Link-preview card. Source and re-render command: og/card.html.
       head: [
+        {
+          tag: "script",
+          content: localeRedirect,
+        },
         {
           tag: "meta",
           attrs: { property: "og:image", content: "https://gambi.sh/og.png" },
@@ -194,54 +214,126 @@ export default defineConfig({
       sidebar: [
         {
           label: "Start here",
+          translations: { "pt-BR": "Comece aqui" },
           items: [
-            { label: "Introduction", slug: "start/introduction" },
-            { label: "Installation", slug: "start/installation" },
-            { label: "Quick start", slug: "start/quickstart" },
+            {
+              label: "Introduction",
+              translations: { "pt-BR": "Introdução" },
+              slug: "start/introduction",
+            },
+            {
+              label: "Installation",
+              translations: { "pt-BR": "Instalação" },
+              slug: "start/installation",
+            },
+            {
+              label: "Quick start",
+              translations: { "pt-BR": "Início rápido" },
+              slug: "start/quickstart",
+            },
           ],
         },
         {
           label: "Share",
+          translations: { "pt-BR": "Compartilhar" },
           items: [
-            { label: "Bring your harness", slug: "guides/bring-your-harness" },
-            { label: "Remote providers", slug: "guides/remote-providers" },
+            {
+              label: "Bring your harness",
+              translations: { "pt-BR": "Traga seu harness" },
+              slug: "guides/bring-your-harness",
+            },
+            {
+              label: "Remote providers",
+              translations: { "pt-BR": "Provedores remotos" },
+              slug: "guides/remote-providers",
+            },
           ],
         },
         {
           label: "Build",
+          translations: { "pt-BR": "Construir" },
           items: [
-            { label: "Using with AI tools", slug: "guides/ai-tools" },
-            { label: "Multi-LLM patterns", slug: "guides/patterns" },
+            {
+              label: "Using with AI tools",
+              translations: { "pt-BR": "Uso com ferramentas de IA" },
+              slug: "guides/ai-tools",
+            },
+            {
+              label: "Multi-LLM patterns",
+              translations: { "pt-BR": "Padrões multi-LLM" },
+              slug: "guides/patterns",
+            },
             {
               label: "Custom participant runtime",
+              translations: { "pt-BR": "Runtime de participante próprio" },
               slug: "guides/custom-participant",
             },
           ],
         },
         {
           label: "Reference",
+          translations: { "pt-BR": "Referência" },
           items: [
-            { label: "CLI", slug: "reference/cli" },
-            { label: "SDK", slug: "reference/sdk" },
-            { label: "HTTP API", slug: "reference/api" },
-            { label: "Observability", slug: "reference/observability" },
+            {
+              label: "CLI",
+              translations: { "pt-BR": "CLI" },
+              slug: "reference/cli",
+            },
+            {
+              label: "SDK",
+              translations: { "pt-BR": "SDK" },
+              slug: "reference/sdk",
+            },
+            {
+              label: "HTTP API",
+              translations: { "pt-BR": "API HTTP" },
+              slug: "reference/api",
+            },
+            {
+              label: "Observability",
+              translations: { "pt-BR": "Observabilidade" },
+              slug: "reference/observability",
+            },
           ],
         },
         {
           label: "Concepts",
+          translations: { "pt-BR": "Conceitos" },
           items: [
-            { label: "How tunnels work", slug: "concepts/tunnel-first" },
-            { label: "Architecture overview", slug: "concepts/architecture" },
-            { label: "What's next", slug: "concepts/whats-next" },
-            { label: "Why the name Gambi", slug: "concepts/why-gambi" },
+            {
+              label: "How tunnels work",
+              translations: { "pt-BR": "Como os túneis funcionam" },
+              slug: "concepts/tunnel-first",
+            },
+            {
+              label: "Architecture overview",
+              translations: { "pt-BR": "Visão geral da arquitetura" },
+              slug: "concepts/architecture",
+            },
+            {
+              label: "What's next",
+              translations: { "pt-BR": "O que vem a seguir" },
+              slug: "concepts/whats-next",
+            },
+            {
+              label: "Why the name Gambi",
+              translations: { "pt-BR": "Por que o nome Gambi" },
+              slug: "concepts/why-gambi",
+            },
           ],
         },
         {
           label: "Help",
+          translations: { "pt-BR": "Ajuda" },
           items: [
-            { label: "Common issues", slug: "troubleshooting/common-issues" },
+            {
+              label: "Common issues",
+              translations: { "pt-BR": "Problemas comuns" },
+              slug: "troubleshooting/common-issues",
+            },
             {
               label: "Migrate from Gambiarra",
+              translations: { "pt-BR": "Migrar do Gambiarra" },
               slug: "guides/migrate-from-gambiarra",
             },
           ],

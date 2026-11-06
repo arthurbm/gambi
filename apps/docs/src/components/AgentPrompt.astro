@@ -14,7 +14,15 @@ interface Props {
 
 const { t } = Astro.locals;
 const lede = Astro.props.lede ?? t("agentPrompt.lede");
-const prompt = setupPrompt;
+// starlight-llms-txt renders pages outside a Starlight route, where reading
+// starlightRoute throws; those renders get the English prompt.
+let locale: string | undefined;
+try {
+  locale = Astro.locals.starlightRoute.locale;
+} catch {
+  locale = undefined;
+}
+const prompt = setupPrompt(locale);
 const id = "agent-prompt-title";
 ---
 

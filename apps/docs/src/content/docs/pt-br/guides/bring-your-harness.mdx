@@ -1,0 +1,227 @@
+---
+title: Traga seu harness
+description: Entre em uma room do Gambi com seu processo local de OpenCode, Claude Code ou Codex e mantenha o login dele na sua máquina.
+---
+
+Use um participante de harness quando quiser compartilhar um processo local de OpenCode, Claude Code ou Codex com uma aplicação em uma room do Gambi. O harness roda na sua máquina, no próprio workspace, com o login que você já tem.
+
+Isso é diferente de compartilhar um endpoint de modelo. Participantes de harness trocam mensagens ACP v1 pelo canal de attach de gerenciamento. Eles nunca recebem requisições de inferência compatíveis com OpenAI.
+
+## Antes de começar
+
+Você precisa de:
+
+- a CLI do Gambi instalada
+- um hub acessível em uma rede confiável
+- o código de uma room existente
+- um participant ID estável que você possa reutilizar depois de uma reconexão
+- um harness suportado, instalado e autenticado na sua máquina
+
+Se o hub não estiver na sua máquina, deixe a URL dele à mão. Por exemplo, `http://192.168.1.10:3000`.
+
+## Instale e autentique seu harness
+
+Escolha uma das configurações. O Gambi confere o login local correspondente antes de registrar o participante.
+
+### OpenCode
+
+Instale o OpenCode e configure pelo menos um provedor:
+
+```bash
+opencode auth login
+opencode auth list --pure
+```
+
+O OpenCode já inclui o comando ACP. O Gambi inicia `opencode acp` para você.
+
+### Claude Code
+
+Instale o Claude Code e o adaptador ACP dele, depois faça login:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+npm install -g @agentclientprotocol/claude-agent-acp
+claude auth login
+claude auth status --json
+```
+
+Cada pessoa precisa rodar o binário da Anthropic sem modificações, com a própria autenticação local. O Gambi não intermedeia o login de uma assinatura do Claude e não deve hospedar o Claude Code para terceiros. Leia os [termos legais e de conformidade](https://code.claude.com/docs/en/legal-and-compliance) da Anthropic antes de entrar.
+
+### Codex
+
+Instale a Codex CLI e o adaptador ACP dela, depois faça login:
+
+```bash
+npm install -g @openai/codex
+npm install -g @agentclientprotocol/codex-acp
+codex login
+codex login status
+```
+
+## Entre na room
+
+Rode um destes comandos. Troque o código da room, o participant ID e o nome pelos seus valores.
+
+```bash
+# OpenCode
+gambi participant join \
+  --room ABC123 \
+  --participant-id arthur-opencode \
+  --name Arthur \
+  --harness opencode
+
+# Claude Code
+gambi participant join \
+  --room ABC123 \
+  --participant-id bia-claude \
+  --name Bia \
+  --harness claude-code
+
+# Codex
+gambi participant join \
+  --room ABC123 \
+  --participant-id caio-codex \
+  --name Caio \
+  --harness codex
+```
+
+Adicione `--hub` quando o hub rodar em outra máquina:
+
+```bash
+gambi participant join \
+  --hub http://192.168.1.10:3000 \
+  --room ABC123 \
+  --participant-id arthur-opencode \
+  --name Arthur \
+  --harness opencode
+```
+
+Adicione `--password` para uma room protegida por senha. Não passe `--endpoint`, `--header` nem `--header-env` no modo harness. A autenticação do harness vem do processo local do harness.
+
+## Confira o participante rodando
+
+Quando a inicialização dá certo, a CLI informa quatro marcos:
+
+1. registro do participante concluído
+2. túnel do participante conectado
+3. processo do harness iniciado
+4. sessão ACP aberta
+
+O processo fica em primeiro plano. Aperte Ctrl+C uma vez para encerrar o processo do harness, remover o participante e sair da room.
+
+Para uma saída do ciclo de vida legível por máquina, use NDJSON:
+
+```bash
+gambi participant join \
+  --room ABC123 \
+  --participant-id arthur-opencode \
+  --harness opencode \
+  --format ndjson
+```
+
+Os eventos de inicialização são `registered`, `tunnel_connected`, `harness_spawned` e `session_opened`. Mudanças em arquivos produzem `artifact_sent`. Um encerramento limpo produz `harness_exited` e `left`.
+
+## Entenda o workspace
+
+O workspace é a pasta na sua máquina onde o harness roda. Por padrão, o Gambi cria uma vazia:
+
+```text
+~/.gambi/workspaces/<room>/<participant-id>/
+```
+
+Para trabalhar em uma pasta que você já tem, como o checkout de um projeto ou um starter que alguém compartilhou com você, passe-a com `--workspace`:
+
+```bash
+gambi participant join \
+  --room ABC123 \
+  --participant-id arthur-opencode \
+  --harness opencode \
+  --workspace ./my-project
+```
+
+O participante observa esse diretório e envia um snapshot versionado um segundo depois que as mudanças nos arquivos se estabilizam. Ele exclui `.git`, `node_modules` e os metadados de runtime locais do Gambi.
+
+O login do harness continua local. Ele não faz parte do registro do participante, dos eventos de ciclo de vida nem dos frames do túnel. Os arquivos do workspace são outra história. O participante os envia de propósito, como artefatos, para que a aplicação conectada possa consumir a saída do harness. Nada trafega no sentido contrário. O hub não consegue gravar arquivos no seu workspace.
+
+## Use o harness a partir de uma aplicação
+
+Qualquer aplicação na rede pode se conectar ao seu harness com o `gambi-sdk`, enviar um prompt a ele e ler o que ele responde e escreve:
+
+```ts
+import { createClient } from "gambi-sdk";
+
+const client = createClient({ hubUrl: "http://192.168.1.10:3000" });
+const channel = await client.harness.attach({
+  roomCode: "ABC123",
+  participantId: "arthur-opencode",
+});
+
+const sessionId = "demo";
+channel.send({ type: "tunnel.harness.control", sessionId, action: "open" });
+
+for await (const frame of channel.messages) {
+  if (frame.type === "tunnel.harness.status" && frame.status === "opened") {
+    channel.send({
+      type: "tunnel.harness.message",
+      sessionId,
+      message: {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "session/prompt",
+        params: {
+          sessionId,
+          prompt: [{ type: "text", text: "Write a README for this folder." }],
+        },
+      },
+    });
+  }
+  if (frame.type === "tunnel.harness.message") {
+    const { update } = (frame.message.params ?? {}) as {
+      update?: { sessionUpdate?: string; content?: { text?: string } };
+    };
+    if (update?.sessionUpdate === "agent_message_chunk") {
+      process.stdout.write(update.content?.text ?? "");
+    }
+  }
+  if (frame.type === "tunnel.harness.artifact") {
+    console.log(`\nartifact v${frame.version}: ${frame.files.map((file) => file.path).join(", ")}`);
+  }
+}
+```
+
+O payload `message` é ACP v1 puro, então qualquer tipo de update do [schema do ACP](https://agentclientprotocol.com/protocol/schema) pode chegar aqui. A referência do SDK também mostra como uma aplicação pode [hospedar ela mesma participantes de harness](/pt-br/reference/sdk/#createharnessparticipantsessionoptions).
+
+Para ver uma aplicação completa que orquestra vários participantes de harness com pessoas guiando cada um, veja os experimentos no [gambiarra-lab](https://github.com/arthurbm/gambiarra-lab).
+
+## Pré-visualize sem iniciar o harness
+
+Use `--dry-run` para conferir a room resolvida, o participant ID, o workspace e o payload de registro:
+
+```bash
+gambi participant join \
+  --room ABC123 \
+  --participant-id arthur-opencode \
+  --harness opencode \
+  --dry-run \
+  --format json
+```
+
+Essa pré-visualização não inicia o processo do harness e não verifica o login local do harness. Rode o comando normal para a checagem completa.
+
+## Falhas comuns
+
+| Sintoma | O que fazer |
+| --- | --- |
+| exit code `2` e "unsupported harness" | use `opencode`, `claude-code` ou `codex` (`fake` é um harness de teste determinístico que não chama nenhum modelo) |
+| exit code `2` para `--endpoint` ou headers de autenticação | remova as flags de provedor de modelo do comando do harness |
+| exit code `2` para `--workspace` | adicione `--harness`; participantes de modelo não têm workspace |
+| exit code `3` antes do registro | rode o comando de instalação ou de login que a CLI mostrou e tente de novo |
+| o túnel desconecta na hora | confirme que o hub está acessível e que todo proxy no caminho repassa upgrades de WebSocket |
+| a CLI sai depois com `tunnel_failed` | o participante não se reconecta sozinho. Rode o mesmo comando de novo; as aplicações conectadas mantêm seus sockets |
+| uma requisição de inferência retorna HTTP `400` para o participant ID | use `client.harness.attach()` no lugar; participantes de harness não são endpoints de modelo |
+
+## Próximos passos
+
+- A [referência da CLI](/pt-br/reference/cli/#gambi-participant-join) lista todas as flags de harness e os eventos de ciclo de vida.
+- A [referência do SDK](/pt-br/reference/sdk/#clientharnessattach-roomcode-participantid-signal-) mostra como uma aplicação se conecta ao participante.
+- [Como os túneis funcionam](/pt-br/concepts/tunnel-first/#o-relay-acp-opaco) explica o que o hub repassa e o que ele não inspeciona.

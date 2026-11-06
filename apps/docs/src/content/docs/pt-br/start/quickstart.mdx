@@ -1,0 +1,202 @@
+---
+title: Início rápido
+description: Suba um hub, crie uma room, compartilhe um modelo e chame-o pelo código, em quatro comandos.
+---
+
+import AgentPrompt from '../../../../components/AgentPrompt.astro';
+
+Este tutorial roda o Gambi do zero. No final, você terá um hub rodando, uma room (sala) e um modelo compartilhado nela que você pode chamar pelo código.
+
+## O que você vai precisar
+
+- **A CLI do Gambi** em cada máquina. Veja [Instalação](/pt-br/start/installation/).
+- **Uma máquina para rodar o hub.** Qualquer computador da rede serve. Ele não precisa de GPU, porque o hub só roteia tráfego.
+- **Pelo menos um endpoint de modelo.** Ollama, LM Studio, vLLM ou qualquer API compatível com OpenAI.
+
+Para compartilhar Claude Code, Codex ou OpenCode em vez de um endpoint de modelo, siga esta página até a criação da room e depois veja [Traga seu harness](/pt-br/guides/bring-your-harness/).
+
+Prefere que seu agente de código faça isso? Copie o prompt em [Configure com seu agente](#configure-com-seu-agente), no fim desta página.
+
+## Passos
+
+`gambi room create` e `gambi participant join` pedem os valores que faltam quando você os roda em um terminal. Passe os valores como flags em scripts, ou adicione `--no-interactive` para desligar as perguntas.
+
+### 1. Suba o hub
+
+Escolha uma máquina da rede para ser o hub. Ela não precisa de GPU, porque o hub só roteia requisições entre participantes.
+
+```bash
+# Padrões: host 0.0.0.0, porta 3000
+gambi hub serve
+
+# Ou escolha uma porta e ative o mDNS:
+gambi hub serve --port 3000 --mdns
+```
+
+A flag `--mdns` anuncia o hub para que outras máquinas da rede possam descobri-lo.
+
+As outras máquinas acessam o hub em `http://<ip-do-hub>:3000`, em que `<ip-do-hub>` é o endereço desta máquina na sua rede, como `192.168.1.10`. Todos os outros comandos recebem essa URL em `--hub`. Sem `--hub`, a CLI usa `http://localhost:3000`, que só funciona na própria máquina do hub.
+
+:::caution[Somente redes confiáveis]
+O hub não tem autenticação embutida. Qualquer pessoa que alcance a porta dele pode criar rooms e enviar requisições de inferência para qualquer room. A senha de uma room só protege a entrada nela. Rode o hub apenas em uma rede em que você confia. Se precisar expô-lo além disso, coloque-o atrás do seu próprio proxy e da sua própria camada de autenticação.
+:::
+
+### 2. Crie uma room
+
+```bash
+# Em um terminal, pergunta o nome da room e uma senha opcional:
+gambi room create
+
+# Ou com flags:
+gambi room create --name "My Room"
+```
+
+A CLI mostra o código da room e o host ID:
+
+```text
+Created room ABC123 (My Room).
+host_id: …
+```
+
+Passe o código da room para todo mundo que quiser entrar.
+
+Você também pode criar uma room protegida por senha:
+
+```bash
+gambi room create --name "Private Room" --password secret123
+```
+
+### 3. Entre com seu modelo
+
+Cada pessoa com um endpoint de modelo entra na room:
+
+```bash
+gambi participant join \
+  --room ABC123 \
+  --participant-id joao-1 \
+  --model llama3
+```
+
+Em qualquer máquina que não seja a do hub, adicione a URL do hub:
+
+```bash
+gambi participant join \
+  --hub http://192.168.1.10:3000 \
+  --room ABC123 \
+  --participant-id joao-1 \
+  --model llama3
+```
+
+O endpoint padrão é `http://localhost:11434` (Ollama). Para outros provedores, use `--endpoint`:
+
+```bash
+# LM Studio
+gambi participant join \
+  --room ABC123 \
+  --participant-id joao-lmstudio \
+  --model mistral \
+  --endpoint http://localhost:1234
+
+# vLLM
+gambi participant join \
+  --room ABC123 \
+  --participant-id joao-vllm \
+  --model llama3 \
+  --endpoint http://localhost:8000
+```
+
+A CLI sonda seu endpoint local, confere se o modelo existe, detecta quais protocolos ele suporta, registra o participante, abre um túnel até o hub e mantém a sessão ativa até você pará-la.
+
+O endpoint do seu provedor pode ficar em `localhost`, mesmo quando o hub roda em outra máquina da mesma rede confiável. O hub nunca se conecta a ele. Para entender o motivo, veja [Como os túneis funcionam](/pt-br/concepts/tunnel-first/).
+
+A CLI também compartilha as especificações da sua máquina (CPU, RAM, GPU). Use `--no-specs` para mantê-las privadas.
+
+Depois de entrar, seu modelo fica disponível para todo mundo na room.
+
+### 4. Use o SDK
+
+Agora qualquer pessoa pode usar os modelos compartilhados no próprio código:
+
+```typescript
+import { createGambi } from "gambi-sdk";
+import { generateText } from "ai";
+
+const gambi = createGambi({
+  roomCode: "ABC123",
+  hubUrl: "http://localhost:3000",
+});
+
+// Envia para qualquer participante disponível
+const result = await generateText({
+  model: gambi.any(),
+  prompt: "Hello, Gambi!",
+});
+
+console.log(result.text);
+```
+
+Se o seu código roda em outra máquina, defina `hubUrl` com o endereço do hub na rede, como `http://192.168.1.10:3000`.
+
+Você também pode escolher um modelo ou um participante específico:
+
+```typescript
+// Qualquer participante que sirva este modelo
+const result = await generateText({
+  model: gambi.model("llama3"),
+  prompt: "Explain quantum computing",
+});
+
+// O participante que entrou como joao-1
+const result = await generateText({
+  model: gambi.participant("joao-1"),
+  prompt: "Write a haiku",
+});
+```
+
+Para usar Chat Completions em vez da Responses API, que é o padrão:
+
+```typescript
+const gambi = createGambi({
+  roomCode: "ABC123",
+  hubUrl: "http://localhost:3000",
+  defaultProtocol: "chatCompletions",
+});
+```
+
+### 5. Chame a API diretamente
+
+Você não precisa do SDK. O hub fala a API da OpenAI, então qualquer linguagem ou cliente HTTP funciona:
+
+```bash
+curl -X POST http://localhost:3000/rooms/ABC123/v1/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "*",
+    "input": "Hello!"
+  }'
+```
+
+Qualquer ferramenta que aceite uma base URL customizada da OpenAI funciona, como o Open WebUI ou a biblioteca `openai` do Python. Aponte-a para:
+
+```
+http://<hub-ip>:<port>/rooms/<ROOM_CODE>/v1
+```
+
+A ferramenta precisa alcançar o hub pela sua rede. Ferramentas hospedadas que chamam o modelo a partir dos próprios servidores não conseguem alcançar um hub em uma rede privada.
+
+Veja a [referência da API](/pt-br/reference/api/) para todas as rotas.
+
+## Configure com seu agente
+
+Seu agente de código pode fazer estes mesmos passos com você, perguntando antes de instalar ou iniciar qualquer coisa.
+
+<AgentPrompt />
+
+## Próximos passos
+
+- Compartilhe Claude Code, Codex ou OpenCode: [Traga seu harness](/pt-br/guides/bring-your-harness/)
+- Aprenda os [comandos da CLI](/pt-br/reference/cli/)
+- Explore o [uso do SDK](/pt-br/reference/sdk/)
+- Leia a [referência da API](/pt-br/reference/api/) completa
+- Usa modelos na nuvem? Veja [Provedores remotos](/pt-br/guides/remote-providers/)
+- Vai trabalhar com vários modelos? Veja [Padrões multi-LLM](/pt-br/guides/patterns/)

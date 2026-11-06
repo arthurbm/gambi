@@ -1,0 +1,46 @@
+---
+title: O que vem por aí
+description: O que o Gambi resolve hoje, o que ainda fica no seu código e onde a camada acima dele está sendo explorada.
+sidebar:
+  order: 3
+---
+
+O Gambi tem um escopo estreito de propósito. Esta página diz o que ele faz hoje, o que ele deixa para você e onde acontece o trabalho acima dele.
+
+## O que o Gambi resolve hoje
+
+- Um hub que mantém rooms e os participantes dentro delas.
+- Participantes que compartilham um modelo compatível com OpenAI ou um harness de código (Claude Code, Codex, OpenCode), cada um por um túnel que o próprio dono abriu.
+- Roteamento das chamadas de inferência por id de participante, `model:<name>` ou `*`.
+- Sessões de harness repassadas por ACP v1, com os artefatos do workspace enviados de volta ao app conectado.
+- Eventos ao vivo da room para cada requisição de inferência, com tempos e contagem de tokens quando o provedor informa.
+
+## O que ainda é código seu
+
+O Gambi move o trabalho entre participantes. Ele não decide como esse trabalho é organizado:
+
+- quem fala quando, e em que ordem
+- que contexto os participantes compartilham, e quem acompanha isso
+- como uma tarefa é dividida entre harnesses, e quem revisa o resultado
+
+Hoje essa lógica fica no seu app. O [guia de padrões](/pt-br/guides/patterns/) mostra revezamento de turnos e fan-out entre participantes de modelo com o SDK; a mesma abordagem vale para participantes de harness por meio de `client.harness.attach()`.
+
+## A camada acima
+
+Revezamento de turnos, contexto compartilhado e orquestração entre harnesses estão sendo explorados. Nada disso é promessa, e nada tem formato definido ainda.
+
+Um lugar onde essa exploração acontece é o [`gambiarra-lab`](https://github.com/arthurbm/gambiarra-lab), onde o Gambiarra Club guarda os experimentos dos seus eventos presenciais, como um painel de evento e um orquestrador de harnesses. O lab consome `gambi` e `gambi-sdk` de fora, como qualquer outro app:
+
+- O Gambi nunca importa nada do lab.
+- Nada do lab é publicado enquanto ele tiver um único consumidor.
+- Uma ideia só se aproxima do Gambi depois que duas experiências distintas precisam dela.
+
+## O que fica fora do hub
+
+Seja lá no que a camada de cima se transformar, o hub continua sendo transporte. Agendamento, grafos de workflow, memória compartilhada, delegação de tarefas e identidade de harness não entram nele. Deixar isso de fora é o que permite que ferramentas comuns compatíveis com OpenAI continuem funcionando contra uma room.
+
+## Relacionados
+
+- [Como os túneis funcionam](/pt-br/concepts/tunnel-first/)
+- [Traga seu harness](/pt-br/guides/bring-your-harness/)
+- [Padrões com vários LLMs](/pt-br/guides/patterns/)

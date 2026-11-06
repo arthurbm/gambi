@@ -1,0 +1,480 @@
+---
+title: Referência da CLI
+description: Referência da CLI operacional do Gambi.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+A CLI do Gambi roda hubs e gerencia rooms, participantes e eventos de room.
+
+A CLI é orientada a recursos:
+
+```bash
+gambi hub serve
+gambi room create
+gambi room list
+gambi room get
+gambi participant join
+gambi participant leave
+gambi participant heartbeat
+gambi events watch
+gambi self update
+```
+
+O `gambi-tui` continua sendo a interface de monitoramento separada, pensada para pessoas.
+
+## Instalação
+
+<Tabs>
+  <TabItem label="Linux / macOS" icon="linux">
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.sh | bash
+    ```
+  </TabItem>
+  <TabItem label="Windows" icon="laptop">
+    ```powershell
+    irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.ps1 | iex
+    ```
+  </TabItem>
+  <TabItem label="npm / bun" icon="seti:npm">
+    ```bash
+    npm install -g gambi
+    # ou
+    bun add -g gambi
+    ```
+  </TabItem>
+</Tabs>
+
+Confira a instalação:
+
+```bash
+gambi --version
+```
+
+## Comportamento global
+
+Todo comando operacional aceita as mesmas flags globais. Variáveis de ambiente definem a maioria delas, o que ajuda em scripts e supervisores.
+
+### Flags globais
+
+| Flag | Descrição |
+| --- | --- |
+| `--format <text\|json\|ndjson>` | escolhe o formato de saída |
+| `--env <name>` | escolhe um ambiente nomeado do arquivo de configuração da CLI |
+| `--interactive` | permite prompts para valores obrigatórios que faltam (exige um TTY) |
+| `--no-interactive` | desativa todos os prompts |
+| `--verbose` | inclui detalhes extras na saída |
+| `--quiet` | reduz o texto de saída não essencial |
+
+### Modos de saída
+
+| Modo | Significado |
+| --- | --- |
+| `text` | saída compacta e legível por pessoas |
+| `json` | um único objeto JSON estruturado |
+| `ndjson` | um objeto JSON por linha |
+
+Padrões:
+
+| Contexto | Padrão |
+| --- | --- |
+| TTY + comando de execução única | `text` |
+| stdout redirecionado + comando de execução única | `json` |
+| stdout redirecionado + comando de streaming | `ndjson` |
+
+Comandos de streaming convertem `--format json` em `ndjson`, para que cada evento seja uma linha JSON independente.
+
+### Variáveis de ambiente
+
+| Variável | Efeito |
+| --- | --- |
+| `GAMBI_FORMAT` | valor de fallback para `--format` |
+| `GAMBI_ENV` | valor de fallback para `--env` |
+| `GAMBI_NO_INTERACTIVE=1` | desativa os prompts em todo lugar |
+| `XDG_CONFIG_HOME` | sobrescreve o diretório base de `~/.config/gambi/config.json` |
+
+### Códigos de saída
+
+| Código | Significado |
+| --- | --- |
+| `0` | sucesso |
+| `1` | falha interna ou inesperada |
+| `2` | uso inválido (flag faltando, valor ruim, `400`/`422` do hub) |
+| `3` | falha de conectividade ou de dependência (hub inacessível, `401`/`403`/`503`) |
+| `4` | rejeição remota ou conflito (`404`/`409` do hub) |
+
+Supervisores de automação podem decidir as novas tentativas com base nesses códigos. Não tente de novo no `2`. No `3`, tente de novo na maioria dos casos. O `4` indica que o hub rejeitou a operação por causa do estado atual dele.
+
+### Ambientes nomeados
+
+A CLI lê a configuração XDG de:
+
+```text
+~/.config/gambi/config.json
+```
+
+Exemplo:
+
+```json
+{
+  "defaultEnv": "local",
+  "envs": {
+    "local": {
+      "hubUrl": "http://localhost:3000",
+      "endpoint": "http://localhost:11434"
+    },
+    "lab": {
+      "hubUrl": "http://192.168.1.10:3000",
+      "endpoint": "http://localhost:11434",
+      "serve": {
+        "host": "0.0.0.0",
+        "port": 3000,
+        "mdns": true
+      }
+    }
+  }
+}
+```
+
+Escolha um ambiente por execução com `--env lab` ou globalmente com `GAMBI_ENV=lab`.
+
+## `gambi hub serve`
+
+Inicia o hub do Gambi.
+
+```bash
+gambi hub serve [options]
+```
+
+Opções:
+
+| Opção | Descrição |
+| --- | --- |
+| `--host` | host onde escutar (padrão vem da configuração do ambiente ou `0.0.0.0`) |
+| `--port` | porta onde escutar (padrão vem da configuração do ambiente ou `3000`) |
+| `--mdns` | ativa a descoberta via mDNS para que outras máquinas encontrem o hub |
+| `--dry-run` | imprime o plano de inicialização resolvido e sai sem ocupar a porta |
+
+Exemplos:
+
+```bash
+gambi hub serve
+gambi hub serve --port 3000 --mdns
+gambi hub serve --dry-run --format ndjson
+```
+
+Eventos estruturados de ciclo de vida (`--format json|ndjson`):
+
+| Evento | Significado |
+| --- | --- |
+| `started` | o hub está escutando em `bindUrl` |
+| `mdns_registered` | o anúncio mDNS está ativo com o nome `name` |
+| `signal_received` | `SIGINT` ou `SIGTERM` recebido durante o desligamento |
+| `stopped` | o hub liberou a porta |
+
+## `gambi room create`
+
+Cria uma room pela API de gerenciamento.
+
+```bash
+gambi room create --name <name> [options]
+```
+
+Opções:
+
+| Opção | Descrição |
+| --- | --- |
+| `--name`, `-n` | nome de exibição da room |
+| `--password`, `-p` | senha opcional da room |
+| `--config <path\|->` | arquivo JSON de configuração de runtime ou `-` para stdin |
+| `--hub`, `-H` | URL do hub |
+| `--dry-run` | valida e imprime a requisição sem criar a room |
+
+Exemplos:
+
+```bash
+gambi room create --name "Demo"
+
+gambi room create --name "Demo" --config ./room.json
+
+cat ./room.json | gambi room create --name "Demo" --config -
+
+gambi room create --name "Demo" --dry-run --format json
+```
+
+## `gambi room list`
+
+Lista os resumos das rooms pela API de gerenciamento.
+
+```bash
+gambi room list [options]
+```
+
+Opções:
+
+| Opção | Descrição |
+| --- | --- |
+| `--hub`, `-H` | URL do hub |
+| `--sort <participant-count\|created-at\|name>` | chave de ordenação (padrão `participant-count`) |
+| `--reverse` | inverte a ordem escolhida |
+
+A ordenação padrão é `participant-count` decrescente, com `created-at` decrescente como critério de desempate.
+
+Exemplos:
+
+```bash
+gambi room list
+gambi room list --format json
+gambi room list --sort created-at --reverse
+gambi room list --hub http://192.168.1.10:3000
+```
+
+## `gambi room get`
+
+Busca o resumo de uma room pelo código.
+
+```bash
+gambi room get --code <room-code> [options]
+```
+
+Opções:
+
+| Opção | Descrição |
+| --- | --- |
+| `--code`, `-c` | código da room |
+| `--hub`, `-H` | URL do hub |
+
+Exemplos:
+
+```bash
+gambi room get --code ABC123
+gambi room get --code ABC123 --format json
+```
+
+## `gambi participant join`
+
+Registra um endpoint de modelo ou um harness ACP local e mantém o túnel dele aberto.
+
+```bash
+gambi participant join --room <room> --participant-id <id> --model <model> [options]
+gambi participant join --room <room> --participant-id <id> --harness <id> [options]
+```
+
+Opções:
+
+| Opção | Descrição |
+| --- | --- |
+| `--room`, `-r` | código da room |
+| `--participant-id` | identificador estável do participante |
+| `--nickname`, `-n`, `--name` | nome de exibição (`--name` é um alias) |
+| `--model`, `-m` | modelo a expor ou, no modo harness, um rótulo opcional |
+| `--harness <opencode\|claude-code\|codex\|fake>` | inicia um harness ACP local em vez de um endpoint de modelo |
+| `--workspace <folder>` | só no modo harness: roda o harness nesta pasta em vez do workspace padrão |
+| `--endpoint`, `-e` | endpoint local usado para sondagem e inferência (padrão `http://localhost:11434`) |
+| `--header` | header de autenticação no formato `Header=Value` |
+| `--header-env` | header de autenticação no formato `Header=ENV_VAR` |
+| `--password`, `-p` | senha da room |
+| `--config <path\|->` | arquivo JSON de configuração de runtime ou stdin |
+| `--no-specs` | pula a coleta das especificações da máquina |
+| `--hub`, `-H` | URL do hub |
+| `--dry-run` | valida e mostra uma prévia da sessão |
+
+Observações:
+
+- `--participant-id` é obrigatório para automação não interativa que precise ser segura para novas tentativas.
+- `--config -` lê do stdin o JSON de configuração de runtime do participante.
+- Num terminal, o comando pede a room, o ID do participante, o modelo, o apelido e a senha que faltarem. No modo modelo, ele lista os modelos encontrados no endpoint.
+- A CLI sonda o endpoint antes do registro para validar o modelo e detectar capacidades.
+- Todo participante entra por um túnel, então o endpoint do provedor pode ficar em `localhost` mesmo quando o hub roda em outra máquina. Veja [Como os túneis funcionam](/pt-br/concepts/tunnel-first/).
+- O modo harness inicia o processo do harness numa pasta de workspace e publica os arquivos alterados depois de um debounce de um segundo. Sem `--workspace`, a pasta é `~/.gambi/workspaces/<room>/<participant-id>/` e começa vazia, exceto por `.gambi.json`, que nunca é publicado. `.git` e `node_modules` nunca são publicados. Passar `--workspace` sem `--harness` sai com código `2`.
+- `--endpoint`, `--header` e `--header-env` são inválidos com `--harness`. O harness usa o login que já existe na máquina do participante. O Gambi não lê nem envia essas credenciais.
+- O adaptador `opencode` roda `opencode acp`. Se o OpenCode não estiver instalado ou não tiver credenciais detectadas, o comando sai com código `3` e imprime o comando necessário para corrigir.
+- O adaptador `claude-code` roda a bridge publicada `claude-agent-acp`. Instale-a com `npm install -g @agentclientprotocol/claude-agent-acp`, instale o Claude Code com `npm install -g @anthropic-ai/claude-code` e autentique localmente com `claude auth login`.
+- Termos do Claude Code: cada usuário final precisa rodar o binário original da Anthropic, sem modificações, com a própria autenticação local. O Gambi nunca intermedeia o login de uma assinatura do Claude e nunca deve hospedar o Claude Code para terceiros. Leia os [termos legais e de conformidade](https://code.claude.com/docs/en/legal-and-compliance) da Anthropic antes de entrar.
+- O adaptador `codex` roda a bridge publicada `codex-acp`. Instale-a com `npm install -g @agentclientprotocol/codex-acp`, instale a Codex CLI com `npm install -g @openai/codex` e autentique localmente com `codex login`.
+- As verificações de prontidão do Claude Code e do Codex usam `claude auth status --json` e `codex login status`. O estado de autenticação e as credenciais ficam na máquina do participante e nunca entram no registro, nos eventos de ciclo de vida ou nos frames do túnel.
+- O adaptador `fake` é determinístico e não chama nenhum modelo. Ele serve para ensaios e testes automatizados.
+- `--dry-run` valida a entrada do comando e imprime a prévia do registro. Ele não inicia o processo ACP nem verifica o login do harness.
+
+Para um passo a passo de configuração do OpenCode, do Claude Code e do Codex, veja [Traga seu harness](/pt-br/guides/bring-your-harness/).
+
+Exemplos:
+
+```bash
+gambi participant join \
+  --room ABC123 \
+  --participant-id worker-1 \
+  --model llama3
+
+gambi participant join \
+  --room ABC123 \
+  --participant-id worker-1 \
+  --model llama3 \
+  --endpoint http://localhost:1234
+
+gambi participant join \
+  --room ABC123 \
+  --participant-id worker-1 \
+  --model llama3 \
+  --hub http://192.168.1.10:3000
+
+gambi participant join \
+  --room ABC123 \
+  --participant-id worker-1 \
+  --model llama3 \
+  --dry-run \
+  --format ndjson
+
+gambi participant join \
+  --room ABC123 \
+  --participant-id arthur-opencode \
+  --name Arthur \
+  --harness opencode
+
+gambi participant join \
+  --room ABC123 \
+  --participant-id bia-claude \
+  --name Bia \
+  --harness claude-code
+
+gambi participant join \
+  --room ABC123 \
+  --participant-id caio-codex \
+  --name Caio \
+  --harness codex
+
+gambi participant join \
+  --room ABC123 \
+  --participant-id rehearsal-1 \
+  --harness fake \
+  --model deterministic-fixture
+```
+
+Eventos de ciclo de vida em NDJSON:
+
+| Evento | Significado |
+| --- | --- |
+| `prepared` | entradas resolvidas e payload montado (no modo modelo, o endpoint também já foi sondado) |
+| `registered` | o registro do participante deu certo |
+| `tunnel_connected` | o túnel do participante está aberto |
+| `harness_spawned` | o processo do harness iniciou |
+| `session_opened` | a negociação ACP v1 e o `session/new` deram certo |
+| `artifact_sent` | um snapshot versionado do workspace passou pelo túnel |
+| `harness_exited` | o processo do harness terminou |
+| `leaving` | o desligamento começou |
+| `left` | a remoção do participante terminou |
+| `heartbeat_failed` | uma requisição de heartbeat de gerenciamento falhou; o comando sai com código `3` |
+| `tunnel_failed` | o túnel fechou; o comando sai com código `3` |
+
+## `gambi participant leave`
+
+Remove um participante de uma room.
+
+```bash
+gambi participant leave --room <room> --participant-id <id> [options]
+```
+
+Opções:
+
+| Opção | Descrição |
+| --- | --- |
+| `--room`, `-r` | código da room |
+| `--participant-id` | identificador do participante |
+| `--hub`, `-H` | URL do hub |
+
+Exemplo:
+
+```bash
+gambi participant leave --room ABC123 --participant-id worker-1
+```
+
+## `gambi participant heartbeat`
+
+Envia um único heartbeat de participante. Use em automações e em sondagens de liveness fora do comando de longa duração `participant join`.
+
+```bash
+gambi participant heartbeat --room <room> --participant-id <id> [options]
+```
+
+Opções:
+
+| Opção | Descrição |
+| --- | --- |
+| `--room`, `-r` | código da room |
+| `--participant-id` | identificador do participante |
+| `--hub`, `-H` | URL do hub |
+
+Exemplo:
+
+```bash
+gambi participant heartbeat --room ABC123 --participant-id worker-1
+```
+
+## `gambi events watch`
+
+Acompanha os eventos de uma room pelo stream SSE de gerenciamento.
+
+```bash
+gambi events watch --room <room> [options]
+```
+
+Opções:
+
+| Opção | Descrição |
+| --- | --- |
+| `--room`, `-r` | código da room (obrigatório) |
+| `--hub`, `-H` | URL do hub |
+
+Exemplos:
+
+```bash
+gambi events watch --room ABC123
+gambi events watch --room ABC123 --format ndjson
+```
+
+Tipos de evento:
+
+- `connected`
+- `room.created`
+- `participant.joined`
+- `participant.updated`
+- `participant.left`
+- `participant.offline`
+- `llm.request`
+- `llm.complete`
+- `llm.error`
+- `harness.session.opened`
+- `harness.session.closed`
+- `harness.artifact`
+
+Veja [Observabilidade](/pt-br/reference/observability/) para o formato dos campos dos eventos `llm.*` e `harness.*`.
+
+## `gambi self update`
+
+Atualiza a CLI instalada. O comando detecta a origem da instalação (bun, npm ou binário standalone) e roda o caminho de atualização correspondente.
+
+```bash
+gambi self update [options]
+```
+
+Opções:
+
+| Opção | Descrição |
+| --- | --- |
+| `--manager <bun\|npm>` | força um gerenciador de pacotes em vez da detecção automática |
+| `--yes` | pula o prompt de confirmação |
+| `--dry-run` | imprime o plano de atualização resolvido e sai |
+
+Exemplos:
+
+```bash
+gambi self update
+gambi self update --yes
+gambi self update --dry-run --format json
+```
+
+## Veja também
+
+- [Referência da API](/pt-br/reference/api/) para as rotas HTTP por trás da CLI.
+- [Referência do SDK](/pt-br/reference/sdk/) para os equivalentes programáticos.
+- [Como os túneis funcionam](/pt-br/concepts/tunnel-first/) para o modelo conceitual por trás do `participant join`.

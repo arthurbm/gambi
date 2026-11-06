@@ -35,16 +35,22 @@ interface Example {
   steps: Step[];
 }
 
+const { t } = Astro.locals;
+const { locale } = Astro.locals.starlightRoute;
+// Internal links stay inside the visitor's locale ("/x/" -> "/pt-br/x/").
+const href = (path: string) => (locale ? `/${locale}${path}` : path);
+
 // Illustrative sessions. Event and frame names are the real ones from
-// packages/core; people, models, and timings are made up.
+// packages/core; people, models, and timings are made up. Log lines travel
+// to the client script inside data-examples, already in the page's locale.
 const examples: Example[] = [
   {
     id: "arena",
-    tab: "Model arena",
-    title: "Model arena",
-    body: "Send one prompt to every model in the room and compare the answers side by side, with timing from the room's events.",
-    href: "/guides/patterns/#model-arena",
-    link: "See the pattern",
+    tab: t("landing.examples.arena.tab"),
+    title: t("landing.examples.arena.title"),
+    body: t("landing.examples.arena.body"),
+    href: href("/guides/patterns/#model-arena"),
+    link: t("landing.examples.seePattern"),
     nodes: [
       { name: "Arthur", offer: "llama3", kind: "model", a: -135 },
       { name: "Lu", offer: "qwen2.5-coder", kind: "model", a: -45 },
@@ -55,7 +61,7 @@ const examples: Example[] = [
       {
         moves: [0, 1, 2, 3].map((n) => ({ n, dir: "out" })),
         ev: "llm.request",
-        text: "one prompt, four models",
+        text: t("landing.examples.arena.s0"),
       },
       {
         moves: [{ n: 1, dir: "back" }],
@@ -77,16 +83,16 @@ const examples: Example[] = [
         ev: "llm.complete",
         text: "llama-3.3-70b · ttft 620 ms",
       },
-      { text: "Your app shows the four answers side by side." },
+      { text: t("landing.examples.arena.s5") },
     ],
   },
   {
     id: "jury",
-    tab: "Jury panel",
-    title: "Jury panel",
-    body: "One model answers and three others score it. Each judge can run on a different person's machine.",
-    href: "/guides/patterns/#jury-panel",
-    link: "See the pattern",
+    tab: t("landing.examples.jury.tab"),
+    title: t("landing.examples.jury.title"),
+    body: t("landing.examples.jury.body"),
+    href: href("/guides/patterns/#jury-panel"),
+    link: t("landing.examples.seePattern"),
     nodes: [
       { name: "Arthur", offer: "llama3", kind: "model", a: -90 },
       { name: "Lu", offer: "qwen2.5-coder", kind: "model", a: 30 },
@@ -97,17 +103,17 @@ const examples: Example[] = [
       {
         moves: [{ n: 0, dir: "out" }],
         ev: "llm.request",
-        text: "llama3 writes the answer",
+        text: t("landing.examples.jury.s0"),
       },
       {
         moves: [{ n: 0, dir: "back" }],
         ev: "llm.complete",
-        text: "answer ready",
+        text: t("landing.examples.jury.s1"),
       },
       {
         moves: [1, 2, 3].map((n) => ({ n, dir: "out" })),
         ev: "llm.request",
-        text: "three judges score it",
+        text: t("landing.examples.jury.s2"),
       },
       {
         moves: [{ n: 1, dir: "back" }],
@@ -124,153 +130,192 @@ const examples: Example[] = [
         ev: "llm.complete",
         text: "mistral-small · 9 / 10",
       },
-      { text: "Your app averages the scores: 8.0." },
+      { text: t("landing.examples.jury.s6") },
     ],
   },
   {
     id: "debate",
-    tab: "Debate",
-    title: "Debate club",
-    body: "Two models argue in turns while a third moderates. Your code decides who speaks next and what each one sees.",
-    href: "/guides/patterns/#debate-club",
-    link: "See the pattern",
+    tab: t("landing.examples.debate.tab"),
+    title: t("landing.examples.debate.title"),
+    body: t("landing.examples.debate.body"),
+    href: href("/guides/patterns/#debate-club"),
+    link: t("landing.examples.seePattern"),
     nodes: [
-      { name: "Arthur", offer: "llama3 · moderator", kind: "model", a: -90 },
-      { name: "Tati", offer: "llama-3.3-70b · against", kind: "model", a: 30 },
-      { name: "Lu", offer: "qwen2.5-coder · for", kind: "model", a: 150 },
+      {
+        name: "Arthur",
+        offer: `llama3 · ${t("landing.examples.debate.moderator")}`,
+        kind: "model",
+        a: -90,
+      },
+      {
+        name: "Tati",
+        offer: `llama-3.3-70b · ${t("landing.examples.debate.against")}`,
+        kind: "model",
+        a: 30,
+      },
+      {
+        name: "Lu",
+        offer: `qwen2.5-coder · ${t("landing.examples.debate.for")}`,
+        kind: "model",
+        a: 150,
+      },
     ],
     steps: [
       {
         moves: [{ n: 2, dir: "out" }],
         ev: "llm.request",
-        text: "turn 1 · for",
+        text: t("landing.examples.debate.s0"),
       },
       {
         moves: [{ n: 2, dir: "back" }],
         ev: "llm.complete",
-        text: "argument received",
+        text: t("landing.examples.debate.s1"),
       },
       {
         moves: [{ n: 1, dir: "out" }],
         ev: "llm.request",
-        text: "turn 1 · against, sees the argument",
+        text: t("landing.examples.debate.s2"),
       },
       {
         moves: [{ n: 1, dir: "back" }],
         ev: "llm.complete",
-        text: "rebuttal received",
+        text: t("landing.examples.debate.s3"),
       },
       {
         moves: [{ n: 2, dir: "out" }],
         ev: "llm.request",
-        text: "turn 2 · for",
+        text: t("landing.examples.debate.s4"),
       },
       {
         moves: [{ n: 2, dir: "back" }],
         ev: "llm.complete",
-        text: "closing received",
+        text: t("landing.examples.debate.s5"),
       },
       {
         moves: [{ n: 0, dir: "out" }],
         ev: "llm.request",
-        text: "moderator reads both sides",
+        text: t("landing.examples.debate.s6"),
       },
       {
         moves: [{ n: 0, dir: "back" }],
         ev: "llm.complete",
-        text: "summary and verdict",
+        text: t("landing.examples.debate.s7"),
       },
     ],
   },
   {
     id: "chain",
-    tab: "Draft, critique, polish",
-    title: "Draft, critique, polish",
-    body: "A small local model drafts, a stronger one critiques, and the first one revises. Cheap where it can be, strong where it counts.",
-    href: "/guides/patterns/#draft-critique-polish",
-    link: "See the pattern",
+    tab: t("landing.examples.chain.tab"),
+    title: t("landing.examples.chain.title"),
+    body: t("landing.examples.chain.body"),
+    href: href("/guides/patterns/#draft-critique-polish"),
+    link: t("landing.examples.seePattern"),
     nodes: [
-      { name: "Arthur", offer: "llama3 · local", kind: "model", a: 180 },
+      {
+        name: "Arthur",
+        offer: `llama3 · ${t("landing.examples.chain.local")}`,
+        kind: "model",
+        a: 180,
+      },
       { name: "Tati", offer: "llama-3.3-70b", kind: "model", a: 0 },
     ],
     steps: [
-      { moves: [{ n: 0, dir: "out" }], ev: "llm.request", text: "draft" },
+      {
+        moves: [{ n: 0, dir: "out" }],
+        ev: "llm.request",
+        text: t("landing.examples.chain.s0"),
+      },
       {
         moves: [{ n: 0, dir: "back" }],
         ev: "llm.complete",
-        text: "draft · 1.2 s",
+        text: t("landing.examples.chain.s1"),
       },
       {
         moves: [{ n: 1, dir: "out" }],
         ev: "llm.request",
-        text: "critique the draft",
+        text: t("landing.examples.chain.s2"),
       },
       {
         moves: [{ n: 1, dir: "back" }],
         ev: "llm.complete",
-        text: "three notes",
+        text: t("landing.examples.chain.s3"),
       },
       {
         moves: [{ n: 0, dir: "out" }],
         ev: "llm.request",
-        text: "revise with the notes",
+        text: t("landing.examples.chain.s4"),
       },
       {
         moves: [{ n: 0, dir: "back" }],
         ev: "llm.complete",
-        text: "final text",
+        text: t("landing.examples.chain.s5"),
       },
     ],
   },
   {
     id: "squads",
-    tab: "Squads",
-    title: "Squads with a steerer",
-    body: "Squads of people build something together, each squad with its own coding agent. Each round one person steers: they record a decision before work goes to the agent, then accept the result or send it back with a reason. Those rules are app code; Gambi carries the messages.",
-    href: "/concepts/whats-next/",
-    link: "Where this is going",
+    tab: t("landing.examples.squads.tab"),
+    title: t("landing.examples.squads.title"),
+    body: t("landing.examples.squads.body"),
+    href: href("/concepts/whats-next/"),
+    link: t("landing.examples.squads.link"),
     explored: true,
     nodes: [
-      { name: "Squad A", offer: "Bia · claude-code", kind: "harness", a: -90 },
-      { name: "Squad B", offer: "Caio · codex", kind: "harness", a: 30 },
-      { name: "Squad C", offer: "Duda · opencode", kind: "harness", a: 150 },
+      {
+        name: t("landing.examples.squads.a"),
+        offer: "Bia · claude-code",
+        kind: "harness",
+        a: -90,
+      },
+      {
+        name: t("landing.examples.squads.b"),
+        offer: "Caio · codex",
+        kind: "harness",
+        a: 30,
+      },
+      {
+        name: t("landing.examples.squads.c"),
+        offer: "Duda · opencode",
+        kind: "harness",
+        a: 150,
+      },
     ],
     steps: [
-      { text: "Round 1 · the challenge goes to every squad" },
-      { text: "Squad A records a decision, Bia steering" },
+      { text: t("landing.examples.squads.s0") },
+      { text: t("landing.examples.squads.s1") },
       {
         moves: [{ n: 0, dir: "out" }],
         ev: "tunnel.harness.message",
-        text: "dispatch to Bia's claude-code",
+        text: t("landing.examples.squads.s2"),
       },
       {
         moves: [{ n: 0, dir: "back" }],
         ev: "tunnel.harness.artifact",
-        text: "v1 · 3 files",
+        text: t("landing.examples.squads.s3"),
       },
-      { text: "Bia accepts" },
+      { text: t("landing.examples.squads.s4") },
       {
         moves: [{ n: 1, dir: "out" }],
         ev: "tunnel.harness.message",
-        text: "dispatch to Caio's codex",
+        text: t("landing.examples.squads.s5"),
       },
       {
         moves: [{ n: 1, dir: "back" }],
         ev: "tunnel.harness.artifact",
-        text: "v1 · 2 files",
+        text: t("landing.examples.squads.s6"),
       },
-      { text: "Caio returns it: missing tests", stop: true },
+      { text: t("landing.examples.squads.s7"), stop: true },
       {
         moves: [{ n: 1, dir: "out", stop: true }],
         ev: "tunnel.harness.message",
-        text: "dispatched again, with the reason",
+        text: t("landing.examples.squads.s8"),
       },
       {
         moves: [{ n: 1, dir: "back" }],
         ev: "tunnel.harness.artifact",
-        text: "v2 · accepted",
+        text: t("landing.examples.squads.s9"),
       },
-      { text: "Round 2 · steering passes to the next person" },
+      { text: t("landing.examples.squads.s10") },
     ],
   },
 ];
@@ -318,14 +363,11 @@ const label = (a: number) => {
 ---
 
 <section class="examples" aria-labelledby="examples-title">
-  <h2 id="examples-title" class="section-title">What a group can build on it</h2>
-  <p class="section-lead">
-    Pick an example. Each one is your app's code running on one hub, with
-    participants on different machines. The events are illustrative.
-  </p>
+  <h2 id="examples-title" class="section-title">{t("landing.examples.title")}</h2>
+  <p class="section-lead">{t("landing.examples.lead")}</p>
 
   <div class="ex" data-examples={JSON.stringify(stageData)}>
-    <div class="ex-tabs" role="tablist" aria-label="Examples">
+    <div class="ex-tabs" role="tablist" aria-label={t("landing.examples.tabs")}>
       {examples.map((ex, i) => (
         <button
           role="tab"
@@ -347,7 +389,7 @@ const label = (a: number) => {
           <div class="ex-panel" role="tabpanel" id={`ex-panel-${ex.id}`} aria-labelledby={`ex-tab-${ex.id}`} hidden={i !== 0}>
             <h3 class="ex-title">
               {ex.title}
-              {ex.explored && <span class="tag-explored">Being explored</span>}
+              {ex.explored && <span class="tag-explored">{t("landing.examples.explored")}</span>}
             </h3>
             <p>{ex.body}</p>
             <a class="ex-link" href={ex.href}>{ex.link}<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3l5 5-5 5"></path></svg></a>

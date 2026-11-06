@@ -1,0 +1,124 @@
+---
+title: Migrar do Gambiarra
+description: Passe de gambiarra para gambi pelo caminho mais curto possível em instalações, imports, configuração e nomes de serviço.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+O projeto agora se chama **Gambi**. Este guia lista o que você precisa atualizar.
+
+## O que mudou
+
+| Antes | Depois |
+|--------|-------|
+| `gambiarra` | `gambi` |
+| `gambiarra-sdk` | `gambi-sdk` |
+| `createGambiarra()` | `createGambi()` |
+| `~/.gambiarra` | `~/.gambi` |
+| `gambiarra-hub` / `_gambiarra` | `gambi-hub` / `_gambi` |
+
+`Gambi` é a abreviação oficial de `gambiarra`. Para a história do nome, leia [Por que Gambi?](/pt-br/concepts/why-gambi/).
+
+## Migração mais rápida
+
+Rode o script automático da sua plataforma:
+
+<Tabs>
+  <TabItem label="Linux / macOS" icon="linux">
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/migrate-from-gambiarra.sh | bash
+    ```
+  </TabItem>
+  <TabItem label="Windows" icon="laptop">
+    ```powershell
+    irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/migrate-from-gambiarra.ps1 | iex
+    ```
+  </TabItem>
+</Tabs>
+
+## Migração manual da CLI
+
+<Tabs>
+  <TabItem label="npm" icon="seti:npm">
+    ```bash
+    npm uninstall -g gambiarra
+    npm install -g gambi
+    ```
+    O novo pacote `gambi` instala um wrapper e o binário da plataforma correspondente à máquina atual.
+  </TabItem>
+  <TabItem label="bun" icon="bun">
+    ```bash
+    bun remove -g gambiarra
+    bun add -g gambi
+    ```
+  </TabItem>
+  <TabItem label="Linux / macOS" icon="linux">
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.sh | bash
+    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.sh | bash
+    ```
+  </TabItem>
+  <TabItem label="Windows" icon="laptop">
+    ```powershell
+    irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.ps1 | iex
+    irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.ps1 | iex
+    ```
+  </TabItem>
+</Tabs>
+
+## Migração do SDK
+
+Troque os imports e os nomes do provedor:
+
+```typescript
+import { createGambi } from "gambi-sdk";
+
+const gambi = createGambi({
+  roomCode: "ABC123",
+});
+```
+
+O que mudou:
+
+- `gambiarra-sdk` vira `gambi-sdk`
+- `createGambiarra` vira `createGambi`
+- os tipos `Gambiarra*` viram tipos `Gambi*`
+- a chave de metadados da resposta `gambiarra` vira `gambi`
+
+## Migração da configuração local
+
+A TUI lê as configurações de:
+
+```text
+~/.gambi/config.json
+```
+
+Se você já tem um `~/.gambiarra/config.json`, o script de migração copia esse arquivo para o novo local quando possível.
+
+A CLI usa um arquivo separado para ambientes nomeados, `$XDG_CONFIG_HOME/gambi/config.json` (por padrão `~/.config/gambi/config.json`). Veja [Ambientes nomeados](/pt-br/reference/cli/#ambientes-nomeados).
+
+## Nomes de serviço e de rede
+
+Se você depende da descoberta via mDNS, atualize estes nomes:
+
+| Antes | Depois |
+|--------|-------|
+| `_gambiarra._tcp.local` | `_gambi._tcp.local` |
+| `gambiarra-hub-{port}` | `gambi-hub-{port}` |
+
+O Gambi não vem com uma unit de serviço. Se você escreveu a sua, por exemplo `gambiarra-hub.service`, renomeie e troque o comando para `gambi hub serve`.
+
+## Verificar
+
+```bash
+gambi --version
+gambi --help
+```
+
+Se você usa o SDK, atualize também os imports do seu app e rode o build ou o typecheck de sempre.
+
+## Próximos passos
+
+- [Início rápido](/pt-br/start/quickstart/): monte um hub e uma room do zero
+- [Referência da CLI](/pt-br/reference/cli/): lista completa de comandos e flags
+- [Referência do SDK](/pt-br/reference/sdk/): métodos de roteamento e opções do provedor

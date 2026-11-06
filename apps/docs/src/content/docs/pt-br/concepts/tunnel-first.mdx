@@ -1,0 +1,104 @@
+---
+title: Como os túneis funcionam
+description: Por que os participantes do Gambi abrem um túnel até o hub em vez de publicar um endpoint de provedor acessível pela rede.
+sidebar:
+  order: 2
+---
+
+Esta página explica o transporte tunnel-first do Gambi: por que quem abre a conexão é o participante, e não o hub.
+
+## O formato antigo
+
+Uma versão anterior do Gambi tratava cada participante como um pequeno servidor HTTP:
+
+1. O participante rodava um provedor local (Ollama, LM Studio etc.).
+2. Ele avisava o hub: "meu endpoint está acessível em `http://host:port`".
+3. O hub roteava cada requisição de inferência fazendo uma chamada HTTP de volta para esse endereço.
+
+Isso funcionava em uma LAN simples, mas empurrava várias restrições para o participante:
+
+- o participante precisava ser acessível a partir do hub
+- NAT, isolamento de Wi-Fi e split tunneling de VPN muitas vezes bloqueavam esse caminho
+- o participante precisava expor uma porta, o que é pedir muito de um colega com um notebook
+- o hub precisava reescrever ou confiar em endereços de provedor que nunca foram dele
+
+O resultado era um sistema que exigia simetria de rede onde ela não existia.
+
+## O formato tunnel-first
+
+Agora o Gambi inverte a conexão. O participante abre um WebSocket até o hub. As requisições de inferência trafegam por esse túnel.
+
+```mermaid title="As duas conexões apontam para o hub. O provedor fica em localhost."
+flowchart LR
+  app["Seu app"]
+  hub(("Hub")):::hub
+  subgraph machine["Máquina do participante"]
+    rt["Runtime do participante"]
+    prov[("Provedor local<br/>Ollama, LM Studio, vLLM")]:::model
+  end
+  app -->|HTTP| hub
+  rt ==>|abre WebSocket| hub
+  rt -->|HTTP em localhost| prov
+  classDef hub stroke-width:1px
+  classDef model stroke-width:1.5px
+```
+
+O que muda:
+
+- o hub nunca inicia uma conexão com o participante
+- o participante pode manter o endpoint do provedor em `localhost`
+- os headers de autenticação ficam no runtime do participante
+- o hub roteia por `participant-id`, `model:<name>` ou `*`, e encaminha a requisição pelo túnel que o participante já abriu
+
+Participantes de harness usam a mesma direção de conexão. O processo do harness fica local e envia mensagens e artefatos pelo túnel aberto pelo participante. Um cliente de harness abre o próprio WebSocket de gerenciamento até o hub e se conecta a esse participante. O hub só repassa dados entre conexões que ele não originou. Participantes de harness não são candidatos ao roteamento de inferência.
+
+## O relay ACP opaco
+
+```mermaid title="O hub repassa mensagens ACP entre duas conexões que ele não abriu."
+flowchart LR
+  client["Cliente de harness<br/>ou app"]
+  hub(("Hub")):::hub
+  subgraph machine["Máquina do participante"]
+    rt["Runtime do participante"]
+    acp["Harness<br/>processo ACP v1"]:::harness
+  end
+  client ==>|WebSocket de gerenciamento| hub
+  rt ==>|túnel do participante| hub
+  rt <-->|stdio| acp
+  classDef hub stroke-width:1px
+  classDef harness stroke-width:1.5px
+```
+
+O frame do túnel tem um `sessionId` e um objeto `message`. O hub valida esse envelope e depois encaminha `message` sem ler o método nem os parâmetros do JSON-RPC ACP. Os comandos de abrir e fechar sessão usam o mesmo relay. Os artefatos do workspace passam em frames separados e versionados.
+
+O login local do harness nunca entra no registro do participante, nos eventos de ciclo de vida nem nos frames do túnel. Isso é diferente dos artefatos do workspace, que o participante envia de propósito para que um app conectado possa usar a saída do harness.
+
+## O que você ganha
+
+- **Localhost continua sendo localhost.** A URL do provedor que você passa para `gambi participant join` ou `createParticipantSession()` pode ser `http://localhost:11434`, mesmo quando o hub roda em outra máquina. O hub nunca precisa alcançar esse endereço.
+- **As credenciais ficam locais.** `authHeaders` e chaves de API só saem do runtime do participante quando o próprio runtime chama o provedor, nunca pelo hub.
+- **Menos pré-requisitos de rede para os participantes.** Um participante precisa de conectividade de saída até o hub e nada mais. Sem redirecionamento de porta, sem anúncio por mDNS, sem exceções no firewall.
+- **Registro seguro para repetir.** O registro de participante é idempotente, e o bootstrap token do túnel é de uso único. Reiniciar um participante com o mesmo ID é seguro.
+
+## Do que você abre mão
+
+- **O upgrade para WebSocket precisa passar.** Qualquer proxy entre o participante e o hub precisa encaminhar `Upgrade: websocket`. Alguns proxies corporativos bloqueiam isso.
+- **Uma direção, não duas.** O participante precisa alcançar o hub. O hub não precisa alcançar o participante, mas nada passa se a saída estiver bloqueada.
+- **Falhas no túnel precisam de tratamento.** Um runtime de participante não se reconecta sozinho. Quando o túnel fecha, a sessão do SDK termina com o motivo de fechamento `tunnel_closed`, e o `gambi participant join` emite um evento NDJSON `tunnel_failed` e sai com código `3`. Um heartbeat de gerenciamento que falha encerra a sessão com `heartbeat_failed` nos dois casos. Monitore isso e reinicie o participante.
+
+## Garantias
+
+O túnel é o único transporte que o hub usa para alcançar os participantes. Isso traz duas garantias:
+
+1. Se um participante não está conectado, ele não está disponível. Nada de DNS desatualizado, nada de sockets meio abertos fingindo estar vivos. A disponibilidade é uma propriedade de uma sessão de túnel ativa.
+2. Se uma requisição aponta para um participante cujo túnel fechou, o hub responde na hora com HTTP `503` e `{"error": "Participant tunnel is not connected."}` em vez de esperar um timeout.
+
+Clientes de harness conectados não dependem do túnel do participante. Se o participante é reiniciado e abre um novo túnel, os sockets de attach existentes continuam abertos e o repasse é retomado. Frames que um cliente envia enquanto não há túnel aberto são descartados.
+
+## Leitura complementar
+
+- [Visão geral da arquitetura](/pt-br/concepts/architecture/#protocolo-do-túnel): o panorama completo, incluindo os tipos de mensagem do túnel.
+- [Referência da API: a rota do túnel](/pt-br/reference/api/#get-v1roomscodeparticipantsidtunnel): o contrato exato de HTTP e WebSocket.
+- [Referência do SDK: `createParticipantSession()`](/pt-br/reference/sdk/#createparticipantsessionoptions): o runtime programático que gerencia um túnel para você.
+- [Traga seu harness](/pt-br/guides/bring-your-harness/): como entrar com OpenCode, Claude Code ou Codex.
+- [Runtime de participante customizado](/pt-br/guides/custom-participant/): como construir seu próprio runtime em cima de `createParticipantSession()`.

@@ -12,6 +12,16 @@ const install = "curl -fsSL https://gambi.sh/install | bash";
 
 // Evaluated once at build time (SSG): shows the deploy date.
 const deployDate = new Date().toISOString().slice(0, 10);
+
+// UI strings come from src/content/i18n/*.json under the `landing.` prefix.
+const { t } = Astro.locals;
+const { locale } = Astro.locals.starlightRoute;
+// Internal links stay inside the visitor's locale ("/x/" -> "/pt-br/x/").
+const href = (path: string) => (locale ? `/${locale}${path}` : path);
+// The language switch points at the same landing in the other locale.
+const other = locale
+  ? { href: "/", lang: "en" }
+  : { href: "/pt-br/", lang: "pt-BR" };
 ---
 
 <script is:inline>
@@ -29,7 +39,7 @@ const deployDate = new Date().toISOString().slice(0, 10);
 <div class="ed">
   <header class="ed-nav">
     <nav class="ed-nav-bar" aria-label="Gambi">
-      <a class="ed-mark" href="/" aria-label="Gambi home">
+      <a class="ed-mark" href={href("/")} aria-label={t("landing.nav.home")}>
         <svg viewBox="0 0 24 24" aria-hidden="true" class="ed-mark-glyph">
           <circle cx="12" cy="12" r="10.5"></circle>
           <circle cx="12" cy="12" r="2.6"></circle>
@@ -38,12 +48,15 @@ const deployDate = new Date().toISOString().slice(0, 10);
         Gambi
       </a>
       <ul class="ed-links">
-        <li><a href="/start/introduction/">Docs</a></li>
-        <li class="hide-sm"><a href="/guides/patterns/">Patterns</a></li>
-        <li class="hide-sm"><a href="/reference/sdk/">SDK</a></li>
-        <li><a href="https://github.com/arthurbm/gambi" rel="noopener">GitHub</a></li>
+        <li><a href={href("/start/introduction/")}>{t("landing.nav.docs")}</a></li>
+        <li class="hide-sm"><a href={href("/guides/patterns/")}>{t("landing.nav.patterns")}</a></li>
+        <li class="hide-sm"><a href={href("/reference/sdk/")}>{t("landing.nav.sdk")}</a></li>
+        <li><a href="https://github.com/arthurbm/gambi" rel="noopener">{t("landing.nav.github")}</a></li>
+        <li>
+          <a class="lang-switch" href={other.href} hreflang={other.lang} lang={other.lang} aria-label={t("landing.nav.lang.aria")}>{t("landing.nav.lang.label")}</a>
+        </li>
         <li class="motion-item">
-          <button class="nav-icon motion-toggle" type="button" aria-pressed="false" aria-label="Pause animations" title="Pause animations">
+          <button class="nav-icon motion-toggle" type="button" aria-pressed="false" aria-label={t("landing.nav.pause")} title={t("landing.nav.pause")} data-label-pause={t("landing.nav.pause")} data-label-play={t("landing.nav.play")}>
             <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M9 6.5v11M15 6.5v11"></path>
             </svg>
@@ -53,7 +66,7 @@ const deployDate = new Date().toISOString().slice(0, 10);
           </button>
         </li>
         <li>
-          <button class="nav-icon theme-toggle" type="button" aria-label="Switch between light and dark" title="Switch between light and dark">
+          <button class="nav-icon theme-toggle" type="button" aria-label={t("landing.nav.theme")} title={t("landing.nav.theme")}>
             <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="12" cy="12" r="4.2"></circle>
               <path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3l1.7 1.7M17 17l1.7 1.7M5.3 18.7 7 17M17 7l1.7-1.7"></path>
@@ -71,38 +84,35 @@ const deployDate = new Date().toISOString().slice(0, 10);
     <section class="hero" aria-labelledby="hero-title">
       <div class="hero-copy">
         <h1 id="hero-title" class="hero-title">
-          <span class="ht-one">Agent tools are built for one person.</span>
-          <span class="ht-many">Gambi is built for many.</span>
+          <span class="ht-one">{t("landing.hero.one")}</span>
+          <span class="ht-many">{t("landing.hero.many")}</span>
         </h1>
-        <p class="lede">
-          Each person connects the agents and models on their own machine.
-          Your app reaches all of them through one hub.
-        </p>
+        <p class="lede">{t("landing.hero.lede")}</p>
         <dl class="brings">
           <div class="bring bring-harness">
-            <dt>Agents</dt>
+            <dt>{t("landing.hero.agents")}</dt>
             <dd>Claude Code, Codex, OpenCode</dd>
           </div>
           <div class="bring bring-model">
-            <dt>Models</dt>
-            <dd>Ollama, vLLM, <span class="bring-more">or any OpenAI-compatible server</span></dd>
+            <dt>{t("landing.hero.models")}</dt>
+            <dd>Ollama, vLLM, <span class="bring-more">{t("landing.hero.modelsMore")}</span></dd>
           </div>
           <div class="bring bring-stop">
-            <dt>Stays local</dt>
-            <dd>Keys and logins</dd>
+            <dt>{t("landing.hero.stays")}</dt>
+            <dd>{t("landing.hero.staysWhat")}</dd>
           </div>
         </dl>
         <div class="actions">
-          <button class="cmd" type="button" data-command={install} aria-label="Copy the install command">
+          <button class="cmd" type="button" data-command={install} data-copied={t("landing.cmd.copied")} data-failed={t("landing.cmd.failed")} aria-label={t("landing.cmd.aria")}>
             <span class="cmd-prompt" aria-hidden="true">$</span>
             <code>{install}</code>
             <span class="copy-icon" aria-hidden="true"><CopyIcon /><CheckIcon /></span>
             <span class="sr-only copy-status" aria-live="polite"></span>
           </button>
           <div class="action-row">
-            <a class="btn btn-primary" href="/start/quickstart/">Get started</a>
+            <a class="btn btn-primary" href={href("/start/quickstart/")}>{t("landing.hero.getStarted")}</a>
             <a class="btn-text" href="#how">
-              How it works
+              {t("landing.hero.how")}
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6l5 5 5-5"></path></svg>
             </a>
           </div>
@@ -117,30 +127,26 @@ const deployDate = new Date().toISOString().slice(0, 10);
     <CodeSection />
 
     <section class="start" aria-labelledby="start-title">
-      <h2 id="start-title" class="section-title">Run your first session</h2>
-      <p class="section-lead">
-        Install the CLI on each machine, start the hub on one of them, and have
-        each person join from their own. The quick start walks through it in
-        four commands.
-      </p>
+      <h2 id="start-title" class="section-title">{t("landing.start.title")}</h2>
+      <p class="section-lead">{t("landing.start.lead")}</p>
       <div class="start-actions">
-        <button class="cmd" type="button" data-command={install} aria-label="Copy the install command">
+        <button class="cmd" type="button" data-command={install} data-copied={t("landing.cmd.copied")} data-failed={t("landing.cmd.failed")} aria-label={t("landing.cmd.aria")}>
           <span class="cmd-prompt" aria-hidden="true">$</span>
           <code>{install}</code>
           <span class="copy-icon" aria-hidden="true"><CopyIcon /><CheckIcon /></span>
           <span class="sr-only copy-status" aria-live="polite"></span>
         </button>
-        <a class="btn btn-primary" href="/start/quickstart/">Read the quick start</a>
+        <a class="btn btn-primary" href={href("/start/quickstart/")}>{t("landing.start.quickstart")}</a>
       </div>
       <p class="start-agent">
-        <button class="prompt-copy" type="button" data-prompt={setupPrompt} data-copied="Prompt copied">
+        <button class="prompt-copy" type="button" data-prompt={setupPrompt(locale)} data-copied={t("landing.start.promptCopied")} data-failed={t("landing.start.promptFailed")}>
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M4 6.5h16M4 12h10M4 17.5h7"></path>
             <path d="m15.5 15 2.5 2.5-2.5 2.5"></path>
           </svg>
-          <span class="prompt-copy-label">Copy a setup prompt for your agent</span>
+          <span class="prompt-copy-label">{t("landing.start.prompt")}</span>
         </button>
-        <span class="start-agent-note">Paste it into Claude Code, Codex, or OpenCode. It reads the docs and walks you through the same steps.</span>
+        <span class="start-agent-note">{t("landing.start.promptNote")}</span>
         <span class="sr-only prompt-status" aria-live="polite"></span>
       </p>
     </section>
@@ -150,33 +156,33 @@ const deployDate = new Date().toISOString().slice(0, 10);
     <div class="footer-grid">
       <div class="footer-brand">
         <p class="footer-mark">Gambi</p>
-        <p class="footer-tag">A hub for many people's agents and models, on a network you trust.</p>
+        <p class="footer-tag">{t("landing.footer.tag")}</p>
       </div>
-      <nav class="footer-col" aria-label="Guides">
-        <p class="footer-label">Guides</p>
-        <a href="/start/quickstart/">Quick start</a>
-        <a href="/guides/bring-your-harness/">Bring your agent</a>
-        <a href="/guides/patterns/">Patterns</a>
-        <a href="/guides/remote-providers/">Remote providers</a>
+      <nav class="footer-col" aria-label={t("landing.footer.guides")}>
+        <p class="footer-label">{t("landing.footer.guides")}</p>
+        <a href={href("/start/quickstart/")}>{t("landing.footer.quickstart")}</a>
+        <a href={href("/guides/bring-your-harness/")}>{t("landing.footer.bringAgent")}</a>
+        <a href={href("/guides/patterns/")}>{t("landing.footer.patterns")}</a>
+        <a href={href("/guides/remote-providers/")}>{t("landing.footer.remote")}</a>
       </nav>
-      <nav class="footer-col" aria-label="Reference">
-        <p class="footer-label">Reference</p>
-        <a href="/reference/cli/">CLI</a>
-        <a href="/reference/sdk/">SDK</a>
-        <a href="/reference/api/">API</a>
-        <a href="/reference/observability/">Observability</a>
+      <nav class="footer-col" aria-label={t("landing.footer.reference")}>
+        <p class="footer-label">{t("landing.footer.reference")}</p>
+        <a href={href("/reference/cli/")}>{t("landing.footer.cli")}</a>
+        <a href={href("/reference/sdk/")}>{t("landing.footer.sdk")}</a>
+        <a href={href("/reference/api/")}>{t("landing.footer.api")}</a>
+        <a href={href("/reference/observability/")}>{t("landing.footer.observability")}</a>
       </nav>
-      <nav class="footer-col" aria-label="Project">
-        <p class="footer-label">Project</p>
-        <a href="/concepts/tunnel-first/">How tunnels work</a>
-        <a href="/concepts/whats-next/">What's next</a>
-        <a href="/concepts/why-gambi/">Why "gambi"?</a>
-        <a href="https://github.com/arthurbm/gambi" rel="noopener">GitHub</a>
+      <nav class="footer-col" aria-label={t("landing.footer.project")}>
+        <p class="footer-label">{t("landing.footer.project")}</p>
+        <a href={href("/concepts/tunnel-first/")}>{t("landing.footer.tunnels")}</a>
+        <a href={href("/concepts/whats-next/")}>{t("landing.footer.next")}</a>
+        <a href={href("/concepts/why-gambi/")}>{t("landing.footer.why")}</a>
+        <a href="https://github.com/arthurbm/gambi" rel="noopener">{t("landing.nav.github")}</a>
       </nav>
     </div>
     <div class="footer-strip">
-      <span>Gambi is short for gambiarra.</span>
-      <span>Docs built {deployDate}</span>
+      <span>{t("landing.footer.short")}</span>
+      <span>{t("landing.footer.built", { date: deployDate })}</span>
     </div>
   </footer>
 </div>
@@ -871,7 +877,7 @@ const deployDate = new Date().toISOString().slice(0, 10);
     if (!motionToggle) return;
     const paused = isPaused();
     motionToggle.setAttribute("aria-pressed", String(paused));
-    const label = paused ? "Play animations" : "Pause animations";
+    const label = (paused ? motionToggle.dataset.labelPlay : motionToggle.dataset.labelPause) ?? "";
     motionToggle.setAttribute("aria-label", label);
     motionToggle.title = label;
   };
@@ -889,9 +895,9 @@ const deployDate = new Date().toISOString().slice(0, 10);
       try {
         await navigator.clipboard.writeText(command);
         button.classList.add("success");
-        if (status) status.textContent = "Copied";
+        if (status) status.textContent = button.dataset.copied ?? "";
       } catch {
-        if (status) status.textContent = "Copy failed. Select the command and copy it.";
+        if (status) status.textContent = button.dataset.failed ?? "";
       }
       setTimeout(() => {
         button.classList.remove("success");
@@ -913,7 +919,7 @@ const deployDate = new Date().toISOString().slice(0, 10);
         label.textContent = button.dataset.copied ?? idle;
         if (status) status.textContent = button.dataset.copied ?? "";
       } catch {
-        if (status) status.textContent = "Copy failed. Open the quick start and copy the prompt there.";
+        if (status) status.textContent = button.dataset.failed ?? "";
       }
       setTimeout(() => {
         button.classList.remove("success");
