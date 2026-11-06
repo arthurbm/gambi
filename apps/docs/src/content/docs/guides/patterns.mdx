@@ -24,19 +24,21 @@ Same prompt, every model in the room. Use it for evals, A/B comparisons, or pick
 ```ts
 const prompt = "Explain TLS handshakes in one sentence.";
 
-// One entry per available model participant
-const models = await gambi.listModels();
+// Model participants that are connected and not handling a request
+const participants = (await gambi.listParticipants()).filter(
+  (p) => !p.harness && p.connection.connected && p.status === "online"
+);
 
 const results = await Promise.all(
-  models.map((m) =>
-    generateText({ model: gambi.participant(m.id), prompt })
+  participants.map((p) =>
+    generateText({ model: gambi.participant(p.id), prompt })
   )
 );
 
-results.forEach((r, i) => console.log(`${models[i].model}: ${r.text}`));
+results.forEach((r, i) => console.log(`${participants[i].model}: ${r.text}`));
 ```
 
-Each call targets a different participant, so they run in parallel. Don't build an arena from repeated `gambi.any()` calls. `any()` picks a random available participant, not the next one in turn, and a participant handling a request is not available. When more `any()` calls run at once than there are free participants, the extra calls fail with HTTP `404`.
+Each call targets a different participant, so they run in parallel. A participant can still pick up someone else's request between the list and your call; that call fails with HTTP `409`. Don't build an arena from repeated `gambi.any()` calls. `any()` picks a random available participant, not the next one in turn, and a participant handling a request is not available. When more `any()` calls run at once than there are free participants, the extra calls fail with HTTP `404`.
 
 ## Jury / judge panel <a id="jury-panel" />
 
@@ -215,10 +217,10 @@ import { createClient } from "gambi-sdk";
 const client = createClient({ hubUrl: "http://localhost:3000" });
 const { data } = await client.participants.list("ABC123");
 
-// The list includes harness participants and offline ones.
+// The list includes harness, busy, and offline participants.
 // Keep model participants that can take a request now.
 const participants = data.filter(
-  (p) => !p.harness && p.connection.connected && p.status !== "offline"
+  (p) => !p.harness && p.connection.connected && p.status === "online"
 );
 
 const responses = await Promise.all(
