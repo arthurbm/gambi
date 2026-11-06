@@ -81,19 +81,19 @@ sequenceDiagram
 
 - deixa os provedores ficarem em `localhost`
 - mantém as credenciais do provedor no runtime do participante
-- evita pedir que os participantes publiquem endpoints na rede só para entrar em uma room
+- evita pedir que os participantes publiquem endpoints na rede só para entrar em uma sala
 - carrega mensagens ACP v1 opacas e artefatos para participantes de harness
 - permite que clientes de gerenciamento se conectem pelo hub sem que o hub inicie nenhuma conexão com o participante
 
 ### SSE para observabilidade
 
-- um stream de eventos da room em mão única basta para monitoramento
+- um stream de eventos da sala em mão única basta para monitoramento
 - alimenta a TUI e os clientes operacionais
 - mantém a visibilidade operacional separada do transporte de inferência
 
 Apps opcionais podem construir coordenação acima desses contratos com o
 `gambi-sdk`: conectar-se a participantes de harness, hospedar os próprios e manter
-o próprio estado. Os streams deles não são o stream da room do hub e não mudam a
+o próprio estado. Os streams deles não são o stream da sala do hub e não mudam a
 API pública do hub.
 
 ## Regras de roteamento

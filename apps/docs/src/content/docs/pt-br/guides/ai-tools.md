@@ -1,13 +1,13 @@
 ---
 title: Usando o Gambi com ferramentas de IA
-description: Use uma room do Gambi como backend de modelos compatível com OpenAI em editores, SDKs e scripts.
+description: Use uma sala do Gambi como backend de modelos compatível com OpenAI em editores, SDKs e scripts.
 ---
 
-Toda room (sala) do Gambi é uma API compatível com OpenAI. Qualquer ferramenta ou biblioteca que permita definir uma base URL customizada da OpenAI consegue enviar requisições para os participantes de modelo de uma room. Participantes harness (Claude Code, Codex, OpenCode) não atendem essas requisições; os apps falam com eles pelo [canal de attach do harness](#gerenciamento-programático).
+Toda sala do Gambi é uma API compatível com OpenAI. Qualquer ferramenta ou biblioteca que permita definir uma base URL customizada da OpenAI consegue enviar requisições para os participantes de modelo de uma sala. Participantes harness (Claude Code, Codex, OpenCode) não atendem essas requisições; os apps falam com eles pelo [canal de attach do harness](#gerenciamento-programático).
 
 ## Detalhes de conexão
 
-Toda room do Gambi expõe uma base URL compatível com OpenAI:
+Toda sala do Gambi expõe uma base URL compatível com OpenAI:
 
 | Configuração | Valor |
 | --- | --- |
@@ -26,7 +26,7 @@ Protocolos suportados:
 # 1. Suba o hub
 gambi hub serve --port 3000
 
-# 2. Crie uma room
+# 2. Crie uma sala
 gambi room create --name "My Room"
 
 # 3. Entre como participante
