@@ -1,9 +1,9 @@
 ---
 title: Traga seu harness
-description: Entre em uma room do Gambi com seu processo local de OpenCode, Claude Code ou Codex e mantenha o login dele na sua máquina.
+description: Entre em uma sala do Gambi com seu processo local de OpenCode, Claude Code ou Codex e mantenha o login dele na sua máquina.
 ---
 
-Use um participante de harness quando quiser compartilhar um processo local de OpenCode, Claude Code ou Codex com uma aplicação em uma room do Gambi. O harness roda na sua máquina, no próprio workspace, com o login que você já tem.
+Use um participante de harness quando quiser compartilhar um processo local de OpenCode, Claude Code ou Codex com uma aplicação em uma sala do Gambi. O harness roda na sua máquina, no próprio workspace, com o login que você já tem.
 
 Isso é diferente de compartilhar um endpoint de modelo. Participantes de harness trocam mensagens ACP v1 pelo canal de attach de gerenciamento. Eles nunca recebem requisições de inferência compatíveis com OpenAI.
 
@@ -13,7 +13,7 @@ Você precisa de:
 
 - a CLI do Gambi instalada
 - um hub acessível em uma rede confiável
-- o código de uma room existente
+- o código de uma sala existente
 - um participant ID estável que você possa reutilizar depois de uma reconexão
 - um harness suportado, instalado e autenticado na sua máquina
 
@@ -58,9 +58,9 @@ codex login
 codex login status
 ```
 
-## Entre na room
+## Entre na sala
 
-Rode um destes comandos. Troque o código da room, o participant ID e o nome pelos seus valores.
+Rode um destes comandos. Troque o código da sala, o participant ID e o nome pelos seus valores.
 
 ```bash
 # OpenCode
@@ -96,7 +96,7 @@ gambi participant join \
   --harness opencode
 ```
 
-Adicione `--password` para uma room protegida por senha. Não passe `--endpoint`, `--header` nem `--header-env` no modo harness. A autenticação do harness vem do processo local do harness.
+Adicione `--password` para uma sala protegida por senha. Não passe `--endpoint`, `--header` nem `--header-env` no modo harness. A autenticação do harness vem do processo local do harness.
 
 ## Confira o participante rodando
 
@@ -107,7 +107,7 @@ Quando a inicialização dá certo, a CLI informa quatro marcos:
 3. processo do harness iniciado
 4. sessão ACP aberta
 
-O processo fica em primeiro plano. Aperte Ctrl+C uma vez para encerrar o processo do harness, remover o participante e sair da room.
+O processo fica em primeiro plano. Aperte Ctrl+C uma vez para encerrar o processo do harness, remover o participante e sair da sala.
 
 Para uma saída do ciclo de vida legível por máquina, use NDJSON:
 
@@ -195,7 +195,7 @@ Para ver uma aplicação completa que orquestra vários participantes de harness
 
 ## Pré-visualize sem iniciar o harness
 
-Use `--dry-run` para conferir a room resolvida, o participant ID, o workspace e o payload de registro:
+Use `--dry-run` para conferir a sala resolvida, o participant ID, o workspace e o payload de registro:
 
 ```bash
 gambi participant join \

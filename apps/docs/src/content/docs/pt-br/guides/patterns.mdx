@@ -3,7 +3,7 @@ title: Padrões multi-LLM
 description: Monte arenas, júris, debates, NPCs com personas e cadeias de raciocínio em várias etapas com o SDK do Gambi.
 ---
 
-Seis padrões para criar experiências em que vários LLMs trabalham juntos. Cada um é poucas linhas de TypeScript em cima do [SDK do Gambi](/pt-br/reference/sdk/). O Gambi cuida do roteamento, dos eventos da room e dos participantes espalhados em várias máquinas. Seu código decide quem fala e quando.
+Seis padrões para criar experiências em que vários LLMs trabalham juntos. Cada um é poucas linhas de TypeScript em cima do [SDK do Gambi](/pt-br/reference/sdk/). O Gambi cuida do roteamento, dos eventos da sala e dos participantes espalhados em várias máquinas. Seu código decide quem fala e quando.
 
 Todos os trechos abaixo partem de:
 
@@ -19,7 +19,7 @@ const gambi = createGambi({
 
 ## Arena de modelos <a id="model-arena" />
 
-O mesmo prompt para todos os modelos da room. Use para evals, comparações A/B ou para escolher um modelo para uma tarefa.
+O mesmo prompt para todos os modelos da sala. Use para evals, comparações A/B ou para escolher um modelo para uma tarefa.
 
 ```ts
 const prompt = "Explain TLS handshakes in one sentence.";
@@ -71,7 +71,7 @@ const yesVotes = verdicts.filter((v) => v.text.startsWith("YES")).length;
 console.log(`Verdict: ${yesVotes}/${judges.length} say yes`);
 ```
 
-Misture provedores à vontade. A resposta pode vir de um Ollama local e os juízes de APIs na nuvem, tudo na mesma room.
+Misture provedores à vontade. A resposta pode vir de um Ollama local e os juízes de APIs na nuvem, tudo na mesma sala.
 
 ## Rascunho → crítica → polimento <a id="draft-critique-polish" />
 
@@ -110,7 +110,7 @@ O mesmo formato serve para code review, tradução ou qualquer ciclo de rascunho
 
 ## Clube de debate <a id="debate-club" />
 
-Dois modelos discutem e um terceiro modera. Alterne os turnos entre participantes com system prompts opostos e depois peça um veredicto ao moderador. Os eventos da room permitem que uma plateia acompanhe cada turno.
+Dois modelos discutem e um terceiro modera. Alterne os turnos entre participantes com system prompts opostos e depois peça um veredicto ao moderador. Os eventos da sala permitem que uma plateia acompanhe cada turno.
 
 ```ts
 const topic = "Is it OK to lie for a good cause?";
@@ -143,7 +143,7 @@ const verdict = await generateText({
 });
 ```
 
-Acompanhe o stream SSE da room (`gambi events watch --room ABC123 --format ndjson`) para ver o `llm.request` e o `llm.complete` de cada turno em tempo real.
+Acompanhe o stream SSE da sala (`gambi events watch --room ABC123 --format ndjson`) para ver o `llm.request` e o `llm.complete` de cada turno em tempo real.
 
 ## NPCs com várias personas <a id="multi-persona-npcs" />
 
@@ -180,9 +180,9 @@ A lógica do seu jogo cuida da ordem dos turnos e do estado. O Gambi transforma 
 
 ## Arena de sala de aula numa LAN <a id="lan-debate-club" />
 
-Junte os modelos de todo mundo numa room, como amigos ou alunos. Cada pessoa entra com o próprio provedor (Ollama, OpenRouter, OpenAI). Você constrói a interface; os modelos ficam nas máquinas de cada um.
+Junte os modelos de todo mundo numa sala, como amigos ou alunos. Cada pessoa entra com o próprio provedor (Ollama, OpenRouter, OpenAI). Você constrói a interface; os modelos ficam nas máquinas de cada um.
 
-Suba o hub e crie uma room:
+Suba o hub e crie uma sala:
 
 ```bash
 gambi hub serve --mdns
@@ -210,7 +210,7 @@ gambi participant join --room ABC123 --participant-id carol \
 Depois o app distribui o mesmo prompt para todos e mostra as respostas lado a lado, abre votação ou faz comparações às cegas:
 
 ```ts
-// createClient cuida das operações de gerenciamento (listar participantes, rooms).
+// createClient cuida das operações de gerenciamento (listar participantes, salas).
 // createGambi (da configuração acima) cuida da inferência. Este exemplo precisa dos dois.
 import { createClient } from "gambi-sdk";
 
@@ -233,7 +233,7 @@ const responses = await Promise.all(
 );
 ```
 
-A room é compartilhada; cada modelo fica na máquina de quem o trouxe.
+A sala é compartilhada; cada modelo fica na máquina de quem o trouxe.
 
 ## Próximos passos
 

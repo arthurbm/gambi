@@ -3,7 +3,7 @@ title: Observabilidade
 description: Eventos SSE, métricas e estado de conexão dos participantes emitidos pelo hub do Gambi.
 ---
 
-O hub informa a atividade de inferência e o estado dos participantes como eventos da room. Esta página documenta esse contrato público.
+O hub informa a atividade de inferência e o estado dos participantes como eventos da sala. Esta página documenta esse contrato público.
 
 Leia os eventos pelo stream SSE de gerenciamento:
 

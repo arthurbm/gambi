@@ -1,13 +1,13 @@
 ---
 title: Provedores remotos
-description: Use provedores de LLM na nuvem, como OpenRouter, Together AI, Groq, Fireworks ou OpenAI, como participantes de uma room do Gambi.
+description: Use provedores de LLM na nuvem, como OpenRouter, Together AI, Groq, Fireworks ou OpenAI, como participantes de uma sala do Gambi.
 ---
 
 Você não precisa de uma GPU local para participar. Qualquer API na nuvem compatível com OpenAI pode servir como seu endpoint de LLM.
 
 ## Como funciona
 
-Quando você entra em uma room com um provedor remoto, o runtime do participante:
+Quando você entra em uma sala com um provedor remoto, o runtime do participante:
 
 1. sonda o endpoint do provedor localmente
 2. se registra no hub

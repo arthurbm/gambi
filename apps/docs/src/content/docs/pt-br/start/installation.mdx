@@ -1,6 +1,6 @@
 ---
 title: Instalação
-description: Instale a CLI do Gambi em toda máquina que participa e o SDK nos apps que chamam uma room.
+description: Instale a CLI do Gambi em toda máquina que participa e o SDK nos apps que chamam uma sala.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
@@ -8,7 +8,7 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 O Gambi tem duas partes para instalar:
 
 - **A CLI** (`gambi`), em toda máquina que roda o hub ou compartilha um modelo ou harness.
-- **O SDK** (`gambi-sdk`), só em apps TypeScript ou JavaScript que chamam uma room. Apps em outras linguagens podem usar qualquer cliente compatível com OpenAI no lugar dele.
+- **O SDK** (`gambi-sdk`), só em apps TypeScript ou JavaScript que chamam uma sala. Apps em outras linguagens podem usar qualquer cliente compatível com OpenAI no lugar dele.
 
 ## CLI
 
@@ -64,7 +64,7 @@ bun add gambi-sdk
 | O hub | A CLI. Sem GPU, porque o hub só roteia tráfego. |
 | Quem compartilha um modelo | A CLI e um servidor compatível com OpenAI rodando, como Ollama, LM Studio ou vLLM, ou uma chave de API na nuvem. |
 | Quem compartilha um harness | A CLI e o Claude Code, o Codex ou o OpenCode, instalado e com login feito. Veja [Traga seu harness](/pt-br/guides/bring-your-harness/). |
-| Um app que chama a room | O SDK ou qualquer cliente compatível com OpenAI. |
+| Um app que chama a sala | O SDK ou qualquer cliente compatível com OpenAI. |
 
 ## Desinstalar
 

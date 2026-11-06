@@ -6,7 +6,7 @@ description: Referência das APIs HTTP de gerenciamento e de inferência do Gamb
 O hub do Gambi expõe dois contratos HTTP:
 
 - API de gerenciamento: rotas nativas do Gambi em `/v1`
-- API de inferência: rotas compatíveis com OpenAI, escopadas por room (sala), em `/rooms/:code/v1/*`
+- API de inferência: rotas compatíveis com OpenAI, escopadas por sala, em `/rooms/:code/v1/*`
 
 O protocolo padrão do plano de inferência (inference plane) é a OpenAI Responses API. Chat Completions continua disponível para compatibilidade.
 
@@ -26,7 +26,7 @@ http://<hub-host>:<port>/rooms/<ROOM_CODE>/v1/
 
 ## Autenticação
 
-O hub não tem autenticação embutida. Rode-o apenas em uma rede confiável, ou atrás do seu próprio proxy e camada de autenticação. A senha da room protege só o registro de participantes; as rotas de inferência não a verificam.
+O hub não tem autenticação embutida. Rode-o apenas em uma rede confiável, ou atrás do seu próprio proxy e camada de autenticação. A senha da sala protege só o registro de participantes; as rotas de inferência não a verificam.
 
 ## API de gerenciamento
 
@@ -78,7 +78,7 @@ curl http://localhost:3000/v1/health
 
 ### GET /v1/rooms
 
-Lista os resumos das rooms.
+Lista os resumos das salas.
 
 ```bash
 curl http://localhost:3000/v1/rooms
@@ -86,7 +86,7 @@ curl http://localhost:3000/v1/rooms
 
 ### POST /v1/rooms
 
-Cria uma room.
+Cria uma sala.
 
 ```bash
 curl -X POST http://localhost:3000/v1/rooms \
@@ -102,7 +102,7 @@ curl -X POST http://localhost:3000/v1/rooms \
 
 ### GET /v1/rooms/:code
 
-Busca o resumo de uma room pelo código.
+Busca o resumo de uma sala pelo código.
 
 ```bash
 curl http://localhost:3000/v1/rooms/ABC123
@@ -110,7 +110,7 @@ curl http://localhost:3000/v1/rooms/ABC123
 
 ### GET /v1/rooms/:code/participants
 
-Lista os participantes de uma room.
+Lista os participantes de uma sala.
 
 ```bash
 curl http://localhost:3000/v1/rooms/ABC123/participants
@@ -154,7 +154,7 @@ Corpo da requisição:
 | `model` | `string` | sim | nome do modelo exposto pelo participante |
 | `endpoint` | `string (URL)` | para participantes de modelo | endpoint do provedor, local ao participante |
 | `harness` | `{ id, model?, hosted? }` | para participantes de harness | identidade do harness local e metadados de exibição |
-| `password` | `string` | não | senha da room, obrigatória quando a room é protegida |
+| `password` | `string` | não | senha da sala, obrigatória quando a sala é protegida |
 | `specs` | `MachineSpecs` | não | specs opcionais da máquina, veja abaixo |
 | `config` | `RuntimeConfig` | não | padrões de runtime do participante, veja abaixo |
 | `capabilities` | `ParticipantCapabilities` | não | capacidades de protocolo do participante, veja abaixo |
@@ -179,7 +179,7 @@ Campos de `ParticipantCapabilities` (cada um tem `"unknown"` como padrão):
 | `openResponses` | `"supported" \| "unsupported" \| "unknown"` | se o endpoint do participante fala a OpenAI Responses API |
 | `chatCompletions` | `"supported" \| "unsupported" \| "unknown"` | se o endpoint do participante fala OpenAI Chat Completions |
 
-Campos de `RuntimeConfig` (todos opcionais): `temperature`, `top_p`, `max_tokens`, `stop`, `frequency_penalty`, `presence_penalty`, `seed`, `instructions`. Eles funcionam como padrões no nível do participante e são mesclados abaixo dos padrões da room e acima dos overrides da requisição. A string `instructions` é privada ao runtime do participante. As respostas da API de gerenciamento mostram apenas `hasInstructions`.
+Campos de `RuntimeConfig` (todos opcionais): `temperature`, `top_p`, `max_tokens`, `stop`, `frequency_penalty`, `presence_penalty`, `seed`, `instructions`. Eles funcionam como padrões no nível do participante e são mesclados abaixo dos padrões da sala e acima dos overrides da requisição. A string `instructions` é privada ao runtime do participante. As respostas da API de gerenciamento mostram apenas `hasInstructions`.
 
 ```bash
 curl -X PUT http://localhost:3000/v1/rooms/ABC123/participants/worker-1 \
@@ -239,7 +239,7 @@ Abre o túnel do participante usando o bootstrap token retornado pela rota de re
 GET /v1/rooms/:code/participants/:id/tunnel?token=<token>
 ```
 
-Esta é uma rota operacional interna para runtimes de participante. Clientes de aplicação devem continuar usando a API HTTP de inferência escopada por room.
+Esta é uma rota operacional interna para runtimes de participante. Clientes de aplicação devem continuar usando a API HTTP de inferência escopada por sala.
 
 Ciclo de vida do token:
 
@@ -253,20 +253,20 @@ Respostas de erro:
 | --- | --- | --- |
 | `400` | `INVALID_REQUEST` | o parâmetro de query `token` está ausente |
 | `401` | `INVALID_REQUEST` | o token é desconhecido, expirou ou está vinculado a outro participante |
-| `404` | `ROOM_NOT_FOUND` | o código da room não existe |
-| `404` | `PARTICIPANT_NOT_FOUND` | o participante não está registrado na room |
+| `404` | `ROOM_NOT_FOUND` | o código da sala não existe |
+| `404` | `PARTICIPANT_NOT_FOUND` | o participante não está registrado na sala |
 
 ### GET /v1/rooms/:code/participants/:id/harness
 
 Conecta um cliente de gerenciamento a um participante de harness registrado, por meio de um upgrade para WebSocket. O cliente inicia essa conexão; o hub nunca se conecta ao participante.
 
-Os clientes enviam frames `tunnel.harness.message` e `tunnel.harness.control`. Eles recebem frames `tunnel.harness.message`, `tunnel.harness.artifact` e `tunnel.harness.status`. Todo frame inclui `sessionId`; o JSON-RPC do ACP vai no campo opaco `message`. Vários clientes podem se conectar. Os sockets deles continuam abertos se o túnel do participante fechar e o participante depois abrir um novo; frames que um cliente envia enquanto nenhum túnel está aberto são descartados. O hub fecha os sockets conectados quando o participante sai da room.
+Os clientes enviam frames `tunnel.harness.message` e `tunnel.harness.control`. Eles recebem frames `tunnel.harness.message`, `tunnel.harness.artifact` e `tunnel.harness.status`. Todo frame inclui `sessionId`; o JSON-RPC do ACP vai no campo opaco `message`. Vários clientes podem se conectar. Os sockets deles continuam abertos se o túnel do participante fechar e o participante depois abrir um novo; frames que um cliente envia enquanto nenhum túnel está aberto são descartados. O hub fecha os sockets conectados quando o participante sai da sala.
 
 A rota retorna `ROOM_NOT_FOUND`, `PARTICIPANT_NOT_FOUND` ou `INVALID_REQUEST` quando o alvo não é um participante de harness.
 
 ### DELETE /v1/rooms/:code/participants/:id
 
-Remove um participante de uma room.
+Remove um participante de uma sala.
 
 ```bash
 curl -X DELETE http://localhost:3000/v1/rooms/ABC123/participants/worker-1
@@ -280,7 +280,7 @@ Envia um heartbeat de um participante.
 curl -X POST http://localhost:3000/v1/rooms/ABC123/participants/worker-1/heartbeat
 ```
 
-Um participante registrado, mas com o túnel desconectado, continua na room e não recebe roteamento. Veja [Intervalos de verificação de saúde](#intervalos-de-verificação-de-saúde).
+Um participante registrado, mas com o túnel desconectado, continua na sala e não recebe roteamento. Veja [Intervalos de verificação de saúde](#intervalos-de-verificação-de-saúde).
 
 ### Intervalos de verificação de saúde
 
@@ -293,7 +293,7 @@ Um runtime de participante customizado precisa respeitar essas janelas. O `creat
 
 ### GET /v1/rooms/:code/events
 
-Assina os eventos da room via SSE.
+Assina os eventos da sala via SSE.
 
 ```bash
 curl -N http://localhost:3000/v1/rooms/ABC123/events
@@ -341,7 +341,7 @@ Eventos de observabilidade:
 
 ## API de inferência
 
-A API de inferência é escopada por room e compatível com OpenAI.
+A API de inferência é escopada por sala e compatível com OpenAI.
 
 URL base:
 
@@ -379,7 +379,7 @@ As rotas de inferência não usam o envelope da API de gerenciamento. Os erros s
 | Status | `error` | Condição |
 | --- | --- | --- |
 | `400` | `Harness participants do not serve inference requests; attach through the management harness channel instead.` | o seletor aponta para um participante de harness |
-| `404` | `Room not found` | o código da room não existe |
+| `404` | `Room not found` | o código da sala não existe |
 | `404` | `No available participant for the requested model` | nenhum participante disponível corresponde ao seletor |
 | `409` | `Participant is already handling another request.` | o seletor aponta para um participante ocupado |
 | `503` | `Participant tunnel is not connected.` | o seletor aponta para um participante com o túnel fechado |
@@ -387,7 +387,7 @@ As rotas de inferência não usam o envelope da API de gerenciamento. Os erros s
 
 ### GET /rooms/:code/v1/models
 
-Lista os participantes de modelo disponíveis na room, no formato de lista da OpenAI. O `id` de cada entrada é o ID do participante, então você pode passá-lo de volta como `model`. Participantes de harness, participantes offline e participantes sem túnel conectado ficam de fora.
+Lista os participantes de modelo disponíveis na sala, no formato de lista da OpenAI. O `id` de cada entrada é o ID do participante, então você pode passá-lo de volta como `model`. Participantes de harness, participantes offline e participantes sem túnel conectado ficam de fora.
 
 ```bash
 curl http://localhost:3000/rooms/ABC123/v1/models
@@ -443,7 +443,7 @@ Use esta rota quando uma ferramenta exigir Chat Completions. Em integrações no
 
 O hub mescla os padrões de runtime nesta ordem:
 
-1. padrões da room
+1. padrões da sala
 2. padrões do participante
 3. overrides da requisição
 

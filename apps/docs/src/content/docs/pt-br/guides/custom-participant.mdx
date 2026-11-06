@@ -12,7 +12,7 @@ Este guia mostra o runtime mínimo que se comporta como a CLI e, depois, as exte
 Você precisa de:
 
 - um hub do Gambi acessível (`gambi hub serve`)
-- um código de room existente (`gambi room create --name "Demo"`)
+- um código de sala existente (`gambi room create --name "Demo"`)
 - um endpoint de provedor local compatível com OpenAI (Ollama, LM Studio, vLLM ou qualquer outro que sirva `/v1/models` e `/v1/chat/completions`)
 - o `gambi-sdk` instalado
 
@@ -60,11 +60,11 @@ São três motivos de fechamento, cada um com um significado diferente:
 
 `closeEvent.error` guarda o `Error` de origem quando existe um. Registre no log.
 
-A sessão nunca reconecta sozinha. Em `"closed"` e `"heartbeat_failed"`, ela tenta remover o participante da room antes de resolver. Em `"tunnel_closed"`, não: o registro continua, e o hub marca o participante como offline assim que o túnel dele fecha. Chamar `createParticipantSession()` de novo com o mesmo participant ID atualiza esse registro e abre um novo túnel.
+A sessão nunca reconecta sozinha. Em `"closed"` e `"heartbeat_failed"`, ela tenta remover o participante da sala antes de resolver. Em `"tunnel_closed"`, não: o registro continua, e o hub marca o participante como offline assim que o túnel dele fecha. Chamar `createParticipantSession()` de novo com o mesmo participant ID atualiza esse registro e abre um novo túnel.
 
 ## Passo 3: Encerre de forma limpa
 
-O SDK não instala handlers de sinal. Ligue `session.close()` ao `SIGINT` e ao `SIGTERM` você mesmo. `close()` fecha o túnel e remove o participante da room antes de retornar.
+O SDK não instala handlers de sinal. Ligue `session.close()` ao `SIGINT` e ao `SIGTERM` você mesmo. `close()` fecha o túnel e remove o participante da sala antes de retornar.
 
 ```ts
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
@@ -100,7 +100,7 @@ O hub nunca vê o `PROVIDER_TOKEN`.
 
 ### Declare as especificações da máquina
 
-A TUI mostra as especificações, e os eventos da room as incluem. Passe-as quando você souber. Os campos são `cpu`, `gpu`, `ram` (GB) e `vram` (GB), todos opcionais:
+A TUI mostra as especificações, e os eventos da sala as incluem. Passe-as quando você souber. Os campos são `cpu`, `gpu`, `ram` (GB) e `vram` (GB), todos opcionais:
 
 ```ts
 await createParticipantSession({
@@ -127,7 +127,7 @@ await createParticipantSession({
 });
 ```
 
-### Entrando numa room protegida por senha
+### Entrando numa sala protegida por senha
 
 ```ts
 await createParticipantSession({

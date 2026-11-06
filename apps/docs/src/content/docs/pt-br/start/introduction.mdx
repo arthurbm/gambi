@@ -8,7 +8,7 @@ sidebar:
 import { LinkCard, CardGrid } from '@astrojs/starlight/components';
 import AgentPrompt from '../../../../components/AgentPrompt.astro';
 
-O Gambi permite que um grupo compartilhe os modelos de IA e os agentes de código que já rodam na máquina de cada pessoa. Uma máquina roda um **hub**. Todo o resto entra em uma **room** (sala) nesse hub e compartilha o que tem: um modelo servido pelo Ollama, pelo vLLM ou por uma API na nuvem, ou um agente de código como Claude Code, Codex ou OpenCode. Seu app então alcança todos eles pelo hub.
+O Gambi permite que um grupo compartilhe os modelos de IA e os agentes de código que já rodam na máquina de cada pessoa. Uma máquina roda um **hub**. Todo o resto entra em uma **sala** nesse hub e compartilha o que tem: um modelo servido pelo Ollama, pelo vLLM ou por uma API na nuvem, ou um agente de código como Claude Code, Codex ou OpenCode. Seu app então alcança todos eles pelo hub.
 
 Chaves e logins nunca saem da máquina a que pertencem, e o hub nunca se conecta à máquina de ninguém. Cada participante abre uma conexão com o hub, e o hub envia o trabalho de volta por ela.
 
@@ -17,7 +17,7 @@ Chaves e logins nunca saem da máquina a que pertencem, e o hub nunca se conecta
 ```mermaid title="Seu app fala com o hub. Cada participante abriu o próprio túnel até o hub."
 flowchart LR
   app["Seu app"] -->|"HTTP"| hub(("Hub")):::hub
-  subgraph room["room ABC123"]
+  subgraph room["sala ABC123"]
     m1["participante: llama3 no Ollama"]:::model
     h1["participante: Claude Code"]:::harness
   end
@@ -30,13 +30,13 @@ flowchart LR
 
 | Peça | O que é |
 | --- | --- |
-| **Hub** | O processo iniciado por `gambi hub serve`. Ele mantém a lista de rooms e participantes e roteia as requisições. Não precisa de GPU. |
-| **Room** | Um grupo dentro do hub, identificado por um código curto como `ABC123`. Toda requisição tem como alvo uma room. |
-| **Participante** | Uma coisa que alguém compartilha em uma room. É um **modelo** ou um **harness**. |
+| **Hub** | O processo iniciado por `gambi hub serve`. Ele mantém a lista de salas e participantes e roteia as requisições. Não precisa de GPU. |
+| **Sala** | Um grupo dentro do hub, identificado por um código curto como `ABC123`. Toda requisição tem como alvo uma sala. |
+| **Participante** | Uma coisa que alguém compartilha em uma sala. É um **modelo** ou um **harness**. |
 | **Participante de modelo** | Um modelo por trás de um servidor compatível com OpenAI na máquina da pessoa: Ollama, LM Studio, vLLM ou uma API na nuvem como o OpenRouter. Os apps o chamam pela API da OpenAI. |
 | **Participante de harness** | Um agente de código (Claude Code, Codex ou OpenCode) rodando na máquina da pessoa, com o login dela. Os apps se conectam a ele e trocam mensagens ACP. |
 | **Túnel** | O WebSocket que um participante abre até o hub. Todo o tráfego dele passa por ali, então o provedor pode ficar em `localhost`. |
-| **Seu app** | Seu código. Ele chama a room pelo [SDK](/pt-br/reference/sdk/) ou por qualquer cliente compatível com OpenAI e decide o que o grupo faz. |
+| **Seu app** | Seu código. Ele chama a sala pelo [SDK](/pt-br/reference/sdk/) ou por qualquer cliente compatível com OpenAI e decide o que o grupo faz. |
 
 :::caution[Somente redes confiáveis]
 O hub não tem autenticação embutida. Rode-o em uma rede onde você confia em todo mundo: sua casa, seu laboratório, a sala onde seu grupo se reúne.
@@ -44,7 +44,7 @@ O hub não tem autenticação embutida. Rode-o em uma rede onde você confia em 
 
 ## Por onde começar
 
-Todo mundo começa pela [Instalação](/pt-br/start/installation/) e pelo [Início rápido](/pt-br/start/quickstart/). O início rápido sobe um hub, cria uma room e compartilha um modelo em quatro comandos. Depois, siga a página do que você quer fazer:
+Todo mundo começa pela [Instalação](/pt-br/start/installation/) e pelo [Início rápido](/pt-br/start/quickstart/). O início rápido sobe um hub, cria uma sala e compartilha um modelo em quatro comandos. Depois, siga a página do que você quer fazer:
 
 <CardGrid>
   <LinkCard
@@ -63,8 +63,8 @@ Todo mundo começa pela [Instalação](/pt-br/start/installation/) e pelo [Iníc
     href="/pt-br/guides/remote-providers/"
   />
   <LinkCard
-    title="Criar um app sobre uma room"
-    description="Chame a room pelo AI SDK, pelo SDK da OpenAI, por Python ou por curl."
+    title="Criar um app sobre uma sala"
+    description="Chame a sala pelo AI SDK, pelo SDK da OpenAI, por Python ou por curl."
     href="/pt-br/guides/ai-tools/"
   />
 </CardGrid>

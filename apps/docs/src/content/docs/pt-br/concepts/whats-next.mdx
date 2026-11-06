@@ -9,11 +9,11 @@ O Gambi tem um escopo estreito de propósito. Esta página diz o que ele faz hoj
 
 ## O que o Gambi resolve hoje
 
-- Um hub que mantém rooms e os participantes dentro delas.
+- Um hub que mantém salas e os participantes dentro delas.
 - Participantes que compartilham um modelo compatível com OpenAI ou um harness de código (Claude Code, Codex, OpenCode), cada um por um túnel que o próprio dono abriu.
 - Roteamento das chamadas de inferência por id de participante, `model:<name>` ou `*`.
 - Sessões de harness repassadas por ACP v1, com os artefatos do workspace enviados de volta ao app conectado.
-- Eventos ao vivo da room para cada requisição de inferência, com tempos e contagem de tokens quando o provedor informa.
+- Eventos ao vivo da sala para cada requisição de inferência, com tempos e contagem de tokens quando o provedor informa.
 
 ## O que ainda é código seu
 
@@ -37,7 +37,7 @@ Um lugar onde essa exploração acontece é o [`gambiarra-lab`](https://github.c
 
 ## O que fica fora do hub
 
-Seja lá no que a camada de cima se transformar, o hub continua sendo transporte. Agendamento, grafos de workflow, memória compartilhada, delegação de tarefas e identidade de harness não entram nele. Deixar isso de fora é o que permite que ferramentas comuns compatíveis com OpenAI continuem funcionando contra uma room.
+Seja lá no que a camada de cima se transformar, o hub continua sendo transporte. Agendamento, grafos de workflow, memória compartilhada, delegação de tarefas e identidade de harness não entram nele. Deixar isso de fora é o que permite que ferramentas comuns compatíveis com OpenAI continuem funcionando contra uma sala.
 
 ## Relacionados
 

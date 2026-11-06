@@ -51,13 +51,13 @@ Depois me guie um passo de cada vez, e pergunte antes de instalar qualquer coisa
 2. Pergunte se esta máquina vai rodar o hub ou entrar em um hub que já existe.
    - Vai rodar o hub: inicie \`gambi hub serve\` em um terminal próprio e me diga a URL que as outras máquinas devem usar (o IP desta máquina na rede local e a porta 3000).
    - Vai entrar: peça a URL do hub e passe com \`--hub\` daqui em diante.
-3. Se eu ainda não tiver um código de room, crie uma room com \`gambi room create --name "<nome>" --no-interactive\` e me mostre o código.
+3. Se eu ainda não tiver um código de sala, crie uma sala com \`gambi room create --name "<nome>" --no-interactive\` e me mostre o código.
 4. Pergunte o que eu quero compartilhar:
    - Um modelo: procure um servidor compatível com OpenAI já rodando (Ollama em localhost:11434, LM Studio em localhost:1234, vLLM em localhost:8000), liste os modelos dele e entre com \`gambi participant join --room <código> --participant-id <id> --model <modelo> --endpoint <url>\`.
    - Um harness: confira se Claude Code, Codex ou OpenCode está instalado e logado, como descreve a página "Traga seu harness", e entre com \`gambi participant join --room <código> --participant-id <id> --harness <claude-code|codex|opencode>\`.
    O \`participant join\` fica em primeiro plano, então rode-o em um terminal próprio.
 5. Prove que funciona:
-   - \`curl http://<hub>/rooms/<código>/v1/models\` lista todos os participantes de modelo da room.
+   - \`curl http://<hub>/rooms/<código>/v1/models\` lista todos os participantes de modelo da sala.
    - Para um modelo, envie \`curl -X POST http://<hub>/rooms/<código>/v1/responses -H "Content-Type: application/json" -d '{"model":"*","input":"Diga olá em uma frase."}'\` e me mostre a resposta.
    - Para um harness, confirme que a saída do join diz que a sessão ACP foi aberta (o evento \`session_opened\` com \`--format ndjson\`).
 

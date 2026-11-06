@@ -1,11 +1,11 @@
 ---
 title: Início rápido
-description: Suba um hub, crie uma room, compartilhe um modelo e chame-o pelo código, em quatro comandos.
+description: Suba um hub, crie uma sala, compartilhe um modelo e chame-o pelo código, em quatro comandos.
 ---
 
 import AgentPrompt from '../../../../components/AgentPrompt.astro';
 
-Este tutorial roda o Gambi do zero. No final, você terá um hub rodando, uma room (sala) e um modelo compartilhado nela que você pode chamar pelo código.
+Este tutorial roda o Gambi do zero. No final, você terá um hub rodando, uma sala e um modelo compartilhado nela que você pode chamar pelo código.
 
 ## O que você vai precisar
 
@@ -13,7 +13,7 @@ Este tutorial roda o Gambi do zero. No final, você terá um hub rodando, uma ro
 - **Uma máquina para rodar o hub.** Qualquer computador da rede serve. Ele não precisa de GPU, porque o hub só roteia tráfego.
 - **Pelo menos um endpoint de modelo.** Ollama, LM Studio, vLLM ou qualquer API compatível com OpenAI.
 
-Para compartilhar Claude Code, Codex ou OpenCode em vez de um endpoint de modelo, siga esta página até a criação da room e depois veja [Traga seu harness](/pt-br/guides/bring-your-harness/).
+Para compartilhar Claude Code, Codex ou OpenCode em vez de um endpoint de modelo, siga esta página até a criação da sala e depois veja [Traga seu harness](/pt-br/guides/bring-your-harness/).
 
 Prefere que seu agente de código faça isso? Copie o prompt em [Configure com seu agente](#configure-com-seu-agente), no fim desta página.
 
@@ -38,29 +38,29 @@ A flag `--mdns` anuncia o hub para que outras máquinas da rede possam descobri-
 As outras máquinas acessam o hub em `http://<ip-do-hub>:3000`, em que `<ip-do-hub>` é o endereço desta máquina na sua rede, como `192.168.1.10`. Todos os outros comandos recebem essa URL em `--hub`. Sem `--hub`, a CLI usa `http://localhost:3000`, que só funciona na própria máquina do hub.
 
 :::caution[Somente redes confiáveis]
-O hub não tem autenticação embutida. Qualquer pessoa que alcance a porta dele pode criar rooms e enviar requisições de inferência para qualquer room. A senha de uma room só protege a entrada nela. Rode o hub apenas em uma rede em que você confia. Se precisar expô-lo além disso, coloque-o atrás do seu próprio proxy e da sua própria camada de autenticação.
+O hub não tem autenticação embutida. Qualquer pessoa que alcance a porta dele pode criar salas e enviar requisições de inferência para qualquer sala. A senha de uma sala só protege a entrada nela. Rode o hub apenas em uma rede em que você confia. Se precisar expô-lo além disso, coloque-o atrás do seu próprio proxy e da sua própria camada de autenticação.
 :::
 
-### 2. Crie uma room
+### 2. Crie uma sala
 
 ```bash
-# Em um terminal, pergunta o nome da room e uma senha opcional:
+# Em um terminal, pergunta o nome da sala e uma senha opcional:
 gambi room create
 
 # Ou com flags:
 gambi room create --name "My Room"
 ```
 
-A CLI mostra o código da room e o host ID:
+A CLI mostra o código da sala e o host ID:
 
 ```text
 Created room ABC123 (My Room).
 host_id: …
 ```
 
-Passe o código da room para todo mundo que quiser entrar.
+Passe o código da sala para todo mundo que quiser entrar.
 
-Você também pode criar uma room protegida por senha:
+Você também pode criar uma sala protegida por senha:
 
 ```bash
 gambi room create --name "Private Room" --password secret123
@@ -68,7 +68,7 @@ gambi room create --name "Private Room" --password secret123
 
 ### 3. Entre com seu modelo
 
-Cada pessoa com um endpoint de modelo entra na room:
+Cada pessoa com um endpoint de modelo entra na sala:
 
 ```bash
 gambi participant join \
@@ -111,7 +111,7 @@ O endpoint do seu provedor pode ficar em `localhost`, mesmo quando o hub roda em
 
 A CLI também compartilha as especificações da sua máquina (CPU, RAM, GPU). Use `--no-specs` para mantê-las privadas.
 
-Depois de entrar, seu modelo fica disponível para todo mundo na room.
+Depois de entrar, seu modelo fica disponível para todo mundo na sala.
 
 ### 4. Use o SDK
 

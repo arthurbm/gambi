@@ -54,7 +54,7 @@ gambi hub serve --port 3000
 Sintomas:
 
 - os helpers de descoberta não encontram nenhum hub
-- nenhuma room é descoberta na rede local
+- nenhuma sala é descoberta na rede local
 
 Causas e soluções:
 
@@ -120,9 +120,9 @@ Uma requisição HTTP de heartbeat de gerenciamento falhou. Uma única falha bas
 
 1. A URL do hub está errada ou desatualizada.
 2. Um proxy ou firewall está bloqueando `POST /v1/rooms/:code/participants/:id/heartbeat`.
-3. A room ou o participante foi apagado do hub enquanto o runtime ainda rodava. Confira com `gambi room get` e rode `gambi participant join` de novo.
+3. A sala ou o participante foi apagado do hub enquanto o runtime ainda rodava. Confira com `gambi room get` e rode `gambi participant join` de novo.
 
-Depois de `heartbeat_failed`, o runtime tenta se remover da room. Depois de `tunnel_closed`, não: o registro continua, e o hub marca o participante como offline assim que o túnel fecha. Nos dois casos, reiniciar com o mesmo ID de participante é seguro, porque o registro é idempotente.
+Depois de `heartbeat_failed`, o runtime tenta se remover da sala. Depois de `tunnel_closed`, não: o registro continua, e o hub marca o participante como offline assim que o túnel fecha. Nos dois casos, reiniciar com o mesmo ID de participante é seguro, porque o registro é idempotente.
 
 ## Latência alta
 
@@ -137,7 +137,7 @@ Causas e soluções:
 2. Provedor ou modelo lento.
 3. Requisições demais para participantes de menos.
 
-Acompanhe os eventos da room e olhe `llm.complete.metrics` para inspecionar:
+Acompanhe os eventos da sala e olhe `llm.complete.metrics` para inspecionar:
 
 - `ttftMs`
 - `durationMs`
@@ -161,7 +161,7 @@ Sintomas e soluções para `gambi participant join --harness`:
 
 ## Ainda com problemas?
 
-1. Confira a saída do hub. O hub imprime linhas `[gambi] llm.request`, `[gambi] llm.complete` e `[gambi] llm.error` no console, e `gambi events watch --room <code>` mostra os eventos da room.
+1. Confira a saída do hub. O hub imprime linhas `[gambi] llm.request`, `[gambi] llm.complete` e `[gambi] llm.error` no console, e `gambi events watch --room <code>` mostra os eventos da sala.
 
 2. Teste o endpoint do provedor diretamente:
 

@@ -26,7 +26,7 @@ The public docs ship in English (site root) and Brazilian Portuguese (`/pt-br/`)
 - Every page under `apps/docs/src/content/docs/` has a Portuguese counterpart at the same path under `apps/docs/src/content/docs/pt-br/`. When you change an English page, update its counterpart in the same PR. Internal links in Portuguese pages carry the `/pt-br` prefix.
 - Landing and component strings live in `apps/docs/src/content/i18n/en.json` and `pt-BR.json`, read with `Astro.locals.t()`. Add every new key to both files.
 - The agent setup prompt has one version per language in `apps/docs/src/prompts.ts`.
-- Domain terms stay in English in Portuguese copy: hub, room, harness, workspace, endpoint, heartbeat, and every CLI, API, and event name. Participant, provider, model, and tunnel are translated (participante, provedor, modelo, túnel).
+- Terms, markup rules, and length limits for Portuguese copy: [`translation-pt-br.md`](translation-pt-br.md).
 
 ## Audiences
 

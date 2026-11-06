@@ -5,7 +5,7 @@ description: Referência da CLI operacional do Gambi.
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-A CLI do Gambi roda hubs e gerencia rooms, participantes e eventos de room.
+A CLI do Gambi roda hubs e gerencia salas, participantes e eventos de sala.
 
 A CLI é orientada a recursos:
 
@@ -174,7 +174,7 @@ Eventos estruturados de ciclo de vida (`--format json|ndjson`):
 
 ## `gambi room create`
 
-Cria uma room pela API de gerenciamento.
+Cria uma sala pela API de gerenciamento.
 
 ```bash
 gambi room create --name <name> [options]
@@ -184,11 +184,11 @@ Opções:
 
 | Opção | Descrição |
 | --- | --- |
-| `--name`, `-n` | nome de exibição da room |
-| `--password`, `-p` | senha opcional da room |
+| `--name`, `-n` | nome de exibição da sala |
+| `--password`, `-p` | senha opcional da sala |
 | `--config <path\|->` | arquivo JSON de configuração de runtime ou `-` para stdin |
 | `--hub`, `-H` | URL do hub |
-| `--dry-run` | valida e imprime a requisição sem criar a room |
+| `--dry-run` | valida e imprime a requisição sem criar a sala |
 
 Exemplos:
 
@@ -204,7 +204,7 @@ gambi room create --name "Demo" --dry-run --format json
 
 ## `gambi room list`
 
-Lista os resumos das rooms pela API de gerenciamento.
+Lista os resumos das salas pela API de gerenciamento.
 
 ```bash
 gambi room list [options]
@@ -231,7 +231,7 @@ gambi room list --hub http://192.168.1.10:3000
 
 ## `gambi room get`
 
-Busca o resumo de uma room pelo código.
+Busca o resumo de uma sala pelo código.
 
 ```bash
 gambi room get --code <room-code> [options]
@@ -241,7 +241,7 @@ Opções:
 
 | Opção | Descrição |
 | --- | --- |
-| `--code`, `-c` | código da room |
+| `--code`, `-c` | código da sala |
 | `--hub`, `-H` | URL do hub |
 
 Exemplos:
@@ -264,7 +264,7 @@ Opções:
 
 | Opção | Descrição |
 | --- | --- |
-| `--room`, `-r` | código da room |
+| `--room`, `-r` | código da sala |
 | `--participant-id` | identificador estável do participante |
 | `--nickname`, `-n`, `--name` | nome de exibição (`--name` é um alias) |
 | `--model`, `-m` | modelo a expor ou, no modo harness, um rótulo opcional |
@@ -273,7 +273,7 @@ Opções:
 | `--endpoint`, `-e` | endpoint local usado para sondagem e inferência (padrão `http://localhost:11434`) |
 | `--header` | header de autenticação no formato `Header=Value` |
 | `--header-env` | header de autenticação no formato `Header=ENV_VAR` |
-| `--password`, `-p` | senha da room |
+| `--password`, `-p` | senha da sala |
 | `--config <path\|->` | arquivo JSON de configuração de runtime ou stdin |
 | `--no-specs` | pula a coleta das especificações da máquina |
 | `--hub`, `-H` | URL do hub |
@@ -283,7 +283,7 @@ Observações:
 
 - `--participant-id` é obrigatório para automação não interativa que precise ser segura para novas tentativas.
 - `--config -` lê do stdin o JSON de configuração de runtime do participante.
-- Num terminal, o comando pede a room, o ID do participante, o modelo, o apelido e a senha que faltarem. No modo modelo, ele lista os modelos encontrados no endpoint.
+- Num terminal, o comando pede a sala, o ID do participante, o modelo, o apelido e a senha que faltarem. No modo modelo, ele lista os modelos encontrados no endpoint.
 - A CLI sonda o endpoint antes do registro para validar o modelo e detectar capacidades.
 - Todo participante entra por um túnel, então o endpoint do provedor pode ficar em `localhost` mesmo quando o hub roda em outra máquina. Veja [Como os túneis funcionam](/pt-br/concepts/tunnel-first/).
 - O modo harness inicia o processo do harness numa pasta de workspace e publica os arquivos alterados depois de um debounce de um segundo. Sem `--workspace`, a pasta é `~/.gambi/workspaces/<room>/<participant-id>/` e começa vazia, exceto por `.gambi.json`, que nunca é publicado. `.git` e `node_modules` nunca são publicados. Passar `--workspace` sem `--harness` sai com código `2`.
@@ -368,7 +368,7 @@ Eventos de ciclo de vida em NDJSON:
 
 ## `gambi participant leave`
 
-Remove um participante de uma room.
+Remove um participante de uma sala.
 
 ```bash
 gambi participant leave --room <room> --participant-id <id> [options]
@@ -378,7 +378,7 @@ Opções:
 
 | Opção | Descrição |
 | --- | --- |
-| `--room`, `-r` | código da room |
+| `--room`, `-r` | código da sala |
 | `--participant-id` | identificador do participante |
 | `--hub`, `-H` | URL do hub |
 
@@ -400,7 +400,7 @@ Opções:
 
 | Opção | Descrição |
 | --- | --- |
-| `--room`, `-r` | código da room |
+| `--room`, `-r` | código da sala |
 | `--participant-id` | identificador do participante |
 | `--hub`, `-H` | URL do hub |
 
@@ -412,7 +412,7 @@ gambi participant heartbeat --room ABC123 --participant-id worker-1
 
 ## `gambi events watch`
 
-Acompanha os eventos de uma room pelo stream SSE de gerenciamento.
+Acompanha os eventos de uma sala pelo stream SSE de gerenciamento.
 
 ```bash
 gambi events watch --room <room> [options]
@@ -422,7 +422,7 @@ Opções:
 
 | Opção | Descrição |
 | --- | --- |
-| `--room`, `-r` | código da room (obrigatório) |
+| `--room`, `-r` | código da sala (obrigatório) |
 | `--hub`, `-H` | URL do hub |
 
 Exemplos:

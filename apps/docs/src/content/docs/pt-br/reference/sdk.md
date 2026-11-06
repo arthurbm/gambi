@@ -5,11 +5,11 @@ description: Referência do provedor, do cliente de gerenciamento, do runtime de
 
 O SDK do Gambi tem cinco pontos de entrada:
 
-- `createGambi()` para inferência pelas rotas compatíveis com OpenAI, escopadas por room (sala)
+- `createGambi()` para inferência pelas rotas compatíveis com OpenAI, escopadas por sala
 - `createClient()` para operações de gerenciamento na API nativa `/v1`
 - `createParticipantSession()` para rodar um participante de modelo por um túnel
 - `createHarnessParticipantSession()` para rodar um participante de harness por um túnel
-- helpers de descoberta para encontrar hubs e rooms na rede local
+- helpers de descoberta para encontrar hubs e salas na rede local
 
 ## Instalação
 
@@ -27,7 +27,7 @@ bun add gambi-sdk
 | `createClient()` | controle operacional | `/v1/*` |
 | `createParticipantSession()` | runtime de participante | API de gerenciamento + túnel do participante |
 | `createHarnessParticipantSession()` | runtime de participante de harness | API de gerenciamento + túnel do participante |
-| helpers de descoberta | resolução de rooms e hubs na rede local | mDNS + API de gerenciamento |
+| helpers de descoberta | resolução de salas e hubs na rede local | mDNS + API de gerenciamento |
 
 ## `createGambi(options)`
 
@@ -44,7 +44,7 @@ const gambi = createGambi({
 
 | Opção | Tipo | Padrão | Descrição |
 | --- | --- | --- | --- |
-| `roomCode` | `string` | nenhum (obrigatório) | código da room à qual se conectar |
+| `roomCode` | `string` | nenhum (obrigatório) | código da sala à qual se conectar |
 | `hubUrl` | `string` | `http://localhost:3000` | URL do hub |
 | `defaultProtocol` | `"openResponses" \| "chatCompletions"` | `"openResponses"` | protocolo padrão dos helpers de roteamento de nível superior |
 
@@ -127,11 +127,11 @@ A lista deixa de fora participantes de harness e participantes offline ou sem t�
 
 ### `gambi.listParticipants()`
 
-Retorna os resumos de participante do plano de gerenciamento (management plane) para a room.
+Retorna os resumos de participante do plano de gerenciamento (management plane) para a sala.
 
 ### `gambi.baseURL`
 
-Retorna a URL base compatível com OpenAI, escopada pela room.
+Retorna a URL base compatível com OpenAI, escopada pela sala.
 
 ## `createClient(options)`
 
@@ -211,7 +211,7 @@ Campos de entrada:
 | `model` | `string` | sim | nome do modelo |
 | `endpoint` | `string` | para participantes de modelo | URL do endpoint local ao participante |
 | `harness` | `object` | para participantes de harness | `id` do harness mais os metadados opcionais `model` e `hosted` |
-| `password` | `string` | não | senha da room |
+| `password` | `string` | não | senha da sala |
 | `specs` | `object` | não | specs da máquina |
 | `config` | `RuntimeConfig` | não | padrões de runtime do participante |
 | `capabilities` | `object` | não | resumo das capacidades de protocolo |
@@ -221,7 +221,7 @@ Campos de retorno:
 | Campo | Tipo | Descrição |
 | --- | --- | --- |
 | `participant` | `ParticipantSummary` | estado público do participante |
-| `roomId` | `string` | identificador interno da room |
+| `roomId` | `string` | identificador interno da sala |
 | `tunnel` | `TunnelBootstrap` | bootstrap do túnel, de uso único |
 
 Este método é seguro para retentativas porque a rota de gerenciamento por trás dele é idempotente. O bootstrap token do túnel é de uso único e tem vida curta.
@@ -255,7 +255,7 @@ await client.participants.remove("ABC123", "worker-1");
 
 ### `client.events.watchRoom({ roomCode, signal? })`
 
-Observa os eventos da room como um async iterable.
+Observa os eventos da sala como um async iterable.
 
 ```ts
 const controller = new AbortController();
@@ -354,7 +354,7 @@ Para um passo a passo, veja [Runtime de participante customizado](/pt-br/guides/
 | Campo | Descrição |
 | --- | --- |
 | `participant` | resumo do participante registrado |
-| `roomId` | identificador da room |
+| `roomId` | identificador da sala |
 | `tunnel` | detalhes do bootstrap do túnel |
 | `close()` | para a sessão e remove o registro (melhor esforço) |
 | `waitUntilClosed()` | resolve com o evento de fechamento |
@@ -365,11 +365,11 @@ Motivos de fechamento:
 - `"heartbeat_failed"`: uma requisição de heartbeat de gerenciamento falhou. Uma falha basta para fechar a sessão.
 - `"tunnel_closed"`: o túnel WebSocket fechou ou deu erro, de qualquer um dos lados. A sessão não reconecta e não remove o registro; o hub marca o participante como offline assim que o túnel fecha.
 
-Em `"closed"` e `"heartbeat_failed"`, a sessão tenta remover o participante da room antes de resolver.
+Em `"closed"` e `"heartbeat_failed"`, a sessão tenta remover o participante da sala antes de resolver.
 
 ## `createHarnessParticipantSession(options)`
 
-Roda um harness local como participante de uma room a partir da sua própria aplicação,
+Roda um harness local como participante de uma sala a partir da sua própria aplicação,
 por exemplo para hospedar harnesses para quem não trouxe um. É o mesmo
 runtime que `gambi participant join --harness` usa, e roda em Node e Bun.
 
@@ -414,7 +414,7 @@ Opções além das compartilhadas `hubUrl`, `roomCode`, `participantId`, `nickna
 | --- | --- |
 | `harnessId` | `opencode`, `claude-code`, `codex` ou `fake` |
 | `model` | rótulo opcional exibido com o participante |
-| `hosted` | marca um harness que o host da room roda para outras pessoas. Rejeitado para `claude-code`. |
+| `hosted` | marca um harness que o host da sala roda para outras pessoas. Rejeitado para `claude-code`. |
 | `workspace` | onde o harness roda; o padrão é `createLocalDirectoryWorkspace()` |
 | `gambiHome` | diretório base do workspace padrão (`~/.gambi`) |
 | `adapter` | substitui o comando e a verificação de prontidão do `harnessId` |
@@ -480,7 +480,7 @@ Opções comuns (`DiscoveryOptions`):
 | `fetchFn` | `typeof fetch` | fetch customizado (testes, proxies) |
 | `browseServices` | `BrowseServicesLike` | browser mDNS customizado |
 
-`resolveGambiTarget()` também aceita `roomCode` e `roomName` para escolher uma única room.
+`resolveGambiTarget()` também aceita `roomCode` e `roomName` para escolher uma única sala.
 
 ### Exemplo
 
@@ -516,7 +516,7 @@ A maioria das aplicações não precisa deles. Eles existem para testes, embeddi
 | Export | Descrição |
 | --- | --- |
 | `hub.create(options)` | inicia um hub no processo atual, o mesmo hub que `gambi hub serve` roda. Opções: `port` (padrão `3000`), `hostname` (padrão `0.0.0.0`), `mdns`. Retorna `{ server, url, mdnsName?, close() }`. Requer Bun. |
-| `rooms` | acesso direto ao registro de rooms em processo de um hub iniciado com `hub.create()` no mesmo processo. Não conversa com um hub remoto; para isso, use `createClient()`. |
+| `rooms` | acesso direto ao registro de salas em processo de um hub iniciado com `hub.create()` no mesmo processo. Não conversa com um hub remoto; para isso, use `createClient()`. |
 | `participants` | helpers que montam registros de participante e mesclam a config de runtime, usados pelo hub. |
 | `getHarnessAdapter(id)` | o adapter embutido para `opencode`, `claude-code`, `codex` ou `fake`: o comando que ele roda e a verificação de prontidão dele. Use-o como base quando passar um `adapter` customizado. |
 | `defaultWorkspacePath({ roomCode, participantId }, gambiHome?)` | a pasta padrão do workspace, `~/.gambi/workspaces/<room>/<participant>`. |
