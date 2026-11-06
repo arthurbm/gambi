@@ -8,8 +8,9 @@
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 const docs = join(root, "src/content/docs");
 const ptDir = join(docs, "pt-br");
 const PAGE = /\.(md|mdx|mdoc)$/;
