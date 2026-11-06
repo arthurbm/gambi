@@ -798,6 +798,12 @@ const label = (a: number) => {
       };
     })();
 
+    // Tokens in flight, so a pause or a tab switch can stop them at once.
+    const inFlight = new Set<() => void>();
+    const stopTravels = () => {
+      for (const stop of [...inFlight]) stop();
+    };
+
     const travel = (svg: SVGSVGElement, _stage: Stage, move: Move) =>
       new Promise<void>((resolve) => {
         const layer = svg.querySelector(".st-tokens");
@@ -817,29 +823,37 @@ const label = (a: number) => {
         track.classList.add("is-live");
         const start = performance.now();
         const duration = 760;
+        let raf = 0;
+        const stop = () => {
+          cancelAnimationFrame(raf);
+          dot.remove();
+          track.classList.remove("is-live");
+          inFlight.delete(stop);
+          resolve();
+        };
+        inFlight.add(stop);
         const step = (now: number) => {
           const p = Math.min(1, (now - start) / duration);
           const pt = track.getPointAtLength(from + (to - from) * easeInOut(p));
           dot.setAttribute("cx", pt.x.toFixed(1));
           dot.setAttribute("cy", pt.y.toFixed(1));
           if (p < 1) {
-            requestAnimationFrame(step);
+            raf = requestAnimationFrame(step);
             return;
           }
-          dot.remove();
-          track.classList.remove("is-live");
           if (move.dir === "out") {
             const g = svg.querySelector(`[data-node="${move.n}"]`);
             g?.classList.add("is-hit");
             window.setTimeout(() => g?.classList.remove("is-hit"), 380);
           }
-          resolve();
+          stop();
         };
-        requestAnimationFrame(step);
+        raf = requestAnimationFrame(step);
       });
 
     const play = async (id: string) => {
       const token = ++run;
+      stopTravels();
       const stage = data.find((s) => s.id === id);
       const svg = stages.find((s) => s.dataset.stage === id);
       if (!stage || !svg) return;
@@ -868,6 +882,7 @@ const label = (a: number) => {
       const stage = data.find((s) => s.id === id);
       if (isStill()) {
         run++;
+        stopTravels();
         frame?.classList.remove("is-playing");
         if (stage) fillLog(stage);
         return;

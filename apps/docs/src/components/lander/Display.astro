@@ -681,6 +681,7 @@ const ticks = Array.from({ length: 72 }, (_, i) => {
     let e = 1;
     let mode: Mode = "many";
     let frame = 0;
+    let introTimer = 0;
     let focusId: string | null = null;
     let userTookOver = false;
     let visible = true;
@@ -882,16 +883,20 @@ const ticks = Array.from({ length: 72 }, (_, i) => {
       );
       // Your one machine sends work down all six of its tracks at once.
       tracks.forEach((_, i) => comet(i, true, 1350 + i * 40));
-      window.setTimeout(() => {
+      introTimer = window.setTimeout(() => {
         if (!userTookOver) setMode("many", true);
         startAmbient();
       }, 2900);
     };
 
-    // Resuming after a pause brings back the ambient traffic.
+    // Pausing settles the hero on its end frame: the pending intro switch is
+    // dropped, and any morph in flight jumps to where it was heading (N ↔ N
+    // unless the visitor picked a mode). Resuming brings back the traffic.
     onMotionChange((still) => {
       if (still) {
         window.clearInterval(ambient);
+        window.clearTimeout(introTimer);
+        setMode(userTookOver ? mode : "many", false);
         return;
       }
       display.classList.add("is-ready");
