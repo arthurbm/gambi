@@ -702,8 +702,9 @@ const ticks = Array.from({ length: 72 }, (_, i) => {
         const d = trackPath(o[i], BEND);
         t.setAttribute("d", d);
         for (const p of comets[i].querySelectorAll("path")) p.setAttribute("d", d);
-        const wedgeAngle = YOU + (OUTER[i] - YOU) * e;
-        wedges[i].setAttribute("transform", `rotate(${wedgeAngle.toFixed(2)})`);
+        // Each wedge sits under its own track's end, so in 1 -> N the six
+        // wedges join into one block as wide as the bundle.
+        wedges[i].setAttribute("transform", `rotate(${o[i].toFixed(2)})`);
         const pos = toPercent(R_LABEL, o[i]);
         slots[i].style.left = `${pos.left.toFixed(2)}%`;
         slots[i].style.top = `${pos.top.toFixed(2)}%`;
