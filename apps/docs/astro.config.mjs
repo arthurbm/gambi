@@ -31,6 +31,27 @@ export default defineConfig({
         }),
       ],
       title: "Gambi",
+      // Link-preview card. Source and re-render command: og/card.html.
+      head: [
+        {
+          tag: "meta",
+          attrs: { property: "og:image", content: "https://gambi.sh/og.png" },
+        },
+        { tag: "meta", attrs: { property: "og:image:width", content: "1200" } },
+        { tag: "meta", attrs: { property: "og:image:height", content: "630" } },
+        {
+          tag: "meta",
+          attrs: {
+            property: "og:image:alt",
+            content:
+              "Agent tools are built for one person. Gambi is built for many. Six people's agents and models connected to one hub.",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: { name: "twitter:image", content: "https://gambi.sh/og.png" },
+        },
+      ],
       customCss: ["./src/styles/custom.css"],
       components: {
         Hero: "./src/components/Hero.astro",

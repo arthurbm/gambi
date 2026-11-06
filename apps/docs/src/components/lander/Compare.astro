@@ -1,0 +1,324 @@
+---
+import { fix, polar } from "./geometry";
+
+// Small ring glyphs, drawn in the same vocabulary as the hero display.
+// viewBox is -60..60; the ring sits at r = 44.
+const R = 44;
+const SPREAD = [-60, 0, 60, 120, 180, 240];
+const CLUSTER = [72, 80, 88, 96, 104, 112];
+const kinds = ["model", "harness", "model", "harness", "model", "harness"];
+
+const dots = (angles: number[], r = R) =>
+  angles.map((a, i) => {
+    const [x, y] = polar(r, a);
+    return { x: fix(x), y: fix(y), kind: kinds[i] };
+  });
+
+const wedgeAt = (a: number, w = 12) => {
+  const [x0, y0] = polar(R + 5, a - w / 2);
+  const [x1, y1] = polar(R + 5, a + w / 2);
+  return `M${fix(x0)} ${fix(y0)} A${R + 5} ${R + 5} 0 0 1 ${fix(x1)} ${fix(y1)}`;
+};
+
+const spoke = (a: number, inward: boolean) => {
+  const [ox, oy] = polar(R - 6, a);
+  const [ix, iy] = polar(13, a);
+  return inward
+    ? { x1: fix(ox), y1: fix(oy), x2: fix(ix), y2: fix(iy) }
+    : { x1: fix(ix), y1: fix(iy), x2: fix(ox), y2: fix(oy) };
+};
+
+const box = (a: number, r = R, s = 9) => {
+  const [x, y] = polar(r, a);
+  return { x: fix(x - s / 2), y: fix(y - s / 2), s };
+};
+
+const rows = [
+  {
+    q: "Where the agents run",
+    one: "One machine or one cloud account.",
+    many: "On each person's own machine.",
+    glyph: "run",
+  },
+  {
+    q: "Whose keys pay",
+    one: "One set of keys for every agent.",
+    many: "Each person's own. The hub never sees them.",
+    glyph: "keys",
+  },
+  {
+    q: "Where an agent works",
+    one: "In one person's checkout.",
+    many: "In the folder its owner picked. The hub can't write there.",
+    glyph: "write",
+  },
+  {
+    q: "Who opens the connection",
+    one: "One process calls out to the rest.",
+    many: "Each machine dials out. The hub never dials in.",
+    glyph: "dial",
+  },
+];
+---
+
+<section class="compare" id="how" aria-labelledby="compare-title">
+  <div class="compare-head">
+    <h2 id="compare-title" class="section-title">The tools stop at one person</h2>
+    <p class="section-lead">
+      There are dozens of orchestrators that run many agents at once. Nearly
+      all of them assume one person behind the keyboard. Put a group in the
+      same session and four things change.
+    </p>
+  </div>
+
+  <div class="grid" role="table" aria-label="One person compared with many people">
+    <div class="grid-row grid-header" role="row">
+      <span role="columnheader" class="col-q"><span class="sr-only">Question</span></span>
+      <span role="columnheader" class="col-h col-one">One person, many agents</span>
+      <span role="columnheader" class="col-h col-many">Many people, many agents</span>
+    </div>
+    {rows.map((row) => (
+      <div class="grid-row" role="row">
+        <span role="rowheader" class="col-q">{row.q}</span>
+        {(["one", "many"] as const).map((side) => {
+          const many = side === "many";
+          const pos = many ? SPREAD : CLUSTER;
+          return (
+            <div role="cell" class:list={["cell", `cell-${side}`]}>
+              <svg class="glyph" viewBox="-60 -60 120 120" aria-hidden="true">
+                <circle class="g-ring" r={R}></circle>
+                {row.glyph === "run" && (
+                  <>
+                    <circle class="g-hub" r="7"></circle>
+                    {dots(pos).map((d) => <circle class:list={["g-dot", `g-${d.kind}`]} cx={d.x} cy={d.y} r="4.2"></circle>)}
+                  </>
+                )}
+                {row.glyph === "keys" && (
+                  <>
+                    <circle class="g-hub" r="7"></circle>
+                    {many
+                      ? SPREAD.map((a) => <path class="g-key" d={wedgeAt(a)}></path>)
+                      : <path class="g-key" d={wedgeAt(92, 46)}></path>}
+                  </>
+                )}
+                {row.glyph === "write" && (
+                  <>
+                    {many
+                      ? SPREAD.map((a) => {
+                          const b = box(a);
+                          return <rect class="g-box" x={b.x} y={b.y} width={b.s} height={b.s} rx="1.5"></rect>;
+                        })
+                      : <rect class="g-box g-box-big" x="-26" y="-26" width="52" height="52" rx="3"></rect>}
+                    {many
+                      ? dots(SPREAD).map((d) => <circle class:list={["g-dot", `g-${d.kind}`]} cx={d.x} cy={d.y} r="2"></circle>)
+                      : dots([0, 60, 120, 180, 240, 300], 13).map((d) => <circle class:list={["g-dot", `g-${d.kind}`]} cx={d.x} cy={d.y} r="2.6"></circle>)}
+                  </>
+                )}
+                {row.glyph === "dial" && (
+                  <>
+                    <circle class="g-hub" r="7"></circle>
+                    {SPREAD.map((a, i) => {
+                      const s = spoke(a, many);
+                      return <line class:list={["g-spoke", `g-${kinds[i]}`]} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} marker-end={`url(#arrow-${side})`}></line>;
+                    })}
+                  </>
+                )}
+                {row.glyph === "dial" && <defs>
+                  <marker id={`arrow-${side}`} viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                    <path class="g-arrow" d="M0 0 L10 5 L0 10z"></path>
+                  </marker>
+                </defs>}
+              </svg>
+              <p>{many ? row.many : row.one}</p>
+            </div>
+          );
+        })}
+      </div>
+    ))}
+  </div>
+
+  <p class="compare-close">
+    Gambi handles those four. What the group does together, who drafts, who
+    decides, who reviews, is your code.
+  </p>
+</section>
+
+<style>
+  .compare-head {
+    max-width: 44rem;
+  }
+
+  .grid {
+    margin-top: 2.4rem;
+    border-top: 1px solid var(--e-line-2);
+  }
+
+  .grid-row {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: center;
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--e-line);
+  }
+
+  .grid-header {
+    padding: 0.9rem 0;
+  }
+
+  .col-h {
+    font-size: 0.78rem;
+    font-weight: 700;
+    font-variation-settings: "wdth" 80;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+  }
+
+  .col-one {
+    color: var(--e-ink-3);
+  }
+
+  .col-many {
+    color: var(--e-ink);
+  }
+
+  .col-q {
+    font-size: 1.08rem;
+    font-weight: 650;
+    font-variation-settings: "wdth" 106;
+    line-height: 1.3;
+  }
+
+  .cell {
+    display: grid;
+    grid-template-columns: 5.25rem minmax(0, 1fr);
+    gap: 1rem;
+    align-items: center;
+  }
+
+  .cell p {
+    margin: 0;
+    font-size: 0.98rem;
+    line-height: 1.45;
+  }
+
+  .cell-one p {
+    color: var(--e-ink-3);
+  }
+
+  .cell-many p {
+    color: var(--e-ink);
+  }
+
+  .glyph {
+    width: 5.25rem;
+    height: 5.25rem;
+    overflow: visible;
+  }
+
+  .g-ring {
+    fill: none;
+    stroke: var(--e-steel);
+    stroke-width: 1.4;
+  }
+
+  .g-hub {
+    fill: var(--e-hub);
+  }
+
+  .g-dot.g-model {
+    fill: var(--e-model);
+  }
+
+  .g-dot.g-harness {
+    fill: var(--e-harness);
+  }
+
+  .g-key {
+    fill: none;
+    stroke: var(--e-stop);
+    stroke-width: 6;
+  }
+
+  .g-box {
+    fill: none;
+    stroke: var(--e-ink-2);
+    stroke-width: 1.6;
+  }
+
+  .g-box-big {
+    stroke-dasharray: 4 3;
+  }
+
+  .g-spoke {
+    stroke-width: 2;
+  }
+
+  .g-spoke.g-model {
+    stroke: var(--e-model);
+  }
+
+  .g-spoke.g-harness {
+    stroke: var(--e-harness);
+  }
+
+  .g-arrow {
+    fill: var(--e-ink-2);
+  }
+
+  .cell-one .glyph {
+    opacity: 0.62;
+  }
+
+  .compare-close {
+    margin: 1.8rem 0 0;
+    max-width: 52ch;
+    font-size: 1.12rem;
+    color: var(--e-ink-2);
+  }
+
+  @media (max-width: 52rem) {
+    .grid-header {
+      display: none;
+    }
+
+    .grid-row {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 0.8rem 1rem;
+      padding: 1.1rem 0;
+    }
+
+    .col-q {
+      grid-column: 1 / -1;
+    }
+
+    .cell {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.4rem;
+      align-items: start;
+    }
+
+    .glyph {
+      width: 3.6rem;
+      height: 3.6rem;
+    }
+
+    .cell::before {
+      font-size: 0.68rem;
+      font-weight: 700;
+      font-variation-settings: "wdth" 80;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .cell-one::before {
+      content: "One person";
+      color: var(--e-ink-3);
+    }
+
+    .cell-many::before {
+      content: "Many people";
+      color: var(--e-ink);
+    }
+  }
+</style>

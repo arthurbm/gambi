@@ -1,0 +1,898 @@
+---
+import { fix, polar } from "./geometry";
+
+type Kind = "model" | "harness";
+
+interface Node {
+  name: string;
+  offer: string;
+  kind: Kind;
+  a: number;
+}
+
+interface Move {
+  n: number;
+  dir: "out" | "back";
+  stop?: boolean;
+}
+
+interface Step {
+  moves?: Move[];
+  ev?: string;
+  text: string;
+  stop?: boolean;
+}
+
+interface Example {
+  id: string;
+  tab: string;
+  title: string;
+  body: string;
+  href: string;
+  link: string;
+  explored?: boolean;
+  nodes: Node[];
+  steps: Step[];
+}
+
+// Illustrative sessions. Event and frame names are the real ones from
+// packages/core; people, models, and timings are made up.
+const examples: Example[] = [
+  {
+    id: "arena",
+    tab: "Model arena",
+    title: "Model arena",
+    body: "Send one prompt to every model in the room and compare the answers side by side, with timing from the room's events.",
+    href: "/guides/patterns/#model-arena",
+    link: "See the pattern",
+    nodes: [
+      { name: "Arthur", offer: "llama3", kind: "model", a: -135 },
+      { name: "Lu", offer: "qwen2.5-coder", kind: "model", a: -45 },
+      { name: "Tati", offer: "llama-3.3-70b", kind: "model", a: 45 },
+      { name: "Gabi", offer: "mistral-small", kind: "model", a: 135 },
+    ],
+    steps: [
+      {
+        moves: [0, 1, 2, 3].map((n) => ({ n, dir: "out" })),
+        ev: "llm.request",
+        text: "one prompt, four models",
+      },
+      {
+        moves: [{ n: 1, dir: "back" }],
+        ev: "llm.complete",
+        text: "qwen2.5-coder · ttft 210 ms",
+      },
+      {
+        moves: [{ n: 0, dir: "back" }],
+        ev: "llm.complete",
+        text: "llama3 · ttft 340 ms",
+      },
+      {
+        moves: [{ n: 3, dir: "back" }],
+        ev: "llm.complete",
+        text: "mistral-small · ttft 410 ms",
+      },
+      {
+        moves: [{ n: 2, dir: "back" }],
+        ev: "llm.complete",
+        text: "llama-3.3-70b · ttft 620 ms",
+      },
+      { text: "Your app shows the four answers side by side." },
+    ],
+  },
+  {
+    id: "jury",
+    tab: "Jury panel",
+    title: "Jury panel",
+    body: "One model answers and three others score it. Each judge can run on a different person's machine.",
+    href: "/guides/patterns/#jury-panel",
+    link: "See the pattern",
+    nodes: [
+      { name: "Arthur", offer: "llama3", kind: "model", a: -90 },
+      { name: "Lu", offer: "qwen2.5-coder", kind: "model", a: 30 },
+      { name: "Gabi", offer: "mistral-small", kind: "model", a: 90 },
+      { name: "Tati", offer: "llama-3.3-70b", kind: "model", a: 150 },
+    ],
+    steps: [
+      {
+        moves: [{ n: 0, dir: "out" }],
+        ev: "llm.request",
+        text: "llama3 writes the answer",
+      },
+      {
+        moves: [{ n: 0, dir: "back" }],
+        ev: "llm.complete",
+        text: "answer ready",
+      },
+      {
+        moves: [1, 2, 3].map((n) => ({ n, dir: "out" })),
+        ev: "llm.request",
+        text: "three judges score it",
+      },
+      {
+        moves: [{ n: 1, dir: "back" }],
+        ev: "llm.complete",
+        text: "qwen2.5-coder · 8 / 10",
+      },
+      {
+        moves: [{ n: 3, dir: "back" }],
+        ev: "llm.complete",
+        text: "llama-3.3-70b · 7 / 10",
+      },
+      {
+        moves: [{ n: 2, dir: "back" }],
+        ev: "llm.complete",
+        text: "mistral-small · 9 / 10",
+      },
+      { text: "Your app averages the scores: 8.0." },
+    ],
+  },
+  {
+    id: "debate",
+    tab: "Debate",
+    title: "Debate club",
+    body: "Two models argue in turns while a third moderates. Your code decides who speaks next and what each one sees.",
+    href: "/guides/patterns/#debate-club",
+    link: "See the pattern",
+    nodes: [
+      { name: "Arthur", offer: "llama3 · moderator", kind: "model", a: -90 },
+      { name: "Tati", offer: "llama-3.3-70b · against", kind: "model", a: 30 },
+      { name: "Lu", offer: "qwen2.5-coder · for", kind: "model", a: 150 },
+    ],
+    steps: [
+      {
+        moves: [{ n: 2, dir: "out" }],
+        ev: "llm.request",
+        text: "turn 1 · for",
+      },
+      {
+        moves: [{ n: 2, dir: "back" }],
+        ev: "llm.complete",
+        text: "argument received",
+      },
+      {
+        moves: [{ n: 1, dir: "out" }],
+        ev: "llm.request",
+        text: "turn 1 · against, sees the argument",
+      },
+      {
+        moves: [{ n: 1, dir: "back" }],
+        ev: "llm.complete",
+        text: "rebuttal received",
+      },
+      {
+        moves: [{ n: 2, dir: "out" }],
+        ev: "llm.request",
+        text: "turn 2 · for",
+      },
+      {
+        moves: [{ n: 2, dir: "back" }],
+        ev: "llm.complete",
+        text: "closing received",
+      },
+      {
+        moves: [{ n: 0, dir: "out" }],
+        ev: "llm.request",
+        text: "moderator reads both sides",
+      },
+      {
+        moves: [{ n: 0, dir: "back" }],
+        ev: "llm.complete",
+        text: "summary and verdict",
+      },
+    ],
+  },
+  {
+    id: "chain",
+    tab: "Draft, critique, polish",
+    title: "Draft, critique, polish",
+    body: "A small local model drafts, a stronger one critiques, and the first one revises. Cheap where it can be, strong where it counts.",
+    href: "/guides/patterns/#draft-critique-polish",
+    link: "See the pattern",
+    nodes: [
+      { name: "Arthur", offer: "llama3 · local", kind: "model", a: 180 },
+      { name: "Tati", offer: "llama-3.3-70b", kind: "model", a: 0 },
+    ],
+    steps: [
+      { moves: [{ n: 0, dir: "out" }], ev: "llm.request", text: "draft" },
+      {
+        moves: [{ n: 0, dir: "back" }],
+        ev: "llm.complete",
+        text: "draft · 1.2 s",
+      },
+      {
+        moves: [{ n: 1, dir: "out" }],
+        ev: "llm.request",
+        text: "critique the draft",
+      },
+      {
+        moves: [{ n: 1, dir: "back" }],
+        ev: "llm.complete",
+        text: "three notes",
+      },
+      {
+        moves: [{ n: 0, dir: "out" }],
+        ev: "llm.request",
+        text: "revise with the notes",
+      },
+      {
+        moves: [{ n: 0, dir: "back" }],
+        ev: "llm.complete",
+        text: "final text",
+      },
+    ],
+  },
+  {
+    id: "squads",
+    tab: "Squads",
+    title: "Squads with a steerer",
+    body: "Squads of people build something together, each squad with its own coding agent. Each round one person steers: they record a decision before work goes to the agent, then accept the result or send it back with a reason. Those rules are app code; Gambi carries the messages.",
+    href: "/explanation/whats-next/",
+    link: "Where this is going",
+    explored: true,
+    nodes: [
+      { name: "Squad A", offer: "Bia · claude-code", kind: "harness", a: -90 },
+      { name: "Squad B", offer: "Caio · codex", kind: "harness", a: 30 },
+      { name: "Squad C", offer: "Duda · opencode", kind: "harness", a: 150 },
+    ],
+    steps: [
+      { text: "Round 1 · the challenge goes to every squad" },
+      { text: "Squad A records a decision, Bia steering" },
+      {
+        moves: [{ n: 0, dir: "out" }],
+        ev: "tunnel.harness.message",
+        text: "dispatch to Bia's claude-code",
+      },
+      {
+        moves: [{ n: 0, dir: "back" }],
+        ev: "tunnel.harness.artifact",
+        text: "v1 · 3 files",
+      },
+      { text: "Bia accepts" },
+      {
+        moves: [{ n: 1, dir: "out" }],
+        ev: "tunnel.harness.message",
+        text: "dispatch to Caio's codex",
+      },
+      {
+        moves: [{ n: 1, dir: "back" }],
+        ev: "tunnel.harness.artifact",
+        text: "v1 · 2 files",
+      },
+      { text: "Caio returns it: missing tests", stop: true },
+      {
+        moves: [{ n: 1, dir: "out", stop: true }],
+        ev: "tunnel.harness.message",
+        text: "dispatched again, with the reason",
+      },
+      {
+        moves: [{ n: 1, dir: "back" }],
+        ev: "tunnel.harness.artifact",
+        text: "v2 · accepted",
+      },
+      { text: "Round 2 · steering passes to the next person" },
+    ],
+  },
+];
+
+const stageData = examples.map((ex) => ({
+  id: ex.id,
+  nodes: ex.nodes.map((n) => {
+    const [x, y] = polar(140, n.a);
+    return { x: Number(fix(x)), y: Number(fix(y)), a: n.a };
+  }),
+  steps: ex.steps,
+}));
+
+// A small event display: nodes sit on a machine band at r = 140 and every
+// track bends the same way into the hub, like the hero.
+const BAND = 140;
+const stageTrack = (a: number) => {
+  const [x0, y0] = polar(BAND - 8, a);
+  const [cx, cy] = polar(84, a + 14);
+  const [x1, y1] = polar(30, a + 22);
+  return `M${fix(x0)} ${fix(y0)} Q${fix(cx)} ${fix(cy)} ${fix(x1)} ${fix(y1)}`;
+};
+const stageWedge = (a: number) => {
+  const [x0, y0] = polar(BAND + 12, a - 6);
+  const [x1, y1] = polar(BAND + 12, a + 6);
+  return `M${fix(x0)} ${fix(y0)} A${BAND + 12} ${BAND + 12} 0 0 1 ${fix(x1)} ${fix(y1)}`;
+};
+
+// Labels sit outside the node, hanging away from the hub.
+const label = (a: number) => {
+  const [x, y] = polar(184, a);
+  let anchor = "middle";
+  const dx = 0;
+  if (Math.abs(x) >= 30) {
+    anchor = x > 0 ? "start" : "end";
+  }
+  let dy = 0;
+  if (y < -100) {
+    dy = -6;
+  } else if (y > 100) {
+    dy = 14;
+  }
+  return { x: fix(x + dx), y: fix(y + dy), anchor };
+};
+---
+
+<section class="examples" aria-labelledby="examples-title">
+  <h2 id="examples-title" class="section-title">What a group can build on it</h2>
+  <p class="section-lead">
+    Pick an example. Each one is your app's code running on one hub, with
+    participants on different machines. The events are illustrative.
+  </p>
+
+  <div class="ex" data-examples={JSON.stringify(stageData)}>
+    <div class="ex-tabs" role="tablist" aria-label="Examples">
+      {examples.map((ex, i) => (
+        <button
+          role="tab"
+          type="button"
+          id={`ex-tab-${ex.id}`}
+          aria-controls={`ex-panel-${ex.id}`}
+          aria-selected={i === 0 ? "true" : "false"}
+          tabindex={i === 0 ? 0 : -1}
+          data-ex={ex.id}
+        >
+          {ex.tab}
+        </button>
+      ))}
+    </div>
+
+    <div class="ex-body">
+      <div class="ex-copy">
+        {examples.map((ex, i) => (
+          <div class="ex-panel" role="tabpanel" id={`ex-panel-${ex.id}`} aria-labelledby={`ex-tab-${ex.id}`} hidden={i !== 0}>
+            <h3 class="ex-title">
+              {ex.title}
+              {ex.explored && <span class="tag-explored">Being explored</span>}
+            </h3>
+            <p>{ex.body}</p>
+            <a class="ex-link" href={ex.href}>{ex.link}<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3l5 5-5 5"></path></svg></a>
+          </div>
+        ))}
+      </div>
+
+      <div class="ex-stage" aria-hidden="true">
+        {examples.map((ex, i) => (
+          <svg class="stage" viewBox="-240 -222 480 470" data-stage={ex.id} hidden={i !== 0}>
+            <circle class="st-band" r={BAND}></circle>
+            <circle class="st-hair" r={BAND - 8}></circle>
+            <circle class="st-hair" r={BAND + 8}></circle>
+            <circle class="st-hair st-tunnel" r="90"></circle>
+            {ex.nodes.map((n, k) => (
+              <path class:list={["st-track", `st-track-${n.kind}`]} data-track={k} d={stageTrack(n.a)}></path>
+            ))}
+            {ex.nodes.map((n) => (
+              <path class="st-wedge" d={stageWedge(n.a)}></path>
+            ))}
+            <circle class="st-hub-ring" r="32"></circle>
+            <circle class="st-hub" r="24"></circle>
+            <text class="st-hub-label" y="5" text-anchor="middle">hub</text>
+            {ex.nodes.map((n, k) => {
+              const [x, y] = polar(140, n.a);
+              const l = label(n.a);
+              return (
+                <g class:list={["st-node", `st-${n.kind}`]} data-node={k}>
+                  <circle class="st-dot" cx={fix(x)} cy={fix(y)} r="10"></circle>
+                  <text class="st-name" x={l.x} y={l.y} text-anchor={l.anchor}>{n.name}</text>
+                  <text class="st-offer" x={l.x} y={Number(l.y) + 20} text-anchor={l.anchor}>{n.offer}</text>
+                </g>
+              );
+            })}
+            <g class="st-tokens"></g>
+          </svg>
+        ))}
+        <div class="log-frame">
+          <ol class="log" data-log>
+            {examples[0].steps.map((s) => (
+              <li class:list={[s.stop && "log-stop"]}>{s.ev && <code>{s.ev}</code>} {s.text}</li>
+            ))}
+          </ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .ex {
+    margin-top: 2.4rem;
+  }
+
+  .ex-tabs {
+    display: flex;
+    gap: 0.35rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 0.2rem;
+    border-bottom: 1px solid var(--e-line-2);
+  }
+
+  .ex-tabs button {
+    flex: none;
+    border: 0;
+    background: transparent;
+    padding: 0.65rem 0.9rem;
+    font: inherit;
+    font-size: 0.95rem;
+    font-weight: 600;
+    font-variation-settings: "wdth" 96;
+    color: var(--e-ink-3);
+    cursor: pointer;
+    border-radius: 8px 8px 0 0;
+    box-shadow: inset 0 -2px 0 transparent;
+    transition: color 160ms ease, box-shadow 200ms var(--ease-out);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .ex-tabs button:hover {
+      color: var(--e-ink);
+    }
+  }
+
+  .ex-tabs button[aria-selected="true"] {
+    color: var(--e-ink);
+    box-shadow: inset 0 -2px 0 var(--e-primary);
+  }
+
+  .ex-body {
+    display: grid;
+    grid-template-columns: minmax(0, 0.62fr) minmax(0, 1.38fr);
+    gap: clamp(2rem, 5vw, 4.5rem);
+    align-items: start;
+    padding-top: 2rem;
+  }
+
+  .ex-panel[hidden] {
+    display: none;
+  }
+
+  .ex-panel {
+    animation: ex-in 260ms var(--ease-out);
+  }
+
+  @keyframes ex-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+
+  .ex-title {
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 1.45rem;
+    font-weight: 680;
+    font-variation-settings: "wdth" 110;
+    letter-spacing: -0.015em;
+  }
+
+  .ex-panel p {
+    margin: 0.8rem 0 0;
+    max-width: 46ch;
+    color: var(--e-ink-2);
+    font-size: 1.04rem;
+  }
+
+  .ex-link {
+    margin-top: 1.1rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-weight: 600;
+    text-decoration: none;
+    color: var(--e-ink);
+    border-bottom: 1px solid var(--e-line-2);
+    padding-bottom: 0.1rem;
+  }
+
+  .ex-link svg {
+    width: 0.85rem;
+    height: 0.85rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    transition: transform 200ms var(--ease-out);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .ex-link:hover svg {
+      transform: translateX(3px);
+    }
+  }
+
+  .tag-explored {
+    padding: 0.08rem 0.5rem;
+    border: 1px dashed var(--e-ink-3);
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    font-variation-settings: "wdth" 80;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--e-ink-2);
+  }
+
+  .ex-stage {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    gap: 1.2rem;
+    align-items: center;
+  }
+
+  .stage {
+    width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+
+  .stage[hidden] {
+    display: none;
+  }
+
+  .st-band {
+    fill: none;
+    stroke: var(--e-steel);
+    stroke-width: 16;
+    opacity: 0.3;
+  }
+
+  .st-hair {
+    fill: none;
+    stroke: var(--e-steel);
+    stroke-width: 1.2;
+    opacity: 0.7;
+  }
+
+  .st-tunnel {
+    stroke-dasharray: 2 6;
+  }
+
+  .st-track {
+    fill: none;
+    stroke-width: 2.6;
+    stroke-linecap: round;
+    opacity: 0.5;
+    transition: opacity 220ms ease;
+  }
+
+  .st-track-model {
+    stroke: var(--e-model);
+  }
+
+  .st-track-harness {
+    stroke: var(--e-harness);
+  }
+
+  .st-track.is-live {
+    opacity: 1;
+  }
+
+  .st-wedge {
+    fill: none;
+    stroke: var(--e-stop);
+    stroke-width: 9;
+  }
+
+  .st-hub-ring {
+    fill: none;
+    stroke: var(--e-hub);
+    stroke-width: 1.2;
+    opacity: 0.45;
+  }
+
+  .st-hub {
+    fill: var(--e-hub);
+  }
+
+  .st-hub-label {
+    font-family: var(--e-text);
+    font-size: 17px;
+    font-weight: 700;
+    fill: var(--e-hub-ink);
+  }
+
+  .st-dot {
+    stroke: var(--e-ground);
+    stroke-width: 3;
+    transition: r 200ms var(--ease-out);
+  }
+
+  .st-model .st-dot {
+    fill: var(--e-model);
+  }
+
+  .st-harness .st-dot {
+    fill: var(--e-harness);
+  }
+
+  .st-node.is-hit .st-dot {
+    r: 14;
+  }
+
+  .st-name {
+    font-family: var(--e-text);
+    font-size: 20px;
+    font-weight: 700;
+    font-variation-settings: "wdth" 100;
+    fill: var(--e-ink);
+  }
+
+  .st-offer {
+    font-family: var(--e-text);
+    font-size: 16px;
+    font-weight: 600;
+    font-variation-settings: "wdth" 78;
+  }
+
+  .st-model .st-offer {
+    fill: var(--e-model);
+  }
+
+  .st-harness .st-offer {
+    fill: var(--e-harness);
+  }
+
+  .log-frame {
+    height: 17rem;
+    padding: 0.9rem 1rem;
+    border-radius: 12px;
+    background: var(--e-code-bg);
+  }
+
+  /* The fade lives on the list, so the panel keeps a clean edge. */
+  .log {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 0.45rem;
+    overflow: hidden;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    color: var(--e-code-ink);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 2.5rem);
+  }
+
+  .log :global(li) {
+    flex: none;
+  }
+
+  .log :global(li.is-new) {
+    animation: log-in 260ms var(--ease-out);
+  }
+
+  @keyframes log-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+
+  .log :global(code) {
+    font-family: var(--e-mono);
+    font-size: 0.95em;
+    color: #6fdcf0;
+    margin-right: 0.35rem;
+  }
+
+  .log :global(li.log-stop) {
+    color: #ff8f7a;
+  }
+
+  @media (max-width: 60rem) {
+    .ex-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  @media (max-width: 40rem) {
+    .ex-stage {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .log-frame {
+      height: 13rem;
+    }
+
+    .ex-tabs {
+      mask-image: linear-gradient(to right, #000 82%, transparent);
+    }
+  }
+</style>
+
+<script>
+  interface Move {
+    n: number;
+    dir: "out" | "back";
+    stop?: boolean;
+  }
+  interface Step {
+    moves?: Move[];
+    ev?: string;
+    text: string;
+    stop?: boolean;
+  }
+  interface Stage {
+    id: string;
+    nodes: { x: number; y: number; a: number }[];
+    steps: Step[];
+  }
+
+  const NS = "http://www.w3.org/2000/svg";
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const root = document.querySelector<HTMLElement>("[data-examples]");
+
+  if (root) {
+    const data: Stage[] = JSON.parse(root.dataset.examples ?? "[]");
+    const tabs = [...root.querySelectorAll<HTMLButtonElement>("[role=tab]")];
+    const panels = [...root.querySelectorAll<HTMLElement>("[role=tabpanel]")];
+    const stages = [...root.querySelectorAll<SVGSVGElement>("[data-stage]")];
+    const log = root.querySelector<HTMLOListElement>("[data-log]");
+
+    let current = data[0]?.id ?? "";
+    let run = 0;
+    let visible = false;
+
+    const line = (step: Step, animate: boolean) => {
+      if (!log) return;
+      const li = document.createElement("li");
+      if (step.stop) li.classList.add("log-stop");
+      if (animate) li.classList.add("is-new");
+      if (step.ev) {
+        const code = document.createElement("code");
+        code.textContent = step.ev;
+        li.append(code, " ");
+      }
+      li.append(step.text);
+      log.append(li);
+    };
+
+    const fillLog = (stage: Stage) => {
+      if (!log) return;
+      log.replaceChildren();
+      stage.steps.forEach((s) => line(s, false));
+    };
+
+    const wait = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms));
+
+    // cubic-bezier(0.77, 0, 0.175, 1), solved numerically: tokens follow the
+    // curved track, so the motion is driven frame by frame.
+    const easeInOut = (() => {
+      const [p1x, p1y, p2x, p2y] = [0.77, 0, 0.175, 1];
+      const cx = 3 * p1x;
+      const bx = 3 * (p2x - p1x) - cx;
+      const ax = 1 - cx - bx;
+      const cy = 3 * p1y;
+      const by = 3 * (p2y - p1y) - cy;
+      const ay = 1 - cy - by;
+      return (p: number) => {
+        let t = p;
+        for (let i = 0; i < 6; i++) {
+          const x = ((ax * t + bx) * t + cx) * t - p;
+          const d = (3 * ax * t + 2 * bx) * t + cx;
+          if (Math.abs(d) < 1e-6) break;
+          t -= x / d;
+        }
+        t = Math.min(1, Math.max(0, t));
+        return ((ay * t + by) * t + cy) * t;
+      };
+    })();
+
+    const travel = (svg: SVGSVGElement, _stage: Stage, move: Move) =>
+      new Promise<void>((resolve) => {
+        const layer = svg.querySelector(".st-tokens");
+        const track = svg.querySelector<SVGPathElement>(`[data-track="${move.n}"]`);
+        if (!layer || !track) return resolve();
+        const len = track.getTotalLength();
+        // The track runs node -> hub.
+        const [from, to] = move.dir === "out" ? [len, 0] : [0, len];
+        const harness = track.classList.contains("st-track-harness");
+        const dot = document.createElementNS(NS, "circle");
+        dot.setAttribute("r", "7");
+        const kindColor = harness ? "var(--e-harness)" : "var(--e-model)";
+        dot.style.fill = move.stop ? "var(--e-stop)" : kindColor;
+        dot.style.stroke = "var(--e-ground)";
+        dot.style.strokeWidth = "3";
+        layer.append(dot);
+        track.classList.add("is-live");
+        const start = performance.now();
+        const duration = 760;
+        const step = (now: number) => {
+          const p = Math.min(1, (now - start) / duration);
+          const pt = track.getPointAtLength(from + (to - from) * easeInOut(p));
+          dot.setAttribute("cx", pt.x.toFixed(1));
+          dot.setAttribute("cy", pt.y.toFixed(1));
+          if (p < 1) {
+            requestAnimationFrame(step);
+            return;
+          }
+          dot.remove();
+          track.classList.remove("is-live");
+          if (move.dir === "out") {
+            const g = svg.querySelector(`[data-node="${move.n}"]`);
+            g?.classList.add("is-hit");
+            window.setTimeout(() => g?.classList.remove("is-hit"), 380);
+          }
+          resolve();
+        };
+        requestAnimationFrame(step);
+      });
+
+    const play = async (id: string) => {
+      const token = ++run;
+      const stage = data.find((s) => s.id === id);
+      const svg = stages.find((s) => s.dataset.stage === id);
+      if (!stage || !svg) return;
+      while (token === run) {
+        log?.replaceChildren();
+        for (const step of stage.steps) {
+          if (token !== run) return;
+          while (!visible || document.hidden) {
+            await wait(300);
+            if (token !== run) return;
+          }
+          line(step, true);
+          if (step.moves?.length) {
+            await Promise.all(step.moves.map((m) => travel(svg, stage, m)));
+            await wait(260);
+          } else {
+            await wait(900);
+          }
+        }
+        await wait(2200);
+      }
+    };
+
+    const select = (id: string, focus = false) => {
+      current = id;
+      tabs.forEach((t) => {
+        const on = t.dataset.ex === id;
+        t.setAttribute("aria-selected", String(on));
+        t.tabIndex = on ? 0 : -1;
+        if (on && focus) t.focus();
+      });
+      panels.forEach((p) => {
+        p.hidden = p.id !== `ex-panel-${id}`;
+      });
+      // SVG elements have no .hidden property; toggle the attribute.
+      stages.forEach((s) => s.toggleAttribute("hidden", s.dataset.stage !== id));
+      const stage = data.find((s) => s.id === id);
+      if (reduce.matches) {
+        run++;
+        if (stage) fillLog(stage);
+      } else {
+        void play(id);
+      }
+    };
+
+    tabs.forEach((t, i) => {
+      t.addEventListener("click", () => select(t.dataset.ex ?? ""));
+      t.addEventListener("keydown", (ev) => {
+        const delta = ev.key === "ArrowRight" ? 1 : ev.key === "ArrowLeft" ? -1 : 0;
+        if (!delta) return;
+        ev.preventDefault();
+        const next = tabs[(i + delta + tabs.length) % tabs.length];
+        select(next.dataset.ex ?? "", true);
+      });
+    });
+
+    new IntersectionObserver(
+      (entries) => {
+        visible = entries.some((en) => en.isIntersecting);
+      },
+      { threshold: 0.3 }
+    ).observe(root);
+
+    if (!reduce.matches) void play(current);
+  }
+</script>

@@ -1,0 +1,519 @@
+---
+// A section cut through the hero rings: hub on the left, then the app ring,
+// the tunnel, the machine band and its red wall, then the model on the
+// participant's machine. Each zone sits over the column that explains it.
+// The hub sits in the second column; the tunnel and machine rings are drawn
+// around it, only on its right, so the app stays outside them.
+const HX = 375;
+const CY = 100;
+---
+
+<section class="wiring" id="wiring" aria-labelledby="wiring-title">
+  <h2 id="wiring-title" class="section-title">One request, end to end</h2>
+  <p class="section-lead">
+    Your app calls the hub. The hub sends the work down the tunnel the
+    participant opened, and the answer comes back the same way.
+  </p>
+
+  <div class="slice" data-slice>
+    <svg class="cut" viewBox="0 0 1000 200" aria-hidden="true">
+      <defs>
+        <clipPath id="cut-right"><rect x={HX} y="0" width={1000 - HX} height="200"></rect></clipPath>
+      </defs>
+      <line class="cut-path" x1="147" y1="100" x2="853" y2="100"></line>
+      <g clip-path="url(#cut-right)">
+        <circle class="cut-ring cut-tunnel" cx={HX} cy={CY} r="185"></circle>
+        <circle class="cut-ring cut-tunnel" cx={HX} cy={CY} r="250"></circle>
+        <circle class="cut-ring cut-tunnel" cx={HX} cy={CY} r="315"></circle>
+        <circle class="cut-band" cx={HX} cy={CY} r="360"></circle>
+        <circle class="cut-wall" cx={HX} cy={CY} r="382"></circle>
+      </g>
+      <rect class="cut-app" x="103" y="78" width="44" height="44" rx="6"></rect>
+      <circle class="cut-hub-ring" cx={HX} cy={CY} r="68"></circle>
+      <circle class="cut-hub" cx={HX} cy={CY} r="56"></circle>
+      <text class="cut-hub-label" x={HX} y={CY + 7} text-anchor="middle">hub</text>
+      <rect class="cut-model" x="853" y="78" width="44" height="44" rx="6"></rect>
+      <g class="cut-labels">
+        <text x="125" y="40" text-anchor="middle">app</text>
+        <text x="625" y="40" text-anchor="middle">tunnel</text>
+        <text x="875" y="40" text-anchor="middle">model</text>
+        <text x="875" y="172" text-anchor="middle" class="cut-key">key added here</text>
+      </g>
+      <circle class="cut-packet" r="11" cx="125" cy="100"></circle>
+    </svg>
+
+    <ol class="layers">
+      <li class="layer" data-layer="app">
+        <h3 class="layer-name">Your app</h3>
+        <p>Calls <code>/rooms/ABC123/v1/responses</code>, or attaches to an agent by participant id.</p>
+      </li>
+      <li class="layer" data-layer="hub">
+        <h3 class="layer-name">Hub</h3>
+        <p>Picks a participant by id, <code>model:&lt;name&gt;</code>, or <code>*</code>, and emits <code>llm.request</code> to the room's events.</p>
+      </li>
+      <li class="layer" data-layer="tunnel">
+        <h3 class="layer-name">Tunnel</h3>
+        <p>A WebSocket the participant opened. <code>tunnel.request</code> goes down, <code>tunnel.response.chunk</code> comes back.</p>
+      </li>
+      <li class="layer layer-home" data-layer="machine">
+        <h3 class="layer-name">Their machine</h3>
+        <p>The runtime adds the provider key, calls the model on <code>localhost</code>, and streams the answer up.</p>
+      </li>
+    </ol>
+  </div>
+
+  <div class="ledger">
+    <table>
+      <caption class="sr-only">What a participant sends to the hub, and what stays on their machine</caption>
+      <thead>
+        <tr><th scope="col" class="th-cross">Crosses the tunnel</th><th scope="col" class="th-stay">Never leaves the machine</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td data-label="Crosses the tunnel">Participant id, display name, model name, and a capability summary.</td>
+          <td data-label="Never leaves the machine">Provider auth headers set with <code>--header</code> or <code>--header-env</code>.</td>
+        </tr>
+        <tr>
+          <td data-label="Crosses the tunnel">The provider URL, as a label. The hub never calls it.</td>
+          <td data-label="Never leaves the machine">The provider itself, which can keep listening on <code>localhost</code>.</td>
+        </tr>
+        <tr>
+          <td data-label="Crosses the tunnel">Model responses, streamed back up the tunnel.</td>
+          <td data-label="Never leaves the machine">The agent's login. It is not part of registration, room events, or tunnel frames.</td>
+        </tr>
+        <tr>
+          <td data-label="Crosses the tunnel">ACP messages for an attached session, and the files the agent writes in its workspace.</td>
+          <td data-label="Never leaves the machine">The agent process, its tools, and everything outside its workspace folder.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <aside class="warning" aria-labelledby="warning-title">
+    <svg viewBox="0 0 24 24" aria-hidden="true" class="warning-icon"><path d="M12 3.5 21.5 20h-19Z"></path><path d="M12 10v4.6M12 17.2v.3"></path></svg>
+    <div>
+      <h3 id="warning-title" class="warning-title">Trusted networks only</h3>
+      <p>
+        The hub has no built-in authentication. Run it where you trust
+        everyone on the network: your home, your lab, the room your group
+        meets in. <a href="/explanation/tunnel-first/">How the tunnel works</a>
+      </p>
+    </div>
+  </aside>
+</section>
+
+<style>
+  .slice {
+    margin-top: 2.6rem;
+  }
+
+  .cut {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .cut-hub {
+    fill: var(--e-hub);
+  }
+
+  .cut-hub-ring {
+    fill: none;
+    stroke: var(--e-hub);
+    stroke-width: 1.6;
+    opacity: 0.45;
+  }
+
+  .cut-hub-label {
+    font-family: var(--e-text);
+    font-size: 22px;
+    font-weight: 700;
+    font-variation-settings: "wdth" 110;
+    fill: var(--e-hub-ink);
+  }
+
+  .cut-ring,
+  .cut-band,
+  .cut-wall {
+    fill: none;
+  }
+
+  .cut-ring {
+    stroke: var(--e-steel);
+    stroke-width: 2;
+  }
+
+  .cut-app {
+    fill: var(--e-sheet);
+    stroke: var(--e-ink-3);
+    stroke-width: 2;
+  }
+
+  .cut-tunnel {
+    stroke-dasharray: 3 9;
+  }
+
+  .cut-band {
+    stroke: var(--e-steel);
+    stroke-width: 30;
+    opacity: 0.32;
+    transition: opacity 240ms ease;
+  }
+
+  .cut-wall {
+    stroke: var(--e-stop);
+    stroke-width: 8;
+  }
+
+  .cut-model {
+    fill: var(--e-sheet);
+    stroke: var(--e-ink-3);
+    stroke-width: 2;
+    transition: stroke 200ms ease;
+  }
+
+  .cut-path {
+    stroke: var(--e-line-2);
+    stroke-width: 2;
+  }
+
+  .cut-labels text {
+    paint-order: stroke;
+    stroke: var(--e-ground);
+    stroke-width: 10px;
+    stroke-linejoin: round;
+    font-family: var(--e-text);
+    font-size: 15px;
+    font-weight: 650;
+    font-variation-settings: "wdth" 78;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    fill: var(--e-ink-3);
+  }
+
+  .cut-labels .cut-key {
+    fill: var(--e-stop);
+    letter-spacing: 0.06em;
+  }
+
+  .cut-packet {
+    fill: var(--e-model);
+    opacity: 0;
+  }
+
+  .slice.is-back .cut-packet {
+    fill: var(--e-harness);
+  }
+
+  .slice[data-at="machine"] .cut-band {
+    opacity: 0.6;
+  }
+
+  .slice[data-at="machine"] .cut-model {
+    stroke: var(--e-stop);
+  }
+
+  .layers {
+    list-style: none;
+    margin: 0.8rem 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .layer {
+    padding: 1rem 1rem 0 0;
+    border-top: 2px solid var(--e-line-2);
+    transition: border-color 200ms ease;
+  }
+
+  .layer.is-on {
+    border-top-color: var(--e-model);
+  }
+
+  .slice.is-back .layer.is-on {
+    border-top-color: var(--e-harness);
+  }
+
+  .layer-name {
+    margin: 0;
+    font-size: 1.08rem;
+    font-weight: 700;
+    font-variation-settings: "wdth" 110;
+  }
+
+  .layer p {
+    margin: 0.45rem 0 0;
+    font-size: 0.93rem;
+    color: var(--e-ink-2);
+  }
+
+  .layer-home .layer-name::after {
+    content: "";
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    margin-left: 0.45rem;
+    border-radius: 2px;
+    background: var(--e-stop);
+    vertical-align: 0.12em;
+  }
+
+  .ledger {
+    margin-top: 2.6rem;
+    border: 1px solid var(--e-line);
+    border-radius: 14px;
+    overflow: hidden;
+    background: var(--e-sheet);
+  }
+
+  .ledger table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.97rem;
+  }
+
+  .ledger th {
+    text-align: left;
+    padding: 0.95rem 1.2rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    font-variation-settings: "wdth" 80;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--e-line-2);
+  }
+
+  .th-cross {
+    color: var(--e-harness);
+  }
+
+  .th-stay {
+    color: var(--e-stop);
+  }
+
+  .ledger td {
+    vertical-align: top;
+    width: 50%;
+    padding: 0.95rem 1.2rem;
+    border-bottom: 1px solid var(--e-line);
+    color: var(--e-ink-2);
+  }
+
+  .ledger td + td,
+  .ledger th + th {
+    border-left: 1px solid var(--e-line);
+  }
+
+  .ledger tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .warning {
+    margin-top: 1.2rem;
+    display: flex;
+    gap: 0.9rem;
+    align-items: flex-start;
+    padding: 1rem 1.2rem;
+    border-radius: 12px;
+    border: 1px solid color-mix(in oklab, var(--e-stop) 55%, transparent);
+    background: color-mix(in oklab, var(--e-stop) 7%, var(--e-ground));
+  }
+
+  .warning-icon {
+    flex: none;
+    width: 1.3rem;
+    height: 1.3rem;
+    margin-top: 0.1rem;
+    fill: none;
+    stroke: var(--e-stop);
+    stroke-width: 1.8;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+
+  .warning-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    font-variation-settings: "wdth" 108;
+    color: var(--e-stop);
+  }
+
+  .warning p {
+    margin: 0.25rem 0 0;
+    max-width: 75ch;
+    color: var(--e-ink-2);
+  }
+
+  .warning a {
+    font-weight: 600;
+    color: var(--e-ink);
+  }
+
+  @media (max-width: 56rem) {
+    .cut-labels text {
+      font-size: 40px;
+      stroke-width: 16px;
+      letter-spacing: 0.06em;
+    }
+
+    .cut-labels .cut-key {
+      display: none;
+    }
+
+    .cut-hub-label {
+      font-size: 34px;
+    }
+
+    .layers {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .layer {
+      padding-right: 0;
+      padding-bottom: 1rem;
+    }
+  }
+
+  @media (max-width: 44rem) {
+    .ledger thead {
+      display: none;
+    }
+
+    .ledger tr {
+      display: grid;
+      border-bottom: 1px solid var(--e-line-2);
+    }
+
+    .ledger tr:last-child {
+      border-bottom: 0;
+    }
+
+    .ledger td {
+      width: auto;
+      display: block;
+      border-bottom: 0;
+    }
+
+    .ledger td + td {
+      border-left: 0;
+      padding-top: 0;
+    }
+
+    .ledger td::before {
+      content: attr(data-label);
+      display: block;
+      margin-bottom: 0.25rem;
+      font-size: 0.72rem;
+      font-weight: 700;
+      font-variation-settings: "wdth" 80;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--e-harness);
+    }
+
+    .ledger td + td::before {
+      color: var(--e-stop);
+    }
+  }
+</style>
+
+<script>
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+  const easeInOut = (() => {
+    const [p1x, p1y, p2x, p2y] = [0.77, 0, 0.175, 1];
+    const cx = 3 * p1x;
+    const bx = 3 * (p2x - p1x) - cx;
+    const ax = 1 - cx - bx;
+    const cy = 3 * p1y;
+    const by = 3 * (p2y - p1y) - cy;
+    const ay = 1 - cy - by;
+    return (p: number) => {
+      let t = p;
+      for (let i = 0; i < 6; i++) {
+        const x = ((ax * t + bx) * t + cx) * t - p;
+        const d = (3 * ax * t + 2 * bx) * t + cx;
+        if (Math.abs(d) < 1e-6) break;
+        t -= x / d;
+      }
+      t = Math.min(1, Math.max(0, t));
+      return ((ay * t + by) * t + cy) * t;
+    };
+  })();
+
+  const slice = document.querySelector<HTMLElement>("[data-slice]");
+  const packet = slice?.querySelector<SVGCircleElement>(".cut-packet");
+
+  if (slice && packet && !reduce.matches) {
+    const layers = [...slice.querySelectorAll<HTMLElement>("[data-layer]")];
+    // x on the cut. Zone edges sit at the column edges: 250, 500, 750.
+    const APP = 125;
+    const HUB = 375;
+    const MODEL = 875;
+    const legs = [
+      { from: APP, to: HUB, ms: 800, back: false, idle: false },
+      { from: HUB, to: HUB, ms: 280, back: false, idle: false },
+      { from: HUB, to: MODEL, ms: 1500, back: false, idle: false },
+      { from: MODEL, to: MODEL, ms: 650, back: false, idle: false },
+      { from: MODEL, to: HUB, ms: 1400, back: true, idle: false },
+      { from: HUB, to: APP, ms: 700, back: true, idle: false },
+      { from: APP, to: APP, ms: 1100, back: true, idle: true },
+    ];
+    const total = legs.reduce((sum, l) => sum + l.ms, 0);
+    const zoneOf = (x: number) => {
+      if (x < 250) return "app";
+      if (x < 500) return "hub";
+      return x < 750 ? "tunnel" : "machine";
+    };
+
+    let live = false;
+    let t0 = 0;
+    let frame = 0;
+    let lastZone = "";
+
+    // One eased timeline moves the packet; the highlights read its position.
+    const tick = (now: number) => {
+      if (!live) return;
+      let rest = (now - t0) % total;
+      let x = APP;
+      let back = false;
+      let idle = false;
+      for (const leg of legs) {
+        if (rest <= leg.ms) {
+          x = leg.from + (leg.to - leg.from) * easeInOut(rest / leg.ms);
+          back = leg.back;
+          idle = leg.idle;
+          break;
+        }
+        rest -= leg.ms;
+      }
+      packet.setAttribute("cx", x.toFixed(1));
+      packet.style.opacity = idle ? "0" : "1";
+      slice.classList.toggle("is-back", back);
+      const zone = idle ? "" : zoneOf(x);
+      if (zone !== lastZone) {
+        lastZone = zone;
+        slice.dataset.at = zone;
+        layers.forEach((l) => l.classList.toggle("is-on", l.dataset.layer === zone));
+      }
+      frame = requestAnimationFrame(tick);
+    };
+
+    new IntersectionObserver(
+      (entries) => {
+        const on = entries.some((en) => en.isIntersecting);
+        if (on && !live) {
+          live = true;
+          t0 = performance.now();
+          frame = requestAnimationFrame(tick);
+        } else if (!on && live) {
+          live = false;
+          cancelAnimationFrame(frame);
+        }
+      },
+      { threshold: 0.35 }
+    ).observe(slice);
+  }
+</script>

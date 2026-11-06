@@ -1,0 +1,894 @@
+---
+import {
+  BEND,
+  LABEL_DEG,
+  OUTER,
+  polar,
+  R_BAND,
+  R_HUB,
+  R_LABEL,
+  R_MACHINE,
+  toPercent,
+  trackPath,
+  VIEW,
+  wedgePath,
+  fix,
+  YOU,
+} from "./geometry";
+
+type Kind = "model" | "harness";
+
+interface Person {
+  id: string;
+  name: string;
+  kind: Kind;
+  offer: string;
+  via: string;
+  crosses: string;
+  stays: string;
+}
+
+// Example session. Names and models are illustrative; every frame type is
+// the real one from packages/core.
+const people: Person[] = [
+  {
+    id: "arthur",
+    name: "Arthur",
+    kind: "model",
+    offer: "llama3",
+    via: "Ollama on localhost:11434",
+    crosses: "tunnel.request",
+    stays: "Ollama keeps listening on loopback. The hub never calls it.",
+  },
+  {
+    id: "bia",
+    name: "Bia",
+    kind: "harness",
+    offer: "claude-code",
+    via: "Claude Code over ACP",
+    crosses: "tunnel.harness.message",
+    stays: "Her Claude login. The CLI checks it locally before joining.",
+  },
+  {
+    id: "lu",
+    name: "Lu",
+    kind: "model",
+    offer: "qwen2.5-coder",
+    via: "vLLM on 127.0.0.1:8000",
+    crosses: "tunnel.response.chunk",
+    stays:
+      "The Authorization header from VLLM_AUTH, added only to the local call.",
+  },
+  {
+    id: "caio",
+    name: "Caio",
+    kind: "harness",
+    offer: "codex",
+    via: "Codex over ACP, in ./my-project",
+    crosses: "tunnel.harness.artifact",
+    stays: "./my-project, the folder he chose. The hub cannot write into it.",
+  },
+  {
+    id: "tati",
+    name: "Tati",
+    kind: "model",
+    offer: "llama-3.3-70b",
+    via: "OpenRouter, called from her laptop",
+    crosses: "tunnel.request",
+    stays:
+      "Her OpenRouter key, read from OPENROUTER_AUTH. It goes only to OpenRouter.",
+  },
+  {
+    id: "duda",
+    name: "Duda",
+    kind: "harness",
+    offer: "opencode",
+    via: "opencode acp",
+    crosses: "tunnel.harness.status",
+    stays: "The provider credentials OpenCode already has configured.",
+  },
+];
+
+const tracks = people.map((p, i) => {
+  const origin = OUTER[i];
+  const pos = toPercent(R_LABEL, origin);
+  return { ...p, origin, d: trackPath(origin), ...pos };
+});
+
+const half = VIEW / 2;
+const viewBox = `${-half} ${-half} ${VIEW} ${VIEW}`;
+const wedge = wedgePath(R_MACHINE + 2, R_MACHINE + 28, 5.5);
+const you = toPercent(R_LABEL, YOU);
+
+const ringLabel = (r: number) => {
+  const [x, y] = polar(r, LABEL_DEG);
+  return { x: fix(x), y: fix(y + 8) };
+};
+const labels = [
+  { text: "machines", ...ringLabel(R_BAND) },
+  { text: "tunnels", ...ringLabel(262) },
+];
+
+const ticks = Array.from({ length: 72 }, (_, i) => {
+  const deg = i * 5;
+  const long = i % 6 === 0;
+  const [x0, y0] = polar(R_MACHINE + 34, deg);
+  const [x1, y1] = polar(R_MACHINE + (long ? 52 : 42), deg);
+  return { d: `M${fix(x0)} ${fix(y0)}L${fix(x1)} ${fix(y1)}`, long };
+});
+---
+
+<figure class="display" data-mode="many" aria-labelledby="display-caption">
+  <div class="display-head">
+    <p class="readout-id"><span>Session</span> <code>ABC123</code> <span class="tag-example">example</span></p>
+    <div class="mode-switch" role="group" aria-label="Who is in the session">
+      <button type="button" data-set-mode="one" aria-pressed="false">1 → N</button>
+      <button type="button" data-set-mode="many" aria-pressed="true">N ↔ N</button>
+    </div>
+  </div>
+
+  <div class="board">
+    <svg class="rings" viewBox={viewBox} role="img" aria-labelledby="rings-title rings-desc">
+      <title id="rings-title">Six people connected to one hub</title>
+      <desc id="rings-desc">
+        Concentric rings: people's machines on the outside, the tunnels in
+        between, the hub at the centre. Each track is one person's tunnel,
+        opened from their own machine.
+      </desc>
+      <g class="ring-layer">
+        <circle class="ring-band" r={R_BAND}></circle>
+        <circle class="ring" r={R_MACHINE + 30}></circle>
+        <circle class="ring" r={R_MACHINE}></circle>
+        <circle class="ring ring-tunnel" r="300"></circle>
+        <circle class="ring ring-tunnel" r="210"></circle>
+        <g>
+          {ticks.map((t) => <path class:list={["tick", t.long && "tick-long"]} d={t.d}></path>)}
+        </g>
+        {labels.map((l) => (
+          <text class="ring-label" x={l.x} y={l.y} text-anchor="middle">{l.text}</text>
+        ))}
+      </g>
+      <g class="wedges">
+        {tracks.map((t) => (
+          <path class="wedge" data-wedge={t.id} d={wedge} transform={`rotate(${t.origin})`}></path>
+        ))}
+      </g>
+      <g class="tracks">
+        {tracks.map((t) => (
+          <path class:list={["track", `track-${t.kind}`]} data-track={t.id} d={t.d}></path>
+        ))}
+      </g>
+      <g class="comets">
+        {tracks.map((t) => (
+          <g class:list={["comet", `comet-${t.kind}`]} data-comet={t.id}>
+            <path class="comet-tail" d={t.d}></path>
+            <path class="comet-head" d={t.d}></path>
+          </g>
+        ))}
+      </g>
+      <circle class="hub-ring" r={R_HUB + 12}></circle>
+      <circle class="hub-core" r={R_HUB}></circle>
+      <text class="hub-label" x="0" y="7" text-anchor="middle">hub</text>
+    </svg>
+
+    <ul class="people" aria-label="Participants">
+      {tracks.map((t) => (
+        <li class="person-slot" data-person-slot={t.id} style={`left:${t.left.toFixed(2)}%;top:${t.top.toFixed(2)}%`}>
+          <button class:list={["person", `person-${t.kind}`]} type="button" data-person={t.id} aria-pressed="false">
+            <span class="person-name">{t.name}</span>
+            <span class="person-offer">{t.offer}</span>
+          </button>
+        </li>
+      ))}
+      <li class="person-slot you-slot" aria-hidden="true" style={`left:${you.left.toFixed(2)}%;top:${you.top.toFixed(2)}%`}>
+        <span class="person person-you"><span class="person-name">You</span><span class="person-offer">6 agents</span></span>
+      </li>
+    </ul>
+  </div>
+
+  <div class="display-foot">
+    <dl class="readouts">
+      <div><dt>People</dt><dd data-r="people">6</dd></div>
+      <div><dt>Machines</dt><dd data-r="machines">6</dd></div>
+      <div><dt>Key holders</dt><dd data-r="keys">6</dd></div>
+    </dl>
+    <div class="inspect" aria-live="polite">
+      <p class="inspect-empty" data-inspect-empty>Pick a person to see what crosses their tunnel and what stays home.</p>
+      {tracks.map((t) => (
+        <div class="inspect-card" data-inspect={t.id} hidden>
+          <p class="inspect-who"><b>{t.name}</b> · {t.via}</p>
+          <p class="inspect-row"><span class="inspect-k k-cross">Crosses</span> <code>{t.crosses}</code></p>
+          <p class="inspect-row"><span class="inspect-k k-stay">Stays</span> {t.stays}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+  <figcaption id="display-caption" class="sr-only">
+    An example session with six people. Switch between one person running six
+    agents from one machine, and six people each bringing their own.
+  </figcaption>
+</figure>
+
+<style>
+  .display {
+    margin: 0;
+    display: grid;
+    gap: 0.4rem;
+  }
+
+  .display-head,
+  .display-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .readout-id {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-variation-settings: "wdth" 78;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--e-ink-3);
+  }
+
+  .readout-id code {
+    font-family: var(--e-mono);
+    font-size: 0.85rem;
+    letter-spacing: 0.04em;
+    color: var(--e-ink);
+  }
+
+  .tag-example {
+    padding: 0.1rem 0.45rem;
+    border: 1px solid var(--e-line-2);
+    border-radius: 999px;
+    letter-spacing: 0.06em;
+  }
+
+  .mode-switch {
+    display: inline-grid;
+    grid-auto-flow: column;
+    padding: 3px;
+    border-radius: 999px;
+    border: 1px solid var(--e-line-2);
+    background: var(--e-sheet);
+  }
+
+  .mode-switch button {
+    border: 0;
+    background: transparent;
+    padding: 0.38rem 0.85rem;
+    border-radius: 999px;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 650;
+    font-variation-settings: "wdth" 90;
+    font-variant-numeric: tabular-nums;
+    color: var(--e-ink-3);
+    cursor: pointer;
+    transition: color 200ms ease, background-color 200ms ease;
+  }
+
+  .mode-switch button[aria-pressed="true"] {
+    color: var(--e-primary-ink);
+    background: var(--e-primary);
+  }
+
+  .board {
+    position: relative;
+    aspect-ratio: 1;
+    width: min(100%, calc(100svh - 20rem), 46rem);
+    min-width: min(100%, 20rem);
+    margin: 0 auto;
+    container-type: inline-size;
+  }
+
+  .rings {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    display: block;
+  }
+
+  .ring {
+    fill: none;
+    stroke: var(--e-steel);
+    stroke-width: 1.4;
+    opacity: 0.75;
+  }
+
+  .ring-band {
+    fill: none;
+    stroke: var(--e-steel);
+    stroke-width: 30;
+    opacity: 0.3;
+  }
+
+  .ring-tunnel {
+    stroke-dasharray: 2 8;
+  }
+
+
+  .tick {
+    stroke: var(--e-steel);
+    stroke-width: 1.2;
+    opacity: 0.5;
+  }
+
+  .tick-long {
+    opacity: 0.9;
+    stroke-width: 1.6;
+  }
+
+  .ring-label {
+    paint-order: stroke;
+    stroke: var(--e-ground);
+    stroke-width: 8px;
+    stroke-linejoin: round;
+    font-family: var(--e-text);
+    font-size: 22px;
+    font-weight: 650;
+    font-variation-settings: "wdth" 76;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    fill: var(--e-ink-3);
+  }
+
+  .wedge {
+    fill: var(--e-stop);
+  }
+
+  .track {
+    fill: none;
+    stroke-width: 3.4;
+    stroke-linecap: round;
+    transition: opacity 220ms ease, stroke-width 220ms ease;
+  }
+
+  .track-model,
+  .comet-model {
+    stroke: var(--e-model);
+  }
+
+  .track-harness,
+  .comet-harness {
+    stroke: var(--e-harness);
+  }
+
+  .comet path {
+    fill: none;
+    stroke-linecap: round;
+    opacity: 0;
+  }
+
+  .comet-head {
+    stroke-width: 9;
+  }
+
+  .comet-tail {
+    stroke-width: 6;
+  }
+
+  .display.has-focus .track:not(.is-focus) {
+    opacity: 0.14;
+  }
+
+  .display.has-focus .track.is-focus {
+    stroke-width: 5;
+  }
+
+  .hub-core {
+    fill: var(--e-hub);
+  }
+
+  .hub-ring {
+    fill: none;
+    stroke: var(--e-hub);
+    stroke-width: 1.4;
+    opacity: 0.45;
+  }
+
+  .hub-label {
+    font-family: var(--e-text);
+    font-size: 19px;
+    font-weight: 700;
+    font-variation-settings: "wdth" 110;
+    fill: var(--e-hub-ink);
+  }
+
+  .people {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .person-slot {
+    position: absolute;
+    transform: translate(-50%, -50%);
+  }
+
+  .person {
+    pointer-events: auto;
+    display: grid;
+    justify-items: center;
+    padding: 0.2rem 0.35rem;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    font: inherit;
+    color: var(--e-ink);
+    cursor: pointer;
+  }
+
+  .person-name,
+  .person-offer {
+    -webkit-text-stroke: 0.32em var(--e-ground);
+    paint-order: stroke fill;
+    white-space: nowrap;
+  }
+
+  .person-name {
+    font-size: clamp(0.8rem, 2.7cqi, 1rem);
+    font-weight: 700;
+    font-variation-settings: "wdth" 104;
+    line-height: 1.15;
+    text-decoration: underline 2px transparent;
+    text-underline-offset: 0.25em;
+    transition: text-decoration-color 180ms ease;
+  }
+
+  .person-offer {
+    font-size: clamp(0.68rem, 2cqi, 0.8rem);
+    font-weight: 600;
+    font-variation-settings: "wdth" 76;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+  }
+
+  .person-model .person-offer {
+    color: var(--e-model);
+  }
+
+  .person-harness .person-offer {
+    color: var(--e-harness);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .person:hover .person-name {
+      text-decoration-color: var(--e-line-2);
+    }
+  }
+
+  .person-model[aria-pressed="true"] .person-name {
+    text-decoration-color: var(--e-model);
+  }
+
+  .person-harness[aria-pressed="true"] .person-name {
+    text-decoration-color: var(--e-harness);
+  }
+
+  .person-you {
+    cursor: default;
+  }
+
+  .person-you .person-offer {
+    color: var(--e-ink-2);
+  }
+
+  .you-slot {
+    opacity: 0;
+  }
+
+  .display[data-mode="one"] .person-slot:not(.you-slot) .person {
+    pointer-events: none;
+  }
+
+  .readouts {
+    margin: 0;
+    display: flex;
+    gap: clamp(1rem, 2.4vw, 1.75rem);
+  }
+
+  .readouts div {
+    display: grid;
+    gap: 0.05rem;
+  }
+
+  .readouts dt {
+    font-size: 0.72rem;
+    font-weight: 600;
+    font-variation-settings: "wdth" 78;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--e-ink-3);
+  }
+
+  .readouts dd {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+
+
+  .readouts dd.flip {
+    animation: readout-flip 260ms var(--ease-out);
+  }
+
+  @keyframes readout-flip {
+    from {
+      opacity: 0;
+      transform: translateY(-0.3em);
+    }
+  }
+
+  .inspect {
+    flex: 1 1 18rem;
+    max-width: 26rem;
+    min-height: 4.4rem;
+    font-size: 0.86rem;
+    line-height: 1.45;
+    color: var(--e-ink-2);
+  }
+
+  .inspect p {
+    margin: 0;
+  }
+
+  .inspect-card[hidden],
+  .inspect-empty[hidden] {
+    display: none;
+  }
+
+  .inspect-card {
+    display: grid;
+    gap: 0.2rem;
+    animation: inspect-in 220ms var(--ease-out);
+  }
+
+  @keyframes inspect-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+
+  .inspect-who b {
+    color: var(--e-ink);
+  }
+
+  .inspect-k {
+    display: inline-block;
+    min-width: 4.2rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    font-variation-settings: "wdth" 78;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .k-cross {
+    color: var(--e-harness);
+  }
+
+  .k-stay {
+    color: var(--e-stop);
+  }
+
+  .inspect code {
+    font-size: 0.8rem;
+  }
+
+  /* Before the intro runs, everything that draws in starts hidden. Without JS
+     or with reduced motion, the final frame shows as is. */
+  @media (prefers-reduced-motion: no-preference) {
+    :global(html.ed-js) .display:not(.is-ready) .track,
+    :global(html.ed-js) .display:not(.is-ready) .person-slot,
+    :global(html.ed-js) .display:not(.is-ready) .wedge {
+      opacity: 0;
+    }
+
+    :global(html.ed-js) .display:not(.is-ready) .ring-layer {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+
+    .ring-layer {
+      transform-origin: 0 0;
+      transition: opacity 700ms var(--ease-out), transform 900ms var(--ease-out);
+    }
+  }
+
+  @media (max-width: 44rem) {
+    .ring-label {
+      font-size: 40px;
+      stroke-width: 12px;
+    }
+
+    .hub-label {
+      font-size: 32px;
+    }
+
+    .readouts dd {
+      font-size: 1.25rem;
+    }
+
+    .display-foot {
+      align-items: flex-start;
+    }
+  }
+</style>
+
+<script>
+  import { BEND, BUNDLE, OUTER, R_LABEL, toPercent, trackPath, YOU } from "./geometry";
+
+  type Mode = "one" | "many";
+
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
+  const EASE_IN_OUT = "cubic-bezier(0.77, 0, 0.175, 1)";
+
+  // cubic-bezier(0.77, 0, 0.175, 1), solved numerically for rAF-driven morphs.
+  const easeInOut = (() => {
+    const [p1x, p1y, p2x, p2y] = [0.77, 0, 0.175, 1];
+    const cx = 3 * p1x;
+    const bx = 3 * (p2x - p1x) - cx;
+    const ax = 1 - cx - bx;
+    const cy = 3 * p1y;
+    const by = 3 * (p2y - p1y) - cy;
+    const ay = 1 - cy - by;
+    return (p: number) => {
+      let t = p;
+      for (let i = 0; i < 6; i++) {
+        const x = ((ax * t + bx) * t + cx) * t - p;
+        const d = (3 * ax * t + 2 * bx) * t + cx;
+        if (Math.abs(d) < 1e-6) break;
+        t -= x / d;
+      }
+      t = Math.min(1, Math.max(0, t));
+      return ((ay * t + by) * t + cy) * t;
+    };
+  })();
+
+  const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+
+  const display = document.querySelector<HTMLElement>(".display");
+
+  if (display) {
+    const tracks = [...display.querySelectorAll<SVGPathElement>(".track")];
+    const comets = [...display.querySelectorAll<SVGGElement>(".comet")];
+    const wedges = [...display.querySelectorAll<SVGPathElement>(".wedge")];
+    const slots = [...display.querySelectorAll<HTMLElement>("[data-person-slot]")];
+    const youSlot = display.querySelector<HTMLElement>(".you-slot");
+    const modeButtons = [...display.querySelectorAll<HTMLButtonElement>("[data-set-mode]")];
+    const personButtons = [...display.querySelectorAll<HTMLButtonElement>("[data-person]")];
+    const inspectCards = [...display.querySelectorAll<HTMLElement>("[data-inspect]")];
+    const inspectEmpty = display.querySelector<HTMLElement>("[data-inspect-empty]");
+    const ids = tracks.map((t) => t.dataset.track ?? "");
+
+    // e = 0 is "one person" (a bundle at the bottom), e = 1 is "many people".
+    let e = 1;
+    let mode: Mode = "many";
+    let frame = 0;
+    let focusId: string | null = null;
+    let userTookOver = false;
+    let visible = true;
+
+    const origins = (k: number) =>
+      OUTER.map((target, i) => {
+        const start = YOU + BUNDLE[i];
+        // Outer tracks travel further; stagger their start so the bundle
+        // peels open from the middle outward.
+        const delay = Math.abs(i - 2.5) * 0.06;
+        const local = clamp01((k - delay * (1 - k)) / (1 - delay * 0.5));
+        return start + (target - start) * local;
+      });
+
+    const render = () => {
+      const o = origins(e);
+      tracks.forEach((t, i) => {
+        const d = trackPath(o[i], BEND);
+        t.setAttribute("d", d);
+        for (const p of comets[i].querySelectorAll("path")) p.setAttribute("d", d);
+        const wedgeAngle = YOU + (OUTER[i] - YOU) * e;
+        wedges[i].setAttribute("transform", `rotate(${wedgeAngle.toFixed(2)})`);
+        const pos = toPercent(R_LABEL, o[i]);
+        slots[i].style.left = `${pos.left.toFixed(2)}%`;
+        slots[i].style.top = `${pos.top.toFixed(2)}%`;
+        slots[i].style.opacity = String(clamp01((e - 0.55) / 0.4));
+        // Hidden labels must not take focus in 1 -> N.
+        slots[i].inert = e < 0.55;
+      });
+      if (youSlot) youSlot.style.opacity = String(clamp01(1 - e * 2.2));
+    };
+
+    const flip = (key: string, value: string) => {
+      const el = display.querySelector<HTMLElement>(`[data-r="${key}"]`);
+      if (!el || el.textContent === value) return;
+      el.textContent = value;
+      el.classList.remove("flip");
+      void el.offsetWidth;
+      el.classList.add("flip");
+    };
+
+    const setReadouts = (m: Mode) => {
+      const many = m === "many";
+      flip("people", many ? "6" : "1");
+      flip("machines", many ? "6" : "1");
+      flip("keys", many ? "6" : "1");
+    };
+
+    const setFocus = (id: string | null) => {
+      focusId = id;
+      display.classList.toggle("has-focus", id !== null);
+      tracks.forEach((t) => t.classList.toggle("is-focus", t.dataset.track === id));
+      personButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.person === id)));
+      inspectCards.forEach((c) => {
+        c.hidden = c.dataset.inspect !== id;
+      });
+      if (inspectEmpty) inspectEmpty.hidden = id !== null;
+    };
+
+    const setMode = (next: Mode, animate: boolean) => {
+      if (next === mode && animate) return;
+      mode = next;
+      display.dataset.mode = next;
+      modeButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.setMode === next)));
+      setFocus(null);
+      cancelAnimationFrame(frame);
+      const from = e;
+      const to = next === "many" ? 1 : 0;
+      let flipped = false;
+      if (!animate || reduce.matches) {
+        e = to;
+        render();
+        setReadouts(next);
+        return;
+      }
+      const start = performance.now();
+      const duration = 1500;
+      const step = (now: number) => {
+        const p = clamp01((now - start) / duration);
+        e = from + (to - from) * easeInOut(p);
+        render();
+        if (!flipped && p > 0.45) {
+          flipped = true;
+          setReadouts(next);
+        }
+        if (p < 1) frame = requestAnimationFrame(step);
+      };
+      frame = requestAnimationFrame(step);
+    };
+
+    /* comets: the hub dispatches outward, the answer streams back in */
+
+    const HEAD = 14;
+    const TAIL = 110;
+
+    const comet = (i: number, outward: boolean, delay = 0) => {
+      if (reduce.matches) return;
+      const [tail, head] = [...comets[i].querySelectorAll<SVGPathElement>("path")];
+      const len = tracks[i].getTotalLength();
+      const gap = len + TAIL + 40;
+      // Path runs machine -> hub. A dash at [a, a + D] needs offset -a.
+      const from = outward ? len : -HEAD;
+      const to = outward ? -TAIL : len + TAIL;
+      const duration = 1100;
+      const opts = { duration, delay, easing: EASE_IN_OUT, fill: "none" as const };
+      head.style.strokeDasharray = `${HEAD} ${gap}`;
+      tail.style.strokeDasharray = `${TAIL} ${gap}`;
+      const tailShift = outward ? 0 : TAIL - HEAD;
+      head.animate(
+        [
+          { strokeDashoffset: -from, opacity: 1 },
+          { strokeDashoffset: -to, opacity: 1 },
+        ],
+        opts
+      );
+      tail.animate(
+        [
+          { strokeDashoffset: -(from - tailShift), opacity: outward ? 0.4 : 0.25 },
+          { strokeDashoffset: -(to - tailShift), opacity: outward ? 0.4 : 0.25 },
+        ],
+        opts
+      );
+      if (outward) {
+        // The request reaches the machine, where the key is added.
+        wedges[i].animate([{ opacity: 1 }, { opacity: 0.35 }, { opacity: 1 }], {
+          duration: 520,
+          delay: delay + duration * 0.72,
+          easing: "ease",
+        });
+      }
+    };
+
+    const roundTrip = (i: number, delay = 0) => {
+      comet(i, true, delay);
+      comet(i, false, delay + 1250);
+    };
+
+    let ambient = 0;
+    const startAmbient = () => {
+      window.clearInterval(ambient);
+      if (reduce.matches) return;
+      ambient = window.setInterval(() => {
+        if (!visible || document.hidden || mode !== "many") return;
+        const pool = focusId ? [ids.indexOf(focusId)] : ids.map((_, i) => i);
+        const pick = pool[Math.floor(Math.random() * pool.length)];
+        if (pick !== undefined && pick >= 0) roundTrip(pick);
+      }, 1500);
+    };
+
+    modeButtons.forEach((b) =>
+      b.addEventListener("click", () => {
+        userTookOver = true;
+        setMode(b.dataset.setMode as Mode, true);
+      })
+    );
+
+    personButtons.forEach((b) =>
+      b.addEventListener("click", () => {
+        userTookOver = true;
+        const id = b.dataset.person ?? null;
+        setFocus(focusId === id ? null : id);
+        if (focusId) roundTrip(ids.indexOf(focusId));
+      })
+    );
+
+    new IntersectionObserver(
+      (entries) => {
+        visible = entries.some((en) => en.isIntersecting);
+      },
+      { threshold: 0.1 }
+    ).observe(display);
+
+    /* intro: one person's bundle draws in, then it opens to many people */
+
+    const intro = () => {
+      if (reduce.matches) {
+        display.classList.add("is-ready");
+        return;
+      }
+      e = 0;
+      mode = "one";
+      display.dataset.mode = "one";
+      modeButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.setMode === "one")));
+      setReadouts("one");
+      render();
+      display.classList.add("is-ready");
+      tracks.forEach((t, i) => {
+        const len = t.getTotalLength();
+        t.animate(
+          [
+            { strokeDasharray: `${len} ${len}`, strokeDashoffset: len },
+            { strokeDasharray: `${len} ${len}`, strokeDashoffset: 0 },
+          ],
+          { duration: 900, delay: 300 + i * 45, easing: EASE_OUT, fill: "backwards" }
+        );
+      });
+      wedges.forEach((w) =>
+        w.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 500, delay: 250, easing: "ease", fill: "backwards" })
+      );
+      // Your one machine sends work down all six of its tracks at once.
+      tracks.forEach((_, i) => comet(i, true, 1350 + i * 40));
+      window.setTimeout(() => {
+        if (!userTookOver) setMode("many", true);
+        startAmbient();
+      }, 2900);
+    };
+
+    if (document.readyState === "complete") intro();
+    else window.addEventListener("load", intro, { once: true });
+  }
+</script>

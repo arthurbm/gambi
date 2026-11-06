@@ -1,0 +1,248 @@
+<!doctype html>
+<!--
+  Source for public/og.png, the link-preview card for gambi.sh.
+  It redraws the landing's hero display (src/components/lander/geometry.ts)
+  in its N <-> N state. Re-render after design changes, from apps/docs:
+
+    google-chrome --headless=new --hide-scrollbars --window-size=1200,630 \
+      --virtual-time-budget=2000 --screenshot=public/og.png \
+      "file://$PWD/og/card.html"
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Gambi link preview</title>
+    <style>
+    @font-face {
+      font-family: "Archivo Variable";
+      src: url("../node_modules/@fontsource-variable/archivo/files/archivo-latin-wdth-normal.woff2")
+        format("woff2-variations");
+      font-weight: 100 900;
+      font-stretch: 62% 125%;
+    }
+
+    :root {
+      --ground: #17191c;
+      --ink: #eceef1;
+      --ink-3: #939aa5;
+      --steel: #56626f;
+      --model: #f2cf3a;
+      --harness: #4fd1e8;
+      --stop: #ef5a44;
+      --hub: #e7ecf3;
+    }
+
+    * {
+      margin: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 1200px;
+      height: 630px;
+      overflow: hidden;
+      background: var(--ground);
+      color: var(--ink);
+      font-family: "Archivo Variable", sans-serif;
+      display: grid;
+      grid-template-columns: 650px 550px;
+      align-items: center;
+    }
+
+    .copy {
+      padding: 0 0 0 72px;
+      display: grid;
+      gap: 34px;
+    }
+
+    .mark {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 30px;
+      font-weight: 700;
+      font-variation-settings: "wdth" 118;
+    }
+
+    .mark svg {
+      width: 32px;
+      height: 32px;
+      fill: none;
+      stroke: var(--ink);
+      stroke-width: 1.6;
+    }
+
+    .mark svg circle:nth-child(2) {
+      fill: var(--model);
+      stroke: none;
+    }
+
+    h1 {
+      font-size: 54px;
+      line-height: 1.03;
+      font-weight: 680;
+      font-variation-settings: "wdth" 108;
+      letter-spacing: -0.03em;
+    }
+
+    h1 span {
+      display: block;
+      text-wrap: balance;
+    }
+
+    h1 .one {
+      color: var(--ink-3);
+    }
+
+    h1 .many {
+      margin-top: 8px;
+    }
+
+    .url {
+      font-size: 22px;
+      font-weight: 600;
+      font-variation-settings: "wdth" 90;
+      color: var(--ink-3);
+      letter-spacing: 0.02em;
+    }
+
+    .rings {
+      width: 550px;
+      height: 550px;
+    }
+
+    .ring {
+      fill: none;
+      stroke: var(--steel);
+      stroke-width: 1.6;
+      opacity: 0.75;
+    }
+
+    .band {
+      fill: none;
+      stroke: var(--steel);
+      stroke-width: 30;
+      opacity: 0.3;
+    }
+
+    .dash {
+      stroke-dasharray: 2 8;
+    }
+
+    .track {
+      fill: none;
+      stroke-width: 5;
+      stroke-linecap: round;
+    }
+
+    .wedge {
+      fill: var(--stop);
+    }
+
+    .name {
+      font-size: 34px;
+      font-weight: 700;
+      font-variation-settings: "wdth" 104;
+      fill: var(--ink);
+    }
+
+    .offer {
+      font-size: 26px;
+      font-weight: 600;
+      font-variation-settings: "wdth" 76;
+    }
+
+    .hub-label {
+      font-size: 24px;
+      font-weight: 700;
+      fill: #17191c;
+    }
+    </style>
+  </head>
+  <body>
+    <div class="copy">
+      <p class="mark">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="10.5"></circle>
+          <circle cx="12" cy="12" r="2.6"></circle>
+          <path d="M3.6 7.4Q8 9 10 11M20.4 7.4Q16 9 14 11M12 22V14.6"></path>
+        </svg>
+        Gambi
+      </p>
+      <h1>
+        <span class="one">Agent tools are built for one person.</span>
+        <span class="many">Gambi is built for many.</span>
+      </h1>
+      <p class="url">gambi.sh</p>
+    </div>
+    <svg class="rings" viewBox="-640 -640 1220 1280" aria-hidden="true">
+      <g id="g"></g>
+    </svg>
+    <script>
+    "use strict";
+    // Same numbers as src/components/lander/geometry.ts.
+    const R_MACHINE = 392;
+    const R_HUB = 46;
+    const OUTER = [-60, 0, 60, 120, 180, 240];
+    const BEND = 14;
+    const people = [
+      ["Arthur", "llama3", "model"],
+      ["Bia", "claude-code", "harness"],
+      ["Lu", "qwen2.5-coder", "model"],
+      ["Caio", "codex", "harness"],
+      ["Tati", "llama-3.3-70b", "model"],
+      ["Duda", "opencode", "harness"],
+    ];
+    const polar = (r, deg) => {
+      const a = (deg * Math.PI) / 180;
+      return [r * Math.cos(a), r * Math.sin(a)];
+    };
+    const f = (n) => n.toFixed(1);
+    const g = document.getElementById("g");
+    const add = (html) => g.insertAdjacentHTML("beforeend", html);
+
+    add(`<circle class="band" r="${R_MACHINE + 15}"/>`);
+    add(`<circle class="ring" r="${R_MACHINE + 30}"/>`);
+    add(`<circle class="ring" r="${R_MACHINE}"/>`);
+    add(`<circle class="ring dash" r="300"/>`);
+    add(`<circle class="ring dash" r="210"/>`);
+
+    people.forEach(([name, offer, kind], i) => {
+      const o = OUTER[i];
+      const [x0, y0] = polar(R_MACHINE, o);
+      const [cx, cy] = polar(236, o + BEND);
+      const [x1, y1] = polar(R_HUB + 4, o + BEND * 1.6);
+      const color = kind === "model" ? "var(--model)" : "var(--harness)";
+      add(
+        `<path class="track" stroke="${color}" d="M${f(x0)} ${f(y0)} Q${f(cx)} ${f(cy)} ${f(x1)} ${f(y1)}"/>`
+      );
+      const [ax, ay] = polar(R_MACHINE + 2, o - 5.5);
+      const [bx, by] = polar(R_MACHINE + 28, o - 5.5);
+      const [ccx, ccy] = polar(R_MACHINE + 28, o + 5.5);
+      const [dx, dy] = polar(R_MACHINE + 2, o + 5.5);
+      add(
+        `<path class="wedge" d="M${f(ax)} ${f(ay)} L${f(bx)} ${f(by)} A${R_MACHINE + 28} ${R_MACHINE + 28} 0 0 1 ${f(ccx)} ${f(ccy)} L${f(dx)} ${f(dy)} A${R_MACHINE + 2} ${R_MACHINE + 2} 0 0 0 ${f(ax)} ${f(ay)}Z"/>`
+      );
+      const [lx, ly] = polar(494, o);
+      let anchor = "middle";
+      let shift = 0;
+      if (Math.abs(lx) >= 60) {
+        anchor = lx > 0 ? "start" : "end";
+        shift = lx > 0 ? -40 : 40;
+      }
+      add(
+        `<text class="name" x="${f(lx + shift)}" y="${f(ly - 4)}" text-anchor="${anchor}">${name}</text>`
+      );
+      add(
+        `<text class="offer" x="${f(lx + shift)}" y="${f(ly + 28)}" text-anchor="${anchor}" fill="${color}">${offer}</text>`
+      );
+    });
+
+    add(
+      `<circle r="${R_HUB + 12}" fill="none" stroke="var(--hub)" stroke-width="1.6" opacity="0.45"/>`
+    );
+    add(`<circle r="${R_HUB}" fill="var(--hub)"/>`);
+    add(`<text class="hub-label" y="8" text-anchor="middle">hub</text>`);
+    </script>
+  </body>
+</html>

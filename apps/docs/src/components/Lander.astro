@@ -1,287 +1,45 @@
 ---
-import "@fontsource/bungee/400.css";
 import "@fontsource-variable/archivo/wdth.css";
 import "@fontsource-variable/jetbrains-mono/index.css";
-import { Code } from "astro:components";
 import CheckIcon from "../assets/lander/check.svg";
 import CopyIcon from "../assets/lander/copy.svg";
+import CodeSection from "./lander/CodeSection.astro";
+import Compare from "./lander/Compare.astro";
+import Display from "./lander/Display.astro";
+import Examples from "./lander/Examples.astro";
+import Wiring from "./lander/Wiring.astro";
 
-const install = {
-  curl: "curl -fsSL https://gambi.sh/install | bash",
-  npm: "npm install -g gambi",
-  bun: "bun add -g gambi",
-};
-
-interface Stall {
-  id: string;
-  name: string;
-  kind: "model" | "harness";
-  offer: string;
-  via: string;
-  join: string;
-  down: [string, string][];
-  stays: string[];
-}
-
-// Example room. Names, models, and addresses are illustrative; every command,
-// flag, and frame type is the real one from packages/cli and packages/core.
-const stalls: Stall[] = [
-  {
-    id: "arthur-ollama",
-    name: "Arthur",
-    kind: "model",
-    offer: "llama3",
-    via: "Ollama on localhost:11434",
-    join: `gambi participant join \\
-  --room ABC123 \\
-  --participant-id arthur-ollama \\
-  --name Arthur \\
-  --model llama3 \\
-  --endpoint http://localhost:11434`,
-    down: [
-      [
-        "tunnel.request",
-        "An OpenAI-compatible call for llama3, replayed against localhost.",
-      ],
-      [
-        "tunnel.response.chunk",
-        "The streamed answer goes back up the same socket.",
-      ],
-    ],
-    stays: [
-      "Ollama keeps listening on loopback. The hub never calls it.",
-      "No provider key exists, so none is sent.",
-    ],
-  },
-  {
-    id: "bia-claude",
-    name: "Bia",
-    kind: "harness",
-    offer: "claude-code",
-    via: "Claude Code through claude-agent-acp",
-    join: `gambi participant join \\
-  --room ABC123 \\
-  --participant-id bia-claude \\
-  --name Bia \\
-  --harness claude-code`,
-    down: [
-      [
-        "tunnel.harness.message",
-        "ACP v1 JSON-RPC. The hub relays it without reading it.",
-      ],
-      [
-        "tunnel.harness.artifact",
-        "Changed workspace files, sent back up as a versioned snapshot.",
-      ],
-    ],
-    stays: [
-      "Her Claude login. The CLI checks it locally before joining.",
-      "The harness itself, running in ~/.gambi/workspaces/ABC123/bia-claude/.",
-    ],
-  },
-  {
-    id: "lu-vllm",
-    name: "Lu",
-    kind: "model",
-    offer: "qwen2.5-coder",
-    via: "vLLM on 127.0.0.1:8000",
-    join: `gambi participant join \\
-  --room ABC123 \\
-  --participant-id lu-vllm \\
-  --name Lu \\
-  --model qwen2.5-coder \\
-  --endpoint http://127.0.0.1:8000 \\
-  --header-env Authorization=VLLM_AUTH`,
-    down: [
-      [
-        "tunnel.request",
-        "Routed here when an app asks for model:qwen2.5-coder.",
-      ],
-      [
-        "tunnel.response.end",
-        "Closes the stream, with timing for the room's events.",
-      ],
-    ],
-    stays: [
-      "The Authorization header from VLLM_AUTH. It is added only to the local call.",
-      "vLLM's port, which nobody outside this laptop has to reach.",
-    ],
-  },
-  {
-    id: "caio-codex",
-    name: "Caio",
-    kind: "harness",
-    offer: "codex",
-    via: "Codex CLI through codex-acp",
-    join: `gambi participant join \\
-  --room ABC123 \\
-  --participant-id caio-codex \\
-  --name Caio \\
-  --harness codex \\
-  --workspace ./my-project`,
-    down: [
-      [
-        "tunnel.harness.control",
-        "Opens or closes a harness session for the attached app.",
-      ],
-      [
-        "tunnel.harness.status",
-        "Reports opened, closed, or error back to that app.",
-      ],
-    ],
-    stays: [
-      "His Codex login, verified with codex login status.",
-      "./my-project, the checkout he chose. The hub cannot write files into it.",
-    ],
-  },
-  {
-    id: "tati-openrouter",
-    name: "Tati",
-    kind: "model",
-    offer: "llama-3.3-70b",
-    via: "OpenRouter, called from Tati's laptop",
-    join: `gambi participant join \\
-  --room ABC123 \\
-  --participant-id tati-openrouter \\
-  --name Tati \\
-  --model meta-llama/llama-3.3-70b-instruct \\
-  --endpoint https://openrouter.ai/api \\
-  --header-env Authorization=OPENROUTER_AUTH`,
-    down: [
-      [
-        "tunnel.request",
-        "Forwarded by her runtime to OpenRouter with her key attached.",
-      ],
-      [
-        "tunnel.response.chunk",
-        "Tokens stream back through her tunnel, not around it.",
-      ],
-    ],
-    stays: [
-      "Her OpenRouter key, read from OPENROUTER_AUTH. It goes only to OpenRouter.",
-      "The bill. Each person pays for what their own stall serves.",
-    ],
-  },
-  {
-    id: "duda-opencode",
-    name: "Duda",
-    kind: "harness",
-    offer: "opencode",
-    via: "opencode acp",
-    join: `gambi participant join \\
-  --room ABC123 \\
-  --participant-id duda-opencode \\
-  --name Duda \\
-  --harness opencode`,
-    down: [
-      [
-        "tunnel.harness.message",
-        "Prompts and tool updates for one ACP session.",
-      ],
-      [
-        "tunnel.harness.artifact",
-        "Workspace files, minus .git and node_modules.",
-      ],
-    ],
-    stays: [
-      "The provider credentials OpenCode already has configured.",
-      "Ctrl+C closes the harness and leaves the room in one go.",
-    ],
-  },
-];
-
-const patterns = [
-  { title: "Model arena", href: "/guides/patterns/#model-arena" },
-  { title: "Jury panel", href: "/guides/patterns/#jury-panel" },
-  {
-    title: "Draft, critique, polish",
-    href: "/guides/patterns/#draft-critique-polish",
-  },
-  { title: "Debate club", href: "/guides/patterns/#debate-club" },
-  {
-    title: "Multi-persona NPCs",
-    href: "/guides/patterns/#multi-persona-npcs",
-  },
-  { title: "LAN debate club", href: "/guides/patterns/#lan-debate-club" },
-];
-
-const modelSnippet = `import { generateText } from "ai";
-import { createGambi } from "gambi-sdk";
-
-const gambi = createGambi({
-  roomCode: "ABC123",
-  hubUrl: "http://192.168.1.10:3000",
-});
-
-// any model stall in the room
-const draft = await generateText({
-  model: gambi.any(),
-  prompt: "Draft the release note for v0.7.",
-});
-
-// or one model, by name
-const review = await generateText({
-  model: gambi.model("llama3"),
-  prompt: \`Tighten this: \${draft.text}\`,
-});`;
-
-const harnessSnippet = `import { createClient } from "gambi-sdk";
-
-const client = createClient({
-  hubUrl: "http://192.168.1.10:3000",
-});
-
-const channel = await client.harness.attach({
-  roomCode: "ABC123",
-  participantId: "bia-claude",
-});
-
-channel.send({
-  type: "tunnel.harness.control",
-  sessionId: "release-notes",
-  action: "open",
-});
-
-// ACP v1 JSON-RPC from here on; the hub never parses it
-for await (const frame of channel.messages) {
-  if (frame.type === "tunnel.harness.artifact") {
-    console.log(frame.version, frame.files.map((f) => f.path));
-  }
-}`;
-
-const firstJoin = `gambi participant join \\
-  --room ABC123 \\
-  --participant-id arthur-opencode \\
-  --name Arthur \\
-  --harness opencode`;
+const install = "curl -fsSL https://gambi.sh/install | bash";
 
 // Evaluated once at build time (SSG): shows the deploy date.
 const deployDate = new Date().toISOString().slice(0, 10);
 ---
 
-<div class="feira">
-  <header class="canopy">
-    <nav class="canopy-bar" aria-label="Gambi">
-      <a class="canopy-mark" href="/" aria-label="Gambi home">Gambi</a>
-      <ul class="canopy-links">
+<script is:inline>
+  document.documentElement.classList.add("ed-js");
+</script>
+
+<div class="ed">
+  <header class="ed-nav">
+    <nav class="ed-nav-bar" aria-label="Gambi">
+      <a class="ed-mark" href="/" aria-label="Gambi home">
+        <svg viewBox="0 0 24 24" aria-hidden="true" class="ed-mark-glyph">
+          <circle cx="12" cy="12" r="10.5"></circle>
+          <circle cx="12" cy="12" r="2.6"></circle>
+          <path d="M3.6 7.4Q8 9 10 11M20.4 7.4Q16 9 14 11M12 22V14.6"></path>
+        </svg>
+        Gambi
+      </a>
+      <ul class="ed-links">
         <li><a href="/guides/quickstart/">Docs</a></li>
-        <li class="hide-sm"><a href="/guides/bring-your-harness/">Harness guide</a></li>
+        <li class="hide-sm"><a href="/guides/patterns/">Patterns</a></li>
         <li class="hide-sm"><a href="/reference/sdk/">SDK</a></li>
+        <li><a href="https://github.com/arthurbm/gambi" rel="noopener">GitHub</a></li>
         <li>
-          <a href="https://github.com/arthurbm/gambi" rel="noopener">GitHub</a>
-        </li>
-        <li>
-          <button
-            class="theme-toggle"
-            type="button"
-            aria-label="Switch between day and night"
-            title="Switch between day and night"
-          >
+          <button class="theme-toggle" type="button" aria-label="Switch between light and dark" title="Switch between light and dark">
             <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="12" cy="12" r="4.2"></circle>
-              <path
-                d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3l1.7 1.7M17 17l1.7 1.7M5.3 18.7 7 17M17 7l1.7-1.7"
-              ></path>
+              <path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3l1.7 1.7M17 17l1.7 1.7M5.3 18.7 7 17M17 7l1.7-1.7"></path>
             </svg>
             <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M19.5 14.6A8 8 0 0 1 9.4 4.5a8 8 0 1 0 10.1 10.1Z"></path>
@@ -292,395 +50,72 @@ const deployDate = new Date().toISOString().slice(0, 10);
     </nav>
   </header>
 
-  <main class="lander-main">
+  <main class="ed-main">
     <section class="hero" aria-labelledby="hero-title">
-      <h1 id="hero-title" class="painted hero-title">
-        <span class="line line-model">Bring your model.</span>
-        <span class="line line-harness">Bring your harness.</span>
-        <span class="line line-keys">Keep your keys.</span>
-      </h1>
-
-      <p class="lede">
-        Gambi is a local-first hub for a network you trust. Each participant
-        dials out to it from its own machine and shares an OpenAI-compatible
-        model or a coding harness such as Claude Code, Codex, or OpenCode. The
-        hub sends work down that tunnel. It never opens a connection to you.
-      </p>
-
-      <div class="actions">
-        <div class="till">
-          <span class="till-label" id="till-label">Install</span>
-          <button
-            class="cmd"
-            type="button"
-            data-command={install.curl}
-            aria-describedby="till-label"
-          >
-            <code>{install.curl}</code>
-            <span class="copy-icon" aria-hidden="true">
-              <CopyIcon />
-              <CheckIcon />
-            </span>
+      <div class="hero-copy">
+        <h1 id="hero-title" class="hero-title">
+          <span class="ht-one">Agent tools are built for one person.</span>
+          <span class="ht-many">Gambi is built for many.</span>
+        </h1>
+        <p class="lede">
+          Each person connects the agents and models already running on their
+          own machine, such as Claude Code, Codex, OpenCode, Ollama, or vLLM.
+          Your app reaches all of them through one hub. Keys and logins never
+          leave the machine they live on.
+        </p>
+        <div class="actions">
+          <button class="cmd" type="button" data-command={install} aria-label="Copy the install command">
+            <span class="cmd-prompt" aria-hidden="true">$</span>
+            <code>{install}</code>
+            <span class="copy-icon" aria-hidden="true"><CopyIcon /><CheckIcon /></span>
             <span class="sr-only copy-status" aria-live="polite"></span>
           </button>
-        </div>
-        <a class="btn btn-paint" href="/guides/quickstart/">Quick start</a>
-        <a class="btn btn-filete" href="/guides/bring-your-harness/"
-          >Bring your harness</a
-        >
-      </div>
-    </section>
-
-    <section class="aisle" aria-labelledby="aisle-title">
-      <h2 id="aisle-title" class="sr-only">An example room</h2>
-      <div class="beam">
-        <div class="tarp" aria-hidden="true"></div>
-        <div class="beam-plate">
-        <span class="beam-name">Gambi hub</span>
-        <span class="beam-note">
-          Example room <code>ABC123</code>. Six made-up stalls, each plugged
-          in from its own laptop. Pick one to see its tunnel.
-        </span>
-        </div>
-        <div class="hem" aria-hidden="true"></div>
-      </div>
-
-      <ul class="stalls">
-        {
-          stalls.map((s, i) => (
-            <li class:list={["stall-slot", `kind-${s.kind}`]} style={`--i: ${i}`}>
-              <span class="cord" aria-hidden="true">
-                <span class="token" />
-              </span>
-              <button
-                class="stall"
-                type="button"
-                aria-pressed={i === 0 ? "true" : "false"}
-                aria-controls="stall-detail"
-                data-stall={s.id}
-              >
-                <span class="stall-roof" aria-hidden="true" />
-                <span class="stall-name">{s.name}</span>
-                <code class="stall-offer">{s.offer}</code>
-                <span class="stall-kind">
-                  {s.kind === "model" ? "Model" : "Harness · ACP"}
-                </span>
-                <span class="stall-state">
-                  <span class="lamp" aria-hidden="true" />
-                  tunnel open
-                </span>
-              </button>
-            </li>
-          ))
-        }
-      </ul>
-
-      <div class="stall-detail" id="stall-detail" aria-live="polite">
-        {
-          stalls.map((s, i) => (
-            <article
-              class="detail"
-              data-detail={s.id}
-              hidden={i !== 0}
-              aria-labelledby={`detail-${s.id}`}
-            >
-              <header class="detail-head">
-                <h3 id={`detail-${s.id}`} class="detail-title">
-                  {s.name}'s stall
-                </h3>
-                <p class="detail-via">{s.via}</p>
-              </header>
-              <div class="detail-cols">
-                <div class="detail-col">
-                  <h4 class="detail-sub">Down the tunnel</h4>
-                  <dl class="frames">
-                    {s.down.map(([frame, note]) => (
-                      <div class="frame-row">
-                        <dt>
-                          <code>{frame}</code>
-                        </dt>
-                        <dd>{note}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                </div>
-                <div class="detail-col">
-                  <h4 class="detail-sub">Stays at {s.name}'s stall</h4>
-                  <ul class="stays">
-                    {s.stays.map((line) => (
-                      <li>{line}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-              <Code class="join" code={s.join} lang="bash" theme="css-variables" />
-            </article>
-          ))
-        }
-      </div>
-    </section>
-
-    <section class="menu" aria-labelledby="menu-title">
-      <h2 id="menu-title" class="painted section-title">
-        Two kinds of stall, one canopy
-      </h2>
-      <p class="section-lead">
-        A participant shares either a model endpoint or a harness. Both join
-        with the same command and travel through the same kind of tunnel. What
-        crosses that tunnel is different.
-      </p>
-
-      <div class="boards">
-        <article class="board board-model" aria-labelledby="board-model">
-          <h3 id="board-model" class="board-title">Models</h3>
-          <p class="board-what">
-            Any OpenAI-compatible endpoint: Ollama, vLLM, LM Studio,
-            OpenRouter, or your own server.
-          </p>
-          <dl class="price-list">
-            <div><dt>Serves</dt><dd><code>/responses</code> and <code>/chat/completions</code></dd></div>
-            <div><dt>Picked by</dt><dd>participant id, <code>model:&lt;name&gt;</code>, or <code>*</code></dd></div>
-            <div><dt>Watched with</dt><dd><code>llm.request</code>, <code>llm.complete</code>, <code>llm.error</code></dd></div>
-            <div><dt>Reached by</dt><dd>apps on <code>/rooms/:code/v1</code></dd></div>
-          </dl>
-          <a class="board-link" href="/guides/quickstart/">Share a model</a>
-        </article>
-
-        <article class="board board-harness" aria-labelledby="board-harness">
-          <h3 id="board-harness" class="board-title">Harnesses</h3>
-          <p class="board-what">
-            Claude Code, Codex, or OpenCode, already logged in on your machine,
-            speaking ACP v1 through your tunnel.
-          </p>
-          <dl class="price-list">
-            <div><dt>Speaks</dt><dd>ACP v1, relayed opaque</dd></div>
-            <div><dt>Works in</dt><dd>a folder you pick with <code>--workspace</code>, or an empty one under <code>~/.gambi/workspaces/</code></dd></div>
-            <div><dt>Sends back</dt><dd>versioned workspace artifacts</dd></div>
-            <div><dt>Reached by</dt><dd>apps calling <code>client.harness.attach()</code></dd></div>
-          </dl>
-          <a class="board-link" href="/guides/bring-your-harness/"
-            >Bring your harness</a
-          >
-        </article>
-      </div>
-      <p class="menu-note">
-        Harness participants never take inference calls, and model routing
-        never picks them. Apps attach to a harness by participant id.
-      </p>
-    </section>
-
-    <section class="ledger" aria-labelledby="ledger-title">
-      <h2 id="ledger-title" class="painted section-title">
-        What crosses the tunnel, and what never leaves your machine
-      </h2>
-
-      <div class="ledger-book">
-        <table>
-          <caption class="sr-only">
-            What a participant sends to the hub, and what stays on the
-            participant machine
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Goes to the hub</th>
-              <th scope="col">Stays at your stall</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td data-label="Goes to the hub">Participant id, display name, model name, and a capability summary.</td>
-              <td data-label="Stays at your stall">
-                Provider auth headers set with <code>--header</code> or
-                <code>--header-env</code>. They are added only when your runtime
-                calls your provider.
-              </td>
-            </tr>
-            <tr>
-              <td data-label="Goes to the hub">The provider URL, as a label. The hub never calls it.</td>
-              <td data-label="Stays at your stall">
-                The provider itself. It can keep listening on
-                <code>localhost</code>.
-              </td>
-            </tr>
-            <tr>
-              <td data-label="Goes to the hub">Model responses, streamed back up the tunnel your runtime opened.</td>
-              <td data-label="Stays at your stall">
-                Your harness login. It is not part of registration, room
-                events, or tunnel frames.
-              </td>
-            </tr>
-            <tr>
-              <td data-label="Goes to the hub">ACP messages for an attached session, plus the workspace files your harness writes.</td>
-              <td data-label="Stays at your stall">
-                The harness process, its tools, and everything outside its
-                workspace folder. The hub cannot write files into that folder.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <aside class="aviso" aria-labelledby="aviso-title">
-        <h3 id="aviso-title" class="aviso-title">Trusted networks only</h3>
-        <p>
-          The hub has no built-in authentication. Run it on a network where
-          you trust everyone, such as your home, your lab, or the room your
-          club meets in.
-          <a href="/explanation/tunnel-first/">How the tunnel works</a>
-        </p>
-      </aside>
-    </section>
-
-    <section class="build" aria-labelledby="build-title">
-      <h2 id="build-title" class="painted section-title">
-        Gambi connects them. You write what happens between them.
-      </h2>
-
-      <div class="snippets">
-        <figure class="snippet">
-          <figcaption>
-            <span class="snippet-file">app.ts</span>
-            <span class="snippet-what">models, through the AI SDK</span>
-          </figcaption>
-          <Code class="snippet-code" code={modelSnippet} lang="ts" theme="css-variables" />
-        </figure>
-        <figure class="snippet">
-          <figcaption>
-            <span class="snippet-file">attach.ts</span>
-            <span class="snippet-what">a harness, through the management client</span>
-          </figcaption>
-          <Code class="snippet-code" code={harnessSnippet} lang="ts" theme="css-variables" />
-        </figure>
-      </div>
-
-      <div class="cardapio" aria-labelledby="cardapio-title">
-        <h3 id="cardapio-title" class="cardapio-title">Recipes on the board</h3>
-        <ul>
-          {
-            patterns.map((p) => (
-              <li>
-                <a href={p.href}>
-                  <span class="dish">{p.title}</span>
-                  <span class="leader" aria-hidden="true" />
-                  <span class="see">see the pattern</span>
-                </a>
-              </li>
-            ))
-          }
-        </ul>
-      </div>
-    </section>
-
-    <section class="layers" aria-labelledby="layers-title">
-      <h2 id="layers-title" class="painted section-title">
-        What Gambi handles, and what is still yours
-      </h2>
-      <p class="section-lead">
-        Gambi moves work between participants. Who talks when, what context
-        they share, and who reviews the result is still your code.
-      </p>
-
-      <ol class="layer-stack">
-        <li class="layer layer-yours">
-          <h3 class="layer-title">What you build</h3>
-          <p class="layer-body">
-            Arenas, jury panels, debate clubs, games with a model per
-            character, a squad of harnesses working one task.
-          </p>
-        </li>
-        <li class="layer layer-above">
-          <h3 class="layer-title">
-            The layer above <span class="tag tag-sketch">Being explored</span>
-          </h3>
-          <p class="layer-body">
-            Turn-taking, shared context, and orchestration across harnesses.
-            Nothing here is promised yet. One place it is being tried is
-            <a class="lab" href="https://github.com/arthurbm/gambiarra-lab" rel="noopener">gambiarra-lab</a>,
-            where the Gambiarra Club keeps experiments from its events, such as
-            an event board and its orchestrator.
-            <a href="/explanation/whats-next/">Where this is going</a>
-          </p>
-        </li>
-        <li class="layer layer-today">
-          <h3 class="layer-title">
-            Gambi today <span class="tag tag-today">Shipping</span>
-          </h3>
-          <p class="layer-body">
-            One hub. Models and harnesses from many machines, each through a
-            tunnel its owner opened, with live events for every request.
-          </p>
-        </li>
-      </ol>
-    </section>
-
-    <section class="setup" aria-labelledby="setup-title">
-      <h2 id="setup-title" class="painted section-title">
-        Put up the canopy
-      </h2>
-      <ol class="steps">
-        <li>
-          <h3 class="step-title">Install the CLI on each machine</h3>
-          <div class="install-row">
-            {
-              Object.entries(install).map(([tool, command]) => (
-                <button
-                  class="cmd cmd-small"
-                  type="button"
-                  data-command={command}
-                  aria-label={`Copy the ${tool} install command`}
-                >
-                  <code>{command}</code>
-                  <span class="copy-icon" aria-hidden="true">
-                    <CopyIcon />
-                    <CheckIcon />
-                  </span>
-                  <span class="sr-only copy-status" aria-live="polite" />
-                </button>
-              ))
-            }
+          <div class="action-row">
+            <a class="btn btn-primary" href="/guides/quickstart/">Get started</a>
+            <a class="btn-text" href="#how">
+              How it works
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6l5 5 5-5"></path></svg>
+            </a>
           </div>
-        </li>
-        <li>
-          <h3 class="step-title">Start the hub</h3>
-          <Code class="step-code" code="gambi hub serve" lang="bash" theme="css-variables" />
-        </li>
-        <li>
-          <h3 class="step-title">Open a room</h3>
-          <Code class="step-code" code='gambi room create --name "Demo"' lang="bash" theme="css-variables" />
-        </li>
-        <li>
-          <h3 class="step-title">Join from your own machine</h3>
-          <Code
-            class="step-code"
-            code={firstJoin}
-            lang="bash"
-            theme="css-variables"
-          />
-          <p class="step-note">
-            Sharing a model instead? Swap <code>--harness</code> for
-            <code>--model</code> and <code>--endpoint</code>.
-          </p>
-        </li>
-      </ol>
-      <div class="setup-actions">
-        <a class="btn btn-paint" href="/guides/quickstart/">Read the quick start</a>
-        <a class="btn btn-filete" href="/reference/cli/">CLI reference</a>
+        </div>
+      </div>
+      <Display />
+    </section>
+
+    <Compare />
+    <Wiring />
+    <Examples />
+    <CodeSection />
+
+    <section class="start" aria-labelledby="start-title">
+      <h2 id="start-title" class="section-title">Run your first session</h2>
+      <p class="section-lead">
+        Install the CLI on each machine, start the hub on one of them, and have
+        each person join from their own. The quick start walks through it in
+        four commands.
+      </p>
+      <div class="start-actions">
+        <button class="cmd" type="button" data-command={install} aria-label="Copy the install command">
+          <span class="cmd-prompt" aria-hidden="true">$</span>
+          <code>{install}</code>
+          <span class="copy-icon" aria-hidden="true"><CopyIcon /><CheckIcon /></span>
+          <span class="sr-only copy-status" aria-live="polite"></span>
+        </button>
+        <a class="btn btn-primary" href="/guides/quickstart/">Read the quick start</a>
       </div>
     </section>
   </main>
 
-  <footer class="lander-footer">
+  <footer class="ed-footer">
     <div class="footer-grid">
       <div class="footer-brand">
-        <p class="painted footer-mark">Gambi</p>
-        <p class="footer-tag">
-          Bring your model. Bring your harness. Keep your keys.
-        </p>
+        <p class="footer-mark">Gambi</p>
+        <p class="footer-tag">A hub for many people's agents and models, on a network you trust.</p>
       </div>
       <nav class="footer-col" aria-label="Guides">
         <p class="footer-label">Guides</p>
         <a href="/guides/quickstart/">Quick start</a>
-        <a href="/guides/bring-your-harness/">Bring your harness</a>
+        <a href="/guides/bring-your-harness/">Bring your agent</a>
         <a href="/guides/patterns/">Patterns</a>
         <a href="/guides/remote-providers/">Remote providers</a>
       </nav>
@@ -694,13 +129,13 @@ const deployDate = new Date().toISOString().slice(0, 10);
       <nav class="footer-col" aria-label="Project">
         <p class="footer-label">Project</p>
         <a href="/explanation/tunnel-first/">How tunnels work</a>
+        <a href="/explanation/whats-next/">What's next</a>
         <a href="/explanation/why-gambi/">Why "gambi"?</a>
         <a href="https://github.com/arthurbm/gambi" rel="noopener">GitHub</a>
-        <a href="https://www.npmjs.com/package/gambi" rel="noopener">npm</a>
       </nav>
     </div>
     <div class="footer-strip">
-      <span>Feito na gambiarra, for networks you trust.</span>
+      <span>Gambi is short for gambiarra.</span>
       <span>Docs built {deployDate}</span>
     </div>
   </footer>
@@ -709,82 +144,77 @@ const deployDate = new Date().toISOString().slice(0, 10);
 <style is:global>
   /* World tokens live on the splash route only; docs pages keep theirs. */
   :root[data-has-hero] {
-    --f-ground: #eef0ea;
-    --f-ground-2: #e2e6dc;
-    --f-board: #fbfbf6;
-    --f-ink: #161a22;
-    --f-ink-soft: #3d4452;
-    --f-rule: rgb(22 26 34 / 0.2);
-    --f-lona: #1e4fb4;
-    --f-lona-deep: #133679;
-    --f-stripe: #ffffff;
-    --f-ovo: #f5c11b;
-    --f-ovo-ink: #161a22;
-    --f-tomate: #c8281c;
-    --f-alarm: #c8281c;
-    --f-folha: #11804a;
-    --f-line-model: #161a22;
-    --f-line-model-sombra: #f5c11b;
-    --f-line-harness: #1e4fb4;
-    --f-line-keys: #11804a;
-    --f-sombra: #161a22;
-    --f-code-bg: #161a22;
-    --f-code-ink: #e9ecf2;
-    --f-code-dim: #9aa3b5;
+    --e-ground: #f1f3f5;
+    --e-panel: #e8ecf0;
+    --e-sheet: #fbfcfd;
+    --e-ink: #0c131d;
+    --e-ink-2: #3c4859;
+    --e-ink-3: #5d6a7c;
+    --e-line: rgb(12 19 29 / 0.14);
+    --e-line-2: rgb(12 19 29 / 0.24);
+    --e-steel: #8a9bb1;
+    --e-model: #8a6500;
+    --e-model-strong: #c99a12;
+    --e-harness: #086f88;
+    --e-stop: #c2382a;
+    --e-hub: #0c131d;
+    --e-hub-ink: #f1f3f5;
+    --e-primary: #0c131d;
+    --e-primary-ink: #f6f7f9;
+    --e-code-bg: #16181b;
+    --e-code-ink: #dfe6ef;
+    --e-code-dim: #8a929d;
 
-    /* Shiki's css-variables theme, painted from the feira palette. */
-    --astro-code-foreground: #e9ecf2;
-    --astro-code-background: var(--f-code-bg);
-    --astro-code-token-keyword: #ff8a73;
-    --astro-code-token-string: #f5c11b;
-    --astro-code-token-string-expression: #f5c11b;
-    --astro-code-token-function: #8fb4ff;
-    --astro-code-token-constant: #6fdca0;
-    --astro-code-token-parameter: #e9ecf2;
-    --astro-code-token-comment: #8a93a6;
-    --astro-code-token-punctuation: #b9c1d0;
-    --astro-code-token-link: #8fb4ff;
+    --astro-code-foreground: #dfe6ef;
+    --astro-code-background: var(--e-code-bg);
+    --astro-code-token-keyword: #ff8f7a;
+    --astro-code-token-string: #f2cf3a;
+    --astro-code-token-string-expression: #f2cf3a;
+    --astro-code-token-function: #6fdcf0;
+    --astro-code-token-constant: #b9c7ff;
+    --astro-code-token-parameter: #dfe6ef;
+    --astro-code-token-comment: #858d99;
+    --astro-code-token-punctuation: #a7b0bc;
+    --astro-code-token-link: #6fdcf0;
 
-    --f-display: "Bungee", "Archivo Variable", sans-serif;
-    --f-text: "Archivo Variable", system-ui, sans-serif;
-    --f-mono: "JetBrains Mono Variable", ui-monospace, monospace;
-    --f-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --e-text: "Archivo Variable", system-ui, sans-serif;
+    --e-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 
     color-scheme: light;
-    background: var(--f-ground);
+    background: var(--e-ground);
   }
 
   :root[data-has-hero][data-theme="dark"] {
-    --f-ground: #14244f;
-    --f-ground-2: #1a2d5e;
-    --f-board: #20356a;
-    --f-ink: #eef0ea;
-    --f-ink-soft: #b9c1d0;
-    --f-rule: rgb(238 240 234 / 0.18);
-    --f-lona: #2a5fd0;
-    --f-lona-deep: #0d1a3d;
-    --f-stripe: #d6dbe6;
-    --f-tomate: #d43a22;
-    --f-alarm: #ff6b55;
-    --f-folha: #4fd08a;
-    --f-line-model: #f5c11b;
-    --f-line-model-sombra: #04070d;
-    --f-line-harness: #8fb0ff;
-    --f-line-keys: #3cc27a;
-    --f-sombra: #04070d;
-    --f-code-bg: #0a1330;
+    --e-ground: #17191c;
+    --e-panel: #1d2024;
+    --e-sheet: #22262b;
+    --e-ink: #eceef1;
+    --e-ink-2: #b4bac3;
+    --e-ink-3: #939aa5;
+    --e-line: rgb(236 238 241 / 0.1);
+    --e-line-2: rgb(236 238 241 / 0.2);
+    --e-steel: #56626f;
+    --e-model: #f2cf3a;
+    --e-model-strong: #f2cf3a;
+    --e-harness: #4fd1e8;
+    --e-stop: #ef5a44;
+    --e-hub: #e7ecf3;
+    --e-hub-ink: #17191c;
+    --e-primary: #f2cf3a;
+    --e-primary-ink: #17191c;
+    --e-code-bg: #121417;
 
     color-scheme: dark;
   }
 
   :root[data-has-hero] body {
-    background: var(--f-ground);
-    color: var(--f-ink);
-    font-family: var(--f-text);
+    background: var(--e-ground);
+    color: var(--e-ink);
+    font-family: var(--e-text);
   }
 
-  /* The splash frame would cap the page at 67.5rem; the canopy runs edge to edge. */
-  /* custom.css pads every content panel with !important; the splash opts out. */
   :root[data-has-hero] .main-pane .content-panel {
     padding: 0 !important;
     border: 0;
@@ -799,157 +229,295 @@ const deployDate = new Date().toISOString().slice(0, 10);
   }
 
   :root[data-has-hero] ::selection {
-    background: var(--f-ovo);
-    color: var(--f-ovo-ink);
+    background: var(--e-model-strong);
+    color: #17191c;
   }
-</style>
 
-<style>
-  .feira {
-    --pad: clamp(1.1rem, 4vw, 4rem);
+  /* Shared by every landing section component. */
+
+  .ed {
+    --gutter: clamp(1rem, 4vw, 3.5rem);
     --measure: 84rem;
-
-    min-height: 100vh;
-    color: var(--f-ink);
-    font-family: var(--f-text);
+    font-family: var(--e-text);
+    font-variation-settings: "wdth" 100;
+    color: var(--e-ink);
+    background: var(--e-ground);
     font-size: 1.0625rem;
     line-height: 1.55;
-    background: var(--f-ground);
+    -webkit-font-smoothing: antialiased;
+    scrollbar-color: var(--e-steel) transparent;
   }
 
-  .feira :where(h1, h2, h3, h4, p, ul, ol, dl, dd, figure, pre) {
-    margin: 0;
-  }
-
-  /* custom.css paints every docs heading; on the feira, headings take their board's ink. */
-  .feira :where(h1, h2, h3, h4) {
+  .ed a {
     color: inherit;
-    letter-spacing: 0;
-  }
-
-  .feira a {
-    color: inherit;
-    text-decoration-color: currentColor;
+    text-underline-offset: 0.22em;
     text-decoration-thickness: 1px;
-    text-underline-offset: 0.2em;
   }
 
-  .feira :focus-visible {
-    outline: 3px solid var(--f-ovo);
+  .ed code {
+    font-family: var(--e-mono);
+    font-size: 0.86em;
+    font-variant-ligatures: none;
+  }
+
+  .ed :is(p, li, dd, td) > code {
+    padding: 0.08em 0.32em;
+    border-radius: 4px;
+    background: var(--e-panel);
+    border: 1px solid var(--e-line);
+    white-space: nowrap;
+  }
+
+  .ed .readout-id code,
+  .ed .log code {
+    padding: 0;
+    background: none;
+    border: 0;
+  }
+
+  .ed :focus-visible {
+    outline: 2px solid var(--e-harness);
     outline-offset: 3px;
-    box-shadow: 0 0 0 6px var(--f-ink);
     border-radius: 4px;
   }
 
-  .feira code,
-  .feira pre {
-    font-family: var(--f-mono);
-    font-size: 0.86em;
-  }
-
-  .sr-only {
+  .ed .sr-only {
     position: absolute;
     width: 1px;
     height: 1px;
     padding: 0;
     margin: -1px;
     overflow: hidden;
-    clip: rect(0 0 0 0);
+    clip: rect(0, 0, 0, 0);
     white-space: nowrap;
     border: 0;
   }
 
-  /* Painted letters: sign capitals with a drop shadow laid down in steps. */
-  .painted {
-    font-family: var(--f-display);
-    font-weight: 400;
-    letter-spacing: 0;
-    line-height: 1.02;
+  .ed-main > section {
+    max-width: var(--measure);
+    margin: 0 auto;
+    padding: clamp(4.5rem, 10vw, 8rem) var(--gutter) 0;
+    scroll-margin-top: 1rem;
+  }
+
+  .ed .section-title {
+    margin: 0;
+    max-width: 20ch;
+    font-size: clamp(1.9rem, 3.6vw, 3rem);
+    line-height: 1.04;
+    font-weight: 650;
+    font-variation-settings: "wdth" 116;
+    letter-spacing: -0.025em;
     text-wrap: balance;
-    text-shadow:
-      0.02em 0.02em 0 var(--f-sombra),
-      0.035em 0.035em 0 var(--f-sombra),
-      0.05em 0.05em 0 var(--f-sombra);
+    color: var(--e-ink);
   }
 
-  /* --------------------------------------------------------------------
-     Canopy: the hub's tarp, with the nav painted on its front
-     -------------------------------------------------------------------- */
+  .ed .section-lead {
+    margin: 1.1rem 0 0;
+    max-width: 62ch;
+    font-size: clamp(1.06rem, 1.3vw, 1.2rem);
+    color: var(--e-ink-2);
+    text-wrap: pretty;
+  }
 
-  .canopy {
+  .ed .btn {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.9rem;
+    padding: 0 1.3rem;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.98rem;
+    text-decoration: none;
+    transition: background-color 160ms ease, transform 160ms var(--ease-out);
+  }
+
+  .ed .btn:active {
+    transform: scale(0.97);
+  }
+
+  .ed .btn-primary {
+    background: var(--e-primary);
+    color: var(--e-primary-ink);
+  }
+
+  .ed .btn-primary:hover {
+    background: color-mix(in oklab, var(--e-primary) 86%, var(--e-ink-3));
+  }
+
+  .ed .cmd {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+    max-width: 100%;
+    padding: 0.85rem 1rem;
+    border-radius: 10px;
+    border: 1px solid var(--e-line-2);
+    background: var(--e-sheet);
+    color: var(--e-ink);
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 160ms ease, transform 160ms var(--ease-out);
+  }
+
+  .ed .cmd:hover {
+    border-color: var(--e-ink-3);
+  }
+
+  .ed .cmd:active {
+    transform: scale(0.98);
+  }
+
+  .ed .cmd code {
+    min-width: 0;
+    flex: 1 1 auto;
+    font-size: 0.92rem;
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: none;
+  }
+
+  .ed .cmd-prompt {
+    font-family: var(--e-mono);
+    font-size: 0.92rem;
+    color: var(--e-ink-3);
+  }
+
+  .ed .copy-icon {
     position: relative;
-    z-index: 2;
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    color: var(--e-ink-3);
   }
 
-  .canopy-bar {
+  .ed .copy-icon svg {
+    position: absolute;
+    inset: 0;
+    width: 1rem;
+    height: 1rem;
+    transition: opacity 180ms ease, transform 180ms var(--ease-out);
+  }
+
+  .ed .copy-icon svg:last-child {
+    opacity: 0;
+    transform: scale(0.8);
+    color: var(--e-harness);
+  }
+
+  .ed .cmd.success .copy-icon svg:first-child {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+
+  .ed .cmd.success .copy-icon svg:last-child {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  /* The headline swaps emphasis with the hero display's mode. */
+  .ed .ht-one,
+  .ed .ht-many {
+    transition: color 600ms var(--ease-out);
+  }
+
+  .ed .hero:has(.display[data-mode="one"]) .ht-one {
+    color: var(--e-ink);
+  }
+
+  .ed .hero:has(.display[data-mode="one"]) .ht-many {
+    color: var(--e-ink-3);
+  }
+</style>
+
+<style>
+  /* ---------- nav ---------- */
+
+  .ed-nav {
+    border-bottom: 1px solid var(--e-line);
+  }
+
+  .ed-nav-bar {
+    max-width: var(--measure);
+    margin: 0 auto;
+    padding: 0.85rem var(--gutter);
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    padding: 0.7rem var(--pad);
-    background: var(--f-lona-deep);
-    color: #fff;
   }
 
-  .canopy-mark {
-    font-family: var(--f-display);
-    font-size: 1.65rem;
-    line-height: 1;
+  .ed-mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-weight: 700;
+    font-size: 1.15rem;
+    font-variation-settings: "wdth" 118;
+    letter-spacing: -0.01em;
     text-decoration: none;
-    color: var(--f-ovo) !important;
-    text-shadow:
-      1px 1px 0 #000,
-      2px 2px 0 #000,
-      3px 3px 0 #000;
   }
 
-  .canopy-links {
+  .ed-mark-glyph {
+    width: 1.35rem;
+    height: 1.35rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+  }
+
+  .ed-mark-glyph circle:nth-child(2) {
+    fill: var(--e-model-strong);
+    stroke: none;
+  }
+
+  .ed-links {
     display: flex;
     align-items: center;
-    gap: clamp(0.4rem, 2vw, 1.6rem);
-    padding: 0;
+    gap: clamp(0.9rem, 2.2vw, 1.75rem);
     list-style: none;
-    font-weight: 600;
-    font-stretch: 92%;
-    font-size: 0.98rem;
+    margin: 0;
+    padding: 0;
+    font-size: 0.95rem;
+    font-weight: 500;
   }
 
-  .canopy-links a {
+  .ed-links a {
+    color: var(--e-ink-2);
     text-decoration: none;
-    color: #fff;
-    padding: 0.35rem 0.15rem;
+    transition: color 160ms ease;
   }
 
-  .canopy-links a:hover {
-    text-decoration: underline;
-    text-decoration-color: var(--f-ovo);
-    text-decoration-thickness: 2px;
+  .ed-links a:hover {
+    color: var(--e-ink);
   }
 
   .theme-toggle {
     display: grid;
     place-items: center;
-    width: 2.25rem;
-    height: 2.25rem;
-    padding: 0;
-    border: 1.5px solid rgb(255 255 255 / 0.55);
+    width: 2.1rem;
+    height: 2.1rem;
     border-radius: 999px;
+    border: 1px solid var(--e-line-2);
     background: transparent;
-    color: #fff;
+    color: var(--e-ink-2);
     cursor: pointer;
+    transition: color 160ms ease, border-color 160ms ease;
   }
 
   .theme-toggle:hover {
-    border-color: var(--f-ovo);
-    color: var(--f-ovo);
+    color: var(--e-ink);
+    border-color: var(--e-ink-3);
   }
 
   .theme-toggle svg {
-    width: 1.15rem;
-    height: 1.15rem;
+    width: 1rem;
+    height: 1rem;
     fill: none;
     stroke: currentColor;
-    stroke-width: 1.8;
+    stroke-width: 1.7;
     stroke-linecap: round;
   }
 
@@ -965,1126 +533,181 @@ const deployDate = new Date().toISOString().slice(0, 10);
     display: block;
   }
 
-  .lander-main > section {
-    max-width: var(--measure);
-    margin-inline: auto;
-    padding-inline: var(--pad);
-  }
+  /* ---------- hero ---------- */
 
-  /* --------------------------------------------------------------------
-     Hero
-     -------------------------------------------------------------------- */
-
-  .hero {
-    padding-top: clamp(2.5rem, 6vw, 4.75rem);
-    padding-bottom: clamp(2.25rem, 4vw, 3.25rem);
+  .ed-main > .hero {
+    padding-top: clamp(2.5rem, 5vw, 4rem);
+    padding-bottom: clamp(1.5rem, 3vw, 2.5rem);
+    display: grid;
+    grid-template-columns: minmax(0, 0.82fr) minmax(0, 1fr);
+    gap: clamp(2rem, 4vw, 4.5rem);
+    align-items: center;
+    min-height: min(calc(100svh - 4.5rem), 58rem);
   }
 
   .hero-title {
-    display: flex;
-    flex-direction: column;
-    gap: 0.06em;
-    font-size: clamp(2.2rem, 5.55vw, 5.4rem);
+    margin: 0;
+    font-size: clamp(2.3rem, 3.7vw, 3.75rem);
+    line-height: 1.02;
+    font-weight: 680;
+    font-variation-settings: "wdth" 108;
+    letter-spacing: -0.03em;
+    text-wrap: balance;
   }
 
-  .line-model {
-    color: var(--f-line-model);
-    text-shadow:
-      0.02em 0.02em 0 var(--f-line-model-sombra),
-      0.035em 0.035em 0 var(--f-line-model-sombra),
-      0.05em 0.05em 0 var(--f-line-model-sombra);
+  .hero-title span {
+    display: block;
   }
 
-  .line-harness {
-    color: var(--f-line-harness);
+  .ht-one {
+    color: var(--e-ink-3);
   }
 
-  .line-keys {
-    color: var(--f-line-keys);
+  .ht-many {
+    margin-top: 0.12em;
+    color: var(--e-ink);
   }
 
   .lede {
-    max-width: 62ch;
-    margin-top: clamp(1.5rem, 3vw, 2.25rem);
-    font-size: clamp(1.08rem, 1.4vw, 1.28rem);
+    margin: 1.6rem 0 0;
+    max-width: 52ch;
+    font-size: clamp(1.08rem, 1.35vw, 1.24rem);
     line-height: 1.55;
-    color: var(--f-ink-soft);
+    color: var(--e-ink-2);
+    text-wrap: pretty;
   }
 
   .actions {
+    margin-top: 2.1rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+    justify-items: start;
+  }
+
+  .action-row {
     display: flex;
     flex-wrap: wrap;
-    align-items: stretch;
-    gap: 0.85rem;
-    margin-top: 2rem;
-  }
-
-  /* The till: a yellow painted board holding the one working command. */
-  .till {
-    display: flex;
     align-items: center;
-    gap: 0.9rem;
-    padding: 0.5rem 0.6rem 0.5rem 1.05rem;
-    border-radius: 10px;
-    background: var(--f-ovo);
-    color: var(--f-ovo-ink);
-    outline: 1.5px solid var(--f-ovo-ink);
-    outline-offset: -5px;
-    max-width: 100%;
+    gap: 1.4rem;
   }
 
-  .till-label {
-    font-family: var(--f-display);
-    font-size: 0.85rem;
-    letter-spacing: 0.02em;
-  }
-
-  .cmd {
+  .btn-text {
     display: inline-flex;
     align-items: center;
-    gap: 0.75rem;
-    min-width: 0;
-    padding: 0.6rem 0.75rem;
-    border: 0;
-    border-radius: 6px;
-    background: var(--f-code-bg);
-    color: var(--f-code-ink);
-    font: inherit;
-    cursor: pointer;
-    text-align: left;
-    transition: background 160ms var(--f-ease);
-  }
-
-  .cmd code {
-    overflow-x: auto;
-    white-space: nowrap;
-    font-size: 0.88rem;
-  }
-
-  /* Anything that scrolls sideways shows it, in the feira's own paint. */
-  .cmd code,
-  .join,
-  .step-code,
-  .snippet-code,
-  .ledger-book {
-    scrollbar-width: thin;
-    scrollbar-color: var(--f-ovo) transparent;
-  }
-
-  .cmd:hover {
-    background: #000;
-  }
-
-  .copy-icon {
-    display: inline-grid;
-    flex: none;
-    color: var(--f-ovo);
-  }
-
-  .copy-icon :global(svg) {
-    width: 1rem;
-    height: 1rem;
-  }
-
-  .copy-icon :global(svg:last-child),
-  .cmd.success .copy-icon :global(svg:first-child) {
-    display: none;
-  }
-
-  .cmd.success .copy-icon :global(svg:last-child) {
-    display: block;
-    color: #5fe39a;
-  }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.85rem 1.35rem;
-    border-radius: 10px;
-    font-family: var(--f-display);
-    font-size: 0.95rem;
-    line-height: 1;
-    letter-spacing: 0.01em;
+    gap: 0.35rem;
+    font-weight: 600;
     text-decoration: none;
-    transition:
-      background 160ms var(--f-ease),
-      transform 160ms var(--f-ease),
-      box-shadow 160ms var(--f-ease);
+    color: var(--e-ink-2);
+    transition: color 160ms ease;
   }
 
-  .btn-paint {
-    background: var(--f-tomate);
-    color: #fff !important;
-    text-shadow: 1px 1px 0 rgb(0 0 0 / 0.45);
-    box-shadow: 0 2px 4px rgb(0 0 0 / 0.18);
+  .btn-text svg {
+    width: 0.9rem;
+    height: 0.9rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    transition: transform 200ms var(--ease-out);
   }
 
-  .btn-paint:hover {
-    background: color-mix(in oklab, var(--f-tomate) 86%, #000);
-    transform: translateY(-1px);
-    box-shadow: 0 6px 14px rgb(0 0 0 / 0.2);
+  .btn-text:hover {
+    color: var(--e-ink);
   }
 
-  .btn-paint:active {
-    transform: translateY(0);
+  @media (hover: hover) and (pointer: fine) {
+    .btn-text:hover svg {
+      transform: translateY(2px);
+    }
   }
 
-  .btn-filete {
-    color: var(--f-ink) !important;
-    border: 1.5px solid var(--f-ink);
-    outline: 1px solid var(--f-ink);
-    outline-offset: -5px;
-  }
+  /* ---------- start ---------- */
 
-  .btn-filete:hover {
-    background: color-mix(in oklab, var(--f-ink) 8%, transparent);
-  }
-
-  /* --------------------------------------------------------------------
-     Aisle: the hub beam, the stalls, and one cord per stall
-     -------------------------------------------------------------------- */
-
-  .aisle {
-    --cord: 4.25rem;
-    padding-bottom: clamp(3.5rem, 7vw, 6rem);
-  }
-
-  /* The canopy: striped tarp, painted valance, scalloped hem. Cords hang from the hem. */
-  .beam {
-    --stripe: 0.8rem;
-    --scallop: 2.4rem;
-
-    filter: drop-shadow(0 6px 8px rgb(0 0 0 / 0.16));
-  }
-
-  .tarp,
-  .hem {
-    background: repeating-linear-gradient(
-      90deg,
-      var(--f-lona) 0 var(--stripe),
-      var(--f-stripe) var(--stripe) calc(var(--stripe) * 2)
-    );
-  }
-
-  .tarp {
-    height: 1.5rem;
-    border-radius: 14px 14px 0 0;
-    box-shadow: inset 0 -4px 6px -2px rgb(0 0 0 / 0.18);
-  }
-
-  .beam-plate {
+  .start-actions {
+    margin-top: 1.8rem;
     display: flex;
     flex-wrap: wrap;
+    gap: 0.8rem;
     align-items: center;
-    gap: 0.5rem 1.5rem;
-    padding: 0.85rem 1.25rem;
-    background: var(--f-lona);
-    color: #fff;
   }
 
-  .hem {
-    height: 1.15rem;
-    -webkit-mask: radial-gradient(
-        circle at 50% 0,
-        #000 calc(var(--scallop) / 2 - 0.03rem),
-        transparent calc(var(--scallop) / 2)
-      )
-      0 0 / var(--scallop) 100% repeat-x;
-    mask: radial-gradient(
-        circle at 50% 0,
-        #000 calc(var(--scallop) / 2 - 0.03rem),
-        transparent calc(var(--scallop) / 2)
-      )
-      0 0 / var(--scallop) 100% repeat-x;
-  }
-
-  .beam-name {
-    font-family: var(--f-display);
-    font-size: clamp(1.25rem, 2.2vw, 1.75rem);
-    line-height: 1;
-    text-shadow:
-      1px 1px 0 var(--f-lona-deep),
-      2px 2px 0 var(--f-lona-deep),
-      3px 3px 0 var(--f-lona-deep);
-  }
-
-  .beam-note {
-    flex: 1 1 22rem;
-    font-size: 0.95rem;
-    font-stretch: 94%;
-    color: rgb(255 255 255 / 0.9);
-  }
-
-  .beam-note code {
-    padding: 0.05rem 0.35rem;
-    border-radius: 4px;
-    background: rgb(0 0 0 / 0.25);
-  }
-
-  .stalls {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    padding: 0;
-    margin: 0;
-    list-style: none;
-  }
-
-  .stall-slot {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    padding-top: var(--cord);
-  }
-
-  /* The cord rises from the stall to the beam: the participant opens it. */
-  .cord {
-    position: absolute;
-    top: 0;
-    left: 50%;
-    width: 4px;
-    height: var(--cord);
-    margin-left: -2px;
-    border-radius: 2px;
-    background: var(--f-ink);
-    transform-origin: 50% 100%;
-    animation: cord-rise 720ms var(--f-ease) both;
-    animation-delay: calc(240ms + var(--i) * 95ms);
-  }
-
-  .cord::before {
-    content: "";
-    position: absolute;
-    top: -2px;
-    left: 50%;
-    width: 14px;
-    height: 10px;
-    margin-left: -7px;
-    border-radius: 0 0 3px 3px;
-    background: var(--f-ink);
-  }
-
-  .token {
-    position: absolute;
-    top: 0;
-    left: 50%;
-    width: 12px;
-    height: 12px;
-    margin-left: -6px;
-    border-radius: 50%;
-    background: var(--f-ovo);
-    box-shadow: 0 0 0 2px var(--f-ink);
-    opacity: 0;
-  }
-
-  .stall-slot.is-dispatching .token {
-    animation: token-down 820ms var(--f-ease) forwards;
-  }
-
-  @keyframes cord-rise {
-    from {
-      transform: scaleY(0);
-    }
-  }
-
-  @keyframes token-down {
-    0% {
-      opacity: 1;
-      transform: translateY(0);
-    }
-    85% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-      transform: translateY(calc(var(--cord) - 12px));
-    }
-  }
-
-  .stall {
-    position: relative;
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.3rem;
-    padding: 1.6rem 1rem 1rem;
-    border: 0;
-    border-inline-end: 1px solid var(--f-rule);
-    background: var(--f-board);
-    color: var(--f-ink);
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-    transition: background 200ms var(--f-ease);
-  }
-
-  .stall-slot:last-child .stall {
-    border-inline-end: 0;
-  }
-
-  .stall-roof {
-    position: absolute;
-    inset: 0 0 auto;
-    height: 0.85rem;
-    background: var(--roof);
-    -webkit-mask: radial-gradient(
-        circle at 50% 0,
-        #000 0.62rem,
-        transparent 0.65rem
-      )
-      0 0 / 1.25rem 0.85rem repeat-x;
-    mask: radial-gradient(circle at 50% 0, #000 0.62rem, transparent 0.65rem)
-      0 0 / 1.25rem 0.85rem repeat-x;
-  }
-
-  .kind-model {
-    --roof: var(--f-ovo);
-  }
-
-  .kind-harness {
-    --roof: var(--f-lona);
-  }
-
-  .stall-name {
-    font-family: var(--f-display);
-    font-size: clamp(1.3rem, 2vw, 1.7rem);
-    line-height: 1.05;
-  }
-
-  .stall-offer {
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 0.82rem !important;
-    font-weight: 600;
-  }
-
-  .stall-kind {
-    font-size: 0.85rem;
-    font-stretch: 90%;
-    color: var(--f-ink-soft);
-  }
-
-  .stall-state {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    margin-top: auto;
-    padding-top: 0.6rem;
-    font-size: 0.8rem;
-    font-weight: 600;
-    font-stretch: 90%;
-    color: var(--f-folha);
-  }
-
-  .lamp {
-    width: 0.55rem;
-    height: 0.55rem;
-    border-radius: 50%;
-    background: currentColor;
-  }
-
-  .stall:hover {
-    background: color-mix(in oklab, var(--f-ovo) 22%, var(--f-board));
-  }
-
-  .stall[aria-pressed="true"] {
-    background: var(--f-ovo);
-    color: var(--f-ovo-ink);
-  }
-
-  .stall[aria-pressed="true"] .stall-roof {
-    background: var(--f-ovo-ink);
-  }
-
-  .stall[aria-pressed="true"] .stall-kind {
-    color: var(--f-ovo-ink);
-  }
-
-  .stall[aria-pressed="true"] .stall-state {
-    color: #0b5a33;
-  }
-
-  .stall-detail {
-    border-top: 3px solid var(--f-ink);
-    background: var(--f-ground-2);
-    border-radius: 0 0 10px 10px;
-  }
-
-  .detail {
-    display: grid;
-    gap: 1.5rem;
-    padding: clamp(1.25rem, 3vw, 2.25rem);
-  }
-
-  .detail[hidden] {
-    display: none;
-  }
-
-  .detail-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.4rem 1rem;
-  }
-
-  .detail-title {
-    font-family: var(--f-display);
-    font-size: 1.35rem;
-    font-weight: 400;
-  }
-
-  .detail-via {
-    color: var(--f-ink-soft);
-  }
-
-  .detail-cols {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1.5rem 2.5rem;
-  }
-
-  .detail-sub {
-    margin-bottom: 0.65rem;
-    font-size: 0.82rem;
-    font-weight: 700;
-    font-stretch: 88%;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--f-ink-soft);
-  }
-
-  .frames {
-    display: grid;
-    gap: 0.7rem;
-  }
-
-  .frame-row dt code {
-    font-weight: 700;
-    color: var(--f-line-harness);
-  }
-
-  .frame-row dd {
-    margin-top: 0.1rem;
-  }
-
-  .stays {
-    display: grid;
-    gap: 0.7rem;
-    padding: 0;
-    list-style: none;
-  }
-
-  .stays li {
-    position: relative;
-    padding-left: 1.4rem;
-  }
-
-  .stays li::before {
-    content: "";
-    position: absolute;
-    top: 0.5em;
-    left: 0;
-    width: 0.7rem;
-    height: 0.7rem;
-    border-radius: 2px;
-    background: var(--f-folha);
-  }
-
-  .join,
-  .step-code,
-  .snippet-code {
-    overflow-x: auto;
-    padding: 1rem 1.15rem;
-    border-radius: 8px;
-    background: var(--f-code-bg);
-    color: var(--f-code-ink);
-    line-height: 1.6;
-    tab-size: 2;
-  }
-
-  .join code,
-  .step-code code,
-  .snippet-code code {
-    font-size: 0.85rem;
-  }
-
-  .join {
-    justify-self: start;
-    min-width: min(100%, 30rem);
-    max-width: 100%;
-  }
-
-  /* --------------------------------------------------------------------
-     Shared section rhythm
-     -------------------------------------------------------------------- */
-
-  .menu,
-  .ledger,
-  .build,
-  .layers,
-  .setup {
-    padding-top: clamp(3.5rem, 8vw, 6.5rem);
-    padding-bottom: clamp(1rem, 2vw, 1.5rem);
-  }
-
-  .section-title {
-    max-width: 22ch;
-    font-size: clamp(1.75rem, 3.6vw, 3rem);
-    color: var(--f-ink);
-    text-shadow:
-      0.03em 0.03em 0 var(--f-ovo),
-      0.055em 0.055em 0 var(--f-ovo);
-  }
-
-  :global(:root[data-theme="dark"]) .section-title {
-    text-shadow:
-      0.03em 0.03em 0 var(--f-lona),
-      0.055em 0.055em 0 var(--f-lona);
-  }
-
-  .section-lead {
-    max-width: 62ch;
-    margin-top: 1.1rem;
-    font-size: 1.12rem;
-    color: var(--f-ink-soft);
-  }
-
-  /* --------------------------------------------------------------------
-     Menu boards
-     -------------------------------------------------------------------- */
-
-  .boards {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: clamp(1rem, 2.5vw, 2rem);
-    margin-top: 2.25rem;
-  }
-
-  .board {
-    display: flex;
-    flex-direction: column;
-    gap: 1.1rem;
-    padding: clamp(1.4rem, 3vw, 2.25rem);
-    border-radius: 14px;
-    outline: 1.5px solid currentColor;
-    outline-offset: -9px;
-  }
-
-  .board-model {
-    background: var(--f-ovo);
-    color: var(--f-ovo-ink);
-  }
-
-  .board-harness {
-    background: var(--f-lona);
-    color: #fff;
-  }
-
-  .board-title {
-    font-family: var(--f-display);
-    font-size: clamp(1.9rem, 3.4vw, 2.75rem);
-    font-weight: 400;
-    line-height: 1;
-  }
-
-  .board-model .board-title {
-    color: var(--f-ovo-ink);
-    text-shadow:
-      1px 1px 0 #fff,
-      2px 2px 0 #fff,
-      3px 3px 0 #fff;
-  }
-
-  .board-harness .board-title {
-    color: #fff;
-    text-shadow:
-      1px 1px 0 #0a1a40,
-      2px 2px 0 #0a1a40,
-      3px 3px 0 #0a1a40;
-  }
-
-  .board-what {
-    max-width: 44ch;
-    font-size: 1.05rem;
-  }
-
-  .price-list {
-    display: grid;
-    gap: 0.55rem;
-  }
-
-  .price-list > div {
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-  }
-
-  .price-list dt {
-    flex: none;
-    font-weight: 700;
-    font-stretch: 90%;
-  }
-
-  /* Dotted leaders, the way a price board runs a line to the price. */
-  .price-list dd {
-    flex: 1;
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-    text-align: right;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-  }
-
-  .price-list dd::before {
-    content: "";
-    flex: 1 1 1.5rem;
-    min-width: 1.5rem;
-    border-bottom: 2px dotted currentColor;
-    opacity: 0.55;
-    transform: translateY(-0.25em);
-  }
-
-  .board code {
-    font-size: 0.84rem;
-    font-weight: 600;
-  }
-
-  .board-link {
-    align-self: flex-start;
-    margin-top: auto;
-    padding-top: 0.4rem;
-    font-weight: 700;
-    text-decoration-thickness: 2px !important;
-  }
-
-  .board-link::after {
-    content: "";
-    display: inline-block;
-    width: 0.55em;
-    height: 0.55em;
-    margin-left: 0.45em;
-    border-top: 2px solid currentColor;
-    border-right: 2px solid currentColor;
-    transform: rotate(45deg) translateY(-0.08em);
-    transition: transform 160ms var(--f-ease);
-  }
-
-  .board-link:hover::after {
-    transform: translateX(3px) rotate(45deg) translateY(-0.08em);
-  }
-
-  .menu-note {
-    max-width: 62ch;
-    margin-top: 1.25rem;
-    color: var(--f-ink-soft);
-  }
-
-  /* --------------------------------------------------------------------
-     Ledger: a ruled account book
-     -------------------------------------------------------------------- */
-
-  .ledger-book {
-    margin-top: 2.25rem;
-    overflow-x: auto;
-    border-radius: 12px;
-    background: var(--f-board);
-    box-shadow: 0 10px 30px -18px rgb(0 0 0 / 0.45);
-  }
-
-  .ledger table {
-    width: 100%;
-    min-width: 40rem;
-    border-collapse: collapse;
-  }
-
-  .ledger th {
-    padding: 1rem 1.4rem 0.85rem;
-    border-bottom: 3px double var(--f-ink);
-    font-family: var(--f-display);
-    font-size: 1rem;
-    font-weight: 400;
-    text-align: left;
-  }
-
-  .ledger th:first-child {
-    color: var(--f-line-harness);
-  }
-
-  .ledger th:last-child {
-    color: var(--f-folha);
-  }
-
-  .ledger td {
-    width: 50%;
-    padding: 1rem 1.4rem;
-    border-bottom: 1px solid var(--f-rule);
-    vertical-align: top;
-  }
-
-  .ledger td:first-child {
-    border-right: 1px solid var(--f-rule);
-  }
-
-  .ledger tr:last-child td {
-    border-bottom: 0;
-  }
-
-  .aviso {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.5rem 1.25rem;
-    margin-top: 1.5rem;
-    padding: 1.1rem 1.4rem;
-    border: 2px solid var(--f-alarm);
-    border-radius: 12px;
-    outline: 1px solid var(--f-alarm);
-    outline-offset: -7px;
-  }
-
-  .aviso-title {
-    font-family: var(--f-display);
-    font-size: 1.35rem;
-    font-weight: 400;
-    color: var(--f-alarm);
-  }
-
-  .aviso p {
-    flex: 1 1 30rem;
-    max-width: 75ch;
-  }
-
-  .aviso a {
-    font-weight: 700;
-    white-space: nowrap;
-  }
-
-  /* --------------------------------------------------------------------
-     Build on it
-     -------------------------------------------------------------------- */
-
-  .snippets {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: clamp(1rem, 2.5vw, 2rem);
-    margin-top: 2.25rem;
-  }
-
-  .snippet {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-
-  .snippet figcaption {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.25rem 0.75rem;
-    padding: 0 0 0.6rem;
-  }
-
-  .snippet-file {
-    font-family: var(--f-mono);
-    font-size: 0.9rem;
-    font-weight: 700;
-  }
-
-  .snippet-what {
-    color: var(--f-ink-soft);
-    font-size: 0.95rem;
-  }
-
-  .snippet-code {
-    flex: 1;
-  }
-
-  .cardapio {
-    margin-top: clamp(2.5rem, 5vw, 3.5rem);
-    padding: clamp(1.4rem, 3vw, 2.25rem);
-    border-radius: 14px;
-    background: var(--f-code-bg);
-    color: var(--f-code-ink);
-  }
-
-  .cardapio-title {
-    font-family: var(--f-display);
-    font-size: 1.35rem;
-    font-weight: 400;
-    color: var(--f-ovo);
-  }
-
-  .cardapio ul {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0 3rem;
-    margin-top: 1rem;
-    padding: 0;
-    list-style: none;
-  }
-
-  .cardapio a {
-    display: flex;
-    align-items: baseline;
-    gap: 0.6rem;
-    padding: 0.65rem 0;
-    text-decoration: none;
-    border-bottom: 1px solid rgb(255 255 255 / 0.12);
-  }
-
-  .dish {
-    font-weight: 700;
-    font-size: 1.08rem;
-  }
-
-  .leader {
-    flex: 1;
-    min-width: 1rem;
-    border-bottom: 2px dotted rgb(255 255 255 / 0.35);
-  }
-
-  .see {
-    font-size: 0.9rem;
-    color: var(--f-code-dim);
-    transition: color 160ms var(--f-ease);
-  }
-
-  .cardapio a:hover .see {
-    color: var(--f-ovo);
-  }
-
-  .cardapio a:hover .dish {
-    text-decoration: underline;
-    text-decoration-color: var(--f-ovo);
-    text-underline-offset: 0.2em;
-  }
-
-  /* --------------------------------------------------------------------
-     Layers: one sign inside another, the outer two still in chalk
-     -------------------------------------------------------------------- */
-
-  .layer-stack {
-    display: grid;
-    gap: 0.75rem;
-    margin-top: 2.25rem;
-    padding: 0;
-    list-style: none;
-  }
-
-  /* Three boards, outermost first. Only the bottom one is painted. */
-  .layer {
-    display: grid;
-    grid-template-columns: minmax(14rem, 1fr) 2fr;
-    align-items: baseline;
-    gap: 0.5rem 2rem;
-    padding: clamp(1.25rem, 3vw, 2rem) clamp(1.25rem, 3vw, 2.25rem);
-    border-radius: 14px;
-  }
-
-  .layer-yours {
-    background: var(--f-board);
-    outline: 1.5px solid var(--f-ink);
-    outline-offset: -7px;
-  }
-
-  .layer-above {
-    background: var(--f-ground-2);
-    color: var(--f-ink);
-  }
-
-  .layer-today {
-    background: var(--f-ovo);
-    color: var(--f-ovo-ink);
-  }
-
-  .layer-title {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.6rem;
-    font-family: var(--f-display);
-    font-size: clamp(1.1rem, 2vw, 1.4rem);
-    font-weight: 400;
-  }
-
-  .layer-body {
-    max-width: 64ch;
-  }
-
-  .tag {
-    padding: 0.2rem 0.55rem;
-    border-radius: 999px;
-    font-family: var(--f-text);
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  .tag-sketch {
-    border: 1.5px solid currentColor;
-    color: var(--f-ink-soft);
-  }
-
-  .tag-today {
-    background: #11804a;
-    color: #fff;
-  }
-
-  .lab {
-    font-family: var(--f-mono);
-    font-size: 0.92em;
-    font-weight: 600;
-  }
-
-  /* --------------------------------------------------------------------
-     Setup
-     -------------------------------------------------------------------- */
-
-  .steps {
-    display: grid;
-    gap: 1.75rem;
-    max-width: 52rem;
-    margin-top: 2.25rem;
-    padding: 0;
-    list-style: none;
-    counter-reset: step;
-  }
-
-  .steps > li {
-    position: relative;
-    display: grid;
-    gap: 0.7rem;
-    padding-left: 3.6rem;
-    counter-increment: step;
-  }
-
-  .steps > li::before {
-    content: counter(step);
-    position: absolute;
-    top: -0.2rem;
-    left: 0;
-    display: grid;
-    place-items: center;
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: 50%;
-    background: var(--f-ovo);
-    color: var(--f-ovo-ink);
-    font-family: var(--f-display);
-    font-size: 1.05rem;
-  }
-
-  .step-title {
-    font-size: 1.15rem;
-    font-weight: 700;
-  }
-
-  .install-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.6rem;
-  }
-
-  .cmd-small code {
-    font-size: 0.82rem;
-  }
-
-  .step-note {
-    color: var(--f-ink-soft);
-  }
-
-  .setup-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.85rem;
-    margin-top: 2.5rem;
-    padding-bottom: clamp(3rem, 7vw, 5rem);
-  }
-
-  /* --------------------------------------------------------------------
-     Footer
-     -------------------------------------------------------------------- */
-
-  .lander-footer {
-    background: var(--f-lona-deep);
-    color: #fff;
-  }
-
-  .lander-footer a {
-    color: #fff;
-    text-decoration: none;
-  }
+  /* ---------- footer ---------- */
 
-  .lander-footer a:hover {
-    text-decoration: underline;
-    text-decoration-color: var(--f-ovo);
+  .ed-footer {
+    margin-top: clamp(5rem, 10vw, 8rem);
+    border-top: 1px solid var(--e-line);
   }
 
   .footer-grid {
-    display: grid;
-    grid-template-columns: 2fr repeat(3, 1fr);
-    gap: 2rem;
     max-width: var(--measure);
-    margin-inline: auto;
-    padding: clamp(2.5rem, 5vw, 3.5rem) var(--pad);
+    margin: 0 auto;
+    padding: 3rem var(--gutter) 2rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr));
+    gap: 2rem;
   }
 
   .footer-mark {
-    font-size: 2rem;
-    color: var(--f-ovo);
-    text-shadow:
-      1px 1px 0 #000,
-      2px 2px 0 #000,
-      3px 3px 0 #000;
+    margin: 0;
+    font-size: 1.3rem;
+    font-weight: 700;
+    font-variation-settings: "wdth" 118;
   }
 
   .footer-tag {
-    max-width: 24ch;
-    margin-top: 0.6rem;
-    color: rgb(255 255 255 / 0.8);
+    margin: 0.5rem 0 0;
+    max-width: 30ch;
+    color: var(--e-ink-2);
+    font-size: 0.95rem;
   }
 
   .footer-col {
     display: grid;
     align-content: start;
     gap: 0.45rem;
+    font-size: 0.95rem;
+  }
+
+  .footer-col a {
+    color: var(--e-ink-2);
+    text-decoration: none;
+  }
+
+  .footer-col a:hover {
+    color: var(--e-ink);
   }
 
   .footer-label {
-    margin-bottom: 0.2rem;
-    font-size: 0.8rem;
+    margin: 0 0 0.3rem;
+    font-size: 0.74rem;
     font-weight: 700;
-    letter-spacing: 0.06em;
+    font-variation-settings: "wdth" 80;
+    letter-spacing: 0.09em;
     text-transform: uppercase;
-    color: var(--f-ovo);
+    color: var(--e-ink-3);
   }
 
   .footer-strip {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 0.5rem 2rem;
     max-width: var(--measure);
-    margin-inline: auto;
-    padding: 1rem var(--pad) 1.5rem;
-    border-top: 1px solid rgb(255 255 255 / 0.15);
-    font-size: 0.88rem;
-    color: rgb(255 255 255 / 0.72);
+    margin: 0 auto;
+    padding: 1.2rem var(--gutter) 2rem;
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    border-top: 1px solid var(--e-line);
+    font-size: 0.85rem;
+    color: var(--e-ink-3);
   }
 
-  /* --------------------------------------------------------------------
-     Responsive
-     -------------------------------------------------------------------- */
-
   @media (max-width: 68rem) {
+    .ed-main > .hero {
+      grid-template-columns: minmax(0, 1fr);
+      min-height: 0;
+    }
+
     .footer-grid {
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
     .footer-brand {
@@ -2092,334 +715,52 @@ const deployDate = new Date().toISOString().slice(0, 10);
     }
   }
 
-  /* Narrow screens: the beam becomes a rail on the left, cords run sideways. */
-  @media (max-width: 56rem) {
-    .aisle {
-      --cord: 1.6rem;
-      position: relative;
-    }
-
-    .stalls {
-      grid-template-columns: 1fr;
-      margin-top: 0;
-      padding-top: 0.75rem;
-      padding-left: 0.85rem;
-      border-left: 6px solid var(--f-lona);
-      border-radius: 0 0 0 6px;
-    }
-
-    .stall-slot {
-      padding-top: 0;
-      padding-left: var(--cord);
-      margin-bottom: 0.5rem;
-    }
-
-    .stall-slot .cord {
-      display: block;
-      top: 50%;
-      left: 0;
-      width: var(--cord);
-      height: 4px;
-      margin: -2px 0 0;
-      transform-origin: 100% 50%;
-      animation-name: cord-rise-x;
-    }
-
-    .cord::before {
-      top: 50%;
-      left: -2px;
-      width: 8px;
-      height: 14px;
-      margin: -7px 0 0;
-      border-radius: 0 3px 3px 0;
-    }
-
-    .token {
-      top: 50%;
-      left: 0;
-      margin: -6px 0 0;
-    }
-
-    .stall-slot.is-dispatching .token {
-      animation-name: token-right;
-    }
-
-    .stall {
-      display: grid;
-      grid-template-columns: auto 1fr;
-      align-items: baseline;
-      gap: 0.15rem 0.75rem;
-      padding: 1.25rem 1rem 0.85rem;
-      border: 0;
-      border-radius: 8px;
-    }
-
-    .stall-offer {
-      justify-self: end;
-    }
-
-    .stall-state {
-      padding-top: 0.2rem;
-      justify-self: end;
-    }
-
-  }
-
   @media (max-width: 44rem) {
-    .detail-cols,
-    .boards,
-    .snippets,
-    .cardapio ul {
-      grid-template-columns: 1fr;
-    }
-
-    .stall-detail {
-      margin-top: 0.5rem;
-      border-radius: 10px;
-    }
-
-    .till {
-      flex-wrap: wrap;
-      width: 100%;
-    }
-
-    .till .cmd {
-      width: 100%;
-    }
-
-    .till .cmd code,
-    .cmd-small code {
-      white-space: normal;
-      overflow-wrap: anywhere;
-    }
-
-    .cmd-small {
-      max-width: 100%;
-    }
-
-    .price-list > div {
-      flex-direction: column;
-      gap: 0.1rem;
-    }
-
-    .price-list dd {
-      justify-content: flex-start;
-      text-align: left;
-    }
-
-    .price-list dd::before {
-      content: none;
-    }
-
-    /* The ledger reads as labelled entries instead of a sideways scroll. */
-    .ledger table,
-    .ledger tbody,
-    .ledger tr,
-    .ledger td {
-      display: block;
-      width: auto;
-      min-width: 0;
-    }
-
-    .ledger thead {
-      display: none;
-    }
-
-    .ledger tr {
-      padding: 0.4rem 0;
-      border-bottom: 3px double var(--f-rule);
-    }
-
-    .ledger tr:last-child {
-      border-bottom: 0;
-    }
-
-    .ledger td,
-    .ledger tr:last-child td {
-      padding: 0.6rem 1.1rem;
-      border: 0;
-    }
-
-    .ledger td:first-child {
-      border-right: 0;
-    }
-
-    .ledger td::before {
-      content: attr(data-label);
-      display: block;
-      margin-bottom: 0.2rem;
-      font-family: var(--f-display);
-      font-size: 0.8rem;
-    }
-
-    .ledger td:first-child::before {
-      color: var(--f-line-harness);
-    }
-
-    .ledger td:last-child::before {
-      color: var(--f-folha);
-    }
-
-    .actions .btn {
-      flex: 1 1 auto;
-    }
-
     .hide-sm {
       display: none;
     }
 
-    .steps > li {
-      padding-left: 2.75rem;
+    .actions .cmd,
+    .start-actions .cmd {
+      width: 100%;
     }
 
-    .steps > li::before {
-      top: -0.1rem;
-      width: 2rem;
-      height: 2rem;
-      font-size: 0.9rem;
-    }
-
-    .layer {
-      grid-template-columns: 1fr;
-    }
-
-    .join code,
-    .step-code code,
-    .snippet-code code {
-      font-size: 0.78rem;
-    }
-
-    /* Phones wrap code instead of cutting tokens; wrapped lines hang under their start. */
-    .join,
-    .step-code,
-    .snippet-code {
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-    }
-
-    .join :global(.line),
-    .step-code :global(.line),
-    .snippet-code :global(.line) {
-      display: inline-block;
-      padding-left: 2ch;
-      text-indent: -2ch;
+    /* The command scrolls inside its box; the fade says there is more. */
+    .actions .cmd code,
+    .start-actions .cmd code {
+      mask-image: linear-gradient(to right, #000 84%, transparent);
     }
 
     .footer-grid {
-      grid-template-columns: 1fr 1fr;
-    }
-  }
-
-  @keyframes cord-rise-x {
-    from {
-      transform: scaleX(0);
-    }
-  }
-
-  @keyframes token-right {
-    0% {
-      opacity: 1;
-      transform: translateX(0);
-    }
-    85% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-      transform: translateX(calc(var(--cord) - 12px));
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .cord,
-    .stall-slot .cord {
-      animation: none;
-    }
-
-    .stall-slot.is-dispatching .token {
-      animation: none;
-    }
-
-    .btn,
-    .btn-paint:hover {
-      transition: none;
-      transform: none;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 </style>
 
 <script>
-  const copyButtons = document.querySelectorAll<HTMLButtonElement>(
-    ".feira button.cmd"
-  );
-  for (const button of copyButtons) {
+  for (const button of document.querySelectorAll<HTMLButtonElement>(".ed button.cmd")) {
     button.addEventListener("click", async () => {
       const command = button.dataset.command;
-      if (!command) {
-        return;
-      }
+      if (!command) return;
       const status = button.querySelector(".copy-status");
       try {
         await navigator.clipboard.writeText(command);
         button.classList.add("success");
-        if (status) {
-          status.textContent = "Copied";
-        }
+        if (status) status.textContent = "Copied";
       } catch {
-        if (status) {
-          status.textContent = "Copy failed. Select the command and copy it.";
-        }
+        if (status) status.textContent = "Copy failed. Select the command and copy it.";
       }
       setTimeout(() => {
         button.classList.remove("success");
-        if (status) {
-          status.textContent = "";
-        }
+        if (status) status.textContent = "";
       }, 1600);
     });
   }
 
-  const toggle = document.querySelector<HTMLButtonElement>(".theme-toggle");
-  toggle?.addEventListener("click", () => {
+  document.querySelector<HTMLButtonElement>(".ed .theme-toggle")?.addEventListener("click", () => {
     const root = document.documentElement;
     const next = root.dataset.theme === "dark" ? "light" : "dark";
     root.dataset.theme = next;
     localStorage.setItem("starlight-theme", next);
   });
-
-  const stallButtons = document.querySelectorAll<HTMLButtonElement>(
-    ".feira .stall"
-  );
-  const details = document.querySelectorAll<HTMLElement>(
-    ".feira [data-detail]"
-  );
-
-  function dispatchTo(button: HTMLButtonElement) {
-    const slot = button.closest(".stall-slot");
-    if (!slot) {
-      return;
-    }
-    slot.classList.remove("is-dispatching");
-    // Restart the token's run down this stall's cord.
-    void (slot as HTMLElement).offsetWidth;
-    slot.classList.add("is-dispatching");
-  }
-
-  for (const button of stallButtons) {
-    button.addEventListener("click", () => {
-      for (const other of stallButtons) {
-        other.setAttribute("aria-pressed", String(other === button));
-      }
-      for (const detail of details) {
-        detail.hidden = detail.dataset.detail !== button.dataset.stall;
-      }
-      dispatchTo(button);
-    });
-  }
-
-  // Once every cord has reached the beam, the hub sends one job down the first.
-  const first = stallButtons[0];
-  if (first && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    setTimeout(() => dispatchTo(first), 1150 + stallButtons.length * 95);
-  }
 </script>
