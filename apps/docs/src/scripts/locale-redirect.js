@@ -23,12 +23,17 @@
     // An unparsable referrer counts as an external arrival.
   }
 
+  if (internal) {
+    try {
+      localStorage.setItem(KEY, current);
+    } catch {
+      // Storage blocked: the choice isn't remembered, but this page stays.
+    }
+    return;
+  }
+
   let saved = null;
   try {
-    if (internal) {
-      localStorage.setItem(KEY, current);
-      return;
-    }
     saved = localStorage.getItem(KEY);
   } catch {
     // Storage blocked: fall back to the device language on every arrival.
