@@ -5,6 +5,7 @@ import { satteri } from "@astrojs/markdown-satteri";
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
 import starlightDotMd from "starlight-dot-md";
+import starlightLinksValidator from "starlight-links-validator";
 import starlightLlmsTxt from "starlight-llms-txt";
 import { mermaidDiagrams } from "./src/plugins/mermaid.mjs";
 
@@ -106,6 +107,8 @@ export default defineConfig({
         // Every page is also served as its Markdown source at <page>.md,
         // for agents and the "Ask your agent" prompt.
         starlightDotMd(),
+        // Fails the build on a broken internal link or #anchor, in every locale.
+        starlightLinksValidator(),
         starlightLlmsTxt({
           projectName: "Gambi",
           description:

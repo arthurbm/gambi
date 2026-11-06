@@ -16,6 +16,7 @@ For the day-to-day command set (install, dev, build, check-types, lint), see the
 | HTTP contracts or public types | quick test of affected endpoint(s); see `docs/reference/docs-update.md` for required doc updates |
 | Tunnel protocol | `bun test packages/core/src` (tunnel tests); see `docs/reference/docs-update.md` |
 | Harness participant runtime | `bun test packages/core/src/harness packages/sdk/src/harness-participant-session.test.ts`, then the installed-adapter smokes below. If you touched `harness-process.ts` or the SDK exports, also run the Node smoke below. |
+| `apps/docs` (pages, landing, translations) | `bun run --cwd apps/docs check:i18n` and `bun run --cwd apps/docs build` (the build fails on a broken internal link or `#anchor`). For UI changes, look at the built site: see [Docs site checks](#docs-site-checks). Translations follow [`translation-pt-br.md`](translation-pt-br.md). |
 | Distribution / release | `bun run --cwd packages/cli check-types`, `bun run --cwd packages/cli build`, `npm pack --dry-run --cache /tmp/npm-cache ./packages/cli/dist/npm/gambi`, `node ./packages/cli/dist/npm/gambi/bin/gambi --version` |
 
 ## Quick validation set
@@ -30,6 +31,21 @@ bun run --cwd apps/tui test
 - Tests in `core` and `sdk` start a hub on fixed ports (e.g., 3998 / 3999) and may fail if the port is busy. Report this as an environmental failure, not a product failure.
 - `packages/core/src/endpoint-capabilities.test.ts` has a historically-flaky test (`probeEndpoint > does not detect protected endpoints without auth headers`). Pre-existing; not introduced by recent work.
 - No Docker, database, or external service is required — all state is in-memory.
+
+## Docs site checks
+
+CI (`.github/workflows/ci.yml`) runs `check-types`, Biome on the changed files, `check:i18n`, and the docs build on every PR.
+
+- The build always prints `[WARN] [content] Entry docs → 404 was not found.` It is pre-existing and harmless.
+- `bun run build` rewrites `apps/docs/dist`, which stops a running `bun run preview`. Restart the preview after each build.
+- `bun x ultracite check` exits 0 even when it reports errors. To gate on lint, run `bun x biome check <files>`, which uses the same config.
+- Look at pages with headless Chrome rather than the T3 preview snapshot, which times out on a hidden tab. Run at most 3 at once:
+  `google-chrome --headless=new --user-data-dir=$(mktemp -d) --disable-gpu --hide-scrollbars --virtual-time-budget=4000 --window-size=1440,7000 --screenshot=out.png http://localhost:4321/`
+- The head script `src/scripts/locale-redirect.js` redirects by device language. To view `/pt-br/` add `--lang=pt-BR --accept-lang=pt-BR`; to check where a URL lands without a screenshot, use `--dump-dom` and read `<html lang>`.
+
+## PR review bots
+
+Greptile reviews a PR once, when it opens; a later push does not trigger a new review. After fixing its findings, the review on the first commit plus your own proof of the fix is the review gate. The retrigger link at the top of its comment asks for a fresh review if the change grew.
 
 ## Harness participant smoke
 
