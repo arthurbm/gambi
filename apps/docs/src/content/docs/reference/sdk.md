@@ -363,7 +363,7 @@ Close reasons:
 
 - `"closed"`: `close()` was called. The SDK installs no signal handlers; wire them yourself.
 - `"heartbeat_failed"`: a management heartbeat request failed. One failure is enough to close the session.
-- `"tunnel_closed"`: the WebSocket tunnel closed or errored, from either side. The session does not reconnect and does not remove the registration; the hub marks the participant offline after the heartbeat timeout.
+- `"tunnel_closed"`: the WebSocket tunnel closed or errored, from either side. The session does not reconnect and does not remove the registration; the hub marks the participant offline as soon as the tunnel closes.
 
 On `"closed"` and `"heartbeat_failed"`, the session tries to remove the participant from the room before it resolves.
 

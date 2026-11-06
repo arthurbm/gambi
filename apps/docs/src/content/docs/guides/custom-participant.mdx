@@ -60,7 +60,7 @@ Three close reasons, each with a different meaning:
 
 `closeEvent.error` holds the underlying `Error` when there is one. Log it.
 
-The session never reconnects by itself. On `"closed"` and `"heartbeat_failed"` it tries to remove the participant from the room before it resolves. On `"tunnel_closed"` it does not: the registration stays, and the hub marks the participant offline once heartbeats stop for 30 seconds. Calling `createParticipantSession()` again with the same participant ID updates that registration and opens a new tunnel.
+The session never reconnects by itself. On `"closed"` and `"heartbeat_failed"` it tries to remove the participant from the room before it resolves. On `"tunnel_closed"` it does not: the registration stays, and the hub marks the participant offline as soon as its tunnel closes. Calling `createParticipantSession()` again with the same participant ID updates that registration and opens a new tunnel.
 
 ## Step 3: Shut down cleanly
 

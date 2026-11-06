@@ -122,7 +122,7 @@ A management HTTP heartbeat request failed. One failed request is enough to clos
 2. A proxy or firewall is blocking `POST /v1/rooms/:code/participants/:id/heartbeat`.
 3. The room or participant was deleted from the hub while the runtime was still running. Check with `gambi room get` and `gambi participant join` again.
 
-After `heartbeat_failed`, the runtime tries to remove itself from the room. After `tunnel_closed`, it does not: the registration stays until the hub marks it offline 30 seconds after the last heartbeat. Either way, restarting with the same participant ID is safe, because registration is idempotent.
+After `heartbeat_failed`, the runtime tries to remove itself from the room. After `tunnel_closed`, it does not: the registration stays, and the hub marks the participant offline as soon as the tunnel closes. Either way, restarting with the same participant ID is safe, because registration is idempotent.
 
 ## High latency
 

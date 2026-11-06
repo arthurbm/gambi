@@ -37,6 +37,16 @@ const escapeHtml = (value) =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 
+/**
+ * MDX parses raw HTML as Markdown and applies smart punctuation to its text,
+ * which would turn `-->` into `–>`. Numeric entities survive that pass.
+ */
+const LITERAL_CHARS = /[&<>"'.-]/g;
+
+/** @param {string} value */
+const escapeLiteral = (value) =>
+  value.replace(LITERAL_CHARS, (char) => `&#${char.charCodeAt(0)};`);
+
 const TITLE_META = /title="([^"]*)"/;
 
 /** @param {string | null | undefined} meta */
@@ -87,7 +97,7 @@ export function renderDiagram(source, title) {
   const html = `<div class="diagram-wide${region}" style="--diagram-min: ${minWidth}px" data-pagefind-ignore="all">${label(wide.svg, title)}</div>${narrowHtml}`;
 
   const caption = title ? `<figcaption>${escapeHtml(title)}</figcaption>` : "";
-  const sourceCopy = `<pre class="diagram-source" hidden data-pagefind-ignore="all"><code class="language-mermaid">${escapeHtml(source)}</code></pre>`;
+  const sourceCopy = `<pre class="diagram-source" hidden data-pagefind-ignore="all"><code class="language-mermaid">${escapeLiteral(source)}</code></pre>`;
   return `<figure class="diagram not-content" data-diagram="${wide.type}">${html}${caption}${sourceCopy}</figure>`;
 }
 
