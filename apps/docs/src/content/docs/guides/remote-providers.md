@@ -1,11 +1,11 @@
 ---
-title: Remote Providers
+title: Remote providers
 description: Use cloud LLM providers such as OpenRouter, Together AI, Groq, Fireworks, or OpenAI as participants in a Gambi room.
 ---
 
 You do not need a local GPU to participate. Any OpenAI-compatible cloud API can be used as your LLM endpoint.
 
-## How It Works
+## How it works
 
 When you join a room with a remote provider, the participant runtime:
 
@@ -14,16 +14,16 @@ When you join a room with a remote provider, the participant runtime:
 3. opens a tunnel back to the hub
 4. forwards tunnel requests to the provider endpoint using local auth headers
 
-This means the hub does not need your provider credentials as part of public participant state, and your provider endpoint does not need to be exposed to the rest of the network.
+The hub never receives your provider credentials, and your provider endpoint is not exposed to the rest of the network.
 
 Supported protocols:
 
-| Protocol | Endpoint | Best For |
+| Protocol | Endpoint | Best for |
 | --- | --- | --- |
 | Responses API | `/v1/responses` | preferred default when the provider supports it |
 | Chat Completions | `/v1/chat/completions` | compatibility for providers and tools that still require it |
 
-## Join With CLI
+## Join with the CLI
 
 For automation, prefer `--header-env` so secrets do not end up in shell history.
 
@@ -50,7 +50,7 @@ gambi participant join --room ABC123 \
   --header "HTTP-Referer=https://my-app.example"
 ```
 
-## Join Through The SDK
+## Join through the SDK
 
 If you are building your own participant runtime, use `createParticipantSession()`:
 
@@ -72,9 +72,9 @@ await createParticipantSession({
 
 `authHeaders` stay local to the participant runtime. They are applied only when that runtime talks to the provider endpoint.
 
-## Popular Providers
+## Popular providers
 
-| Provider | Base URL | Free Models? |
+| Provider | Base URL | Free models? |
 | --- | --- | --- |
 | OpenRouter | `https://openrouter.ai/api` | yes |
 | Together AI | `https://api.together.xyz` | free tier |
@@ -82,7 +82,7 @@ await createParticipantSession({
 | Fireworks | `https://api.fireworks.ai/inference` | free tier |
 | OpenAI | `https://api.openai.com` | no |
 
-## Cost Considerations
+## Cost
 
 When you join with a cloud provider:
 
@@ -92,13 +92,13 @@ When you join with a cloud provider:
 
 Choose a model you are comfortable paying for, or use free-tier models for experimentation.
 
-## Security Notes
+## Security notes
 
-- Provider auth headers should remain on the participant runtime.
+- Provider auth headers stay on the participant runtime.
 - The tunnel-first model avoids publishing the provider endpoint or its credentials to the rest of the network just to participate.
-- If your hub is reachable outside your LAN, put it behind HTTPS or a reverse proxy and apply proper access control before using cloud provider credentials with it.
+- The hub has no built-in authentication. Anyone who can reach it can send requests that spend your provider credits. Keep it on a trusted network, or put it behind HTTPS and your own authentication layer.
 
-## When To Use Which Protocol
+## Which protocol to use
 
 - Responses API: preferred default
 - Chat Completions: compatibility path

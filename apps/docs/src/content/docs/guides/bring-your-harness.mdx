@@ -104,10 +104,10 @@ When startup succeeds, the CLI reports four milestones:
 
 1. participant registration completed
 2. the participant tunnel connected
-3. the local ACP process started
+3. the harness process started
 4. the ACP session opened
 
-The process stays in the foreground. Press Ctrl+C once to close the ACP process, remove the participant, and leave the room.
+The process stays in the foreground. Press Ctrl+C once to stop the harness process, remove the participant, and leave the room.
 
 For machine-readable lifecycle output, use NDJSON:
 
@@ -141,7 +141,7 @@ gambi participant join \
 
 The participant watches this directory and sends a versioned snapshot one second after file changes settle. It excludes `.git`, `node_modules`, and Gambi's local runtime metadata.
 
-The harness login remains local. It is not part of participant registration, lifecycle events, or tunnel frames. Workspace files are different. The participant sends them deliberately as artifacts so the attached application can consume the harness output. Nothing travels the other way: the hub cannot write files into your workspace.
+The harness login remains local. It is not part of participant registration, lifecycle events, or tunnel frames. Workspace files are different. The participant sends them deliberately as artifacts so the attached application can consume the harness output. Nothing travels the other way. The hub cannot write files into your workspace.
 
 ## Use the harness from an application
 
@@ -206,18 +206,19 @@ gambi participant join \
   --format json
 ```
 
-This preview does not start the ACP process and does not verify the local harness login. Run the normal command for the full readiness check.
+This preview does not start the harness process and does not verify the local harness login. Run the normal command for the full readiness check.
 
 ## Common failures
 
 | Symptom | What to do |
 | --- | --- |
-| exit code `2` and "unsupported harness" | use `opencode`, `claude-code`, or `codex` |
+| exit code `2` and "unsupported harness" | use `opencode`, `claude-code`, or `codex` (`fake` is a deterministic test harness that calls no model) |
 | exit code `2` for `--endpoint` or auth headers | remove model-provider flags from the harness command |
 | exit code `2` for `--workspace` | add `--harness`; model participants have no workspace |
 | exit code `3` before registration | run the install or login command printed by the CLI, then retry |
 | tunnel disconnects immediately | confirm that the hub is reachable and every proxy forwards WebSocket upgrades |
-| an inference request rejects the participant ID | use `client.harness.attach()` instead; harness participants are not model endpoints |
+| the CLI exits with `tunnel_failed` later | the participant does not reconnect on its own. Run the same command again; attached applications keep their sockets |
+| an inference request returns HTTP `400` for the participant ID | use `client.harness.attach()` instead; harness participants are not model endpoints |
 
 ## Next steps
 

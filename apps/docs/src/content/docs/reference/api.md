@@ -1,14 +1,14 @@
 ---
-title: API Reference
+title: API reference
 description: Reference for the Gambi management and inference HTTP APIs.
 ---
 
 The Gambi hub exposes two HTTP contracts:
 
-- Management API: native Gambi endpoints under `/v1`
-- Inference API: OpenAI-compatible room-scoped endpoints under `/rooms/:code/v1/*`
+- Management API: native Gambi routes under `/v1`
+- Inference API: OpenAI-compatible, room-scoped routes under `/rooms/:code/v1/*`
 
-The default protocol on the inference plane is the OpenAI Responses API. Chat Completions remains available as a compatibility surface.
+The default protocol on the inference plane is the OpenAI Responses API. Chat Completions remains available for compatibility.
 
 ## Base URLs
 
@@ -26,7 +26,7 @@ http://<hub-host>:<port>/rooms/<ROOM_CODE>/v1/
 
 ## Authentication
 
-The hub does not provide native authentication. It is designed for trusted local networks.
+The hub has no built-in authentication. Run it only on a trusted network, or behind your own proxy and authentication layer. A room password only protects participant registration; inference routes do not check it.
 
 ## Management API
 
@@ -58,18 +58,15 @@ Management errors use:
 }
 ```
 
-Common error codes:
+Error codes the hub returns:
 
 - `ROOM_NOT_FOUND`
 - `PARTICIPANT_NOT_FOUND`
 - `INVALID_REQUEST`
 - `INVALID_PASSWORD`
-- `ENDPOINT_NOT_REACHABLE`
-- `PARTICIPANT_CONFLICT`
-- `PARTICIPANT_BUSY`
-- `PARTICIPANT_TUNNEL_NOT_CONNECTED`
-- `MODEL_NOT_FOUND`
 - `INTERNAL_ERROR`
+
+The error code enum also declares `ENDPOINT_NOT_REACHABLE`, `PARTICIPANT_CONFLICT`, `PARTICIPANT_BUSY`, `PARTICIPANT_TUNNEL_NOT_CONNECTED`, and `MODEL_NOT_FOUND`. The hub does not return them today; treat them as reserved. The SDK uses `PARTICIPANT_TUNNEL_NOT_CONNECTED` for a client-side error when you send on a closed harness channel.
 
 ### GET /v1/health
 
@@ -147,7 +144,7 @@ Participant summaries include:
 
 Create or update a participant registration.
 
-This endpoint is idempotent and is the canonical registration path. The participant endpoint is treated as local metadata for the participant runtime. The hub does not need direct network reachability to it.
+This route is idempotent and is the canonical registration path. The hub stores the participant `endpoint` as metadata and never connects to it.
 
 Request body:
 
@@ -162,9 +159,9 @@ Request body:
 | `config` | `RuntimeConfig` | no | participant runtime defaults, see below |
 | `capabilities` | `ParticipantCapabilities` | no | participant protocol capabilities, see below |
 
-When `harness` is present, `endpoint` may be omitted and `capabilities` is ignored. Harness participants remain visible in management responses but are never returned by `/v1/models` or selected for inference.
+When `harness` is present, `endpoint` may be omitted and `capabilities` is ignored. Harness participants remain visible in management responses but are never returned by `/rooms/:code/v1/models` or selected for inference.
 
-Provider credentials are intentionally not part of participant registration. Do not send `authHeaders` to this endpoint; pass them to `createParticipantSession()` or the CLI runtime so they stay local to the participant.
+Provider credentials are not part of participant registration. Do not send `authHeaders` to this route; pass them to `createParticipantSession()` or the CLI runtime so they stay local to the participant.
 
 `MachineSpecs` fields (all optional):
 
@@ -182,7 +179,7 @@ Provider credentials are intentionally not part of participant registration. Do 
 | `openResponses` | `"supported" \| "unsupported" \| "unknown"` | whether the participant endpoint speaks the OpenAI Responses API |
 | `chatCompletions` | `"supported" \| "unsupported" \| "unknown"` | whether the participant endpoint speaks OpenAI Chat Completions |
 
-`RuntimeConfig` fields (all optional): `temperature`, `top_p`, `max_tokens`, `stop`, `frequency_penalty`, `presence_penalty`, `seed`, `instructions`. These act as participant-level defaults and are merged under the room defaults and above request-time overrides. The `instructions` string is private to the participant runtime — management responses surface only `hasInstructions`.
+`RuntimeConfig` fields (all optional): `temperature`, `top_p`, `max_tokens`, `stop`, `frequency_penalty`, `presence_penalty`, `seed`, `instructions`. These act as participant-level defaults and are merged under the room defaults and above request-time overrides. The `instructions` string is private to the participant runtime. Management responses show only `hasInstructions`.
 
 ```bash
 curl -X PUT http://localhost:3000/v1/rooms/ABC123/participants/worker-1 \
@@ -232,7 +229,7 @@ Behavior:
 - `201` when the participant is created
 - `200` when the participant already exists and is updated or unchanged
 
-The returned `tunnel` bootstrap is intended for participant runtimes such as the CLI or SDK `createParticipantSession()`.
+Participant runtimes, such as the CLI or the SDK's `createParticipantSession()`, use the returned `tunnel` bootstrap to open the tunnel.
 
 ### GET /v1/rooms/:code/participants/:id/tunnel
 
@@ -246,7 +243,7 @@ This is an internal operational route for participant runtimes. Application clie
 
 Token lifecycle:
 
-- the bootstrap token is single-use — successful upgrade consumes it
+- the bootstrap token is single-use: a successful upgrade consumes it
 - the token expires 60 seconds after issuance
 - re-registering via `PUT /v1/rooms/:code/participants/:id` returns a fresh token
 
@@ -263,7 +260,7 @@ Error responses:
 
 Attach a management client to a registered harness participant using a WebSocket upgrade. The client initiates this connection; the hub never connects to the participant.
 
-Clients send `tunnel.harness.message` and `tunnel.harness.control` frames. They receive `tunnel.harness.message`, `tunnel.harness.artifact`, and `tunnel.harness.status` frames. Every frame includes `sessionId`; ACP JSON-RPC lives in the opaque `message` field. Multiple clients may attach, and their sockets remain open while the participant tunnel reconnects.
+Clients send `tunnel.harness.message` and `tunnel.harness.control` frames. They receive `tunnel.harness.message`, `tunnel.harness.artifact`, and `tunnel.harness.status` frames. Every frame includes `sessionId`; ACP JSON-RPC lives in the opaque `message` field. Multiple clients may attach. Their sockets stay open if the participant tunnel closes and the participant later opens a new one; frames a client sends while no tunnel is open are dropped. The hub closes attached sockets when the participant leaves the room.
 
 The route returns `ROOM_NOT_FOUND`, `PARTICIPANT_NOT_FOUND`, or `INVALID_REQUEST` when the target is not a harness participant.
 
@@ -283,12 +280,16 @@ Send a heartbeat for one participant.
 curl -X POST http://localhost:3000/v1/rooms/ABC123/participants/worker-1/heartbeat
 ```
 
-Health constants:
+A participant that is registered but has a disconnected tunnel stays in the room and is not routable. See [Health timings](#health-timings).
 
-- heartbeat interval: `10_000 ms`
-- offline timeout: `30_000 ms`
+### Health timings
 
-Note that participant routability also depends on tunnel connectivity. A participant can remain registered but still be unroutable if its tunnel is disconnected.
+Two constants in `packages/core/src/types.ts` drive liveness:
+
+- `HEALTH_CHECK_INTERVAL = 10_000` ms: how often participant runtimes send a heartbeat and a tunnel ping.
+- `PARTICIPANT_TIMEOUT = 30_000` ms: after this long without a heartbeat, the hub marks the participant offline. The hub also closes a tunnel that has been silent for this long.
+
+A custom participant runtime must match these windows. `createParticipantSession()` does it for you.
 
 ### GET /v1/rooms/:code/events
 
@@ -297,6 +298,8 @@ Subscribe to room events as SSE.
 ```bash
 curl -N http://localhost:3000/v1/rooms/ABC123/events
 ```
+
+`GET /rooms/:code/events` serves the same stream. Prefer the `/v1` path.
 
 Each SSE `data:` block contains a JSON event with:
 
@@ -352,19 +355,39 @@ The `model` field controls routing:
 
 | Value | Behavior |
 | --- | --- |
-| `*` or `any` | random available participant |
-| `model:<name>` | first available participant matching the model name |
-| `<participant-id>` | specific participant |
+| `*` or `any` | a random available participant |
+| `model:<name>` | the first available participant whose model is `<name>` |
+| `<participant-id>` | that participant, if it is available |
+
+If the value is not a `*`, `any`, or `model:` selector and no available participant has that ID, the hub treats the value as a model name and picks the first available participant serving it. So `"model": "llama3"` behaves like `model:llama3` unless a participant is registered with the ID `llama3`.
 
 A participant is available only when:
 
 - its tunnel is connected
 - it is not offline
 - it is not already handling another request
+- it is a model participant (harness participants never receive inference requests)
+
+### Inference errors
+
+Inference routes do not use the management envelope. Errors are a JSON object with an `error` string and no code:
+
+```json
+{ "error": "Participant tunnel is not connected." }
+```
+
+| Status | `error` | Condition |
+| --- | --- | --- |
+| `400` | `Harness participants do not serve inference requests; attach through the management harness channel instead.` | the selector names a harness participant |
+| `404` | `Room not found` | the room code does not exist |
+| `404` | `No available participant for the requested model` | no available participant matches the selector |
+| `409` | `Participant is already handling another request.` | the selector names a participant that is busy |
+| `503` | `Participant tunnel is not connected.` | the selector names a participant whose tunnel is closed |
+| `502` | `Failed to proxy request: …` | the tunnel request failed after a participant was selected |
 
 ### GET /rooms/:code/v1/models
 
-List available room models in an OpenAI-compatible format.
+List the room's available model participants in OpenAI list format. Each entry's `id` is the participant ID, so you can pass it back as `model`. Harness participants, offline participants, and participants without a connected tunnel are left out.
 
 ```bash
 curl http://localhost:3000/rooms/ABC123/v1/models
@@ -414,7 +437,7 @@ curl -X POST http://localhost:3000/rooms/ABC123/v1/chat/completions \
   }'
 ```
 
-Use this when you need explicit Chat Completions compatibility. For new integrations, prefer `/responses`.
+Use this when a tool requires Chat Completions. For new integrations, prefer `/responses`.
 
 ## Runtime defaults
 

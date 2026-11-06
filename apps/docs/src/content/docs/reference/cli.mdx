@@ -1,11 +1,11 @@
 ---
-title: CLI Reference
+title: CLI reference
 description: Reference for the Gambi operational CLI.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-The Gambi CLI is the operational surface for hubs, rooms, participants, and room events.
+The Gambi CLI runs hubs and manages rooms, participants, and room events.
 
 The CLI is resource-oriented:
 
@@ -14,7 +14,6 @@ gambi hub serve
 gambi room create
 gambi room list
 gambi room get
-gambi participant join
 gambi participant join
 gambi participant leave
 gambi participant heartbeat
@@ -54,7 +53,7 @@ gambi --version
 
 ## Global behavior
 
-Every operational command inherits the same set of global flags from the shared command base. They can also be driven by environment variables, which is useful for scripts and supervisors.
+Every operational command accepts the same global flags. Environment variables can set most of them, which helps in scripts and supervisors.
 
 ### Global flags
 
@@ -62,7 +61,7 @@ Every operational command inherits the same set of global flags from the shared 
 | --- | --- |
 | `--format <text\|json\|ndjson>` | select output format |
 | `--env <name>` | pick a named environment from the CLI config file |
-| `--interactive` | allow prompts for missing required values |
+| `--interactive` | allow prompts for missing required values (needs a TTY) |
 | `--no-interactive` | disable all prompts |
 | `--verbose` | include extended details in output |
 | `--quiet` | reduce non-essential text output |
@@ -104,7 +103,7 @@ Streaming commands coerce `--format json` to `ndjson` so every event is a standa
 | `3` | connectivity or dependency failure (unreachable hub, `401`/`403`/`503`) |
 | `4` | remote rejection or conflict (`404`/`409` from hub) |
 
-Agent-style supervisors can key retries off these codes. `2` should not be retried, `3` usually should, and `4` means the operation is rejected by the hub state.
+Automation supervisors can key retries off these codes. Do not retry `2`. Retry `3` in most cases. `4` means the hub rejected the operation because of its current state.
 
 ### Named environments
 
@@ -137,7 +136,7 @@ Example:
 }
 ```
 
-Select an environment per-invocation with `--env lab` or globally with `GAMBI_ENV=lab`.
+Select an environment per invocation with `--env lab` or globally with `GAMBI_ENV=lab`.
 
 ## `gambi hub serve`
 
@@ -265,32 +264,33 @@ Options:
 
 | Option | Description |
 | --- | --- |
-| `--room` | room code |
+| `--room`, `-r` | room code |
 | `--participant-id` | stable participant identifier |
-| `--nickname`, `--name` | display name (`--name` is an alias) |
-| `--model` | model to expose, or an optional label in harness mode |
+| `--nickname`, `-n`, `--name` | display name (`--name` is an alias) |
+| `--model`, `-m` | model to expose, or an optional label in harness mode |
 | `--harness <opencode\|claude-code\|codex\|fake>` | start a local ACP harness instead of a model endpoint |
 | `--workspace <folder>` | harness mode only: run the harness in this folder instead of the default workspace |
-| `--endpoint` | local endpoint used for probing and inference |
+| `--endpoint`, `-e` | local endpoint used for probing and inference (default `http://localhost:11434`) |
 | `--header` | auth header in `Header=Value` format |
 | `--header-env` | auth header in `Header=ENV_VAR` format |
-| `--password` | room password |
+| `--password`, `-p` | room password |
 | `--config <path\|->` | runtime config JSON file or stdin |
 | `--no-specs` | skip machine specs collection |
-| `--hub` | hub URL |
+| `--hub`, `-H` | hub URL |
 | `--dry-run` | validate and preview the session |
 
 Notes:
 
 - `--participant-id` is required for non-interactive retry-safe automation.
 - `--config -` reads participant runtime config JSON from stdin.
+- In a terminal, the command prompts for a missing room, participant ID, model, nickname, and password. In model mode it lists the models found on the endpoint.
 - The CLI probes the endpoint before registration to validate the model and detect capabilities.
-- Participant joins now always use a tunnel, so the provider endpoint can stay on `localhost` even when the hub runs on another machine. See [How tunnels work](/explanation/tunnel-first/).
-- Harness mode starts the ACP agent in a workspace folder and publishes changed files after a one-second debounce. Without `--workspace`, the folder is `~/.gambi/workspaces/<room>/<participant-id>/` and starts empty apart from `.gambi.json`, which is never published. `.git` and `node_modules` are never published. Passing `--workspace` without `--harness` exits with code `2`.
+- Every participant joins through a tunnel, so the provider endpoint can stay on `localhost` even when the hub runs on another machine. See [How tunnels work](/explanation/tunnel-first/).
+- Harness mode starts the harness process in a workspace folder and publishes changed files after a one-second debounce. Without `--workspace`, the folder is `~/.gambi/workspaces/<room>/<participant-id>/` and starts empty apart from `.gambi.json`, which is never published. `.git` and `node_modules` are never published. Passing `--workspace` without `--harness` exits with code `2`.
 - `--endpoint`, `--header`, and `--header-env` are invalid with `--harness`. The harness uses its existing login on the participant machine. Gambi does not read or upload those credentials.
 - The `opencode` adapter runs `opencode acp`. If OpenCode is missing or has no detected credentials, the command exits with code `3` and prints the command needed to fix it.
 - The `claude-code` adapter runs the published `claude-agent-acp` bridge. Install it with `npm install -g @agentclientprotocol/claude-agent-acp`, install Claude Code with `npm install -g @anthropic-ai/claude-code`, and authenticate locally with `claude auth login`.
-- **Claude Code terms warning:** each end user must run the unmodified Anthropic binary with their own local authentication. Gambi never intermediates a Claude subscription login and must never host Claude Code for third parties. Review Anthropic's [legal and compliance terms](https://code.claude.com/docs/en/legal-and-compliance) before joining.
+- Claude Code terms: each end user must run the unmodified Anthropic binary with their own local authentication. Gambi never intermediates a Claude subscription login and must never host Claude Code for third parties. Review Anthropic's [legal and compliance terms](https://code.claude.com/docs/en/legal-and-compliance) before joining.
 - The `codex` adapter runs the published `codex-acp` bridge. Install it with `npm install -g @agentclientprotocol/codex-acp`, install Codex CLI with `npm install -g @openai/codex`, and authenticate locally with `codex login`.
 - Claude Code and Codex readiness checks use `claude auth status --json` and `codex login status`. Authentication state and credentials remain on the participant machine and are never included in registration, lifecycle events, or tunnel frames.
 - The `fake` adapter is deterministic and calls no model. It is for rehearsals and automated tests.
@@ -354,17 +354,17 @@ NDJSON lifecycle events:
 
 | Event | Meaning |
 | --- | --- |
-| `prepared` | endpoint probing and payload assembly completed |
+| `prepared` | inputs resolved and payload assembled (model mode has also probed the endpoint) |
 | `registered` | participant registration succeeded |
 | `tunnel_connected` | the participant tunnel is open |
-| `harness_spawned` | the local ACP process started |
+| `harness_spawned` | the harness process started |
 | `session_opened` | ACP v1 negotiation and `session/new` succeeded |
 | `artifact_sent` | a versioned workspace snapshot crossed the tunnel |
-| `harness_exited` | the local ACP process exited |
+| `harness_exited` | the harness process exited |
 | `leaving` | shutdown started |
 | `left` | participant removal completed |
-| `heartbeat_failed` | management heartbeat loop failed |
-| `tunnel_failed` | tunnel connectivity failed |
+| `heartbeat_failed` | a management heartbeat request failed; the command exits with code `3` |
+| `tunnel_failed` | the tunnel closed; the command exits with code `3` |
 
 ## `gambi participant leave`
 
@@ -390,7 +390,7 @@ gambi participant leave --room ABC123 --participant-id worker-1
 
 ## `gambi participant heartbeat`
 
-Send one participant heartbeat. Useful for automation and liveness probing independently from the long-running `participant join` command.
+Send one participant heartbeat. Use it for automation and liveness probes outside the long-running `participant join` command.
 
 ```bash
 gambi participant heartbeat --room <room> --participant-id <id> [options]
@@ -432,7 +432,7 @@ gambi events watch --room ABC123
 gambi events watch --room ABC123 --format ndjson
 ```
 
-Important event types:
+Event types:
 
 - `connected`
 - `room.created`
@@ -443,8 +443,11 @@ Important event types:
 - `llm.request`
 - `llm.complete`
 - `llm.error`
+- `harness.session.opened`
+- `harness.session.closed`
+- `harness.artifact`
 
-See [Observability](/reference/observability/) for the field shape of the `llm.*` events.
+See [Observability](/reference/observability/) for the field shape of the `llm.*` and `harness.*` events.
 
 ## `gambi self update`
 
@@ -472,6 +475,6 @@ gambi self update --dry-run --format json
 
 ## See also
 
-- [API Reference](/reference/api/) for the HTTP surfaces backing the CLI.
-- [SDK Reference](/reference/sdk/) for programmatic equivalents.
+- [API reference](/reference/api/) for the HTTP routes behind the CLI.
+- [SDK reference](/reference/sdk/) for programmatic equivalents.
 - [How tunnels work](/explanation/tunnel-first/) for the conceptual model behind `participant join`.

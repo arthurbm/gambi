@@ -1,6 +1,8 @@
 ---
-title: What's Next
+title: What's next
 description: What Gambi handles today, what is still your code, and where the layer above it is being explored.
+sidebar:
+  order: 3
 ---
 
 Gambi is deliberately narrow. This page says what it does today, what it leaves to you, and where the work above it happens.
@@ -11,7 +13,7 @@ Gambi is deliberately narrow. This page says what it does today, what it leaves 
 - Participants that share an OpenAI-compatible model or a coding harness (Claude Code, Codex, OpenCode), each through a tunnel its owner opened.
 - Routing of inference calls by participant id, `model:<name>`, or `*`.
 - Harness sessions relayed over ACP v1, with workspace artifacts sent back to the attached app.
-- Live room events with timing and token counts for every request.
+- Live room events for every inference request, with timing, and token counts when the provider reports them.
 
 ## What is still your code
 
@@ -21,7 +23,7 @@ Gambi moves work between participants. It does not decide how that work is organ
 - what context participants share, and who keeps track of it
 - how a task is split across harnesses, and who reviews the result
 
-The [patterns guide](/guides/patterns/) shows how to write these on top of the SDK today.
+Today that logic lives in your application. The [patterns guide](/guides/patterns/) shows turn-taking and fan-out across model participants with the SDK; the same approach applies to harness participants through `client.harness.attach()`.
 
 ## The layer above
 
@@ -35,10 +37,10 @@ One case where that exploration happens is [`gambiarra-lab`](https://github.com/
 
 ## What stays out of the hub
 
-Whatever the layer above becomes, the hub stays a transport. Scheduling, workflow graphs, shared memory, task delegation, and agent identity do not go into it. Keeping them out is what lets plain OpenAI-compatible tools keep working against a room.
+Whatever the layer above becomes, the hub stays a transport. Scheduling, workflow graphs, shared memory, task delegation, and harness identity do not go into it. Keeping them out is what lets plain OpenAI-compatible tools keep working against a room.
 
 ## Related
 
-- [How Tunnels Work](/explanation/tunnel-first/)
-- [Bring Your Harness](/guides/bring-your-harness/)
-- [Patterns](/guides/patterns/)
+- [How tunnels work](/explanation/tunnel-first/)
+- [Bring your harness](/guides/bring-your-harness/)
+- [Multi-LLM patterns](/guides/patterns/)

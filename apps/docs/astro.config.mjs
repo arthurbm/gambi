@@ -180,16 +180,16 @@ export default defineConfig({
         {
           label: "Guides",
           items: [
-            { label: "Quick Start", slug: "guides/quickstart" },
+            { label: "Quick start", slug: "guides/quickstart" },
             {
-              label: "Bring Your Harness",
+              label: "Bring your harness",
               slug: "guides/bring-your-harness",
             },
-            { label: "Multi-LLM Patterns", slug: "guides/patterns" },
-            { label: "Using with AI Tools", slug: "guides/ai-tools" },
-            { label: "Remote Providers", slug: "guides/remote-providers" },
+            { label: "Multi-LLM patterns", slug: "guides/patterns" },
+            { label: "Using with AI tools", slug: "guides/ai-tools" },
+            { label: "Remote providers", slug: "guides/remote-providers" },
             {
-              label: "Custom Participant Runtime",
+              label: "Custom participant runtime",
               slug: "guides/custom-participant",
             },
             {
@@ -201,9 +201,9 @@ export default defineConfig({
         {
           label: "Reference",
           items: [
-            { label: "API Reference", slug: "reference/api" },
-            { label: "CLI Reference", slug: "reference/cli" },
-            { label: "SDK Reference", slug: "reference/sdk" },
+            { label: "API reference", slug: "reference/api" },
+            { label: "CLI reference", slug: "reference/cli" },
+            { label: "SDK reference", slug: "reference/sdk" },
             { label: "Observability", slug: "reference/observability" },
           ],
         },

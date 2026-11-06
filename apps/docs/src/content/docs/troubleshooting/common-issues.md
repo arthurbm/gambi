@@ -1,11 +1,9 @@
 ---
-title: Common Issues
-description: Troubleshooting common problems with Gambi
+title: Common issues
+description: Fixes for common problems with Gambi hubs, participants, and harnesses.
 ---
 
-# Common Issues
-
-## Participant Shows as Offline
+## Participant shows as offline
 
 Symptoms:
 
@@ -30,7 +28,7 @@ Causes and solutions:
 curl http://hub-ip:3000/v1/health
 ```
 
-## Connection Timeout
+## Connection timeout
 
 Symptoms:
 
@@ -51,7 +49,7 @@ gambi hub serve --port 3000
 
 3. The wrong hub URL is configured.
 
-## mDNS Discovery Not Working
+## mDNS discovery not working
 
 Symptoms:
 
@@ -70,7 +68,7 @@ gambi hub serve --mdns
 
 3. UDP port 5353 is blocked.
 
-## CORS Errors
+## CORS errors
 
 Symptoms:
 
@@ -82,7 +80,7 @@ Causes and solutions:
 1. A custom proxy is stripping CORS headers.
 2. A custom proxy is also stripping WebSocket upgrade headers needed for participant tunnels.
 
-## Request Goes To The Wrong Participant
+## Request goes to the wrong participant
 
 Symptoms:
 
@@ -95,7 +93,9 @@ Causes and solutions:
 
 2. The intended participant is offline, busy, or tunnel-disconnected.
 
-## Participant Reports `tunnel_failed` or `heartbeat_failed`
+3. A plain `model` value that is not a participant ID is treated as a model name. If no available participant has the ID you sent, the hub routes to the first available participant serving a model with that name. See [Model routing](/reference/api/#model-routing).
+
+## Participant reports `tunnel_failed` or `heartbeat_failed`
 
 Symptoms:
 
@@ -103,7 +103,7 @@ Symptoms:
 - `gambi participant join --format ndjson` emits a `heartbeat_failed` event and exits
 - a custom runtime built on `createParticipantSession()` reports a close reason of `"tunnel_closed"` or `"heartbeat_failed"`
 
-These are distinct failure modes. Diagnose by the lifecycle event or close reason.
+These are different failures. Diagnose by the lifecycle event or close reason. Neither the CLI nor the SDK reconnects on its own: restart the participant with the same participant ID.
 
 ### `tunnel_failed` / close reason `"tunnel_closed"`
 
@@ -116,15 +116,15 @@ The WebSocket tunnel to the hub was interrupted. Common causes:
 
 ### `heartbeat_failed`
 
-The management HTTP heartbeat loop failed repeatedly. This is about HTTP reachability to `/v1`, not the WebSocket path. Common causes:
+A management HTTP heartbeat request failed. One failed request is enough to close the session. This is about HTTP reachability to `/v1`, not the WebSocket path. Common causes:
 
 1. The hub URL is wrong or stale.
 2. A proxy or firewall is blocking `POST /v1/rooms/:code/participants/:id/heartbeat`.
 3. The room or participant was deleted from the hub while the runtime was still running. Check with `gambi room get` and `gambi participant join` again.
 
-In both cases, the runtime removes itself from the room as a best effort when it can, so restarting is a safe operation.
+After `heartbeat_failed`, the runtime tries to remove itself from the room. After `tunnel_closed`, it does not: the registration stays until the hub marks it offline 30 seconds after the last heartbeat. Either way, restarting with the same participant ID is safe, because registration is idempotent.
 
-## High Latency
+## High latency
 
 Symptoms:
 
@@ -143,13 +143,25 @@ Watch room events and look at `llm.complete.metrics` to inspect:
 - `durationMs`
 - `tokensPerSecond`
 
-## Still Having Issues?
+## Harness participant fails to start or is rejected
 
-1. Check hub logs:
+Symptoms and fixes for `gambi participant join --harness`:
 
-```bash
-DEBUG=* gambi hub serve
-```
+1. Exit code `3` before registration, with a message to install or log in.
+   - The harness binary or its ACP adapter is missing, or there is no local login. Run the command the CLI prints, for example `opencode auth login`, `claude auth login`, or `codex login`, then retry. See [Bring your harness](/guides/bring-your-harness/#install-and-authenticate-your-harness).
+
+2. Exit code `2` and an error ending in `cannot be used with --harness`.
+   - Remove `--endpoint`, `--header`, and `--header-env`. The harness uses its own local login.
+
+3. `Claude Code cannot run as a Gambi-hosted harness for third parties.`
+   - An application called `createHarnessParticipantSession()` with `harnessId: "claude-code"` and `hosted: true`. The SDK rejects that combination. Each person must run Claude Code with their own login.
+
+4. An inference request returns HTTP `400` with `Harness participants do not serve inference requests`.
+   - The `model` value names a harness participant. Harness participants do not take OpenAI-compatible requests. Attach with `client.harness.attach()` instead.
+
+## Still having issues?
+
+1. Check the hub output. The hub prints `[gambi] llm.request`, `[gambi] llm.complete`, and `[gambi] llm.error` lines to the console, and `gambi events watch --room <code>` shows room events.
 
 2. Test the provider endpoint directly:
 

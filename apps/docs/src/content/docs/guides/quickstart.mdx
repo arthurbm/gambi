@@ -1,30 +1,32 @@
 ---
-title: Quick Start
+title: Quick start
 description: Get up and running with Gambi in minutes.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-This tutorial walks you through setting up Gambi from scratch. By the end, you'll have a hub running with participants sharing LLMs on your network.
+This tutorial sets up Gambi from scratch. By the end, you'll have a hub running with participants sharing models on your network.
 
-## What You'll Need
+## What you'll need
 
-- **A machine to run the hub** — any computer on the network (doesn't need a GPU, it just routes traffic)
-- **At least one LLM endpoint** — Ollama, LM Studio, vLLM, or any OpenAI-compatible API
-- **Node.js** only if you plan to install the CLI through npm
+- **A machine to run the hub.** Any computer on the network works. It doesn't need a GPU, because the hub only routes traffic.
+- **At least one model endpoint.** Ollama, LM Studio, vLLM, or any OpenAI-compatible API.
+- **Node.js**, only if you plan to install the CLI through npm.
+
+To share Claude Code, Codex, or OpenCode instead of a model endpoint, follow this page up to creating a room, then see [Bring your harness](/guides/bring-your-harness/).
 
 ## Installation
 
 ### CLI
 
-The CLI allows you to start hubs, create rooms, and join as a participant. Pre-built binaries are available for **Linux** (x64/arm64), **macOS** (Apple Silicon and Intel), and **Windows** (x64).
+The CLI starts hubs, creates rooms, and joins rooms as a participant. Pre-built binaries are available for **Linux** (x64/arm64), **macOS** (Apple Silicon and Intel), and **Windows** (x64).
 
 <Tabs>
   <TabItem label="Linux / macOS" icon="linux">
     ```bash
     curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.sh | bash
     ```
-    The script auto-detects your OS and architecture, downloads the correct binary, and installs it to `/usr/local/bin`.
+    The script detects your OS and architecture, downloads the matching binary, and installs it to `~/.local/bin`. Set `GAMBI_INSTALL_DIR` to install somewhere else.
   </TabItem>
   <TabItem label="Windows" icon="laptop">
     ```powershell
@@ -76,7 +78,7 @@ gambi --version
 
 ### SDK
 
-The SDK provides [Vercel AI SDK](https://sdk.vercel.ai/) integration for using shared LLMs in your TypeScript/JavaScript applications. It defaults to the Responses API and also supports Chat Completions.
+The SDK is a [Vercel AI SDK](https://sdk.vercel.ai/) provider for using shared models in TypeScript and JavaScript applications. It defaults to the Responses API and also supports Chat Completions.
 
 ```bash
 npm install gambi-sdk
@@ -84,36 +86,46 @@ npm install gambi-sdk
 bun add gambi-sdk
 ```
 
-## Basic Usage
+## Basic usage
 
-All CLI commands support **interactive mode** — run without flags and you'll be guided through each option. Flags still work for scripting.
+`gambi room create` and `gambi participant join` prompt for missing values when you run them in a terminal. Pass the values as flags for scripts, or add `--no-interactive` to turn prompts off.
 
-### 1. Start the Hub Server
+### 1. Start the hub
 
-Pick a machine on the network to be the hub. It doesn't need a GPU — the hub only routes requests between participants.
+Pick a machine on the network to be the hub. It doesn't need a GPU, because the hub only routes requests between participants.
 
 ```bash
-# Interactive — prompts for port, host, mDNS:
+# Defaults: host 0.0.0.0, port 3000
 gambi hub serve
 
-# Or with flags:
+# Or choose a port and enable mDNS:
 gambi hub serve --port 3000 --mdns
 ```
 
-The `--mdns` flag enables auto-discovery so other machines on the network can find the hub automatically.
+The `--mdns` flag advertises the hub so other machines on the network can discover it.
 
-### 2. Create a Room
+:::caution[Trusted networks only]
+The hub has no built-in authentication. Anyone who can reach its port can create rooms and send inference requests to any room. A room password only protects joining. Run it only on a network you trust. If you need to expose it beyond that, put it behind your own proxy and authentication layer.
+:::
+
+### 2. Create a room
 
 ```bash
-# Interactive — prompts for room name and password:
+# In a terminal, prompts for the room name and an optional password:
 gambi room create
 
 # Or with flags:
 gambi room create --name "My Room"
-# Output: Room created! Code: ABC123
 ```
 
-Share this code with everyone who wants to join — via chat, projector, sticky note, whatever works.
+The CLI prints the room code and the host ID:
+
+```text
+Created room ABC123 (My Room).
+host_id: …
+```
+
+Share the room code with everyone who wants to join.
 
 You can also create a password-protected room:
 
@@ -121,9 +133,9 @@ You can also create a password-protected room:
 gambi room create --name "Private Room" --password secret123
 ```
 
-### 3. Join with Your LLM
+### 3. Join with your model
 
-Each person with an LLM endpoint joins the room:
+Each person with a model endpoint joins the room:
 
 ```bash
 gambi participant join \
@@ -132,7 +144,7 @@ gambi participant join \
   --model llama3
 ```
 
-With flags, the default endpoint is `http://localhost:11434` (Ollama). For other providers, use `--endpoint`:
+The default endpoint is `http://localhost:11434` (Ollama). For other providers, use `--endpoint`:
 
 ```bash
 # LM Studio
@@ -150,17 +162,17 @@ gambi participant join \
   --endpoint http://localhost:8000
 ```
 
-The CLI probes your local endpoint, detects available models and protocol capabilities, registers the participant, opens a tunnel back to the hub, and keeps the session alive until interrupted.
+The CLI probes your local endpoint, checks that the model exists, detects which protocols it supports, registers the participant, opens a tunnel to the hub, and keeps the session alive until you stop it.
 
-Important implication: your provider endpoint can stay on `localhost`, even when the hub is running on another machine in the same trusted network. You no longer need to publish a LAN-reachable provider URL just to join a room. For the reasoning behind this, see [How Tunnels Work](/explanation/tunnel-first/).
+Your provider endpoint can stay on `localhost`, even when the hub runs on another machine in the same trusted network. The hub never connects to it. For the reasoning, see [How tunnels work](/explanation/tunnel-first/).
 
-It also shares your machine specs (CPU, RAM, GPU) automatically. Use `--no-specs` if you prefer not to share them.
+The CLI also shares your machine specs (CPU, RAM, GPU). Use `--no-specs` to keep them private.
 
-Once joined, your LLM is available to everyone in the room.
+Once joined, your model is available to everyone in the room.
 
 ### 4. Use the SDK
 
-Now anyone can use the shared LLMs from their code:
+Anyone can now use the shared models from their code:
 
 ```typescript
 import { createGambi } from "gambi-sdk";
@@ -180,18 +192,18 @@ const result = await generateText({
 console.log(result.text);
 ```
 
-You can also target specific models or participants:
+You can also target a model or a participant:
 
 ```typescript
-// Use a specific model
+// Any participant serving this model
 const result = await generateText({
   model: gambi.model("llama3"),
   prompt: "Explain quantum computing",
 });
 
-// Use a specific participant
+// The participant that joined as joao-1
 const result = await generateText({
-  model: gambi.participant("joao"),
+  model: gambi.participant("joao-1"),
   prompt: "Write a haiku",
 });
 ```
@@ -206,9 +218,9 @@ const gambi = createGambi({
 });
 ```
 
-### 5. Use the API Directly
+### 5. Call the API directly
 
-No SDK needed. The hub is an OpenAI-compatible API — use it from any language or tool:
+You don't need the SDK. The hub speaks the OpenAI API, so any language or HTTP client works:
 
 ```bash
 curl -X POST http://localhost:3000/rooms/ABC123/v1/responses \
@@ -219,18 +231,21 @@ curl -X POST http://localhost:3000/rooms/ABC123/v1/responses \
   }'
 ```
 
-Any tool that accepts a custom OpenAI base URL works — Lovable, Cursor, Open WebUI, Python's `openai` library, etc. Just point it at:
+Any tool that accepts a custom OpenAI base URL works, such as Open WebUI or Python's `openai` library. Point it at:
 
 ```
 http://<hub-ip>:<port>/rooms/<ROOM_CODE>/v1
 ```
 
-See the [API Reference](/reference/api/) for all available endpoints.
+The tool has to reach the hub over your network. Hosted tools that call the model from their own servers cannot reach a hub on a private network.
 
-## Next Steps
+See the [API reference](/reference/api/) for every route.
 
-- Learn about [CLI commands](/reference/cli/)
+## Next steps
+
+- Share Claude Code, Codex, or OpenCode: [Bring your harness](/guides/bring-your-harness/)
+- Learn the [CLI commands](/reference/cli/)
 - Explore [SDK usage](/reference/sdk/)
-- See the full [API Reference](/reference/api/)
-- Using cloud LLMs? See [Remote Providers](/guides/remote-providers/)
-- Building multi-LLM experiences? See [Multi-LLM Patterns](/guides/patterns/)
+- Read the full [API reference](/reference/api/)
+- Using cloud models? See [Remote providers](/guides/remote-providers/)
+- Building with several models? See [Multi-LLM patterns](/guides/patterns/)
