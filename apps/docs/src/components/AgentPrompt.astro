@@ -1,0 +1,203 @@
+---
+/**
+ * AgentPrompt.astro - "Ask your agent": a ready prompt the visitor copies
+ * into their own coding agent. The prompt text is shown in full so people
+ * can read what they paste. Labels come from Starlight's UI strings
+ * (src/content/i18n), the prompt from src/prompts.ts.
+ */
+import { setupPrompt } from "../prompts";
+
+interface Props {
+  /** Overrides the default lede under the label. */
+  lede?: string;
+}
+
+const { t } = Astro.locals;
+const lede = Astro.props.lede ?? t("agentPrompt.lede");
+const prompt = setupPrompt;
+const id = "agent-prompt-title";
+---
+
+<section class="agent-prompt not-content" aria-labelledby={id} data-agent-prompt>
+  <div class="ap-head">
+    <div class="ap-copy-text">
+      <p class="ap-label" id={id}>
+        <svg viewBox="0 0 24 24" aria-hidden="true" class="ap-icon">
+          <path d="M4 6.5h16M4 12h10M4 17.5h7"></path>
+          <path d="m15.5 15 2.5 2.5-2.5 2.5"></path>
+        </svg>
+        {t("agentPrompt.label")}
+      </p>
+      <p class="ap-lede">{lede}</p>
+    </div>
+    <button
+      class="ap-button"
+      type="button"
+      data-copied={t("agentPrompt.copied")}
+      data-failed={t("agentPrompt.failed")}
+    >
+      <span class="ap-button-label">{t("agentPrompt.copy")}</span>
+    </button>
+  </div>
+  <pre class="ap-prompt" tabindex="0" aria-label={t("agentPrompt.label")}><code>{prompt}</code></pre>
+  <span class="ap-status sr-only" aria-live="polite"></span>
+</section>
+
+<script>
+  for (const root of document.querySelectorAll<HTMLElement>("[data-agent-prompt]")) {
+    const button = root.querySelector<HTMLButtonElement>(".ap-button");
+    const label = root.querySelector<HTMLElement>(".ap-button-label");
+    const status = root.querySelector<HTMLElement>(".ap-status");
+    const text = root.querySelector("code")?.textContent ?? "";
+    if (!(button && label && status)) {
+      continue;
+    }
+    const idle = label.textContent ?? "";
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    button.addEventListener("click", async () => {
+      clearTimeout(timer);
+      try {
+        await navigator.clipboard.writeText(text);
+        label.textContent = button.dataset.copied ?? idle;
+        status.textContent = button.dataset.copied ?? "";
+        button.classList.add("is-copied");
+      } catch {
+        status.textContent = button.dataset.failed ?? "";
+      }
+      timer = setTimeout(() => {
+        label.textContent = idle;
+        status.textContent = "";
+        button.classList.remove("is-copied");
+      }, 2000);
+    });
+  }
+</script>
+
+<style>
+  .agent-prompt {
+    margin-block: 1.75rem;
+    border: 1px solid var(--e-line-2);
+    border-radius: 12px;
+    background: var(--e-sheet);
+    overflow: hidden;
+  }
+
+  .ap-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.9rem 1.25rem;
+    padding: 1rem 1.2rem;
+  }
+
+  .ap-copy-text {
+    flex: 1 1 18rem;
+    min-width: 0;
+  }
+
+  .ap-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    color: var(--e-ink);
+    font-size: 1rem;
+    font-weight: 700;
+    font-variation-settings: "wdth" 108;
+  }
+
+  .ap-icon {
+    flex: none;
+    width: 1.1rem;
+    height: 1.1rem;
+    fill: none;
+    stroke: var(--e-harness);
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .ap-lede {
+    margin: 0.3rem 0 0;
+    color: var(--e-ink-2);
+    font-size: 0.94rem;
+    line-height: 1.5;
+    text-wrap: pretty;
+  }
+
+  .ap-button {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.6rem;
+    min-width: 9.5rem;
+    padding: 0 1.1rem;
+    border: 0;
+    border-radius: 10px;
+    background: var(--e-primary);
+    color: var(--e-primary-ink);
+    font: inherit;
+    font-size: 0.94rem;
+    font-weight: 650;
+    cursor: pointer;
+    transition:
+      background-color 160ms ease,
+      transform 160ms var(--ease-out);
+  }
+
+  .ap-button:hover {
+    background: color-mix(in oklab, var(--e-primary) 86%, var(--e-ink-3));
+  }
+
+  .ap-button:active {
+    transform: scale(0.97);
+  }
+
+  .ap-button.is-copied {
+    background: var(--e-harness);
+    color: var(--e-ground);
+  }
+
+  .ap-prompt {
+    margin: 0;
+    max-height: 15rem;
+    overflow: auto;
+    padding: 0.95rem 1.15rem;
+    border-top: 1px solid var(--e-line);
+    background: var(--e-code-bg);
+    color: var(--e-code-ink);
+    font-family: var(--e-mono);
+    font-size: 0.8rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    scrollbar-color: var(--e-code-scrollbar) transparent;
+  }
+
+  .ap-prompt code {
+    font: inherit;
+    background: none;
+    border: 0;
+    padding: 0;
+    color: inherit;
+  }
+
+  .ap-prompt:focus-visible {
+    outline: 2px solid var(--e-harness);
+    outline-offset: -2px;
+  }
+
+  @media (max-width: 30rem) {
+    .ap-button {
+      width: 100%;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ap-button {
+      transition: none;
+    }
+  }
+</style>

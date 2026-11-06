@@ -1,0 +1,95 @@
+---
+title: Installation
+description: Install the Gambi CLI on every machine that joins, and the SDK in the apps that call a room.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Gambi has two parts you install:
+
+- **The CLI** (`gambi`), on every machine that runs the hub or shares a model or harness.
+- **The SDK** (`gambi-sdk`), only in TypeScript or JavaScript apps that call a room. Apps in other languages can use any OpenAI-compatible client instead.
+
+## CLI
+
+Pre-built binaries are available for **Linux** (x64/arm64), **macOS** (Apple Silicon and Intel), and **Windows** (x64).
+
+<Tabs>
+  <TabItem label="Linux / macOS" icon="linux">
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.sh | bash
+    ```
+    The script detects your OS and architecture, downloads the matching binary, and installs it to `~/.local/bin`. Set `GAMBI_INSTALL_DIR` to install somewhere else.
+  </TabItem>
+  <TabItem label="Windows" icon="laptop">
+    ```powershell
+    irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.ps1 | iex
+    ```
+    The script downloads the binary to `%LOCALAPPDATA%\gambi\` and adds it to your user PATH.
+  </TabItem>
+  <TabItem label="npm / bun" icon="seti:npm">
+    ```bash
+    # Via npm
+    npm install -g gambi
+
+    # Via bun
+    bun add -g gambi
+    ```
+    The published `gambi` package is a wrapper that installs only the matching platform binary for your machine. npm users only need Node.js; Bun is not required at runtime.
+  </TabItem>
+</Tabs>
+
+Verify the installation:
+
+```bash
+gambi --version
+```
+
+To update later, run `gambi self update`.
+
+## SDK
+
+The SDK is a [Vercel AI SDK](https://sdk.vercel.ai/) provider for using shared models in TypeScript and JavaScript applications. It defaults to the Responses API and also supports Chat Completions. It also includes the management client and the harness attach channel.
+
+```bash
+npm install gambi-sdk
+# or
+bun add gambi-sdk
+```
+
+## What each machine needs
+
+| Machine | Needs |
+| --- | --- |
+| The hub | The CLI. No GPU, because the hub only routes traffic. |
+| Someone sharing a model | The CLI and a running OpenAI-compatible server, such as Ollama, LM Studio, or vLLM, or a cloud API key. |
+| Someone sharing a harness | The CLI and Claude Code, Codex, or OpenCode, installed and logged in. See [Bring your harness](/guides/bring-your-harness/). |
+| An app that calls the room | The SDK, or any OpenAI-compatible client. |
+
+## Uninstall
+
+<Tabs>
+  <TabItem label="Linux / macOS" icon="linux">
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.sh | bash
+    ```
+  </TabItem>
+  <TabItem label="Windows" icon="laptop">
+    ```powershell
+    irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.ps1 | iex
+    ```
+  </TabItem>
+  <TabItem label="npm / bun" icon="seti:npm">
+    ```bash
+    # If installed via npm
+    npm uninstall -g gambi
+
+    # If installed via bun
+    bun remove -g gambi
+    ```
+  </TabItem>
+</Tabs>
+
+## Next step
+
+Run a hub and share your first model in the [Quick start](/start/quickstart/).

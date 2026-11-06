@@ -1,92 +1,23 @@
 ---
 title: Quick start
-description: Get up and running with Gambi in minutes.
+description: Run a hub, create a room, share a model, and call it from code, in four commands.
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
+import AgentPrompt from '../../../components/AgentPrompt.astro';
 
-This tutorial sets up Gambi from scratch. By the end, you'll have a hub running with participants sharing models on your network.
+This tutorial runs Gambi from scratch. By the end, you'll have a hub running, a room, and a model shared in it that you can call from code.
 
 ## What you'll need
 
+- **The Gambi CLI** on each machine. See [Installation](/start/installation/).
 - **A machine to run the hub.** Any computer on the network works. It doesn't need a GPU, because the hub only routes traffic.
 - **At least one model endpoint.** Ollama, LM Studio, vLLM, or any OpenAI-compatible API.
-- **Node.js**, only if you plan to install the CLI through npm.
 
 To share Claude Code, Codex, or OpenCode instead of a model endpoint, follow this page up to creating a room, then see [Bring your harness](/guides/bring-your-harness/).
 
-## Installation
+Prefer to have your coding agent do it? Copy the prompt in [Set it up with your agent](#set-it-up-with-your-agent) at the end of this page.
 
-### CLI
-
-The CLI starts hubs, creates rooms, and joins rooms as a participant. Pre-built binaries are available for **Linux** (x64/arm64), **macOS** (Apple Silicon and Intel), and **Windows** (x64).
-
-<Tabs>
-  <TabItem label="Linux / macOS" icon="linux">
-    ```bash
-    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.sh | bash
-    ```
-    The script detects your OS and architecture, downloads the matching binary, and installs it to `~/.local/bin`. Set `GAMBI_INSTALL_DIR` to install somewhere else.
-  </TabItem>
-  <TabItem label="Windows" icon="laptop">
-    ```powershell
-    irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/install.ps1 | iex
-    ```
-    The script downloads the binary to `%LOCALAPPDATA%\gambi\` and adds it to your user PATH.
-  </TabItem>
-  <TabItem label="npm / bun" icon="seti:npm">
-    ```bash
-    # Via npm
-    npm install -g gambi
-
-    # Via bun
-    bun add -g gambi
-    ```
-    The published `gambi` package is a wrapper that installs only the matching platform binary for your machine. npm users only need Node.js; Bun is not required at runtime.
-  </TabItem>
-</Tabs>
-
-Verify the installation:
-
-```bash
-gambi --version
-```
-
-### Uninstallation
-
-<Tabs>
-  <TabItem label="Linux / macOS" icon="linux">
-    ```bash
-    curl -fsSL https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.sh | bash
-    ```
-  </TabItem>
-  <TabItem label="Windows" icon="laptop">
-    ```powershell
-    irm https://raw.githubusercontent.com/arthurbm/gambi/main/scripts/uninstall.ps1 | iex
-    ```
-  </TabItem>
-  <TabItem label="npm / bun" icon="seti:npm">
-    ```bash
-    # If installed via npm
-    npm uninstall -g gambi
-
-    # If installed via bun
-    bun remove -g gambi
-    ```
-  </TabItem>
-</Tabs>
-
-### SDK
-
-The SDK is a [Vercel AI SDK](https://sdk.vercel.ai/) provider for using shared models in TypeScript and JavaScript applications. It defaults to the Responses API and also supports Chat Completions.
-
-```bash
-npm install gambi-sdk
-# or
-bun add gambi-sdk
-```
-
-## Basic usage
+## Steps
 
 `gambi room create` and `gambi participant join` prompt for missing values when you run them in a terminal. Pass the values as flags for scripts, or add `--no-interactive` to turn prompts off.
 
@@ -103,6 +34,8 @@ gambi hub serve --port 3000 --mdns
 ```
 
 The `--mdns` flag advertises the hub so other machines on the network can discover it.
+
+Other machines reach the hub at `http://<hub-ip>:3000`, where `<hub-ip>` is this machine's address on your network, such as `192.168.1.10`. Every other command takes that URL as `--hub`. Without `--hub`, the CLI uses `http://localhost:3000`, which only works on the hub machine itself.
 
 :::caution[Trusted networks only]
 The hub has no built-in authentication. Anyone who can reach its port can create rooms and send inference requests to any room. A room password only protects joining. Run it only on a network you trust. If you need to expose it beyond that, put it behind your own proxy and authentication layer.
@@ -144,6 +77,16 @@ gambi participant join \
   --model llama3
 ```
 
+On any machine other than the hub, add the hub URL:
+
+```bash
+gambi participant join \
+  --hub http://192.168.1.10:3000 \
+  --room ABC123 \
+  --participant-id joao-1 \
+  --model llama3
+```
+
 The default endpoint is `http://localhost:11434` (Ollama). For other providers, use `--endpoint`:
 
 ```bash
@@ -164,7 +107,7 @@ gambi participant join \
 
 The CLI probes your local endpoint, checks that the model exists, detects which protocols it supports, registers the participant, opens a tunnel to the hub, and keeps the session alive until you stop it.
 
-Your provider endpoint can stay on `localhost`, even when the hub runs on another machine in the same trusted network. The hub never connects to it. For the reasoning, see [How tunnels work](/explanation/tunnel-first/).
+Your provider endpoint can stay on `localhost`, even when the hub runs on another machine in the same trusted network. The hub never connects to it. For the reasoning, see [How tunnels work](/concepts/tunnel-first/).
 
 The CLI also shares your machine specs (CPU, RAM, GPU). Use `--no-specs` to keep them private.
 
@@ -191,6 +134,8 @@ const result = await generateText({
 
 console.log(result.text);
 ```
+
+If your code runs on another machine, set `hubUrl` to the hub's network address, such as `http://192.168.1.10:3000`.
 
 You can also target a model or a participant:
 
@@ -240,6 +185,12 @@ http://<hub-ip>:<port>/rooms/<ROOM_CODE>/v1
 The tool has to reach the hub over your network. Hosted tools that call the model from their own servers cannot reach a hub on a private network.
 
 See the [API reference](/reference/api/) for every route.
+
+## Set it up with your agent
+
+Your coding agent can run these same steps with you, asking before it installs or starts anything.
+
+<AgentPrompt />
 
 ## Next steps
 

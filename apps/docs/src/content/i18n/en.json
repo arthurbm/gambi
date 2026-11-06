@@ -1,0 +1,7 @@
+{
+  "agentPrompt.label": "Ask your agent",
+  "agentPrompt.lede": "Paste this into Claude Code, Codex, OpenCode, or Cursor. It reads these docs as Markdown and walks you through the setup, one step at a time.",
+  "agentPrompt.copy": "Copy prompt",
+  "agentPrompt.copied": "Copied",
+  "agentPrompt.failed": "Copy failed. Select the prompt and copy it."
+}

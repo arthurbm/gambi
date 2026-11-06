@@ -416,6 +416,9 @@ A list framed by a Line 2 top rule, each row split by Line: a title (650, width 
 ### Command copy button
 The install command as a button: sheet surface, Line 2 border, `rounded.md`, a muted `$` prompt, the command in mono, and a copy icon. Clicking copies to the clipboard and crossfades the copy icon to a cyan check for 1.6s, with a polite live-region message ("Copied" or a fallback instruction). Hover darkens the border to ink 3; press scales to 0.98. The command scrolls inside the button without a scrollbar; under 44rem the button goes full width and the command fades at its right edge.
 
+### Agent prompt
+"Ask your agent": a ready setup prompt (`src/prompts.ts`) for the visitor's own coding agent. In the docs (`src/components/AgentPrompt.astro`) it is a sheet panel with a Line 2 border at `rounded.lg`: a title in ink (700, width 108) with a cyan lines-and-chevron icon, a one-line lede in ink 2, a primary "Copy prompt" button, and the full prompt under a Line rule on the code slab in mono at 0.8rem, wrapped and capped at 15rem with its own scroll, so people read what they paste. Copying turns the button cyan and says "Copied" for 2s through a polite live region. On the landing it is a quieter text button under the closing section's actions ("Copy a setup prompt for your agent"), in ink with a Line 2 underline and the same cyan icon, so the primary stays the only filled button in view.
+
 ### Buttons
 - **Shape:** `rounded.md`, 2.9rem tall, 1.3rem side padding, 600 weight.
 - **Primary:** filled with primary on primary ink: ink on paper, signal yellow with dark text in graphite. One per view: "Get started" in the hero and "Read the quick start" in the closing section.

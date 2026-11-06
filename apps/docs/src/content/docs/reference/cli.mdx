@@ -285,7 +285,7 @@ Notes:
 - `--config -` reads participant runtime config JSON from stdin.
 - In a terminal, the command prompts for a missing room, participant ID, model, nickname, and password. In model mode it lists the models found on the endpoint.
 - The CLI probes the endpoint before registration to validate the model and detect capabilities.
-- Every participant joins through a tunnel, so the provider endpoint can stay on `localhost` even when the hub runs on another machine. See [How tunnels work](/explanation/tunnel-first/).
+- Every participant joins through a tunnel, so the provider endpoint can stay on `localhost` even when the hub runs on another machine. See [How tunnels work](/concepts/tunnel-first/).
 - Harness mode starts the harness process in a workspace folder and publishes changed files after a one-second debounce. Without `--workspace`, the folder is `~/.gambi/workspaces/<room>/<participant-id>/` and starts empty apart from `.gambi.json`, which is never published. `.git` and `node_modules` are never published. Passing `--workspace` without `--harness` exits with code `2`.
 - `--endpoint`, `--header`, and `--header-env` are invalid with `--harness`. The harness uses its existing login on the participant machine. Gambi does not read or upload those credentials.
 - The `opencode` adapter runs `opencode acp`. If OpenCode is missing or has no detected credentials, the command exits with code `3` and prints the command needed to fix it.
@@ -477,4 +477,4 @@ gambi self update --dry-run --format json
 
 - [API reference](/reference/api/) for the HTTP routes behind the CLI.
 - [SDK reference](/reference/sdk/) for programmatic equivalents.
-- [How tunnels work](/explanation/tunnel-first/) for the conceptual model behind `participant join`.
+- [How tunnels work](/concepts/tunnel-first/) for the conceptual model behind `participant join`.
