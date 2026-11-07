@@ -80,7 +80,7 @@
   "landing.display.tati.stays": "Her OpenRouter key, read from OPENROUTER_AUTH. It goes only to OpenRouter.",
   "landing.display.duda.via": "opencode acp",
   "landing.display.duda.stays": "The provider credentials OpenCode already has configured.",
-  "landing.compare.title": "Four things change with a group",
+  "landing.compare.title": "What changes with a group",
   "landing.compare.lead": "Most orchestrators that run many agents at once assume one person at the keyboard. Put a group in the same session and each of these questions gets a different answer.",
   "landing.compare.table": "One person compared with many people",
   "landing.compare.question": "Question",
