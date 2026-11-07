@@ -21,7 +21,9 @@ export const OUTER = [-60, 0, 60, 120, 180, 240];
 export const BEND = 14;
 export const YOU = 90;
 export const BUNDLE = [-15, -9, -3, 3, 9, 15];
-export const LABEL_DEG = -79;
+// Ring labels sit at the top, midway between the two upper people, so they
+// clear both names at every board size.
+export const LABEL_DEG = -90;
 
 export const trackPath = (origin: number, bend = BEND) => {
   const [x0, y0] = polar(R_MACHINE, origin);
