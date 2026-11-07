@@ -80,8 +80,8 @@ const stays = t("landing.wiring.stays");
       <tbody>
         {ledger.map((row) => (
           <tr>
-            <td data-label={crosses} set:html={row.cross} />
-            <td data-label={stays} set:html={row.stay} />
+            <td set:html={row.cross} />
+            <td set:html={row.stay} />
           </tr>
         ))}
       </tbody>
@@ -373,45 +373,50 @@ const stays = t("landing.wiring.stays");
     }
   }
 
+  /* On phones the two columns become two lists, so each header shows once:
+     everything that crosses, then everything that stays. */
   @media (max-width: 44rem) {
-    .ledger thead {
-      display: none;
-    }
-
-    .ledger tr {
+    .ledger table {
       display: grid;
-      border-bottom: 1px solid var(--e-line-2);
     }
 
-    .ledger tr:last-child {
-      border-bottom: 0;
+    .ledger :is(thead, tbody, tr) {
+      display: contents;
+    }
+
+    .ledger :is(th, td) {
+      width: auto;
+      border-left: 0;
+    }
+
+    .ledger td + td,
+    .ledger th + th {
+      border-left: 0;
+    }
+
+    .ledger .th-cross {
+      order: 0;
+    }
+
+    .ledger td:first-child {
+      order: 1;
+    }
+
+    .ledger .th-stay {
+      order: 2;
+      border-top: 1px solid var(--e-line-2);
+    }
+
+    .ledger td:last-child {
+      order: 3;
     }
 
     .ledger td {
-      width: auto;
-      display: block;
+      padding-block: 0.75rem;
+    }
+
+    .ledger tr:last-child td:first-child {
       border-bottom: 0;
-    }
-
-    .ledger td + td {
-      border-left: 0;
-      padding-top: 0;
-    }
-
-    .ledger td::before {
-      content: attr(data-label);
-      display: block;
-      margin-bottom: 0.25rem;
-      font-size: 0.72rem;
-      font-weight: 700;
-      font-variation-settings: "wdth" 80;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--e-harness);
-    }
-
-    .ledger td + td::before {
-      color: var(--e-stop);
     }
   }
 </style>
