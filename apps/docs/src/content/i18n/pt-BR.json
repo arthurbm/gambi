@@ -80,7 +80,7 @@
   "landing.display.tati.stays": "A chave dela do OpenRouter, lida de OPENROUTER_AUTH. Só vai para o OpenRouter.",
   "landing.display.duda.via": "opencode acp",
   "landing.display.duda.stays": "As credenciais de provedor que o OpenCode já tem configuradas.",
-  "landing.compare.title": "Com um grupo, quatro coisas mudam",
+  "landing.compare.title": "O que muda com um grupo",
   "landing.compare.lead": "A maioria dos orquestradores que rodam vários agentes ao mesmo tempo supõe uma única pessoa ao teclado. Com um grupo na mesma sessão, cada pergunta abaixo tem outra resposta.",
   "landing.compare.table": "Uma pessoa comparada com muitas pessoas",
   "landing.compare.question": "Pergunta",
