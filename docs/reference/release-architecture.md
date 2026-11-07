@@ -120,7 +120,7 @@ Run it only after the release changes have merged and the required validation is
 
 ### Resuming a partial release
 
-`scripts/publish.ts` skips `npm publish` for any package whose target version is already on npm, then verifies it like the others. Each verification waits up to 5 minutes (30 attempts × 10 s) for the version and dist-tag to show up in `npm view`. Large packages have taken more than a minute.
+`scripts/publish.ts` skips `npm publish` for any package whose target version is already on npm, then verifies it like the others. Each verification waits up to 20 minutes (80 attempts × 15 s) for the version and dist-tag to show up in `npm view`. npm accepts a publish before it shows the version: during v0.7.0, the 53 MB binary packages took from 3 to more than 5 minutes.
 
 If the `publish` job fails after some packages reached npm and before `Commit and tag`, nothing was committed or tagged. Dispatch the workflow again on `main` with the same bump: the `version` job calculates the same version from the unchanged `package.json` files, and the publish step continues from the first package that is missing.
 

@@ -94,10 +94,11 @@ async function verifyNpmPackage(
   packageName: string,
   tag: string
 ): Promise<NpmVerificationResult> {
-  // Large binary packages have taken over a minute to appear in
-  // `npm view` after a successful publish (v0.3.2, v0.7.0).
-  const retryAttempts = 30;
-  const retryDelayMs = 10_000;
+  // npm accepts a publish and shows the version only after it finishes
+  // processing it. During v0.7.0 that took about 3 minutes for a 53 MB
+  // binary package and more than 5 minutes for the next one.
+  const retryAttempts = 80;
+  const retryDelayMs = 15_000;
   let lastError: Error | undefined;
 
   for (let attempt = 1; attempt <= retryAttempts; attempt++) {
