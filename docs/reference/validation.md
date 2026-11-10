@@ -61,7 +61,7 @@ Run the applicable check for each locally installed adapter before an event
 release. These commands stop before a paid model prompt:
 
 ```bash
-opencode auth list --pure
+opencode auth list
 claude auth status --json
 codex login status
 claude-agent-acp --help
@@ -72,7 +72,7 @@ Then run one full-round smoke only for the harnesses budgeted for the event.
 OpenCode example:
 
 ```bash
-opencode auth list --pure
+opencode auth list
 bun run dev:cli -- participant join \
   --room <ROOM_CODE> \
   --participant-id opencode-smoke \

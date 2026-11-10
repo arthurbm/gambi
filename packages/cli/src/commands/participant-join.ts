@@ -507,7 +507,17 @@ export class ParticipantJoinCommand extends AgentCommand {
     let nickname = this.nickname ?? this.name;
     let participantId = this.participantId;
     const model = this.model ?? harnessId;
-    const adapter = getHarnessAdapter(harnessId);
+    const baseAdapter = getHarnessAdapter(harnessId);
+    const adapter = {
+      ...baseAdapter,
+      detect: async () => {
+        const detection = await baseAdapter.detect();
+        if (detection.ok && detection.message) {
+          this.context.stderr.write(`${detection.message}\n`);
+        }
+        return detection;
+      },
+    };
 
     for (const note of adapter.notes) {
       this.context.stderr.write(`${note}\n`);

@@ -9,6 +9,7 @@ export type SupportedHarnessId = Extract<
 >;
 
 export interface HarnessDetection {
+  /** With `ok: false`, why the harness cannot start; with `ok: true`, a warning. */
   message?: string;
   ok: boolean;
 }
@@ -57,23 +58,66 @@ async function detectOpenCode(
     };
   }
 
-  const result = await tools.run(executable, ["auth", "list", "--pure"]);
-  if (result.exitCode !== 0) {
-    return {
-      ok: false,
-      message: `OpenCode authentication could not be checked. Run \`opencode auth login\` and retry.${commandFailureDetail(result)}`,
-    };
+  // OpenCode 1.x accepts `--pure` and marks each credential with ●.
+  const legacy = await tools.run(executable, ["auth", "list", "--pure"]);
+  if (legacy.exitCode === 0) {
+    return legacy.stdout.includes("●")
+      ? { ok: true }
+      : { ok: false, message: OPENCODE_NO_CREDENTIALS };
   }
 
-  if (!result.stdout.includes("●")) {
-    return {
-      ok: false,
-      message:
-        "OpenCode has no detected credentials. Run `opencode auth login` (or configure a provider API key) and retry.",
-    };
+  // OpenCode 2.x rejects `--pure`; its JSON lists each provider's connections
+  // (stored credentials and provider keys found in the environment).
+  const current = await tools.run(executable, [
+    "auth",
+    "list",
+    "--format",
+    "json",
+  ]);
+  const hasConnections =
+    current.exitCode === 0 ? openCodeHasConnections(current.stdout) : undefined;
+  if (hasConnections === true) {
+    return { ok: true };
+  }
+  if (hasConnections === false) {
+    return { ok: false, message: OPENCODE_NO_CREDENTIALS };
   }
 
-  return { ok: true };
+  // Unknown OpenCode output: starting with a warning beats blocking a user
+  // who is logged in. A missing login then surfaces from OpenCode itself.
+  return {
+    ok: true,
+    message: `Warning: Gambi could not confirm OpenCode credentials. If OpenCode is not logged in, run \`opencode auth login\`.${current.exitCode === 0 ? "" : commandFailureDetail(current)}`,
+  };
+}
+
+const OPENCODE_NO_CREDENTIALS =
+  "OpenCode has no detected credentials. Run `opencode auth login` (or configure a provider API key) and retry.";
+
+/**
+ * Reads `opencode auth list --format json` (OpenCode 2.x). Returns undefined
+ * when the output does not have the known shape.
+ */
+function openCodeHasConnections(stdout: string): boolean | undefined {
+  let providers: unknown;
+  try {
+    providers = JSON.parse(stdout);
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(providers)) {
+    return undefined;
+  }
+  let found = false;
+  for (const provider of providers) {
+    const connections = (provider as { connections?: unknown } | null)
+      ?.connections;
+    if (!Array.isArray(connections)) {
+      return undefined;
+    }
+    found ||= connections.length > 0;
+  }
+  return found;
 }
 
 async function detectClaudeCode(

@@ -110,3 +110,133 @@ describe("harness adapters", () => {
     });
   });
 });
+
+interface Result {
+  exitCode: number;
+  stderr: string;
+  stdout: string;
+}
+
+describe("OpenCode detection", () => {
+  // Real `opencode auth list --format json` output from OpenCode 2.2.7.
+  const OPENCODE_2_JSON = JSON.stringify([
+    {
+      id: "anthropic",
+      name: "Anthropic",
+      connections: [
+        { type: "credential", id: "cred_1", label: "OAuth", method: "oauth" },
+      ],
+    },
+  ]);
+  const OPENCODE_2_ENV_JSON = JSON.stringify([
+    {
+      id: "anthropic",
+      name: "Anthropic",
+      connections: [{ type: "env", name: "ANTHROPIC_API_KEY" }],
+    },
+  ]);
+  const UNRECOGNIZED_PURE = {
+    exitCode: 1,
+    stderr: "ERROR\n  Unrecognized flag: --pure in command opencode auth list",
+    stdout: "",
+  };
+
+  function openCodeTools(responses: Record<string, Result>) {
+    const calls: string[] = [];
+    const tools: HarnessDetectionTools = {
+      which: (command) =>
+        command === "opencode" ? "/test/bin/opencode" : undefined,
+      run: (_command, args) => {
+        const key = args.join(" ");
+        calls.push(key);
+        return Promise.resolve(
+          responses[key] ?? {
+            exitCode: 1,
+            stderr: `Unrecognized flag in ${key}`,
+            stdout: "",
+          }
+        );
+      },
+    };
+    return { calls, tools };
+  }
+
+  function ok(stdout: string): Result {
+    return { exitCode: 0, stderr: "", stdout };
+  }
+
+  test("accepts OpenCode 2.x with stored credentials", async () => {
+    const { calls, tools } = openCodeTools({
+      "auth list --pure": UNRECOGNIZED_PURE,
+      "auth list --format json": ok(OPENCODE_2_JSON),
+    });
+    await expect(
+      getHarnessAdapter("opencode", tools).detect()
+    ).resolves.toEqual({ ok: true });
+    expect(calls).toEqual(["auth list --pure", "auth list --format json"]);
+  });
+
+  test("accepts OpenCode 2.x with a provider key from the environment", async () => {
+    const { tools } = openCodeTools({
+      "auth list --pure": UNRECOGNIZED_PURE,
+      "auth list --format json": ok(OPENCODE_2_ENV_JSON),
+    });
+    await expect(
+      getHarnessAdapter("opencode", tools).detect()
+    ).resolves.toEqual({ ok: true });
+  });
+
+  test("asks for opencode auth login when OpenCode 2.x has no credentials", async () => {
+    const { tools } = openCodeTools({
+      "auth list --pure": UNRECOGNIZED_PURE,
+      "auth list --format json": ok("[]\n"),
+    });
+    await expect(
+      getHarnessAdapter("opencode", tools).detect()
+    ).resolves.toMatchObject({
+      ok: false,
+      message: expect.stringContaining("opencode auth login"),
+    });
+  });
+
+  test("keeps detecting older OpenCode through --pure and ●", async () => {
+    const { calls, tools } = openCodeTools({
+      "auth list --pure": ok("●  Anthropic oauth\n"),
+    });
+    await expect(
+      getHarnessAdapter("opencode", tools).detect()
+    ).resolves.toEqual({ ok: true });
+    expect(calls).toEqual(["auth list --pure"]);
+
+    const loggedOut = openCodeTools({
+      "auth list --pure": ok("Credentials ~/.local/share/opencode/auth.json\n"),
+    });
+    await expect(
+      getHarnessAdapter("opencode", loggedOut.tools).detect()
+    ).resolves.toMatchObject({
+      ok: false,
+      message: expect.stringContaining("opencode auth login"),
+    });
+  });
+
+  test("lets the harness start with a warning when no known output is recognized", async () => {
+    const { tools } = openCodeTools({
+      "auth list --pure": UNRECOGNIZED_PURE,
+      "auth list --format json": ok("Anthropic  OAuth  stored\n"),
+    });
+    await expect(
+      getHarnessAdapter("opencode", tools).detect()
+    ).resolves.toMatchObject({
+      ok: true,
+      message: expect.stringContaining("could not confirm"),
+    });
+
+    const failing = openCodeTools({ "auth list --pure": UNRECOGNIZED_PURE });
+    await expect(
+      getHarnessAdapter("opencode", failing.tools).detect()
+    ).resolves.toMatchObject({
+      ok: true,
+      message: expect.stringContaining("could not confirm"),
+    });
+  });
+});
