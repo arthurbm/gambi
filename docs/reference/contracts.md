@@ -260,12 +260,12 @@ Adapter commands and readiness checks are local:
 
 | Harness id | ACP command | Readiness check |
 | --- | --- | --- |
-| `opencode` | `opencode acp` | `opencode auth list --pure` |
+| `opencode` | `opencode acp` | `opencode auth list --pure` (OpenCode 1.x, `●` marks a credential), then `opencode auth list --format json` (OpenCode 2.x, any provider connection) |
 | `claude-code` | `claude-agent-acp` from `@agentclientprotocol/claude-agent-acp` | `claude auth status --json` |
 | `codex` | `codex-acp` from `@agentclientprotocol/codex-acp` | `codex login status` |
 | `fake` | bundled deterministic agent (`gambi __fake-acp-agent` in the binary; SDK consumers pass a command that runs `runFakeAcpAgent()` to `createFakeHarnessAdapter()`) | bundled script exists |
 
-No readiness output or credential is registered or tunneled. The participant's public `harness.id` is the selected id and `harness.model` is the optional `--model` label. Claude Code additionally prints Anthropic's terms warning on join and rejects `hosted: true`: every end user must run the unmodified binary with their own local authentication; Gambi never intermediates subscription login or hosts Claude Code for third parties.
+If neither OpenCode check gives a recognized answer, the join continues and prints a warning to stderr instead of blocking a user who may be logged in. No readiness output or credential is registered or tunneled. The participant's public `harness.id` is the selected id and `harness.model` is the optional `--model` label. Claude Code additionally prints Anthropic's terms warning on join and rejects `hosted: true`: every end user must run the unmodified binary with their own local authentication; Gambi never intermediates subscription login or hosts Claude Code for third parties.
 
 `gambi self update` updates via `bun`, `npm`, or the standalone binary depending on installation mode.
 
