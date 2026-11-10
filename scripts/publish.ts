@@ -2,6 +2,17 @@
 
 import { resolve } from "node:path";
 import { $ } from "bun";
+import {
+  packCliTarballs,
+  TARBALL_DIR,
+  validateCliTarballs,
+} from "./cli-tarballs";
+import {
+  NpmReleaseError,
+  type NpmVerificationResult,
+  publishAndVerify,
+  type ReleasePackage,
+} from "./npm-release";
 
 interface CliDistributionManifest {
   binaryPackages: Array<{
@@ -23,16 +34,12 @@ interface CliDistributionManifest {
   wrapperPackageDir: string;
 }
 
-interface NpmVerificationResult {
-  distTagVersion: string;
-  packageName: string;
-  publishedVersion: string;
-  tag: string;
-  verified: boolean;
-}
-
 const VERSION = process.env.VERSION || Bun.argv[2];
 const NPM_TAG = process.env.NPM_TAG || "latest";
+// How long each group waits for npm to show its packages. Running out of time
+// does not mean a publish failed: npm may still be processing it.
+const WAIT_TIMEOUT_MS =
+  Number(process.env.GAMBI_NPM_WAIT_MINUTES || "30") * 60_000;
 
 if (!VERSION) {
   console.error("Error: VERSION required");
@@ -43,10 +50,6 @@ if (!VERSION) {
 
 function getCliManifestPath() {
   return resolve("packages/cli/dist/manifest.json");
-}
-
-function resolveCliDistributionPath(pathname: string) {
-  return resolve("packages/cli", pathname);
 }
 
 async function readCliManifest() {
@@ -75,71 +78,9 @@ async function ensureCliDistribution() {
     );
   }
 
+  console.log("Packing CLI tarballs...");
+  await packCliTarballs(rebuilt);
   return rebuilt;
-}
-
-// npm 12 prints `["x.y.z"]` for `npm view <pkg>@<version> version --json`;
-// older npm prints `"x.y.z"`.
-function parseNpmViewVersion(output: string) {
-  const text = output.trim();
-  if (text === "") {
-    return "";
-  }
-
-  const parsed = JSON.parse(text) as string | string[];
-  return Array.isArray(parsed) ? (parsed.at(-1) ?? "") : parsed;
-}
-
-async function verifyNpmPackage(
-  packageName: string,
-  tag: string
-): Promise<NpmVerificationResult> {
-  // npm accepts a publish and shows the version only after it finishes
-  // processing it. During v0.7.0 that took about 3 minutes for a 53 MB
-  // binary package and more than 5 minutes for the next one.
-  const retryAttempts = 80;
-  const retryDelayMs = 15_000;
-  let lastError: Error | undefined;
-
-  for (let attempt = 1; attempt <= retryAttempts; attempt++) {
-    try {
-      const publishedVersion = parseNpmViewVersion(
-        await $`npm view ${`${packageName}@${VERSION}`} version --json`.text()
-      );
-      const distTags = JSON.parse(
-        (await $`npm view ${packageName} dist-tags --json`.text()).trim()
-      ) as Record<string, string>;
-      const distTagVersion = distTags[tag] ?? "";
-      const verified =
-        publishedVersion === VERSION && distTagVersion === VERSION;
-
-      if (!verified) {
-        throw new Error(
-          `metadata mismatch (version=${publishedVersion}, ${tag}=${distTagVersion})`
-        );
-      }
-
-      return {
-        packageName,
-        tag,
-        publishedVersion,
-        distTagVersion,
-        verified: true,
-      };
-    } catch (error) {
-      lastError = error as Error;
-      if (attempt < retryAttempts) {
-        console.log(
-          `  waiting npm registry propagation for ${packageName} (attempt ${attempt}/${retryAttempts})...`
-        );
-        await Bun.sleep(retryDelayMs);
-      }
-    }
-  }
-
-  throw new Error(
-    `Could not verify npm metadata for ${packageName}: ${lastError?.message ?? "unknown error"}`
-  );
 }
 
 console.log(`\n=== Publishing Gambi v${VERSION} ===\n`);
@@ -174,6 +115,22 @@ await $`bun run --cwd apps/tui build`;
 
 const cliManifest = await ensureCliDistribution();
 
+// The CLI packages publish from the tarballs build-cli packed (file modes
+// survive in a tarball, not in a workflow artifact; #83). Check all of them
+// before publishing any.
+const cliTarballs = await validateCliTarballs({
+  binaries: cliManifest.binaryPackages.map((pkg) => pkg.packageName),
+  dir: TARBALL_DIR,
+  version: VERSION,
+});
+const cliTarball = (name: string) => {
+  const tarball = cliTarballs.get(name);
+  if (!tarball) {
+    throw new Error(`No tarball for ${name}`);
+  }
+  return tarball;
+};
+
 console.log("\nCLI distribution summary:");
 console.log(`  version: ${cliManifest.version}`);
 console.log(`  wrapper: ${cliManifest.wrapperPackageDir}`);
@@ -203,9 +160,7 @@ for (const asset of releaseAssets) {
   );
 }
 
-console.log("\nPublishing to npm...");
-
-const npmVerificationResults: NpmVerificationResult[] = [];
+let npmVerificationResults: NpmVerificationResult[] = [];
 const releaseReportPath = resolve("packages/cli/dist/release-report.json");
 
 async function writeReleaseReport(status: string, error?: string) {
@@ -231,62 +186,54 @@ async function writeReleaseReport(status: string, error?: string) {
   console.log(`\nWrote release report (${status}) to ${releaseReportPath}`);
 }
 
-async function isAlreadyPublished(packageName: string) {
-  const result = await $`npm view ${`${packageName}@${VERSION}`} version --json`
-    .quiet()
-    .nothrow();
-  const output = `${result.stdout.toString()}${result.stderr.toString()}`;
-
-  if (result.exitCode === 0) {
-    return parseNpmViewVersion(result.stdout.toString()) === VERSION;
-  }
-
-  if (output.includes("E404")) {
-    return false;
-  }
-
-  throw new Error(
-    `Could not check whether ${packageName}@${VERSION} is on npm: ${output.trim()}`
-  );
-}
-
-// Skipping versions that are already on npm lets a re-run resume a release
-// that stopped partway, instead of failing on the first package it published.
-async function publishPackage(packageName: string, packageDir: string) {
-  console.log(`\n--- ${packageName} ---`);
-
-  if (await isAlreadyPublished(packageName)) {
-    console.log(
-      `  ${packageName}@${VERSION} is already on npm; skipping npm publish`
-    );
-  } else {
-    await $`cd ${packageDir} && npm publish --access public --tag ${NPM_TAG}`;
-  }
-
-  npmVerificationResults.push(await verifyNpmPackage(packageName, NPM_TAG));
-  console.log("  ✓ verified npm metadata");
-}
+// The wrapper lists the platform packages as optionalDependencies pinned to
+// this version. npm publishes it without checking them, but an install that
+// resolves the wrapper before npm shows its binary skips the missing optional
+// dependency and leaves `gambi` without a binary. So the wrapper is published
+// only after npm shows every other package.
+const basePackages: ReleasePackage[] = [
+  { name: "gambi-sdk", dir: resolve("packages/sdk") },
+  { name: "gambi-tui", dir: resolve("apps/tui") },
+  ...cliManifest.binaryPackages.map((binaryPackage) => ({
+    name: binaryPackage.packageName,
+    tarball: cliTarball(binaryPackage.packageName),
+  })),
+];
+const wrapperPackage: ReleasePackage = {
+  name: "gambi",
+  tarball: cliTarball("gambi"),
+};
 
 try {
-  await publishPackage("gambi-sdk", resolve("packages/sdk"));
-  await publishPackage("gambi-tui", resolve("apps/tui"));
+  console.log("\nPublishing SDK, TUI, and platform binaries to npm...");
+  npmVerificationResults = await publishAndVerify({
+    packages: basePackages,
+    tag: NPM_TAG,
+    version: VERSION,
+    waitTimeoutMs: WAIT_TIMEOUT_MS,
+  });
 
-  for (const binaryPackage of cliManifest.binaryPackages) {
-    await publishPackage(
-      binaryPackage.packageName,
-      resolveCliDistributionPath(binaryPackage.packageDir)
-    );
-  }
-
-  await publishPackage(
-    "gambi",
-    resolveCliDistributionPath(cliManifest.wrapperPackageDir)
-  );
+  console.log("\nPublishing the gambi wrapper to npm...");
+  npmVerificationResults = [
+    ...npmVerificationResults,
+    ...(await publishAndVerify({
+      packages: [wrapperPackage],
+      tag: NPM_TAG,
+      version: VERSION,
+      waitTimeoutMs: WAIT_TIMEOUT_MS,
+    })),
+  ];
 
   await writeReleaseReport("success");
   console.log(`\n=== Published v${VERSION} successfully ===\n`);
 } catch (error) {
   const publishError = error as Error;
+  if (publishError instanceof NpmReleaseError) {
+    npmVerificationResults = [
+      ...npmVerificationResults,
+      ...publishError.verified,
+    ];
+  }
   console.error(`\nPublish failed: ${publishError.message}`);
   await writeReleaseReport("failed", publishError.message);
   throw publishError;

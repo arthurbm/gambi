@@ -37,6 +37,10 @@ jobs:
       - name: CLI tests
         run: bun test packages/cli/src
 
+      # The npm publish and verify loop used by the release workflow.
+      - name: Release script tests
+        run: bun test scripts
+
       # Packs gambi-sdk and type-checks it from a clean npm project, so the
       # published declarations cannot point at unpublished packages (#82).
       - name: Check gambi-sdk declarations as a consumer
