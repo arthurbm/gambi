@@ -32,6 +32,11 @@ jobs:
       - name: Typecheck
         run: bun run check-types
 
+      # Includes the npm wrapper test: a signal sent to bin/gambi must reach the
+      # platform binary instead of orphaning it (#103). Needs Node on PATH.
+      - name: CLI tests
+        run: bun test packages/cli/src
+
       # Packs gambi-sdk and type-checks it from a clean npm project, so the
       # published declarations cannot point at unpublished packages (#82).
       - name: Check gambi-sdk declarations as a consumer
