@@ -1,4 +1,4 @@
-import { nanoid } from "nanoid";
+import { customAlphabet, nanoid } from "nanoid";
 import { Participant } from "./participant.ts";
 import {
   PARTICIPANT_TIMEOUT,
@@ -44,6 +44,21 @@ function toSummary(room: RoomState): RoomSummary {
 const rooms = new Map<string, RoomState>();
 const codeToRoomId = new Map<string, string>();
 
+// Uppercase letters and digits only: a code must never start with "-" (the
+// CLI would read `--room -ABC12` as another option) and is easy to dictate.
+const generateRoomCode = customAlphabet(
+  "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+  6
+);
+
+function generateUniqueRoomCode(): string {
+  let code = generateRoomCode();
+  while (codeToRoomId.has(code)) {
+    code = generateRoomCode();
+  }
+  return code;
+}
+
 interface RoomState {
   info: RoomInfo;
   participants: Map<string, StoredParticipant>;
@@ -60,8 +75,11 @@ async function create(
   password?: string,
   defaults?: RuntimeConfig
 ): Promise<RoomInfo> {
+  const passwordHash = password ? await hashPassword(password) : undefined;
   const id = nanoid();
-  const code = nanoid(6).toUpperCase();
+  // No await between picking the code and saving it, so two concurrent
+  // creations cannot both see the same code as free.
+  const code = generateUniqueRoomCode();
 
   const info: RoomInfo = {
     id,
@@ -70,7 +88,7 @@ async function create(
     hostId,
     createdAt: Date.now(),
     defaults,
-    passwordHash: password ? await hashPassword(password) : undefined,
+    passwordHash,
   };
 
   rooms.set(id, {
