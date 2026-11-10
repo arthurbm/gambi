@@ -3,6 +3,8 @@ import { Participant } from "./participant.ts";
 import { Room } from "./room.ts";
 import type { ParticipantInfoInternal } from "./types.ts";
 
+const ROOM_CODE_PATTERN = /^[A-Z0-9]{6}$/;
+
 function createMockParticipant(
   overrides: Partial<ParticipantInfoInternal> = {}
 ): ParticipantInfoInternal {
@@ -57,6 +59,17 @@ describe("Room", () => {
 
       expect(room1.code).not.toBe(room2.code);
       expect(room1.id).not.toBe(room2.id);
+    });
+
+    test("generates codes of six uppercase letters and digits only", async () => {
+      const codes = new Set<string>();
+      for (let index = 0; index < 10_000; index++) {
+        const room = await Room.create(`Room ${index}`, "host");
+        expect(room.code).toMatch(ROOM_CODE_PATTERN);
+        codes.add(room.code);
+      }
+
+      expect(codes.size).toBe(10_000);
     });
   });
 

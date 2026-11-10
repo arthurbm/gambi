@@ -16,7 +16,7 @@ interface CreateRoomProps {
 type Step = "form" | "success";
 
 export function buildParticipantJoinCommand(roomCode: string): string {
-  return `gambi participant join --room ${roomCode} --endpoint <llm-url> --model <model>`;
+  return `gambi participant join --room=${roomCode} --endpoint <llm-url> --model <model>`;
 }
 
 /**
