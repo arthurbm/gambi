@@ -75,7 +75,10 @@ async function create(
   password?: string,
   defaults?: RuntimeConfig
 ): Promise<RoomInfo> {
+  const passwordHash = password ? await hashPassword(password) : undefined;
   const id = nanoid();
+  // No await between picking the code and saving it, so two concurrent
+  // creations cannot both see the same code as free.
   const code = generateUniqueRoomCode();
 
   const info: RoomInfo = {
@@ -85,7 +88,7 @@ async function create(
     hostId,
     createdAt: Date.now(),
     defaults,
-    passwordHash: password ? await hashPassword(password) : undefined,
+    passwordHash,
   };
 
   rooms.set(id, {
