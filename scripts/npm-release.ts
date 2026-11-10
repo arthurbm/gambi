@@ -1,23 +1,27 @@
 /**
  * Publishes a group of npm packages, then waits for npm to show all of them.
  *
- * npm accepts a publish minutes before `npm view` lists the new version: in
- * v0.7.1 the binary packages took 3.5 to 4.5 minutes, and the registry serves
- * packuments with `cache-control: max-age=300`. Waiting for each package before
- * publishing the next one added those waits up (about 25 minutes for 8
- * packages). Here every package in the group is published first, then one
+ * npm records a version minutes after `npm publish` returns: in v0.7.1, from
+ * 58 s (`gambi-sdk`) to 4.4 minutes (the binaries). Waiting for each package
+ * before publishing the next one added those waits up (about 25 minutes for
+ * 8 packages). Here every package in the group is published first, then one
  * polling loop checks all of them at once, so the waits overlap.
  *
- * A package is retried in the next round only when its publish failed or npm
- * still does not show it when the round times out. Publishing a version that
- * is already on npm counts as published, so a retry or a re-run is safe.
+ * Each package is published at most once per run. A package that npm does not
+ * show before the timeout is not published again: the registry may still be
+ * processing it, and a second upload of a 50 MB tarball can fail in a way that
+ * hides a healthy publish. Re-running the job resumes instead: it skips every
+ * version that is already on npm.
  */
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { $ } from "bun";
 
-export interface ReleasePackage {
-  dir: string;
-  name: string;
-}
+/** Published from `tarball` with scripts off, or from `dir` with scripts. */
+export type ReleasePackage =
+  | { dir: string; name: string; tarball?: undefined }
+  | { dir?: undefined; name: string; tarball: string };
 
 export interface NpmVerificationResult {
   distTagVersion: string;
@@ -47,22 +51,20 @@ export interface NpmClient {
 
 export interface PublishAndVerifyOptions {
   log?: (message: string) => void;
-  /** Rounds of publish + wait before giving up. */
-  maxRounds?: number;
   now?: () => number;
   npm?: NpmClient;
+  /** Published in this order. */
   packages: ReleasePackage[];
   pollIntervalMs?: number;
-  /** How long one round waits for npm to show the packages it published. */
-  roundTimeoutMs?: number;
   sleep?: (ms: number) => Promise<void>;
   tag: string;
   version: string;
+  /** How long to wait for npm to show every package of the group. */
+  waitTimeoutMs?: number;
 }
 
 export const DEFAULT_POLL_INTERVAL_MS = 15_000;
-export const DEFAULT_ROUND_TIMEOUT_MS = 10 * 60_000;
-export const DEFAULT_MAX_ROUNDS = 3;
+export const DEFAULT_WAIT_TIMEOUT_MS = 30 * 60_000;
 
 export class NpmReleaseError extends Error {
   readonly verified: NpmVerificationResult[];
@@ -110,11 +112,26 @@ function lastLines(output: string, count: number) {
   return output.trim().split("\n").slice(-count).join("\n");
 }
 
+async function runPublish(pkg: ReleasePackage, tag: string) {
+  if (pkg.tarball !== undefined) {
+    // From an empty directory, so no project config can change the registry.
+    const cwd = await mkdtemp(join(tmpdir(), "gambi-publish-"));
+    return await $`npm publish ${pkg.tarball} --access public --tag ${tag} --ignore-scripts`
+      .cwd(cwd)
+      .nothrow();
+  }
+  // gambi-sdk and gambi-tui build in prepublishOnly.
+  return await $`npm publish --access public --tag ${tag}`
+    .cwd(pkg.dir)
+    .nothrow();
+}
+
 export const npmCli: NpmClient = {
   async isPublished(name, version) {
-    const result = await $`npm view ${`${name}@${version}`} version --json`
-      .quiet()
-      .nothrow();
+    const result =
+      await $`npm view --prefer-online ${`${name}@${version}`} version --json`
+        .quiet()
+        .nothrow();
     const output = `${result.stdout.toString()}${result.stderr.toString()}`;
 
     if (result.exitCode === 0) {
@@ -131,9 +148,7 @@ export const npmCli: NpmClient = {
   },
 
   async publish(pkg, tag) {
-    const result = await $`npm publish --access public --tag ${tag}`
-      .cwd(pkg.dir)
-      .nothrow();
+    const result = await runPublish(pkg, tag);
     if (result.exitCode === 0) {
       return { status: "published" };
     }
@@ -151,10 +166,12 @@ export const npmCli: NpmClient = {
 
   async view(name, version, tag) {
     const publishedVersion = parseNpmViewVersion(
-      await $`npm view ${`${name}@${version}`} version --json`.quiet().text()
+      await $`npm view --prefer-online ${`${name}@${version}`} version --json`
+        .quiet()
+        .text()
     );
     const distTags = parseNpmViewDistTags(
-      await $`npm view ${name} dist-tags --json`.quiet().text()
+      await $`npm view --prefer-online ${name} dist-tags --json`.quiet().text()
     );
 
     return { publishedVersion, distTagVersion: distTags[tag] ?? "" };
@@ -174,11 +191,11 @@ interface RunState {
   now: () => number;
   npm: NpmClient;
   pollIntervalMs: number;
-  roundTimeoutMs: number;
   sleep: (ms: number) => Promise<void>;
   tag: string;
   verified: Map<string, NpmVerificationResult>;
   version: string;
+  waitTimeoutMs: number;
 }
 
 async function publishOne(
@@ -194,15 +211,15 @@ async function publishOne(
   }
 }
 
-/** Publishes each package in order and returns the ones npm accepted. */
+/** Publishes each package once, in order, and returns the ones that failed. */
 async function publishAll(state: RunState, packages: ReleasePackage[]) {
-  const accepted: ReleasePackage[] = [];
+  const failed: string[] = [];
   for (const pkg of packages) {
     const label = `${pkg.name}@${state.version}`;
     const outcome = await publishOne(state, pkg);
 
     if (outcome.status === "failed") {
-      state.lastError.set(pkg.name, `publish failed: ${outcome.error}`);
+      failed.push(`${label} (${outcome.error})`);
       state.log(`  ✗ ${label}: publish failed: ${lastLines(outcome.error, 1)}`);
       continue;
     }
@@ -212,9 +229,8 @@ async function publishAll(state: RunState, packages: ReleasePackage[]) {
         ? `  ↑ ${label} published`
         : `  = ${label} is already on npm; not publishing again`
     );
-    accepted.push(pkg);
   }
-  return accepted;
+  return failed;
 }
 
 /** One `npm view` check; records the result in `verified` or `lastError`. */
@@ -243,41 +259,42 @@ async function checkVisible(state: RunState, pkg: ReleasePackage) {
   return false;
 }
 
-/** Polls all packages together until npm shows them or the round times out. */
+/** Polls all packages together until npm shows them or the wait times out. */
 async function waitUntilVisible(state: RunState, packages: ReleasePackage[]) {
-  const roundStart = state.now();
-  const deadline = roundStart + state.roundTimeoutMs;
+  const start = state.now();
+  const deadline = start + state.waitTimeoutMs;
   let waiting = packages;
 
   while (waiting.length > 0) {
     const visible = await Promise.all(
       waiting.map((pkg) => checkVisible(state, pkg))
     );
-    const elapsedSeconds = Math.round((state.now() - roundStart) / 1000);
+    const elapsedSeconds = Math.round((state.now() - start) / 1000);
     for (const [index, pkg] of waiting.entries()) {
       if (visible[index]) {
         state.log(
-          `  ✓ ${pkg.name}@${state.version} visible on npm (${elapsedSeconds}s)`
+          `  ✓ npm shows ${pkg.name}@${state.version} (${elapsedSeconds}s)`
         );
       }
     }
 
     waiting = waiting.filter((_, index) => !visible[index]);
     if (waiting.length === 0 || state.now() >= deadline) {
-      return;
+      return waiting;
     }
 
     state.log(
-      `  waiting for npm to show ${waiting.map((pkg) => pkg.name).join(", ")} (${elapsedSeconds}s of ${Math.round(state.roundTimeoutMs / 1000)}s)`
+      `  waiting for npm to show ${waiting.map((pkg) => pkg.name).join(", ")} (${elapsedSeconds}s of ${Math.round(state.waitTimeoutMs / 1000)}s)`
     );
     await state.sleep(state.pollIntervalMs);
   }
+  return waiting;
 }
 
 export async function publishAndVerify(
   options: PublishAndVerifyOptions
 ): Promise<NpmVerificationResult[]> {
-  const { packages, maxRounds = DEFAULT_MAX_ROUNDS } = options;
+  const { packages } = options;
   const state: RunState = {
     tag: options.tag,
     version: options.version,
@@ -286,36 +303,25 @@ export async function publishAndVerify(
     now: options.now ?? Date.now,
     sleep: options.sleep ?? Bun.sleep,
     pollIntervalMs: options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS,
-    roundTimeoutMs: options.roundTimeoutMs ?? DEFAULT_ROUND_TIMEOUT_MS,
+    waitTimeoutMs: options.waitTimeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS,
     verified: new Map(),
     lastError: new Map(),
   };
-  const notVerified = () =>
-    packages.filter((pkg) => !state.verified.has(pkg.name));
   const verifiedInOrder = () =>
     packages.flatMap((pkg) => {
       const result = state.verified.get(pkg.name);
       return result ? [result] : [];
     });
 
-  for (let round = 1; round <= maxRounds; round++) {
-    const pending = notVerified();
-    if (pending.length === 0) {
-      break;
-    }
-    if (round > 1) {
-      state.log(
-        `\nRound ${round}/${maxRounds}: retrying ${pending.map((pkg) => pkg.name).join(", ")}`
-      );
-      await state.sleep(state.pollIntervalMs);
-    }
-
-    // Publish every pending package first, then wait for all of them at once.
-    const accepted = await publishAll(state, pending);
-    await waitUntilVisible(state, accepted);
+  const failed = await publishAll(state, packages);
+  if (failed.length > 0) {
+    throw new NpmReleaseError(
+      `npm publish failed for ${failed.join("; ")}. Re-run the failed job: it skips the versions already on npm.`,
+      verifiedInOrder()
+    );
   }
 
-  const missing = notVerified();
+  const missing = await waitUntilVisible(state, packages);
   if (missing.length > 0) {
     const details = missing
       .map(
@@ -324,7 +330,7 @@ export async function publishAndVerify(
       )
       .join("; ");
     throw new NpmReleaseError(
-      `npm does not show ${details} after ${maxRounds} rounds`,
+      `npm does not show ${details} after ${Math.round(state.waitTimeoutMs / 1000)} s. npm accepted the publish and may still be processing it, so this is not a failed publish: re-run the failed job later; it skips the versions npm shows by then.`,
       verifiedInOrder()
     );
   }

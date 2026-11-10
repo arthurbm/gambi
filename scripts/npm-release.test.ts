@@ -12,18 +12,16 @@ import {
 
 const VERSION = "0.7.2";
 const TAG = "latest";
+const MINUTE = 60_000;
 
-type Behavior =
-  /** Publishes; npm shows it `visibleAfterMs` later. */
-  | { kind: "ok"; visibleAfterMs: number }
-  /** Already on npm before the run starts. */
-  | { kind: "on-npm" }
-  /** On npm, but `npm view` cannot see it yet (stale packument). */
-  | { kind: "hidden"; visibleAfterMs: number }
-  /** The first `failures` publishes fail, then it behaves like "ok". */
-  | { kind: "flaky"; failures: number; visibleAfterMs: number }
-  /** npm accepts it and never shows it. */
-  | { kind: "never" };
+interface Behavior {
+  /** The publish fails. */
+  fails?: boolean;
+  /** Already on npm before the run (visible after `visibleAfterMs`). */
+  onNpm?: boolean;
+  /** npm shows the version this long after the publish. Infinity = never. */
+  visibleAfterMs?: number;
+}
 
 /**
  * An in-memory npm registry with a fake clock: publishes take `publishMs`,
@@ -33,25 +31,15 @@ type Behavior =
 function fakeRegistry(behaviors: Record<string, Behavior>, publishMs = 5000) {
   let clock = 0;
   const visibleAt = new Map<string, number>();
-  const failuresLeft = new Map<string, number>();
   const calls: string[] = [];
 
   for (const [name, behavior] of Object.entries(behaviors)) {
-    if (behavior.kind === "on-npm") {
-      visibleAt.set(name, 0);
-    }
-    if (behavior.kind === "hidden") {
-      visibleAt.set(name, behavior.visibleAfterMs);
-    }
-    if (behavior.kind === "flaky") {
-      failuresLeft.set(name, behavior.failures);
+    if (behavior.onNpm) {
+      visibleAt.set(name, behavior.visibleAfterMs ?? 0);
     }
   }
-
-  const isVisible = (name: string) => {
-    const at = visibleAt.get(name);
-    return at !== undefined && clock >= at;
-  };
+  const isVisible = (name: string) =>
+    clock >= (visibleAt.get(name) ?? Number.POSITIVE_INFINITY);
 
   const npm: NpmClient = {
     isPublished(name) {
@@ -61,28 +49,16 @@ function fakeRegistry(behaviors: Record<string, Behavior>, publishMs = 5000) {
     publish(pkg): Promise<PublishOutcome> {
       calls.push(`publish ${pkg.name}`);
       clock += publishMs;
-      const behavior = behaviors[pkg.name];
-      if (!behavior) {
-        throw new Error(`no behavior for ${pkg.name}`);
-      }
+      const behavior = behaviors[pkg.name] ?? {};
       if (visibleAt.has(pkg.name)) {
-        // Real npm: E403 "You cannot publish over the previously published
+        // Real npm: "You cannot publish over the previously published
         // versions", which the client maps to already-published.
         return Promise.resolve({ status: "already-published" });
       }
-      const left = failuresLeft.get(pkg.name) ?? 0;
-      if (left > 0) {
-        failuresLeft.set(pkg.name, left - 1);
-        return Promise.resolve({
-          status: "failed",
-          error: "npm error code E503",
-        });
+      if (behavior.fails) {
+        return Promise.resolve({ status: "failed", error: "npm error E503" });
       }
-      if (behavior.kind === "never") {
-        visibleAt.set(pkg.name, Number.POSITIVE_INFINITY);
-      } else if (behavior.kind === "ok" || behavior.kind === "flaky") {
-        visibleAt.set(pkg.name, clock + behavior.visibleAfterMs);
-      }
+      visibleAt.set(pkg.name, clock + (behavior.visibleAfterMs ?? 0));
       return Promise.resolve({ status: "published" });
     },
     view(name) {
@@ -108,15 +84,13 @@ function fakeRegistry(behaviors: Record<string, Behavior>, publishMs = 5000) {
   };
 }
 
+type Registry = ReturnType<typeof fakeRegistry>;
+
 function packagesFor(names: string[]): ReleasePackage[] {
-  return names.map((name) => ({ name, dir: `/fake/${name}` }));
+  return names.map((name) => ({ name, tarball: `/fake/${name}.tgz` }));
 }
 
-function run(
-  registry: ReturnType<typeof fakeRegistry>,
-  names: string[],
-  logs: string[] = []
-) {
+function run(registry: Registry, names: string[], logs: string[] = []) {
   return publishAndVerify({
     packages: packagesFor(names),
     tag: TAG,
@@ -131,12 +105,20 @@ function run(
 const publishes = (calls: string[]) =>
   calls.filter((call) => call.startsWith("publish "));
 
+async function failure(promise: Promise<unknown>) {
+  const error = await promise.catch((caught: unknown) => caught);
+  if (!(error instanceof NpmReleaseError)) {
+    throw new Error(`expected an NpmReleaseError, got ${String(error)}`);
+  }
+  return error;
+}
+
 describe("publishAndVerify", () => {
   test("publishes every package before waiting, then waits for all at once", async () => {
     const registry = fakeRegistry({
-      a: { kind: "ok", visibleAfterMs: 60_000 },
-      b: { kind: "ok", visibleAfterMs: 270_000 },
-      c: { kind: "ok", visibleAfterMs: 200_000 },
+      a: { visibleAfterMs: MINUTE },
+      b: { visibleAfterMs: 4.5 * MINUTE },
+      c: { visibleAfterMs: 3.5 * MINUTE },
     });
 
     const results = await run(registry, ["a", "b", "c"]);
@@ -146,8 +128,6 @@ describe("publishAndVerify", () => {
       "b",
       "c",
     ]);
-    expect(results.every((result) => result.verified)).toBe(true);
-    // All publishes happen before the first `npm view`.
     const firstView = registry.calls.findIndex((call) =>
       call.startsWith("view ")
     );
@@ -156,20 +136,18 @@ describe("publishAndVerify", () => {
       "publish b",
       "publish c",
     ]);
-    // The waits overlap: total ≈ 3 publishes + the slowest wait (b, 270 s
-    // after it was published at 10 s), not the sum of the waits.
-    expect(registry.now()).toBeLessThanOrEqual(10_000 + 270_000 + 15_000);
+    // The waits overlap: 3 publishes + the slowest wait (b, published at
+    // 10 s), not the sum of the waits.
+    expect(registry.now()).toBeLessThanOrEqual(10_000 + 4.5 * MINUTE + 15_000);
   });
 
   test("does not publish a version that is already on npm", async () => {
     const registry = fakeRegistry({
-      a: { kind: "on-npm" },
-      b: { kind: "ok", visibleAfterMs: 30_000 },
+      a: { onNpm: true },
+      b: { visibleAfterMs: 30_000 },
     });
 
-    const results = await run(registry, ["a", "b"]);
-
-    expect(results).toHaveLength(2);
+    expect(await run(registry, ["a", "b"])).toHaveLength(2);
     expect(publishes(registry.calls)).toEqual(["publish b"]);
   });
 
@@ -177,7 +155,7 @@ describe("publishAndVerify", () => {
     // npm view cannot see it yet, so the pre-check says "not on npm" and the
     // publish fails with the conflict error.
     const registry = fakeRegistry({
-      a: { kind: "hidden", visibleAfterMs: 45_000 },
+      a: { onNpm: true, visibleAfterMs: 45_000 },
     });
     const logs: string[] = [];
 
@@ -185,89 +163,69 @@ describe("publishAndVerify", () => {
 
     expect(results[0]?.verified).toBe(true);
     expect(publishes(registry.calls)).toEqual(["publish a"]);
-    expect(logs.join("\n")).toContain("already on npm");
-    expect(logs.join("\n")).not.toContain("Round 2");
+    expect(logs.join("\n")).toContain("a@0.7.2 is already on npm");
   });
 
-  test("retries only the package whose publish failed", async () => {
+  test("waits up to 30 minutes and publishes each package only once", async () => {
     const registry = fakeRegistry({
-      a: { kind: "ok", visibleAfterMs: 60_000 },
-      b: { kind: "flaky", failures: 1, visibleAfterMs: 60_000 },
-      c: { kind: "ok", visibleAfterMs: 60_000 },
+      a: { visibleAfterMs: MINUTE },
+      // Past the earlier timeouts (5 and 20 minutes), inside 30.
+      slow: { visibleAfterMs: 25 * MINUTE },
     });
-    const logs: string[] = [];
 
-    const results = await run(registry, ["a", "b", "c"], logs);
+    expect(await run(registry, ["a", "slow"])).toHaveLength(2);
+    expect(publishes(registry.calls)).toEqual(["publish a", "publish slow"]);
+  });
 
-    expect(results.map((result) => result.packageName)).toEqual([
-      "a",
-      "b",
-      "c",
-    ]);
+  test("does not publish again when npm still does not show a package at the timeout", async () => {
+    const registry = fakeRegistry({
+      a: { visibleAfterMs: MINUTE },
+      lost: { visibleAfterMs: Number.POSITIVE_INFINITY },
+    });
+
+    const error = await failure(run(registry, ["a", "lost"]));
+
+    expect(publishes(registry.calls)).toEqual(["publish a", "publish lost"]);
+    expect(error.message).toContain(
+      "npm does not show lost@0.7.2 (npm view: E404) after 1800 s"
+    );
+    expect(error.message).toContain("this is not a failed publish");
+    expect(error.verified.map((result) => result.packageName)).toEqual(["a"]);
+    expect(registry.now()).toBeGreaterThanOrEqual(30 * MINUTE);
+    expect(registry.now()).toBeLessThan(31 * MINUTE);
+  });
+
+  test("fails without waiting when a publish fails, after trying the rest", async () => {
+    const registry = fakeRegistry({
+      a: { visibleAfterMs: MINUTE },
+      broken: { fails: true },
+      c: { visibleAfterMs: MINUTE },
+    });
+
+    const error = await failure(run(registry, ["a", "broken", "c"]));
+
     expect(publishes(registry.calls)).toEqual([
       "publish a",
-      "publish b",
+      "publish broken",
       "publish c",
-      "publish b",
     ]);
-    expect(logs.join("\n")).toContain("Round 2/3: retrying b");
+    expect(registry.calls.some((call) => call.startsWith("view "))).toBe(false);
+    expect(error.message).toContain("broken@0.7.2 (npm error E503)");
+    expect(error.message).toContain("Re-run the failed job");
   });
 
-  test("publishes again a package npm still does not show when the round times out", async () => {
+  test("a re-run publishes only what is missing", async () => {
     const registry = fakeRegistry({
-      a: { kind: "ok", visibleAfterMs: 30_000 },
-      // Shows up 12 minutes after publish: past the 10-minute round.
-      slow: { kind: "ok", visibleAfterMs: 12 * 60_000 },
-    });
-    const logs: string[] = [];
-
-    const results = await run(registry, ["a", "slow"], logs);
-
-    expect(results).toHaveLength(2);
-    // Round 2 publishes `slow` again; npm answers "already published", and
-    // the next poll sees it.
-    expect(publishes(registry.calls)).toEqual([
-      "publish a",
-      "publish slow",
-      "publish slow",
-    ]);
-    expect(logs.join("\n")).toContain("Round 2/3: retrying slow");
-    expect(logs.join("\n")).toContain("slow@0.7.2 is already on npm");
-  });
-
-  test("fails with the missing packages and keeps the verified ones", async () => {
-    const registry = fakeRegistry({
-      a: { kind: "ok", visibleAfterMs: 30_000 },
-      lost: { kind: "never" },
-      broken: { kind: "flaky", failures: 99, visibleAfterMs: 0 },
+      a: { onNpm: true },
+      b: { onNpm: true },
+      c: { visibleAfterMs: MINUTE },
     });
 
-    const error = await run(registry, ["a", "lost", "broken"]).catch(
-      (caught: unknown) => caught
-    );
-
-    expect(error).toBeInstanceOf(NpmReleaseError);
-    const releaseError = error as NpmReleaseError;
-    expect(releaseError.message).toContain("lost@0.7.2 (npm view: E404)");
-    expect(releaseError.message).toContain(
-      "broken@0.7.2 (publish failed: npm error code E503)"
-    );
-    expect(releaseError.verified.map((result) => result.packageName)).toEqual([
-      "a",
-    ]);
-    expect(publishes(registry.calls)).toEqual([
-      "publish a",
-      "publish lost",
-      "publish broken",
-      "publish lost",
-      "publish broken",
-      "publish lost",
-      "publish broken",
-    ]);
+    expect(await run(registry, ["a", "b", "c"])).toHaveLength(3);
+    expect(publishes(registry.calls)).toEqual(["publish c"]);
   });
 
   test("requires the dist-tag to point at the new version", async () => {
-    let tagMoved = false;
     let clock = 0;
     const npm: NpmClient = {
       isPublished: () => Promise.resolve(false),
@@ -275,11 +233,11 @@ describe("publishAndVerify", () => {
       view: () =>
         Promise.resolve({
           publishedVersion: VERSION,
-          distTagVersion: tagMoved ? VERSION : "0.7.1",
+          distTagVersion: clock >= 30_000 ? VERSION : "0.7.1",
         }),
     };
 
-    const result = publishAndVerify({
+    const results = await publishAndVerify({
       packages: packagesFor(["a"]),
       tag: TAG,
       version: VERSION,
@@ -287,13 +245,12 @@ describe("publishAndVerify", () => {
       now: () => clock,
       sleep: (ms) => {
         clock += ms;
-        tagMoved = clock >= 30_000;
         return Promise.resolve();
       },
       log: () => undefined,
     });
 
-    expect((await result)[0]?.distTagVersion).toBe(VERSION);
+    expect(results[0]?.distTagVersion).toBe(VERSION);
     expect(clock).toBe(30_000);
   });
 });
@@ -327,16 +284,11 @@ describe("isAlreadyPublishedError", () => {
   });
 });
 
-describe("parseNpmViewVersion", () => {
-  test("reads npm 11 and npm 12 output", () => {
+describe("npm view parsers", () => {
+  test("read npm 11 and npm 12 output", () => {
     expect(parseNpmViewVersion('"0.7.1"\n')).toBe("0.7.1");
     expect(parseNpmViewVersion('["0.7.1"]\n')).toBe("0.7.1");
     expect(parseNpmViewVersion("")).toBe("");
-  });
-});
-
-describe("parseNpmViewDistTags", () => {
-  test("reads npm 11 and npm 12 output", () => {
     expect(parseNpmViewDistTags('{\n  "latest": "0.7.1"\n}\n')).toEqual({
       latest: "0.7.1",
     });
