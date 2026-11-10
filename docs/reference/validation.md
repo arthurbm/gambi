@@ -10,7 +10,7 @@ For the day-to-day command set (install, dev, build, check-types, lint), see the
 |---|---|
 | `packages/core` | `bun test packages/core/src` and `bun run --cwd packages/core check-types` |
 | `packages/cli` | run the affected subcommand, validate `--help`, `bun run --cwd packages/cli check-types`. If you touched distribution or build, also `bun run --cwd packages/cli build`. |
-| `packages/sdk` | `bun test packages/sdk/src` and `bun run --cwd packages/sdk check-types` |
+| `packages/sdk` | `bun test packages/sdk/src` and `bun run --cwd packages/sdk check-types`. If you touched the build, public types, or dependencies, also `bun run --cwd packages/sdk build && bun run --cwd packages/sdk check:packed-types`: it packs the SDK, installs it in a clean npm project, and type-checks a consumer with `skipLibCheck` off and on. Pass a version (`check:packed-types 0.7.1`) to check a release from npm instead. |
 | SDK discovery helpers | review `apps/docs/src/content/docs/reference/sdk.md`, `apps/docs/src/content/docs/guides/ai-tools.md`, `README.md`, `docs/reference/architecture.md` |
 | `apps/tui` | `bun run --cwd apps/tui test` |
 | HTTP contracts or public types | quick test of affected endpoint(s); see `docs/reference/docs-update.md` for required doc updates |
@@ -34,7 +34,7 @@ bun run --cwd apps/tui test
 
 ## Docs site checks
 
-CI (`.github/workflows/ci.yml`) runs `check-types`, Biome on the changed files, `check:i18n`, and the docs build on every PR.
+CI (`.github/workflows/ci.yml`) runs `check-types`, the packed `gambi-sdk` consumer check, Biome on the changed files, `check:i18n`, and the docs build on every PR.
 
 - The build always prints `[WARN] [content] Entry docs → 404 was not found.` It is pre-existing and harmless.
 - `bun run build` rewrites `apps/docs/dist`, which stops a running `bun run preview`. Restart the preview after each build.
