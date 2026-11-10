@@ -2,6 +2,7 @@ import { createHub } from "@gambi/core/hub";
 import { AgentCommand } from "../utils/agent-command.ts";
 import { Command, Option } from "../utils/option.ts";
 import { writeStructured } from "../utils/output.ts";
+import { onceTerminationSignal } from "../utils/termination-signal.ts";
 
 export function parseServePort(input: string | number): number | null {
   const port = Number(input);
@@ -119,8 +120,7 @@ export class HubServeCommand extends AgentCommand {
         resolve(0);
       };
 
-      process.once("SIGINT", () => shutdown("SIGINT"));
-      process.once("SIGTERM", () => shutdown("SIGTERM"));
+      onceTerminationSignal(shutdown);
     });
 
     return 0;

@@ -2,6 +2,7 @@
 
 const childProcess = require("node:child_process");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 const PLATFORM_MAP = {
@@ -15,19 +16,49 @@ const ARCH_MAP = {
   x64: "x64",
 };
 
+// Signals that end a CLI session. The wrapper relays them to the binary so a
+// supervisor that stops `gambi` by PID stops the binary too (#103).
+const FORWARDED_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
+
 function run(target) {
-  const result = childProcess.spawnSync(target, process.argv.slice(2), {
+  const child = childProcess.spawn(target, process.argv.slice(2), {
     stdio: "inherit",
     windowsHide: false,
   });
 
-  if (result.error) {
-    console.error(result.error.message);
-    process.exit(1);
-  }
+  // Windows has no POSIX signals: Ctrl+C already reaches the binary through
+  // the shared console, and child.kill() would terminate it without cleanup.
+  const relays =
+    process.platform === "win32"
+      ? []
+      : FORWARDED_SIGNALS.map((signal) => {
+          const relay = () => {
+            if (child.exitCode === null && child.signalCode === null) {
+              child.kill(signal);
+            }
+          };
+          process.on(signal, relay);
+          return { relay, signal };
+        });
 
-  const code = typeof result.status === "number" ? result.status : 1;
-  process.exit(code);
+  child.on("error", (error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
+
+  child.on("exit", (code, signal) => {
+    if (signal) {
+      // Die from the same signal so the caller sees what killed the binary.
+      for (const entry of relays) {
+        process.off(entry.signal, entry.relay);
+      }
+      process.kill(process.pid, signal);
+      // Reached only when the signal does not end this process (Node ignores
+      // SIGPIPE, for example): fall back to the shell's 128 + n convention.
+      process.exit(128 + (os.constants.signals[signal] || 0));
+    }
+    process.exit(typeof code === "number" ? code : 1);
+  });
 }
 
 function getCandidates() {
@@ -96,40 +127,46 @@ function resolveViaSiblingPackages(scriptDir, packageNames) {
   return undefined;
 }
 
-const overridePath = process.env.GAMBI_BIN_PATH;
-if (overridePath) {
-  run(overridePath);
-}
+function main() {
+  const overridePath = process.env.GAMBI_BIN_PATH;
+  if (overridePath) {
+    run(overridePath);
+    return;
+  }
 
-const scriptPath = fs.realpathSync(__filename);
-const scriptDir = path.dirname(scriptPath);
-const cachedBinary = path.join(
-  scriptDir,
-  process.platform === "win32" ? ".gambi.exe" : ".gambi"
-);
-if (fs.existsSync(cachedBinary)) {
-  run(cachedBinary);
-}
-
-const packageNames = getCandidates();
-if (packageNames.length === 0) {
-  console.error(
-    `Gambi does not ship a packaged binary for ${process.platform}/${process.arch} yet.`,
+  const scriptPath = fs.realpathSync(__filename);
+  const scriptDir = path.dirname(scriptPath);
+  const cachedBinary = path.join(
+    scriptDir,
+    process.platform === "win32" ? ".gambi.exe" : ".gambi"
   );
-  process.exit(1);
+  if (fs.existsSync(cachedBinary)) {
+    run(cachedBinary);
+    return;
+  }
+
+  const packageNames = getCandidates();
+  if (packageNames.length === 0) {
+    console.error(
+      `Gambi does not ship a packaged binary for ${process.platform}/${process.arch} yet.`,
+    );
+    process.exit(1);
+  }
+
+  const resolved =
+    packageNames.map(resolveViaRequire).find(Boolean) ||
+    resolveViaSiblingPackages(scriptDir, packageNames) ||
+    resolveViaNodeModules(scriptDir, packageNames);
+
+  if (!resolved) {
+    console.error(
+      "Gambi could not find a compatible platform binary. Expected one of: " +
+        packageNames.map((name) => `"${name}"`).join(" or "),
+    );
+    process.exit(1);
+  }
+
+  run(resolved);
 }
 
-const resolved =
-  packageNames.map(resolveViaRequire).find(Boolean) ||
-  resolveViaSiblingPackages(scriptDir, packageNames) ||
-  resolveViaNodeModules(scriptDir, packageNames);
-
-if (!resolved) {
-  console.error(
-    "Gambi could not find a compatible platform binary. Expected one of: " +
-      packageNames.map((name) => `"${name}"`).join(" or "),
-  );
-  process.exit(1);
-}
-
-run(resolved);
+main();

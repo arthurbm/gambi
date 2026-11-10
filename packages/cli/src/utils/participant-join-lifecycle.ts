@@ -2,6 +2,7 @@ import { password as passwordPrompt, text } from "@clack/prompts";
 import { nanoid } from "nanoid";
 
 import { handleCancel } from "./prompt.ts";
+import { onceTerminationSignal } from "./termination-signal.ts";
 
 export interface JoinScope {
   participantId?: string;
@@ -91,27 +92,10 @@ export function waitForJoinSession(input: {
   session: JoinSession;
 }): Promise<number> {
   return new Promise<number>((resolve) => {
-    const signalProcess = process as unknown as {
-      off: (signal: "SIGINT" | "SIGTERM", listener: () => void) => void;
-      once: (signal: "SIGINT" | "SIGTERM", listener: () => void) => void;
-    };
-    let closing = false;
-    const cleanup = () => {
-      signalProcess.off("SIGINT", onSigint);
-      signalProcess.off("SIGTERM", onSigterm);
-    };
-    const shutdown = (signal: "SIGINT" | "SIGTERM") => {
-      if (closing) {
-        return;
-      }
-      closing = true;
+    const cleanup = onceTerminationSignal((signal) => {
       input.onLeaving(signal);
       input.session.close().catch(() => undefined);
-    };
-    const onSigint = () => shutdown("SIGINT");
-    const onSigterm = () => shutdown("SIGTERM");
-    signalProcess.once("SIGINT", onSigint);
-    signalProcess.once("SIGTERM", onSigterm);
+    });
 
     input.session.waitUntilClosed().then(
       (result) => {
