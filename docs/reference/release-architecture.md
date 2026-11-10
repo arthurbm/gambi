@@ -50,24 +50,44 @@ Source of truth:
 
 - `.github/workflows/release.yml`
 - `scripts/publish.ts`
+- `scripts/npm-release.ts` (publish and verify loop, tested by `scripts/npm-release.test.ts`)
 
 ### Stages
 
 1. `version` — captures the exact source commit and calculates the next synchronized version from the selected bump type.
 2. `build-cli` — builds the CLI distribution once and uploads `packages/cli/dist` as a workflow artifact.
-3. `publish` — downloads the prebuilt artifact, updates repo package versions, publishes npm packages in order, verifies npm metadata, emits the release report, commits the version bump, tags, pushes.
+3. `publish` — downloads the prebuilt artifact, updates repo package versions, publishes npm packages in two groups (see below), verifies npm metadata, emits the release report, commits the version bump, tags, pushes.
 4. `github-release` — downloads the same prebuilt artifact, verifies asset names and sizes against the manifest, uploads to the GitHub Release.
 
 ### Publish order (required)
 
-1. `gambi-sdk`
-2. `gambi-tui`
-3. `gambi-linux-x64`
-4. `gambi-linux-arm64`
-5. `gambi-darwin-arm64`
-6. `gambi-darwin-x64`
-7. `gambi-windows-x64`
-8. `gambi` (wrapper — must be last; depends on platform packages existing in the registry)
+The script publishes in two groups. Inside a group, it publishes every package in this order without waiting for npm, then checks all of them together.
+
+1. Base group:
+   1. `gambi-sdk`
+   2. `gambi-tui`
+   3. `gambi-linux-x64`
+   4. `gambi-linux-arm64`
+   5. `gambi-darwin-arm64`
+   6. `gambi-darwin-x64`
+   7. `gambi-windows-x64`
+2. `gambi` (wrapper), published only after npm shows every package of the base group.
+
+The wrapper waits for the binaries to be visible, not just accepted. `npm publish` does not check the wrapper's `optionalDependencies`, so publishing it first would succeed. But an install that finds the wrapper before npm shows the matching binary skips the missing optional dependency without an error, and `gambi` ends up without a binary. Waiting costs about 1.5 minutes per release (the wrapper's own wait).
+
+### Publish and verify loop
+
+npm accepts a publish minutes before `npm view` shows it, and the registry serves packuments with `cache-control: max-age=300`. In v0.7.1 the wait after each publish took from 77 s (`gambi-sdk`) to 4.5 minutes (binaries). Until v0.7.1 the script waited for each package before publishing the next one, so the waits added up: 25 of the 27 minutes of the `publish` step. Now the waits overlap.
+
+For each group, `publishAndVerify` in `scripts/npm-release.ts` runs up to 3 rounds:
+
+1. Publish each pending package in order. A version that `npm view` already shows is not published again. If `npm publish` fails because the version exists (`You cannot publish over the previously published versions`, or `EPUBLISHCONFLICT`), the package counts as published.
+2. Every 15 s, run `npm view` for all accepted packages at once, until each one shows the new version with the dist-tag pointing at it, or 10 minutes pass.
+3. The next round retries only the packages whose publish failed or that npm still does not show.
+
+If a package is still missing after 3 rounds, the step fails and lists each package with its last error. A slow package gets up to about 30 minutes in total.
+
+Expected duration from the v0.7.1 timings: about 6 minutes for the base group and 1.5 minutes for the wrapper, against 27 minutes before.
 
 ### Observability and verification
 
@@ -120,9 +140,9 @@ Run it only after the release changes have merged and the required validation is
 
 ### Resuming a partial release
 
-`scripts/publish.ts` skips `npm publish` for any package whose target version is already on npm, then verifies it like the others. Each verification waits up to 20 minutes (80 attempts × 15 s) for the version and dist-tag to show up in `npm view`. npm accepts a publish before it shows the version: during v0.7.0, the 53 MB binary packages took from 3 to more than 5 minutes.
+`scripts/publish.ts` does not publish a package again when its target version is already on npm, then verifies it like the others (see [Publish and verify loop](#publish-and-verify-loop)).
 
-If the `publish` job fails after some packages reached npm and before `Commit and tag`, nothing was committed or tagged. Dispatch the workflow again on `main` with the same bump: the `version` job calculates the same version from the unchanged `package.json` files, and the publish step continues from the first package that is missing.
+If the `publish` job fails after some packages reached npm and before `Commit and tag`, nothing was committed or tagged. Dispatch the workflow again on `main` with the same bump: the `version` job calculates the same version from the unchanged `package.json` files, and the publish step publishes only the packages that are missing.
 
 If the job failed after `Commit and tag`, do not re-run with the same bump; the next version would be calculated. Recover the GitHub Release manually instead.
 
@@ -135,6 +155,7 @@ Important rule: this workflow must build **from the selected tag itself**, not f
 ## Local Validation Before Merging Release Changes
 
 ```bash
+bun test scripts
 bun run --cwd packages/cli check-types
 bun run --cwd packages/cli build
 npm pack --dry-run --cache /tmp/npm-cache ./packages/cli/dist/npm/gambi

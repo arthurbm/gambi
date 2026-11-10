@@ -17,7 +17,7 @@ For the day-to-day command set (install, dev, build, check-types, lint), see the
 | Tunnel protocol | `bun test packages/core/src` (tunnel tests); see `docs/reference/docs-update.md` |
 | Harness participant runtime | `bun test packages/core/src/harness packages/sdk/src/harness-participant-session.test.ts`, then the installed-adapter smokes below. If you touched `harness-process.ts` or the SDK exports, also run the Node smoke below. |
 | `apps/docs` (pages, landing, translations) | `bun run --cwd apps/docs check:i18n` and `bun run --cwd apps/docs build` (the build fails on a broken internal link or `#anchor`). For UI changes, look at the built site: see [Docs site checks](#docs-site-checks). Translations follow [`translation-pt-br.md`](translation-pt-br.md). |
-| Distribution / release | `bun run --cwd packages/cli check-types`, `bun run --cwd packages/cli build`, `npm pack --dry-run --cache /tmp/npm-cache ./packages/cli/dist/npm/gambi`, `node ./packages/cli/dist/npm/gambi/bin/gambi --version` |
+| Distribution / release | `bun test scripts` (publish and verify loop against a fake npm), `bun run --cwd packages/cli check-types`, `bun run --cwd packages/cli build`, `npm pack --dry-run --cache /tmp/npm-cache ./packages/cli/dist/npm/gambi`, `node ./packages/cli/dist/npm/gambi/bin/gambi --version` |
 
 ## Quick validation set
 
@@ -34,7 +34,7 @@ bun run --cwd apps/tui test
 
 ## Docs site checks
 
-CI (`.github/workflows/ci.yml`) runs `check-types`, the packed `gambi-sdk` consumer check, Biome on the changed files, `check:i18n`, and the docs build on every PR.
+CI (`.github/workflows/ci.yml`) runs `check-types`, the release script tests (`bun test scripts`), the packed `gambi-sdk` consumer check, Biome on the changed files, `check:i18n`, and the docs build on every PR.
 
 - The build always prints `[WARN] [content] Entry docs → 404 was not found.` It is pre-existing and harmless.
 - `bun run build` rewrites `apps/docs/dist`, which stops a running `bun run preview`. Restart the preview after each build.

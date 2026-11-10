@@ -50,6 +50,8 @@ Wrapper depende dos binários existirem no registro — se publicar primeiro, in
 
 **Rejeitada:** *publish paralelo com retry* — adiciona não-determinismo num pipeline que precisa ser auditável.
 
+**Atualização (2026-11-10):** o publish continua sequencial e na mesma ordem, mas a verificação deixou de ser feita pacote a pacote. O npm aceita o publish minutos antes de `npm view` mostrar a versão (na v0.7.1, de 1 a 4,5 minutos por pacote; o registro serve packuments com `max-age=300`), e esperar cada um antes do próximo somava 25 dos 27 minutos do job. Agora o script publica o SDK, a TUI e os binários em sequência, espera todos aparecerem num único loop e só então publica o wrapper e espera por ele. O wrapper continua por último e só sai depois que o npm mostra os binários: o `npm publish` do wrapper não confere as `optionalDependencies`, mas um `npm install -g gambi` que achasse o wrapper antes do binário pularia a dependência opcional sem erro e deixaria o CLI sem binário. Um pacote só é publicado de novo se o publish falhou ou se a versão não apareceu no prazo da rodada; republicar uma versão que já existe conta como sucesso.
+
 #### D3 — Build uma vez, reusar em CI
 
 O workflow tem 4 estágios (`version`, `build-cli`, `publish`, `github-release`). `build-cli` sobe `packages/cli/dist` como artifact; `publish` e `github-release` baixam o mesmo artifact.
