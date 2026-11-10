@@ -104,10 +104,43 @@ export {
 };
 `;
 
+// Under Bun's types, Hub["server"] must stay Bun's server type.
+const BUN_CONSUMER = `import { hub } from "gambi-sdk";
+
+const created = hub.create({ port: 0 });
+const port: number | undefined = created.server.port;
+await created.server.stop();
+// @ts-expect-error the server is Bun's server type, not any
+created.server.notAServerMethod();
+
+export { port };
+`;
+
 const MATRIX = [
-  { module: "nodenext", moduleResolution: "nodenext", skipLibCheck: false },
-  { module: "preserve", moduleResolution: "bundler", skipLibCheck: false },
-  { module: "preserve", moduleResolution: "bundler", skipLibCheck: true },
+  {
+    module: "nodenext",
+    moduleResolution: "nodenext",
+    skipLibCheck: false,
+    types: ["node"],
+  },
+  {
+    module: "preserve",
+    moduleResolution: "bundler",
+    skipLibCheck: false,
+    types: ["node"],
+  },
+  {
+    module: "preserve",
+    moduleResolution: "bundler",
+    skipLibCheck: true,
+    types: ["node"],
+  },
+  {
+    module: "preserve",
+    moduleResolution: "bundler",
+    skipLibCheck: false,
+    types: ["bun"],
+  },
 ];
 
 const workDir = await mkdtemp(join(tmpdir(), "gambi-sdk-types-"));
@@ -137,8 +170,10 @@ try {
         dependencies: {
           // @ai-sdk/provider's declarations import `json-schema` without
           // depending on its types; any consumer with skipLibCheck off needs it.
+          "@types/bun": "^1",
           "@types/json-schema": "^7",
-          "@types/node": "^22",
+          // Same range bun-types asks for; an older pin breaks its types.
+          "@types/node": "*",
           "gambi-sdk": dependency,
           typescript: "5.9.3",
         },
@@ -148,12 +183,16 @@ try {
     )
   );
   await writeFile(join(workDir, "consumer.ts"), CONSUMER);
+  await writeFile(join(workDir, "bun-consumer.ts"), BUN_CONSUMER);
   await $`npm install --no-audit --no-fund --ignore-scripts --loglevel=error`
     .cwd(workDir)
     .quiet();
 
   for (const config of MATRIX) {
-    const label = `module=${config.module} moduleResolution=${config.moduleResolution} skipLibCheck=${config.skipLibCheck}`;
+    const label = `module=${config.module} moduleResolution=${config.moduleResolution} skipLibCheck=${config.skipLibCheck} types=${config.types}`;
+    const files = config.types.includes("bun")
+      ? ["consumer.ts", "bun-consumer.ts"]
+      : ["consumer.ts"];
     await writeFile(
       join(workDir, "tsconfig.json"),
       JSON.stringify({
@@ -162,9 +201,8 @@ try {
           noEmit: true,
           strict: true,
           target: "ES2022",
-          types: ["node"],
         },
-        files: ["consumer.ts"],
+        files,
       })
     );
     const result = await $`npx tsc -p tsconfig.json`
