@@ -3,6 +3,11 @@
 import { resolve } from "node:path";
 import { $ } from "bun";
 import {
+  packCliTarballs,
+  TARBALL_DIR,
+  validateCliTarballs,
+} from "./cli-tarballs";
+import {
   NpmReleaseError,
   type NpmVerificationResult,
   publishAndVerify,
@@ -31,6 +36,10 @@ interface CliDistributionManifest {
 
 const VERSION = process.env.VERSION || Bun.argv[2];
 const NPM_TAG = process.env.NPM_TAG || "latest";
+// How long each group waits for npm to show its packages. Running out of time
+// does not mean a publish failed: npm may still be processing it.
+const WAIT_TIMEOUT_MS =
+  Number(process.env.GAMBI_NPM_WAIT_MINUTES || "30") * 60_000;
 
 if (!VERSION) {
   console.error("Error: VERSION required");
@@ -41,10 +50,6 @@ if (!VERSION) {
 
 function getCliManifestPath() {
   return resolve("packages/cli/dist/manifest.json");
-}
-
-function resolveCliDistributionPath(pathname: string) {
-  return resolve("packages/cli", pathname);
 }
 
 async function readCliManifest() {
@@ -73,6 +78,8 @@ async function ensureCliDistribution() {
     );
   }
 
+  console.log("Packing CLI tarballs...");
+  await packCliTarballs(rebuilt);
   return rebuilt;
 }
 
@@ -107,6 +114,22 @@ await $`bun run --cwd packages/sdk build`;
 await $`bun run --cwd apps/tui build`;
 
 const cliManifest = await ensureCliDistribution();
+
+// The CLI packages publish from the tarballs build-cli packed (file modes
+// survive in a tarball, not in a workflow artifact; #83). Check all of them
+// before publishing any.
+const cliTarballs = await validateCliTarballs({
+  binaries: cliManifest.binaryPackages.map((pkg) => pkg.packageName),
+  dir: TARBALL_DIR,
+  version: VERSION,
+});
+const cliTarball = (name: string) => {
+  const tarball = cliTarballs.get(name);
+  if (!tarball) {
+    throw new Error(`No tarball for ${name}`);
+  }
+  return tarball;
+};
 
 console.log("\nCLI distribution summary:");
 console.log(`  version: ${cliManifest.version}`);
@@ -163,22 +186,22 @@ async function writeReleaseReport(status: string, error?: string) {
   console.log(`\nWrote release report (${status}) to ${releaseReportPath}`);
 }
 
-// The wrapper lists the platform packages as optionalDependencies. npm
-// publishes it without checking them, but an install that resolves the
-// wrapper before npm shows its binary skips the missing optional dependency
-// and leaves `gambi` without a binary. So the wrapper is published only after
-// npm shows every other package.
+// The wrapper lists the platform packages as optionalDependencies pinned to
+// this version. npm publishes it without checking them, but an install that
+// resolves the wrapper before npm shows its binary skips the missing optional
+// dependency and leaves `gambi` without a binary. So the wrapper is published
+// only after npm shows every other package.
 const basePackages: ReleasePackage[] = [
   { name: "gambi-sdk", dir: resolve("packages/sdk") },
   { name: "gambi-tui", dir: resolve("apps/tui") },
   ...cliManifest.binaryPackages.map((binaryPackage) => ({
     name: binaryPackage.packageName,
-    dir: resolveCliDistributionPath(binaryPackage.packageDir),
+    tarball: cliTarball(binaryPackage.packageName),
   })),
 ];
 const wrapperPackage: ReleasePackage = {
   name: "gambi",
-  dir: resolveCliDistributionPath(cliManifest.wrapperPackageDir),
+  tarball: cliTarball("gambi"),
 };
 
 try {
@@ -187,6 +210,7 @@ try {
     packages: basePackages,
     tag: NPM_TAG,
     version: VERSION,
+    waitTimeoutMs: WAIT_TIMEOUT_MS,
   });
 
   console.log("\nPublishing the gambi wrapper to npm...");
@@ -196,6 +220,7 @@ try {
       packages: [wrapperPackage],
       tag: NPM_TAG,
       version: VERSION,
+      waitTimeoutMs: WAIT_TIMEOUT_MS,
     })),
   ];
 

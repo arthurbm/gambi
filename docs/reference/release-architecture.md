@@ -51,13 +51,34 @@ Source of truth:
 - `.github/workflows/release.yml`
 - `scripts/publish.ts`
 - `scripts/npm-release.ts` (publish and verify loop, tested by `scripts/npm-release.test.ts`)
+- `scripts/cli-tarballs.ts` (packs and validates the CLI tarballs, tested by `scripts/cli-tarballs.test.ts`)
+
+The workflow has `concurrency: release`, so a second dispatch waits for the first one to finish instead of publishing or tagging at the same time. Both jobs that run Bun pin it (`bun-version: "1.4.4"`, also in `build-binaries.yml`), so a release compiles with the same Bun as the last one. v0.7.0 and v0.7.1 were built with 1.4.4; the root `packageManager` still says `bun@1.3.13`.
 
 ### Stages
 
 1. `version` — captures the exact source commit and calculates the next synchronized version from the selected bump type.
-2. `build-cli` — builds the CLI distribution once and uploads `packages/cli/dist` as a workflow artifact.
-3. `publish` — downloads the prebuilt artifact, updates repo package versions, publishes npm packages in two groups (see below), verifies npm metadata, emits the release report, commits the version bump, tags, pushes.
-4. `github-release` — downloads the same prebuilt artifact, verifies asset names and sizes against the manifest, uploads to the GitHub Release.
+2. `build-cli` — builds the CLI distribution once, packs the 6 CLI packages into tarballs (see [CLI tarballs](#cli-tarballs)), and uploads `packages/cli/dist` as a workflow artifact.
+3. `publish` — checks the npm token (`npm whoami`), downloads the artifact, installs the packed CLI with install scripts off and runs it, updates repo package versions, publishes npm packages in two groups (see below), emits the release report, commits the version bump, tags, pushes.
+4. `smoke` — on a clean runner, runs `npx -y gambi@<version> --version` (must print the version) and `participant join --help` with install scripts off.
+5. `github-release` — downloads the same artifact, verifies asset names and sizes against the manifest, uploads to the GitHub Release. It runs in parallel with `smoke`: the GitHub assets do not come from npm.
+
+### CLI tarballs
+
+`actions/upload-artifact` drops file modes, so binaries that crossed from `build-cli` to `publish` as loose files reached npm as `0644`. The wrapper's `postinstall` hid that with a `chmod`, but installs that skip scripts (`bunx`, pnpm 10+, npm 12, `--ignore-scripts`) failed with `EACCES` (#83).
+
+Now `build-cli` runs `bun run scripts/cli-tarballs.ts pack <version>`: it sets `bin/*` to `0755` in each CLI package and runs `npm pack`, which keeps the mode inside the tarball. `publish` publishes those exact files with `npm publish <file.tgz> --ignore-scripts`. `gambi-sdk` and `gambi-tui` still publish from their directories, because their `prepublishOnly` builds them.
+
+Before publishing anything, `scripts/publish.ts` validates every tarball in `packages/cli/dist/tarballs` and stops on any problem:
+
+- the package is one of the 5 platform packages or the wrapper, with exactly one tarball each, and none is missing;
+- its version is the release version;
+- `publishConfig` sets nothing but `access` (a tarball cannot redirect the registry);
+- only the wrapper has install scripts;
+- `package/bin/gambi` (or `gambi.exe`) is executable;
+- the wrapper's `optionalDependencies` pin all 5 platform packages at the release version.
+
+Then the `Smoke-test the CLI tarballs` step installs `gambi-linux-x64` and `gambi` from the tarballs with `npm install --ignore-scripts` and runs `gambi --version` and `gambi participant join --help`. The `smoke` job does the same from npm after publishing. Both keep install scripts off, so the `postinstall` cannot hide a binary without the executable bit.
 
 ### Publish order (required)
 
@@ -73,27 +94,39 @@ The script publishes in two groups. Inside a group, it publishes every package i
    7. `gambi-windows-x64`
 2. `gambi` (wrapper), published only after npm shows every package of the base group.
 
-The wrapper waits for the binaries to be visible, not just accepted. `npm publish` does not check the wrapper's `optionalDependencies`, so publishing it first would succeed. But an install that finds the wrapper before npm shows the matching binary skips the missing optional dependency without an error, and `gambi` ends up without a binary. Waiting costs about 1.5 minutes per release (the wrapper's own wait).
+The wrapper waits for the binaries to be visible, not just accepted. `npm publish` does not check the wrapper's `optionalDependencies`, so publishing it first would succeed. But an install that finds the wrapper before npm shows the matching binary skips the missing optional dependency without an error, and `gambi` ends up without a binary. The binaries' own `latest` tag does not matter to the wrapper, because it pins their exact version. Waiting costs about 1.5 minutes per release (the wrapper's own wait).
 
 ### Publish and verify loop
 
-npm accepts a publish minutes before `npm view` shows it, and the registry serves packuments with `cache-control: max-age=300`. In v0.7.1 the wait after each publish took from 77 s (`gambi-sdk`) to 4.5 minutes (binaries). Until v0.7.1 the script waited for each package before publishing the next one, so the waits added up: 25 of the 27 minutes of the `publish` step. Now the waits overlap.
+npm records a version minutes after `npm publish` returns. In v0.7.1, `time[version]` in each packument came 58 s (`gambi-sdk`) to 4.4 minutes (binaries) after the publish, and `npm view` showed the version 9 to 21 s after that time, within one 15 s polling interval. Until v0.7.1 the script waited for each package before publishing the next one, so the waits added up: 25 of the 27 minutes of the `publish` step. Now the waits overlap.
 
-For each group, `publishAndVerify` in `scripts/npm-release.ts` runs up to 3 rounds:
+A fresher check would not help: the delay is in the registry, not in the CDN or the npm cache. `npm view` already fetches with `preferOnline` (the script passes `--prefer-online` anyway), and the per-version document (`GET /<pkg>/<version>`) is served uncached but only exists once the registry records the version.
 
-1. Publish each pending package in order. A version that `npm view` already shows is not published again. If `npm publish` fails because the version exists (`You cannot publish over the previously published versions`, or `EPUBLISHCONFLICT`), the package counts as published.
-2. Every 15 s, run `npm view` for all accepted packages at once, until each one shows the new version with the dist-tag pointing at it, or 10 minutes pass.
-3. The next round retries only the packages whose publish failed or that npm still does not show.
+For each group, `publishAndVerify` in `scripts/npm-release.ts`:
 
-If a package is still missing after 3 rounds, the step fails and lists each package with its last error. A slow package gets up to about 30 minutes in total.
+1. Publishes each package once, in order. A version that `npm view` already shows is not published again. If `npm publish` fails because the version exists (`You cannot publish over the previously published versions`, or `EPUBLISHCONFLICT`), the package counts as published. If any other publish fails, the step stops after trying the rest of the group, without waiting.
+2. Every 15 s, runs `npm view --prefer-online` for all packages at once, until each one shows the new version with the dist-tag pointing at it, or the timeout passes: 30 minutes per group by default, set by `GAMBI_NPM_WAIT_MINUTES` in `release.yml`.
+
+A package npm does not show in time is **not** published again in the same run. npm already accepted it and may still be processing it (other projects have seen large packages take up to an hour), and a second upload of a 50 MB tarball can fail with an error that hides a healthy publish. A timeout does not mean the publish failed: re-run the job later (see [Resuming a partial release](#resuming-a-partial-release)).
 
 Expected duration from the v0.7.1 timings: about 6 minutes for the base group and 1.5 minutes for the wrapper, against 27 minutes before.
 
 ### Observability and verification
 
-- `build-cli` prints and summarizes (`$GITHUB_STEP_SUMMARY`) the manifest content: wrapper directory, binary package list, release asset list with byte sizes and SHA-256 digests.
+- `build-cli` prints and summarizes (`$GITHUB_STEP_SUMMARY`) the manifest content: wrapper directory, binary package list, release asset list with byte sizes and SHA-256 digests. Its pack step prints each tarball with the mode of its binary.
 - `publish` writes `packages/cli/dist/release-report.json` with published-package list, npm metadata verification results per package, and CLI artifact metadata.
 - `github-release` verifies uploaded asset names and byte sizes against expected manifest entries, then appends a table to job summary.
+
+### Deferred
+
+Considered for this pipeline and left for later:
+
+- Stage, then promote (publish under a temporary dist-tag, move `latest` after everything shows up). It would add `npm dist-tag` calls the current token has never run in CI, more partial states, and no protection that the two groups do not already give without a test between the steps.
+- npm Trusted Publishing (OIDC, #99) with `--provenance`, in its own PR and release.
+- Building `gambi-sdk` and `gambi-tui` outside the job that holds the npm token.
+- Removing the wrapper's `postinstall`.
+- Beta or next channels.
+- Moving the binaries off npm, which needs an ADR.
 
 ## Authentication
 
@@ -101,8 +134,8 @@ The release workflow authenticates to npm using a **granular access token** stor
 
 How it works:
 
-1. The `publish` job passes `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` to the publish step.
-2. `actions/setup-node` with `registry-url` creates an `.npmrc` that references this token.
+1. The `publish` job writes its own npm config to `$RUNNER_TEMP/npmrc` (the registry and `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`, nothing else) and points `NPM_CONFIG_USERCONFIG` at it.
+2. Only the `Check the npm token` (`npm whoami`) and `Publish packages` steps get `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}`. `npm whoami` runs first, so an expired token fails the job in seconds.
 3. Each npm package on npmjs.com must allow granular access tokens (with 2FA bypass) in its publishing access settings.
 4. The `publish` job also has `id-token: write` permission, enabling `--provenance` signing if added in the future.
 
@@ -142,9 +175,11 @@ Run it only after the release changes have merged and the required validation is
 
 `scripts/publish.ts` does not publish a package again when its target version is already on npm, then verifies it like the others (see [Publish and verify loop](#publish-and-verify-loop)).
 
-If the `publish` job fails after some packages reached npm and before `Commit and tag`, nothing was committed or tagged. Dispatch the workflow again on `main` with the same bump: the `version` job calculates the same version from the unchanged `package.json` files, and the publish step publishes only the packages that are missing.
+If the `publish` job fails before `Commit and tag` (a publish error, or a package npm did not show in time), nothing was committed or tagged. Open the failed run and use **Re-run failed jobs**. The re-run reuses the `version` and `build-cli` outputs of that run: the same commit, the same version, and the same artifact, so npm, the tag, and the GitHub Release assets stay on the same build. It publishes only the packages npm does not show yet. After a timeout, wait a few minutes before re-running so npm can finish processing.
 
-If the job failed after `Commit and tag`, do not re-run with the same bump; the next version would be calculated. Recover the GitHub Release manually instead.
+Do not dispatch the workflow again to resume. A new dispatch captures the current `HEAD` of `main` and rebuilds: if `main` moved, the tag and the GitHub Release assets would not match what is already on npm.
+
+If the job failed after `Commit and tag`, do not re-run it; recover the GitHub Release manually instead.
 
 ## Manual Binary Rebuilds
 
@@ -162,6 +197,18 @@ npm pack --dry-run --cache /tmp/npm-cache ./packages/cli/dist/npm/gambi
 npm pack --dry-run --cache /tmp/npm-cache ./packages/cli/dist/npm/gambi-linux-x64
 bun run --cwd packages/sdk build
 ```
+
+To check the tarballs the release would publish (packing takes about a minute):
+
+```bash
+GAMBI_RELEASE_VERSION=0.0.0-local bun run --cwd packages/cli build
+bun run scripts/cli-tarballs.ts pack 0.0.0-local
+cd "$(mktemp -d)" && npm init -y > /dev/null
+npm install --ignore-scripts <repo>/packages/cli/dist/tarballs/gambi-linux-x64-0.0.0-local.tgz <repo>/packages/cli/dist/tarballs/gambi-0.0.0-local.tgz
+./node_modules/.bin/gambi --version
+```
+
+The workflow calls `./node_modules/.bin/gambi` directly. Avoid `npx --no gambi --version`: npm 11 reads that `--version` as its own and prints the npm version.
 
 Smoke checks:
 

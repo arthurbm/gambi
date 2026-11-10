@@ -25,7 +25,9 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Pinned so a release builds the same binaries as its dry runs.
+          # v0.7.0 and v0.7.1 were built with 1.4.4.
+          bun-version: "1.4.4"
 
       - name: Install dependencies
         run: bun install
