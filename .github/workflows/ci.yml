@@ -32,6 +32,13 @@ jobs:
       - name: Typecheck
         run: bun run check-types
 
+      # Packs gambi-sdk and type-checks it from a clean npm project, so the
+      # published declarations cannot point at unpublished packages (#82).
+      - name: Check gambi-sdk declarations as a consumer
+        run: |
+          bun run --cwd packages/sdk build
+          bun run --cwd packages/sdk check:packed-types
+
       # Only the files this change touches: the repo predates the lint rules
       # and still carries pre-existing errors elsewhere. `ultracite check`
       # exits 0 on errors, so call Biome (same config) directly.

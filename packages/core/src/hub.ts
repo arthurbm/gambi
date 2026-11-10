@@ -49,8 +49,19 @@ export interface HubOptions {
   mdns?: boolean;
 }
 
+/**
+ * The Bun server behind a hub. Written against `globalThis` instead of `Bun`
+ * so published declarations still compile where Bun's types are not loaded
+ * (Node consumers of `gambi-sdk`); there it resolves to `unknown`.
+ */
+export type HubServer = typeof globalThis extends {
+  Bun: { serve: (...args: never[]) => infer Server };
+}
+  ? Server
+  : unknown;
+
 export interface Hub {
-  server: ReturnType<typeof Bun.serve>;
+  server: HubServer;
   url: string;
   mdnsName?: string;
   close: () => void;

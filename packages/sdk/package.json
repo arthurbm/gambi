@@ -44,11 +44,14 @@
   "scripts": {
     "build": "bun run build.ts",
     "prepublishOnly": "bun run build",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "check:packed-types": "bun run scripts/check-packed-types.ts"
   },
   "dependencies": {
     "@ai-sdk/open-responses": "^1.0.6",
     "@ai-sdk/openai-compatible": "^2.0.2",
+    "@ai-sdk/provider": "^3.0.1",
+    "openai": "^6.15.0",
     "zod": "^4.3.5"
   },
   "peerDependencies": {
@@ -61,10 +64,11 @@
     }
   },
   "devDependencies": {
-    "@ai-sdk/provider": "^3.0.1",
     "@gambi/core": "workspace:*",
     "@types/bun": "latest",
-    "ai": "^6.0.6"
+    "ai": "^6.0.6",
+    "rollup": "^4.68.2",
+    "rollup-plugin-dts": "6.5.1"
   },
   "publishConfig": {
     "access": "public"

@@ -1,6 +1,9 @@
 #!/usr/bin/env bun
 import { rm } from "node:fs/promises";
-import { $, build } from "bun";
+import { isAbsolute } from "node:path";
+import { build } from "bun";
+import { rollup } from "rollup";
+import { dts } from "rollup-plugin-dts";
 
 // 1. Limpar dist/
 await rm("./dist", { recursive: true, force: true });
@@ -52,8 +55,20 @@ console.log(
   `✓ Built discovery subpath (${discoveryResult.outputs.length} files)`
 );
 
-// 5. Gerar .d.ts files com tsc
-await $`bun tsc --emitDeclarationOnly --outDir dist --noEmit false`;
-console.log("✓ Generated type declarations");
+// 5. Gerar .d.ts empacotados com rollup-plugin-dts
+// O @gambi/core não é publicado: as declarações dele entram no bundle, como o
+// JS acima. Os demais pacotes ficam externos e precisam estar em dependencies.
+// Ver issue #82 e scripts/check-packed-types.ts.
+const isBundledIntoDeclarations = (id: string) =>
+  id.startsWith(".") || isAbsolute(id) || id.startsWith("@gambi/");
+
+const declarations = await rollup({
+  input: { index: "./src/index.ts", discovery: "./src/discovery.ts" },
+  plugins: [dts({ respectExternal: true, tsconfig: "./tsconfig.json" })],
+  external: (id) => !isBundledIntoDeclarations(id),
+});
+await declarations.write({ dir: "./dist", format: "es" });
+await declarations.close();
+console.log("✓ Generated bundled type declarations");
 
 console.log("✓ Build completed successfully");
