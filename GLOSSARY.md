@@ -10,6 +10,11 @@ Gambi is a local-first hub for sharing OpenAI-compatible LLM endpoints across a 
 The central process (`gambi hub serve`) that holds the registry of rooms and participants and dispatches inference traffic.
 _Avoid_: Server, gateway, broker.
 
+**Managed hub**:
+A **Hub** operated by the Gambi project instead of by the room's host, so that a room can be reached from any network rather than only from a trusted local one. Exploratory: no ADR has accepted it yet.
+_In Portuguese_: **hub gerenciado**. Not "gerenciável", which reads as "a hub you can manage" and describes the hub people already run themselves.
+_Avoid_: Hosted hub, remote hub, cloud hub, Gambi Cloud (see Flagged ambiguities).
+
 **Room**:
 A named scope (identified by a short `code`) that groups participants under shared defaults; every inference request targets a room.
 _Avoid_: Channel, session, group.
@@ -140,6 +145,8 @@ Orchestration vocabulary (orchestrator, steerer, squad, dispatch, draft, decisio
 - **"Substrate" / "social primitives"** are **internal vocabulary** — they name the two layers of the product/research model in `docs/product/research-direction.md`: the *substrate* is what Gambi ships today (hub, tunnel, routing, observability); *social primitives* is the layer above it (turn-taking, shared context, agent-to-agent interaction), still research. Use them freely in `docs/` and in design conversation. _Rule_: never in public copy (landing, docs pages, README). A reader who has not read the research doc gets nothing from either term — say the concrete thing instead ("turn-taking, shared context, models talking to models"). Ruled in ADR-0001 § 7 (E6).
 
 - **"Runtime", "layer", "scope"** are domain words here and also construct names in libraries the code uses (for example Effect's `Runtime`, `Layer`, `Scope`). In prose, bare **runtime** means the **participant runtime**, the **harness layer** is the product layer of harness participants, and a room is a "scope" only in the plain-English sense. _Rule_: library constructs are implementation vocabulary and never get an entry in this file; when you mean one, write it as code (`Layer`, `Scope`).
+
+- **"Hosted"** and **"remote"** are already taken, so neither names the **Managed hub**. **Hosted** qualifies a harness participant that the room host contributes for people who bring none. **Remote** in `PRODUCT.md` means another machine on the same trusted network. _Rule_: a hub operated by the project is a **Managed hub**; never "hosted hub" or "remote hub".
 
 - **"Heartbeat"** is reserved for the management-plane HTTP heartbeat. The tunnel's keepalive is **ping/pong** (`tunnel.ping` / `tunnel.pong`). Saying "the heartbeat failed" implicitly means management; tunnel failures are "ping/pong stopped" or "tunnel closed."
 
