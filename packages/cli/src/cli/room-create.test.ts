@@ -138,9 +138,7 @@ layer(layerHub(), { excludeTestServices: true })("room create", (it) => {
 
         expect(result.exitCode).toBe(0);
         expect(result.terminal).toContain("Room name");
-        expect(result.stdout).toMatch(
-          /^Created room [0-9A-Z]{6} \(Perguntada\)\.\nhost_id: \S+\n$/
-        );
+        expect(result.stdout).toMatch(CREATED_PERGUNTADA);
       })
   );
 
