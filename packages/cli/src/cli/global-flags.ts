@@ -12,22 +12,24 @@ import { OUTPUT_FORMATS, type OutputFormat } from "./output.ts";
 export const Format = GlobalFlag.Setting("format")({
   flag: Flag.Literals("format", OUTPUT_FORMATS).pipe(
     Flag.optional,
+    Flag.withMetavar(`<${OUTPUT_FORMATS.join("|")}>`),
     Flag.withDescription(
       "Output format. Default: text on a terminal, json otherwise"
     )
   ),
 });
 
-export const Interactive = GlobalFlag.Setting("interactive")({
-  flag: Flag.Boolean("interactive").pipe(
+export const NoInteractive = GlobalFlag.Setting("no-interactive")({
+  flag: Flag.Boolean("no-interactive").pipe(
+    Flag.withoutNegation,
     Flag.withDescription(
-      "Ask for missing input on a terminal. --no-interactive never asks"
+      "Never ask for missing input, even on a terminal: fail instead"
     ),
-    Flag.withDefault(true)
+    Flag.withDefault(false)
   ),
 });
 
-export const globalFlags = [Format, Interactive] as const;
+export const globalFlags = [Format, NoInteractive] as const;
 
 export interface PeekedGlobalFlags {
   /** `--format`, when it names a known format. */

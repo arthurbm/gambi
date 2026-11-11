@@ -58,12 +58,16 @@ export const exitCodeOf = (failure: unknown): number =>
     ? ExitCode[failureKinds[failure._tag]]
     : ExitCode.internal;
 
-/** The fields of a typed error, without the wrapped cause. */
+/** The fields of a typed error, without the wrapped cause and the type brands. */
 const detailsOf = (
   failure: object
 ): Readonly<Record<string, unknown>> | undefined => {
   const entries = Object.entries(failure).filter(
-    ([key, value]) => key !== "_tag" && key !== "cause" && value !== undefined
+    ([key, value]) =>
+      key !== "_tag" &&
+      key !== "cause" &&
+      !key.startsWith("~") &&
+      value !== undefined
   );
   return entries.length === 0 ? undefined : Object.fromEntries(entries);
 };

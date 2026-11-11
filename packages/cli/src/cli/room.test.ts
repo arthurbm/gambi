@@ -5,6 +5,8 @@ import { layer } from "@gambi/testing/effect";
 import { Effect } from "effect";
 import { runCommand } from "./testing.ts";
 
+const SORTED_ROOM_NAME = /^(zz|aa|mm) /;
+
 layer(layerHub(), { excludeTestServices: true })("room commands", (it) => {
   it.effect(
     "room list prints the rooms as JSON when stdout is not a terminal",
@@ -140,6 +142,56 @@ layer(layerHub(), { excludeTestServices: true })("room commands", (it) => {
           "",
         ].join("\n")
       );
+    })
+  );
+
+  it.effect("room list --sort name orders by name, --reverse inverts it", () =>
+    Effect.gen(function* () {
+      const hub = yield* Hub;
+      const client = yield* managementClient;
+      for (const name of ["zz Xote", "aa Baião", "mm Forró"]) {
+        yield* client.rooms.create({ payload: { name } });
+      }
+      const sortedNames = (args: readonly string[]) =>
+        runCommand(["room", "list", "--hub", hub.url, ...args]).pipe(
+          Effect.map((result) =>
+            (JSON.parse(result.stdout).data as { name: string }[])
+              .map((room) => room.name)
+              .filter((name) => SORTED_ROOM_NAME.test(name))
+          )
+        );
+
+      expect(yield* sortedNames(["--sort", "name"])).toEqual([
+        "aa Baião",
+        "mm Forró",
+        "zz Xote",
+      ]);
+      expect(yield* sortedNames(["--sort", "name", "--reverse"])).toEqual([
+        "zz Xote",
+        "mm Forró",
+        "aa Baião",
+      ]);
+    })
+  );
+
+  it.effect("room list rejects a sort it does not know as invalid usage", () =>
+    Effect.gen(function* () {
+      const hub = yield* Hub;
+
+      const result = yield* runCommand([
+        "room",
+        "list",
+        "--hub",
+        hub.url,
+        "--sort",
+        "color",
+      ]);
+
+      expect(result.exitCode).toBe(2);
+      expect(JSON.parse(result.stderr).error).toMatchObject({
+        name: "InvalidValue",
+        details: { option: "sort", value: "color" },
+      });
     })
   );
 });
