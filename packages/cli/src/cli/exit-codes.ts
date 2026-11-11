@@ -59,14 +59,8 @@ export const failureKinds = {
   RoomNotFound: "rejected",
 } as const satisfies Record<FailureTag, FailureKind>;
 
-const isKnownTag = (tag: unknown): tag is FailureTag =>
-  Predicate.isString(tag) && Object.hasOwn(failureKinds, tag);
-
-/** The exit code of a failure. Anything without a row is a bug: `1`. */
-export const exitCodeOf = (failure: unknown): number =>
-  Predicate.hasProperty(failure, "_tag") && isKnownTag(failure._tag)
-    ? ExitCode[failureKinds[failure._tag]]
-    : ExitCode.internal;
+export const exitCodeOf = (failure: CommandFailure): number =>
+  ExitCode[failureKinds[failure._tag]];
 
 /** The fields of a typed error, without the wrapped cause and the type brands. */
 const detailsOf = (

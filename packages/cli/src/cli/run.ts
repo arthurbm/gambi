@@ -79,7 +79,10 @@ const fail = Effect.fnUntraced(function* (failure: CommandFailure) {
   return exitCodeOf(failure);
 });
 
-/** Log lines never share stdout with data: stderr, as JSON when the output is structured. */
+/**
+ * Log lines never share stdout with data: they go to stderr, as JSON when the
+ * output is structured.
+ */
 const logging = Layer.unwrap(
   Effect.gen(function* () {
     const { format } = yield* Output;

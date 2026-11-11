@@ -13,7 +13,7 @@ import { Effect, Layer, Runtime } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { HubListen } from "./commands/hub.ts";
 import { ExitCode } from "./exit-codes.ts";
-import { processExitCode, runCli } from "./run.ts";
+import { type CliEnvironment, processExitCode, runCli } from "./run.ts";
 import {
   makeTermination,
   Termination,
@@ -69,7 +69,11 @@ const runMain = Runtime.makeRunMain(({ fiber, teardown }) => {
   });
 });
 
-const Platform = Layer.mergeAll(
+/**
+ * Everything `runCli` asks of its environment. A command that needs a new
+ * service gets it here and in `testing.ts`.
+ */
+const Platform: Layer.Layer<CliEnvironment> = Layer.mergeAll(
   Layer.succeed(Termination, termination.service),
   Layer.succeed(HubListen, BunHttpServer.layer),
   Mdns.layer,
