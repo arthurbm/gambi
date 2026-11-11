@@ -1,0 +1,136 @@
+# Effect conventions
+
+Rules for every line of Effect code in this repo. The decision is [ADR-0007](../adr/0007-effect-as-runtime-foundation.md); the facts behind it are in [`docs/research/effect-v4-foundation.md`](../research/effect-v4-foundation.md).
+
+## Read the installed package first
+
+Do not write Effect API from memory. Effect v4 renamed much of the v3 and beta API, and most code you have seen uses the old names.
+
+Before writing Effect code, read these two, from the installed package:
+
+1. `packages/protocol/node_modules/effect/AGENTS.md`
+2. The examples in `packages/protocol/node_modules/effect/ai-docs/src/` for the area you touch (services, errors, resources, streams, testing, `51_http-server`, `60_child-process`, `70_cli`)
+
+There is no `node_modules/effect` at the repo root. Bun links each dependency inside the workspace that declares it, so use the path above.
+
+For anything those two do not cover, read the source in `packages/protocol/node_modules/effect/src/`. It is the same version the code runs. Do not use web documentation, a blog post, or another checkout of Effect.
+
+## Version
+
+- `effect` and every `@effect/*` package are pinned to the same exact version, without `^` or `~`. Today that is `4.1.4`.
+- The workspace resolves one copy of `effect`. Two copies break schema decoding and service lookup.
+- `bun test scripts/effect-foundation.test.ts` fails when a range, a second version, or a second copy appears.
+- A bump is its own change: update every `package.json` at once, run the whole suite, and read the release notes. The `cli`, `http`, `http-api`, `rpc`, `socket` and `process` modules are marked unstable and may break in a minor.
+- Bun is pinned to `1.4.4` (`packageManager` in the root `package.json` and `bun-version` in the release workflows).
+
+## Imports
+
+- Import by name from the barrel: `import { Effect, Layer, Schema } from "effect"`. Lint rejects namespace imports (`import * as Effect from "effect/Effect"`).
+- The modules that used to be separate packages are subpaths of `effect`: `effect/cli`, `effect/http`, `effect/http-api`, `effect/rpc`, `effect/socket`, `effect/process`, `effect/testing`.
+- `effect/unstable/*` does not exist. `@effect/platform`, `@effect/cli` and `@effect/rpc` have no v4 release; do not add them.
+
+## Names that no longer exist
+
+Each row was checked against the installed `effect@4.1.4`.
+
+| Do not write | Write |
+|---|---|
+| `ServiceMap.Service`, `Context.Tag`, `Context.GenericTag`, `Effect.Service`, `Effect.Tag` | `Context.Service` with a `static layer` |
+| `FiberRef` | `Context.Reference` |
+| `Schema.TaggedErrorClass`, `Schema.ErrorClass` | `Schema.TaggedError` |
+| `Effect.catchAll`, `Effect.catchAllCause`, `Effect.catchSome` | `Effect.catch`, `Effect.catchCause`, `Effect.catchIf` |
+| `Effect.either`, the `Either` module | `Effect.result`, the `Result` module |
+| `Effect.fork`, `Effect.forkDaemon` | `Effect.forkChild`, `Effect.forkDetach` (`Effect.forkScoped` is unchanged) |
+| `Effect.async` | `Effect.callback` |
+| `Effect.zipRight` | `Effect.andThen` |
+| `Effect.timeoutFail` | `Effect.timeout` then `Effect.catchTag("TimeoutError", ...)`, or `Effect.timeoutOrElse` |
+| `Cause.TimeoutException` | `Cause.TimeoutError` |
+| `Effect.runtime` | `Effect.context`, or a `ManagedRuntime` at the boundary |
+| `Layer.scoped`, `Layer.scopedDiscard`, `Layer.unwrapEffect` | `Layer.effect`, `Layer.effectDiscard`, `Layer.unwrap` (`Layer.effect` takes a scoped Effect) |
+| `Schema.decodeUnknown` | `Schema.decodeUnknownEffect` (`decodeUnknownSync` is unchanged) |
+| `Schema.Union(A, B)`, `Schema.Literal("a", "b")` | `Schema.Union([A, B])`, `Schema.Literals(["a", "b"])` |
+
+`Data.TaggedError` still exists. Do not use it: errors here are `Schema.TaggedError`, because they cross the tunnel and the management plane.
+
+A name missing from this table is not thereby safe. Check it in the installed source.
+
+## Packages and the platform boundary
+
+| Package | Holds | Platform rule |
+|---|---|---|
+| `@gambi/protocol` | Schemas, the management plane contract, the tunnel calls, the typed errors, the status transition function | No platform at all. No `Bun.*`, no `process`, no `node:*`, no `bun:*`, no `@effect/platform-*`. Lint and its `tsconfig.json` (`types: []`) both reject them. |
+| `@gambi/core` | Hub, participant runtime, harness | Depends on the abstract services from `effect` (`FileSystem`, `ChildProcessSpawner`, `Socket`, `HttpServer`). No `Bun.*` in new code. |
+| `packages/cli` entrypoint, SDK hosting entries | `BunRuntime.runMain` and the `@effect/platform-bun` layers | The only place `@effect/platform-bun` is imported. |
+| `@gambi/testing` | The test helper | Test-only. Never a runtime dependency. |
+
+Because `@gambi/protocol` type-checks without DOM types, a web type such as `Headers` or `ReadableStream` is not in scope there. Take it from an `effect` module instead of the global.
+
+## Services
+
+- State lives in a service. Never in a module-level variable: two hubs in one process must not see each other's rooms.
+- Name a service after the domain concept, using [`GLOSSARY.md`](../../GLOSSARY.md): `Rooms`, `Tunnels`, `Harness`. No `Service`, `Manager` or `Impl` suffix.
+- Define it with `Context.Service` and attach the implementation as `static readonly layer`. A test double is `static readonly layerTest`.
+- The identifier is `gambi/<package>/<Name>`, for example `gambi/core/Rooms`.
+- Dependencies come from the environment (`yield* Rooms`), not from parameters. Configuration and plain values may be parameters.
+- A reusable function that returns an Effect is `Effect.fn("Rooms.create")(function* ...)`. The name becomes the span. Use `Effect.fnUntraced` for per-chunk and per-event work. Do not write a function whose body is only `Effect.gen`.
+- A resource (port, mDNS announcement, timer, socket, subprocess) is acquired with `Effect.acquireRelease` or a scoped layer, so that a later failure releases it.
+- Use `Clock` and `DateTime` for time, never `Date.now()` or `setTimeout`. The test clock only controls the former.
+- `ManagedRuntime` and `Effect.runPromise` belong at the edges only: the SDK's `Promise` API, the TUI, the CLI entrypoint. Never inside a service.
+
+## Errors
+
+- Every expected failure is a `Schema.TaggedError` class with structured fields (a room code, a port, a participant id). No failure travels as a string.
+- The message is fixed or built from the fields, never copied from `cause.message`. An error that wraps another keeps it in a `cause: Schema.Defect()` field.
+- Create the error where the failure happens. Map it to an HTTP status or an exit code once, at the transport.
+- Recover with `Effect.catchTag` or `Effect.catchTags`. `Effect.catch` handles the whole error channel; use it only when that is the intent.
+- Inside a generator, fail with `return yield* new RoomNotFound({ code })`. Keep the `return`.
+- A bug (a broken invariant) is a defect: `Effect.die` or `Effect.orDie`. Do not give it a typed error.
+
+## Tests
+
+Tests run on `bun test`. `@gambi/testing/effect` mirrors the `@effect/vitest` API; do not import `@effect/vitest`, which fails inside `bun test`.
+
+Add `"@gambi/testing": "workspace:*"` to the `devDependencies` of the workspace that uses it.
+
+```ts
+import { expect } from "bun:test";
+import { it, layer } from "@gambi/testing/effect";
+import { Effect, Fiber } from "effect";
+import { TestClock } from "effect/testing";
+
+it.effect("removes a participant 60 s after its tunnel drops", () =>
+  Effect.gen(function* () {
+    const fiber = yield* Effect.forkChild(removal);
+    yield* TestClock.adjust("60 seconds");
+    expect(yield* Fiber.join(fiber)).toBe("removed");
+  })
+);
+
+layer(Rooms.layerTest)("Rooms", (it) => {
+  it.effect("creates a room", () => Effect.gen(function* () { /* ... */ }));
+});
+```
+
+| Form | Runs with | Use for |
+|---|---|---|
+| `it.effect` | `TestClock` and `TestConsole` | Everything by default |
+| `it.live` | The real clock | A real socket or a real subprocess, nothing else |
+| `layer(L)(name, (it) => ...)` | `L` built once for the block and released when it ends; `it.effect` inside sees the same instances | A shared service, a shared hub |
+| `layer(L, { excludeTestServices: true })` | The same, on the real clock | A block that shares a socket or a subprocess |
+
+Each form also has `.skip`, `.only`, `.skipIf(condition)`, `.runIf(condition)`, `.each(cases)` and `.fails`. Plain synchronous tests still use `test` from `bun:test`.
+
+Rules:
+
+- **No real wait in a test.** No `setTimeout`, no `Bun.sleep`, no `Effect.sleep` on the real clock to "let things settle". Timeouts, backoff and removal deadlines run under `it.effect` and move with `TestClock.adjust`.
+- **Live only for socket and subprocess.** A live test waits for an event (a `Deferred`, a `Queue`, a stream element), never for a duration.
+- Under `it.effect` time does not move by itself. Fork the Effect that sleeps, then call `TestClock.adjust`; joining before adjusting hangs until the `bun test` timeout.
+- Every test body gets a `Scope`, closed when the test ends. `Effect.acquireRelease` and `Effect.addFinalizer` work without `Effect.scoped`.
+- Test behavior seen from outside: an HTTP response, a room event, a line of stdout, an exit code. Do not assert on which services or layers exist.
+
+Known traps:
+
+- The `it` inside a `layer` block has no `live`. For a block that needs the real clock, pass `excludeTestServices: true` and use `it.effect`.
+- `bun test` stops a test after 5 s. A live test that compiles or spawns something passes a timeout in milliseconds as the third argument.
+- Biome's `noMisplacedAssertion` accepts `expect` inside `it.effect` and `it.live`, and rejects it inside `.fails` and `.each`. Suppress it there with a reason.
+- A failed Effect test prints its error twice: the helper logs the full cause, then `bun test` reports the rejection.

@@ -1,0 +1,19 @@
+{
+  "name": "@gambi/protocol",
+  "version": "0.7.2",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "bun build ./src/index.ts --target=browser --outdir=dist",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "effect": "4.1.4"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

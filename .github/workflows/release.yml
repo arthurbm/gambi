@@ -49,7 +49,9 @@ jobs:
             "packages/cli/package.json",
             "packages/config/package.json",
             "packages/core/package.json",
+            "packages/protocol/package.json",
             "packages/sdk/package.json",
+            "packages/testing/package.json",
           ];
 
           function compareSemver(left, right) {

@@ -9,6 +9,9 @@ For the day-to-day command set (install, dev, build, check-types, lint), see the
 | Area touched | Validation |
 |---|---|
 | `packages/core` | `bun test packages/core/src` and `bun run --cwd packages/core check-types` |
+| `packages/protocol` | `bun run --cwd packages/protocol check-types` and `bun test scripts/effect-foundation.test.ts` (lint keeps platform APIs out of the package). Tests for it use `@gambi/testing/effect`. |
+| `packages/testing` (Effect test helper) | `bun test packages/testing/src` and `bun run --cwd packages/testing check-types` |
+| `effect` / `@effect/*` version, `bun.lock`, `biome.json` | `bun test scripts/effect-foundation.test.ts` (one exact version, one copy of `effect`) and `bun test packages/cli/src/effect-binary.test.ts` (a compiled binary that imports `effect` builds and runs) |
 | `packages/cli` | run the affected subcommand, validate `--help`, `bun run --cwd packages/cli check-types`. If you touched distribution or build, also `bun run --cwd packages/cli build`. |
 | `packages/sdk` | `bun test packages/sdk/src` and `bun run --cwd packages/sdk check-types`. If you touched the build, public types, or dependencies, also `bun run --cwd packages/sdk build && bun run --cwd packages/sdk check:packed-types`: it packs the SDK, installs it in a clean npm project, and type-checks a consumer with `skipLibCheck` off and on. Pass a version (`check:packed-types 0.7.1`) to check a release from npm instead. |
 | SDK discovery helpers | review `apps/docs/src/content/docs/reference/sdk.md`, `apps/docs/src/content/docs/guides/ai-tools.md`, `README.md`, `docs/reference/architecture.md` |
@@ -31,10 +34,11 @@ bun run --cwd apps/tui test
 - Tests in `core` and `sdk` start a hub on fixed ports (e.g., 3998 / 3999) and may fail if the port is busy. Report this as an environmental failure, not a product failure.
 - `packages/core/src/endpoint-capabilities.test.ts` has a historically-flaky test (`probeEndpoint > does not detect protected endpoints without auth headers`). Pre-existing; not introduced by recent work.
 - No Docker, database, or external service is required — all state is in-memory.
+- Effect tests follow [`effect-conventions.md`](effect-conventions.md#tests): `it.effect` with the test clock by default, `it.live` only for a real socket or subprocess, and no real wait.
 
 ## Docs site checks
 
-CI (`.github/workflows/ci.yml`) runs `check-types`, the release script tests (`bun test scripts`), the packed `gambi-sdk` consumer check, Biome on the changed files, `check:i18n`, and the docs build on every PR.
+CI (`.github/workflows/ci.yml`) runs `check-types`, the CLI tests, the Effect test helper tests, the release script tests (`bun test scripts`), the packed `gambi-sdk` consumer check, Biome on the changed files, `check:i18n`, and the docs build on every PR.
 
 - The build always prints `[WARN] [content] Entry docs → 404 was not found.` It is pre-existing and harmless.
 - `bun run build` rewrites `apps/docs/dist`, which stops a running `bun run preview`. Restart the preview after each build.
