@@ -12,6 +12,7 @@ import {
   Scope,
   Stream,
 } from "effect";
+import { TestClock } from "effect/testing";
 import { layerHub, managementClient } from "../testing/hub.ts";
 import { joinParticipant } from "../testing/participant.ts";
 import { Tunnels } from "./tunnels.ts";
@@ -136,4 +137,28 @@ it.live("a new tunnel of the same participant replaces the one it had", () =>
     }).pipe(Effect.provide(hub.context));
     yield* hub.close;
   })
+);
+
+// The hub is built inside the test, so it reads the test clock. Moving that
+// clock with a tunnel open can trip the hub's ping timeout, because a jump
+// leaves no time for the pong: with the default 5 s interval, these two steps
+// drop the tunnel. A test that needs the clock and a tunnel sets the interval
+// out of its way.
+it.effect("the ping interval of the tunnels is a setting of the hub", () =>
+  Effect.gen(function* () {
+    const client = yield* managementClient;
+    const { room } = yield* client.rooms.create({
+      payload: { name: "Coco" },
+    });
+    yield* joinParticipant({ roomCode: room.code, participantId: "arthur-1" });
+    const status = client.participants
+      .list({ params: { code: room.code } })
+      .pipe(Effect.map((listed) => listed[0]?.status));
+
+    yield* TestClock.adjust("4 seconds");
+    expect(yield* status).toBe("online");
+    yield* TestClock.adjust("6 seconds");
+
+    expect(yield* status).toBe("online");
+  }).pipe(Effect.provide(layerHub({ tunnelPingInterval: "1 hour" })))
 );

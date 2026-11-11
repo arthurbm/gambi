@@ -15,6 +15,7 @@ import { GAMBI_VERSION } from "@gambi/protocol";
 import {
   Cause,
   Context,
+  Duration,
   Effect,
   type FileSystem,
   Layer,
@@ -40,6 +41,7 @@ import { Tunnels } from "./tunnels.ts";
 
 export const DEFAULT_HUB_PORT = 3000;
 export const DEFAULT_HUB_HOSTNAME = "0.0.0.0";
+export const DEFAULT_TUNNEL_PING_INTERVAL: Duration.Input = "5 seconds";
 
 /** The platform services an HTTP server brings: `BunHttpServer.layer` provides all of them. */
 export type HubPlatform =
@@ -64,6 +66,11 @@ export interface HubOptions {
   readonly mdns?: boolean | undefined;
   /** The port to listen on; `0` takes any free port. Default `3000`. */
   readonly port?: number | undefined;
+  /**
+   * How often the hub pings each tunnel; a tunnel that stays silent for one
+   * more interval is dropped. Default 5 seconds.
+   */
+  readonly tunnelPingInterval?: Duration.Input | undefined;
   /**
    * The Gambi version this hub answers for. A participant of another minor
    * is refused at registration. Default: `GAMBI_VERSION`, the version of this
@@ -156,7 +163,12 @@ export class Hub extends Context.Service<
   ): Layer.Layer<Hub | Tunnels, HubStartError, Mdns> => {
     const Settings = Layer.succeed(
       HubSettings,
-      HubSettings.of({ version: options.version ?? GAMBI_VERSION })
+      HubSettings.of({
+        tunnelPingInterval: Duration.fromInputUnsafe(
+          options.tunnelPingInterval ?? DEFAULT_TUNNEL_PING_INTERVAL
+        ),
+        version: options.version ?? GAMBI_VERSION,
+      })
     );
 
     const State = Layer.mergeAll(Rooms.layer, Tunnels.layer).pipe(

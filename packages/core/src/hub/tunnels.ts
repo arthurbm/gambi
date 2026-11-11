@@ -275,6 +275,7 @@ export class Tunnels extends Context.Service<
 
           yield* Effect.gen(function* () {
             const base = yield* RpcClient.makeProtocolSocket({
+              pingInterval: settings.tunnelPingInterval,
               retryPolicy: Schedule.recurs(0),
             }).pipe(
               Effect.provideService(Socket.Socket, socket),
