@@ -197,6 +197,8 @@ Optimized for human monitoring. It is not the canonical operational contract —
 ## Repository map
 
 - `packages/core` — hub runtime and contracts
+- `packages/protocol` — internal, platform-free home of the Effect schemas and contracts (ADR-0007); empty until the first contract lands
+- `packages/testing` — internal Effect test helper for `bun test` (`@gambi/testing/effect`)
 - `packages/cli` — operational CLI source
 - `packages/sdk` — inference provider and management client
 - `apps/tui` — monitoring interface

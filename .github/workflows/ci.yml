@@ -37,7 +37,13 @@ jobs:
       - name: CLI tests
         run: bun test packages/cli/src
 
-      # The npm publish and verify loop used by the release workflow.
+      # The Effect test helper every Effect test in the repo runs on.
+      - name: Effect test helper tests
+        run: bun test packages/testing/src
+
+      # The npm publish and verify loop used by the release workflow. Also the
+      # Effect foundation guards: one exact `effect` version, no platform API
+      # in `@gambi/protocol`.
       - name: Release script tests
         run: bun test scripts
 
