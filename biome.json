@@ -79,6 +79,42 @@
       }
     },
     {
+      "includes": [
+        "packages/core/src/hub/**/*.ts",
+        "!packages/core/src/hub/**/*.test.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "Bun": "The new hub uses no Bun.* API (ADR-0007). Take the capability as an Effect service; the entrypoint provides the @effect/platform-bun layer."
+                }
+              }
+            },
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "bun",
+                      "bun:*",
+                      "@effect/platform-*",
+                      "@effect/platform-*/**"
+                    ],
+                    "message": "The new hub depends on the abstract services of `effect` (ADR-0007). Only an entrypoint imports @effect/platform-bun."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["**/*.astro"],
       "linter": {
         "rules": {
