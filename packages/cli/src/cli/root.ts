@@ -5,6 +5,7 @@
  */
 import type { CliError } from "effect/cli";
 import { Command } from "effect/cli";
+import { hub } from "./commands/hub.ts";
 import { room } from "./commands/room.ts";
 import { globalFlags } from "./global-flags.ts";
 
@@ -13,7 +14,7 @@ export const root = Command.make("gambi").pipe(
     "Share OpenAI-compatible LLM endpoints across a trusted local network"
   ),
   Command.withGlobalFlags(globalFlags),
-  Command.withSubcommands([room])
+  Command.withSubcommands([hub, room])
 );
 
 /** Every typed error a run of `gambi` can end with. `exit-codes.ts` maps each one. */

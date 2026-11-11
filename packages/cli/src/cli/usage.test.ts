@@ -94,3 +94,36 @@ it.effect("--completions prints a completion script for the shell", () =>
     expect(result.stdout).toContain("room");
   })
 );
+
+it.effect("GAMBI_FORMAT sets the format when --format is absent", () =>
+  Effect.gen(function* () {
+    const fromEnv = yield* runCommand(["hub", "serve", "--dry-run"], {
+      env: { GAMBI_FORMAT: "ndjson" },
+    });
+    expect(fromEnv.stdout).toBe(
+      '{"data":{"host":"0.0.0.0","port":3000,"mdns":false}}\n'
+    );
+
+    const flagWins = yield* runCommand(
+      ["hub", "serve", "--dry-run", "--format", "text"],
+      { env: { GAMBI_FORMAT: "ndjson" } }
+    );
+    expect(flagWins.stdout).toBe(
+      "Would start a hub on 0.0.0.0:3000 (mDNS: off).\n"
+    );
+  })
+);
+
+it.effect("GAMBI_NO_INTERACTIVE=1 never asks, even on a terminal", () =>
+  Effect.gen(function* () {
+    const result = yield* runCommand(["room", "get"], {
+      tty: true,
+      answers: ["ABC123"],
+      env: { GAMBI_NO_INTERACTIVE: "1" },
+    });
+
+    expect(result.exitCode).toBe(2);
+    expect(result.terminal).toBe("");
+    expect(result.stderr).toContain("Missing required flag: --code");
+  })
+);

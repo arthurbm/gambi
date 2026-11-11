@@ -20,9 +20,14 @@ export const ExitCode = {
   connectivity: 3,
   /** The hub understood the request and refused it. */
   rejected: 4,
+  /** A signal stopped a command that was not waiting for one. */
+  interrupted: 130,
 } as const;
 
-export type FailureKind = Exclude<keyof typeof ExitCode, "success">;
+export type FailureKind = Exclude<
+  keyof typeof ExitCode,
+  "success" | "interrupted"
+>;
 
 type FailureTag = CommandFailure["_tag"];
 
@@ -38,6 +43,11 @@ export const failureKinds = {
   UnrecognizedOption: "usage",
   UserError: "usage",
   ValidationError: "usage",
+
+  // Starting a hub (`@gambi/core`).
+  HubListenFailed: "internal",
+  MdnsAnnounceFailed: "connectivity",
+  PortInUse: "usage",
 
   // Reaching the hub (`hub-client.ts`).
   HubUnreachable: "connectivity",

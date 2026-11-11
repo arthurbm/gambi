@@ -5,6 +5,7 @@ import { layer } from "@gambi/testing/effect";
 import { Effect } from "effect";
 import { runCommand } from "./testing.ts";
 
+const REQUEST_ID_LINE = /^request_id: \S+$/;
 const SORTED_ROOM_NAME = /^(zz|aa|mm) /;
 
 layer(layerHub(), { excludeTestServices: true })("room commands", (it) => {
@@ -135,13 +136,12 @@ layer(layerHub(), { excludeTestServices: true })("room commands", (it) => {
 
       expect(result.exitCode).toBe(4);
       expect(result.stdout).toBe("");
-      expect(result.stderr).toBe(
-        [
-          "Error (RoomNotFound): Room 'NOPE00' was not found.",
-          "Hint: List the rooms of this hub to see the codes that exist.",
-          "",
-        ].join("\n")
-      );
+      expect(result.stderr.split("\n")).toEqual([
+        "Error (RoomNotFound): Room 'NOPE00' was not found.",
+        "Hint: List the rooms of this hub to see the codes that exist.",
+        expect.stringMatching(REQUEST_ID_LINE),
+        "",
+      ]);
     })
   );
 

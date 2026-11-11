@@ -6,7 +6,17 @@
  * stdout carries data only: the result of a command, or its events. Errors
  * and log lines go to stderr.
  */
-import { Clock, Console, Context, Effect, Layer, Stdio } from "effect";
+import {
+  Clock,
+  Config,
+  Console,
+  Context,
+  Effect,
+  Layer,
+  Option,
+  Predicate,
+  Stdio,
+} from "effect";
 
 export const OUTPUT_FORMATS = ["text", "json", "ndjson"] as const;
 export type OutputFormat = (typeof OUTPUT_FORMATS)[number];
@@ -54,8 +64,9 @@ export class Output extends Context.Service<
   }
 >()("gambi/cli/Output") {
   /**
-   * `requested` is the `--format` flag. Without it the format follows stdout:
-   * `text` on a terminal, `json` otherwise.
+   * `requested` is the `--format` flag. Without it the format is
+   * `GAMBI_FORMAT`, and without that it follows stdout: `text` on a terminal,
+   * `json` otherwise.
    */
   static readonly layer = (
     requested: OutputFormat | undefined
@@ -64,8 +75,13 @@ export class Output extends Context.Service<
       Output,
       Effect.gen(function* () {
         const stdio = yield* Stdio.Stdio;
+        const fromEnvironment = yield* Config.option(
+          Config.Literals(OUTPUT_FORMATS, "GAMBI_FORMAT")
+        ).pipe(Effect.catch(() => Effect.succeed(Option.none())));
         const format =
-          requested ?? ((yield* stdio.stdoutIsTerminal) ? "text" : "json");
+          requested ??
+          Option.getOrUndefined(fromEnvironment) ??
+          ((yield* stdio.stdoutIsTerminal) ? "text" : "json");
 
         return Output.of({
           format,
@@ -96,6 +112,10 @@ export class Output extends Context.Service<
                     ...(report.hint === undefined
                       ? []
                       : [`Hint: ${report.hint}`]),
+                    // The id to look for in the hub's log.
+                    ...(Predicate.isString(report.details?.requestId)
+                      ? [`request_id: ${report.details.requestId}`]
+                      : []),
                   ].join("\n")
                 : JSON.stringify({
                     error: {
