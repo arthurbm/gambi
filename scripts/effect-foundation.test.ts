@@ -78,12 +78,14 @@ describe("@gambi/protocol has no platform dependency", () => {
     ROOT,
     "packages/core/src/participant/lint-probe.ts"
   );
+  const cliProbe = join(ROOT, "packages/cli/src/cli/commands/lint-probe.ts");
 
   afterEach(async () => {
     await rm(probe, { force: true });
     await rm(coreProbe, { force: true });
     await rm(hubProbe, { force: true });
     await rm(runtimeProbe, { force: true });
+    await rm(cliProbe, { force: true });
   });
 
   /** Lints `source` as a file at `path` and returns the rules it breaks. */
@@ -159,6 +161,17 @@ describe("@gambi/protocol has no platform dependency", () => {
     expect(await brokenRules(runtimeProbe, source)).toEqual([
       `lint/style/${rule}`,
     ]);
+  });
+
+  test.each([
+    ["Bun.*", "export const version = Bun.version;\n", "noRestrictedGlobals"],
+    [
+      "@effect/platform-bun",
+      'import { BunRuntime } from "@effect/platform-bun";\nexport const run = BunRuntime.runMain;\n',
+      "noRestrictedImports",
+    ],
+  ])("lint rejects %s in the commands of the new CLI", async (_label, source, rule) => {
+    expect(await brokenRules(cliProbe, source)).toEqual([`lint/style/${rule}`]);
   });
 
   test("its manifest depends on no platform package", async () => {
