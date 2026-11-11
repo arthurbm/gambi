@@ -10,9 +10,12 @@
  * Add a resource the hub owns (a timer, a registry of tunnels) as a layer or
  * an `Effect.acquireRelease` on top of the port, never before it.
  */
+
+import { GAMBI_VERSION } from "@gambi/protocol";
 import {
   Cause,
   Context,
+  Duration,
   Effect,
   type FileSystem,
   Layer,
@@ -29,11 +32,16 @@ import {
 } from "effect/http";
 import { ManagementRoutes } from "./management.ts";
 import { Mdns, type MdnsAnnounceFailed } from "./mdns.ts";
+import { Participants } from "./participants.ts";
 import { RoomPasswords } from "./room-passwords.ts";
 import { Rooms } from "./rooms.ts";
+import { HubSettings } from "./settings.ts";
+import { TunnelRoute } from "./tunnel-route.ts";
+import { Tunnels } from "./tunnels.ts";
 
 export const DEFAULT_HUB_PORT = 3000;
 export const DEFAULT_HUB_HOSTNAME = "0.0.0.0";
+export const DEFAULT_TUNNEL_PING_INTERVAL: Duration.Input = "5 seconds";
 
 /** The platform services an HTTP server brings: `BunHttpServer.layer` provides all of them. */
 export type HubPlatform =
@@ -58,6 +66,17 @@ export interface HubOptions {
   readonly mdns?: boolean | undefined;
   /** The port to listen on; `0` takes any free port. Default `3000`. */
   readonly port?: number | undefined;
+  /**
+   * How often the hub pings each tunnel; a tunnel that stays silent for one
+   * more interval is dropped. Default 5 seconds.
+   */
+  readonly tunnelPingInterval?: Duration.Input | undefined;
+  /**
+   * The Gambi version this hub answers for. A participant of another minor
+   * is refused at registration. Default: `GAMBI_VERSION`, the version of this
+   * build.
+   */
+  readonly version?: string | undefined;
 }
 
 /** Another process already listens on the port the hub was asked to use. */
@@ -141,15 +160,28 @@ export class Hub extends Context.Service<
    */
   static readonly layer = (
     options: HubOptions
-  ): Layer.Layer<Hub, HubStartError, Mdns> => {
-    const State = Rooms.layer.pipe(
-      Layer.provide(RoomPasswords.layerWebCrypto),
-      Layer.provide(SecureRandom.layerWebCrypto)
+  ): Layer.Layer<Hub | Tunnels, HubStartError, Mdns> => {
+    const Settings = Layer.succeed(
+      HubSettings,
+      HubSettings.of({
+        tunnelPingInterval: Duration.fromInputUnsafe(
+          options.tunnelPingInterval ?? DEFAULT_TUNNEL_PING_INTERVAL
+        ),
+        version: options.version ?? GAMBI_VERSION,
+      })
     );
 
-    const Served = HttpRouter.serve(ManagementRoutes, {
-      disableListenLog: true,
-    }).pipe(Layer.provide([State, SecureRandom.layerWebCrypto]));
+    const State = Layer.mergeAll(Rooms.layer, Tunnels.layer).pipe(
+      Layer.provideMerge(Participants.layer),
+      Layer.provide(RoomPasswords.layerWebCrypto),
+      Layer.provide(SecureRandom.layerWebCrypto),
+      Layer.provideMerge(Settings)
+    );
+
+    const Served = HttpRouter.serve(
+      Layer.mergeAll(ManagementRoutes, TunnelRoute),
+      { disableListenLog: true }
+    ).pipe(Layer.provide(SecureRandom.layerWebCrypto));
 
     const Announced = Layer.effect(
       Hub,
@@ -182,7 +214,21 @@ export class Hub extends Context.Service<
       })
     );
 
-    return Layer.mergeAll(Served, Announced).pipe(
+    // Built last, so released first: the tunnels close before the routes
+    // and the server start to stop. Each tunnel is a request still being
+    // answered, and the server would wait 20 s for it.
+    const TunnelsClosedFirst = Layer.effectDiscard(
+      Effect.gen(function* () {
+        const tunnels = yield* Tunnels;
+        yield* Effect.addFinalizer(() => tunnels.closeAll);
+      })
+    );
+
+    // `Tunnels` is also the in-process way to call a participant, so it is
+    // part of what the layer provides.
+    return TunnelsClosedFirst.pipe(
+      Layer.provideMerge(Layer.mergeAll(Served, Announced)),
+      Layer.provideMerge(State),
       Layer.provide(listening(options))
     );
   };

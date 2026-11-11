@@ -14,6 +14,7 @@ import { Effect, Layer, Logger } from "effect";
 import { FetchHttpClient, type HttpClient } from "effect/http";
 import { Hub, type HubOptions, type HubStartError } from "../hub/hub.ts";
 import { Mdns } from "../hub/mdns.ts";
+import type { Tunnels } from "../hub/tunnels.ts";
 
 export interface TestHubOptions extends Partial<Omit<HubOptions, "listen">> {
   /** Where the hub's log lines go. Default: nowhere. */
@@ -26,7 +27,7 @@ export interface TestHubOptions extends Partial<Omit<HubOptions, "listen">> {
  */
 export const layerHubWithoutMdns = (
   options: TestHubOptions = {}
-): Layer.Layer<Hub | HttpClient.HttpClient, HubStartError, Mdns> => {
+): Layer.Layer<Hub | Tunnels | HttpClient.HttpClient, HubStartError, Mdns> => {
   const { loggers = [], ...hubOptions } = options;
   return Hub.layer({
     hostname: "127.0.0.1",
@@ -48,7 +49,7 @@ export const layerHubWithoutMdns = (
  */
 export const layerHub = (
   options: TestHubOptions = {}
-): Layer.Layer<Hub | Mdns | HttpClient.HttpClient, HubStartError> =>
+): Layer.Layer<Hub | Tunnels | Mdns | HttpClient.HttpClient, HubStartError> =>
   layerHubWithoutMdns(options).pipe(Layer.provideMerge(Mdns.layerTest));
 
 /** The management client derived from the contract, pointed at the hub in the environment. */

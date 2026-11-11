@@ -8,10 +8,11 @@ import {
   RoomNotFound,
   type RoomSummary,
   type RuntimeConfig,
-  type RuntimeConfigPublic,
+  toRuntimeConfigPublic,
 } from "@gambi/protocol";
 import { Clock, Context, Effect, Layer } from "effect";
 import { SecureRandom } from "effect/crypto";
+import { Participants } from "./participants.ts";
 import { RoomPasswords } from "./room-passwords.ts";
 
 // Uppercase letters and digits only: a code must never start with "-" (a CLI
@@ -29,13 +30,8 @@ interface RoomState {
   readonly passwordHash: string | undefined;
 }
 
-const toPublicConfig = (config: RuntimeConfig): RuntimeConfigPublic => {
-  const { instructions, ...generation } = config;
-  return { ...generation, hasInstructions: instructions !== undefined };
-};
-
 // The password hash and the instructions text never leave the hub.
-const toSummary = (room: RoomState): RoomSummary => ({
+const toSummary = (room: RoomState, participantCount: number): RoomSummary => ({
   id: room.id,
   code: room.code,
   name: room.name,
@@ -43,9 +39,9 @@ const toSummary = (room: RoomState): RoomSummary => ({
   createdAt: room.createdAt,
   ...(room.defaults === undefined
     ? {}
-    : { defaults: toPublicConfig(room.defaults) }),
+    : { defaults: toRuntimeConfigPublic(room.defaults) }),
   passwordProtected: room.passwordHash !== undefined,
-  participantCount: 0,
+  participantCount,
 });
 
 export class Rooms extends Context.Service<
@@ -68,6 +64,7 @@ export class Rooms extends Context.Service<
   static readonly layer = Layer.effect(
     Rooms,
     Effect.gen(function* () {
+      const participants = yield* Participants;
       const passwords = yield* RoomPasswords;
       const random = yield* SecureRandom.SecureRandom;
       const byCode = new Map<string, RoomState>();
@@ -80,6 +77,11 @@ export class Rooms extends Context.Service<
         }
         return code;
       });
+
+      const summarize = (room: RoomState) =>
+        Effect.map(participants.count(room.code), (count) =>
+          toSummary(room, count)
+        );
 
       const find = (code: string) => {
         const room = byCode.get(code.toUpperCase());
@@ -116,11 +118,11 @@ export class Rooms extends Context.Service<
             passwordProtected: passwordHash !== undefined,
           })
         );
-        return { room: toSummary(room), hostId };
+        return { room: yield* summarize(room), hostId };
       });
 
       const get = Effect.fn("Rooms.get")(function* (code: string) {
-        return toSummary(yield* find(code));
+        return yield* summarize(yield* find(code));
       });
 
       const checkPassword = Effect.fn("Rooms.checkPassword")(function* (
@@ -141,7 +143,9 @@ export class Rooms extends Context.Service<
         checkPassword,
         create,
         get,
-        list: Effect.sync(() => [...byCode.values()].map(toSummary)),
+        list: Effect.suspend(() =>
+          Effect.forEach([...byCode.values()], summarize)
+        ),
       });
     })
   );

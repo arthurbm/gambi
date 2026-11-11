@@ -74,6 +74,35 @@ Because `@gambi/protocol` type-checks without DOM types, a web type such as `Hea
 - Use `Schema.optionalKey` for an optional field of the wire, not `Schema.optional`: the JSON codec turns `undefined` into `null`.
 - Never build the envelope, a status code or a `Response` by hand in a handler.
 
+## The tunnel
+
+A tunnel is `effect/rpc` over the WebSocket a participant dialed, with the roles inverted: the participant runtime dials and **serves** the calls, the hub accepts the socket and **makes** them. Every call is hub to participant.
+
+| What | Where |
+|---|---|
+| The calls (`TunnelRpcs`) and the URL a runtime dials (`tunnelUrl`) | `packages/protocol/src/tunnel/rpcs.ts` |
+| The status table (`transitionStatus`) | `packages/protocol/src/participant-status.ts` |
+| Bootstrap tokens and open tunnels (`Tunnels`) | `packages/core/src/hub/tunnels.ts` |
+| The upgrade route | `packages/core/src/hub/tunnel-route.ts` |
+| Participants and their status (`Participants`) | `packages/core/src/hub/participants.ts` |
+| The participant runtime (`register`, `openTunnel`, `ParticipantRuntime.layer`) | `packages/core/src/participant/runtime.ts` |
+
+To add a call:
+
+1. Define it with `Rpc.make` in `rpcs.ts` and add it to `TunnelRpcs`. A stream call sets `stream: true`; its `success` is then the schema of one chunk and its `error` the error of the stream.
+2. Implement its handler with `TunnelRpcs.toLayerHandler("<Tag>", handler)` where the participant runtime is hosted, and provide it to `ParticipantRuntime.layer`. The compiler rejects a runtime that misses a handler.
+3. On the hub, get the client with `Tunnels.client(roomCode, participantId)` and call it. A unary call is an `Effect`, a stream call a `Stream`.
+
+Rules:
+
+- The handlers belong to the host of the runtime, not to the runtime. That is where `ParticipantAuthHeaders` live; the runtime never receives them, so nothing it sends to the hub can carry them.
+- A handler does its work in its own fiber and scope. Interrupting the call on the hub interrupts the handler, so anything it started (a request to the provider, a subprocess) must stop when it is interrupted.
+- `Tunnels.client` needs a `Scope` and the client is good until that scope closes. If the tunnel drops meanwhile, the calls fail with `RpcClientError`; `error.reason` says why (`SocketCloseError` with the close code, `SocketReadError` on a ping timeout). Never keep a client past the scope it was taken in: a call on a client that was let go of is interrupted instead of failed.
+- A participant's status changes only in `Participants.transition`, which runs the event through `transitionStatus`. Do not write a status anywhere else. What must follow a change (a room event) goes there.
+- The hub's wiring of a tunnel (`Tunnels.serve`) has three load-bearing details, listed at the top of `tunnels.ts`. Read them before changing it.
+- The hub pings every 5 s (`HubOptions.tunnelPingInterval`) and drops a tunnel that stays silent for one more interval. The participant has no ping of its own.
+- A knob of the hub is a field of `HubSettings` (`packages/core/src/hub/settings.ts`), with its default resolved in `Hub.layer`. Services read it from there, not from parameters.
+
 ## Services
 
 - State lives in a service. Never in a module-level variable: two hubs in one process must not see each other's rooms.
@@ -164,12 +193,48 @@ layer(layerHub(), { excludeTestServices: true })("rooms", (it) => {
 - Assert on the typed error (`Effect.flip`, then `_tag` or `toBeInstanceOf`). Send a raw request with `HttpClient` only to assert the envelope or the status on the wire.
 - A workspace other than the core adds `@effect/platform-bun` and `@gambi/core` to its `devDependencies` to import the helper.
 
+### A participant in a test
+
+`@gambi/core/testing/participant` joins a real participant runtime to the hub of the block. It returns when the participant is `online`.
+
+```ts
+import { TunnelRpcs } from "@gambi/protocol";
+import { Tunnels } from "@gambi/core/hub/tunnels";
+import { TunnelDiagnostics } from "@gambi/core/participant/diagnostics";
+import { joinParticipant } from "@gambi/core/testing/participant";
+
+it.effect("answers through the tunnel", () =>
+  Effect.gen(function* () {
+    const client = yield* managementClient;
+    const { room } = yield* client.rooms.create({ payload: { name: "Frevo" } });
+    const participant = yield* joinParticipant({
+      roomCode: room.code,
+      participantId: "arthur-1",
+      // Optional: replace a handler. The last layer merged wins.
+      handlers: TunnelDiagnostics.pipe(
+        Layer.merge(TunnelRpcs.toLayerHandler("Echo", ({ text }) => Effect.succeed(text.toUpperCase())))
+      ),
+    });
+    const tunnel = yield* (yield* Tunnels).client(room.code, "arthur-1");
+    expect(yield* tunnel.Echo({ text: "frevo" })).toBe("FREVO");
+  })
+);
+```
+
+- The participant stops when the test ends. `participant.stop` stops it earlier, with a closing handshake; `participant.kill` cuts its socket the way a dead process does.
+- The hub notices a drop a moment later. Wait for it with `Tunnels.awaitDrop(roomCode, participantId)`, never with a sleep, and only then assert on the status.
+- To see a cancellation arrive, give the handler an `Effect.onInterrupt` that completes a `Deferred` and wait on it (`observedHandler` in `packages/core/src/hub/tunnel.test.ts`).
+- `participant.sentToHub` is everything the runtime sent to the hub (HTTP requests and tunnel frames), for asserting what must never leave the participant's machine.
+- `register` and `openTunnel` are exported for a test that needs the two steps apart (`packages/core/src/hub/bootstrap-token.test.ts`).
+
 Known traps:
 
 - The `it` inside a `layer` block has no `live`. For a block that needs the real clock, pass `excludeTestServices: true` and use `it.effect`.
 - `bun test` stops a test after 5 s. A live test that compiles or spawns something passes a timeout in milliseconds as the third argument.
 - Biome's `noMisplacedAssertion` accepts `expect` inside `it.effect` and `it.live`, and rejects it inside `.fails` and `.each`. Suppress it there with a reason.
 - A failed Effect test prints its error twice: the helper logs the full cause, then `bun test` reports the rejection.
+- Moving the test clock while a tunnel is open can drop the tunnel: a jump leaves no time for a pong, and the hub's ping timeout fires (`adjust("4 seconds")` then `adjust("6 seconds")` does it with the default interval). A test that needs the clock and an open tunnel starts its hub with `layerHub({ tunnelPingInterval: "1 hour" })`.
+- A hub built inside `it.effect` (`Effect.provide(layerHub())`) reads the test clock; one shared with `layer(layerHub(), { excludeTestServices: true })` reads the real one.
 
 ## The CLI
 

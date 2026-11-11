@@ -10,4 +10,8 @@ export * from "./management/client.ts";
 export * from "./management/envelope.ts";
 export * from "./management/errors.ts";
 export * from "./management/openapi.ts";
+export * from "./participant.ts";
+export * from "./participant-status.ts";
 export * from "./room.ts";
+export * from "./tunnel/rpcs.ts";
+export * from "./version.ts";

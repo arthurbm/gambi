@@ -17,9 +17,21 @@ import {
   HttpApiSchema,
   OpenApi,
 } from "effect/http-api";
+import {
+  ParticipantId,
+  ParticipantRegistered,
+  ParticipantSummary,
+  RegisterParticipant,
+} from "../participant.ts";
 import { CreateRoom, RoomCode, RoomCreated, RoomSummary } from "../room.ts";
 import { failure, success } from "./envelope.ts";
-import { InternalError, InvalidRequest, RoomNotFound } from "./errors.ts";
+import {
+  InternalError,
+  InvalidPassword,
+  InvalidRequest,
+  RoomNotFound,
+  VersionMismatch,
+} from "./errors.ts";
 
 export const Health = Schema.Struct({
   status: Schema.Literal("ok"),
@@ -70,8 +82,34 @@ export class RoomsGroup extends HttpApiGroup.make("rooms")
     })
   ) {}
 
+export class ParticipantsGroup extends HttpApiGroup.make("participants")
+  .add(
+    HttpApiEndpoint.put("register", "/rooms/:code/participants/:id", {
+      params: { code: RoomCode, id: ParticipantId },
+      payload: RegisterParticipant,
+      success: success(ParticipantRegistered),
+      error: [
+        failure(RoomNotFound),
+        failure(InvalidPassword),
+        failure(VersionMismatch),
+      ],
+    }),
+    HttpApiEndpoint.get("list", "/rooms/:code/participants", {
+      params: { code: RoomCode },
+      success: success(Schema.Array(ParticipantSummary)),
+      error: failure(RoomNotFound),
+    })
+  )
+  .annotateMerge(
+    OpenApi.annotations({
+      title: "Participants",
+      description:
+        "Register a participant and list the participants of a room. Registration answers with the bootstrap token of the tunnel.",
+    })
+  ) {}
+
 export class ManagementApi extends HttpApi.make("gambi-management")
-  .add(HubGroup, RoomsGroup)
+  .add(HubGroup, RoomsGroup, ParticipantsGroup)
   .prefix("/v1")
   .middleware(ManagementFailures)
   .annotateMerge(
