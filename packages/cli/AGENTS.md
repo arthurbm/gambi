@@ -4,6 +4,17 @@ Workspace fonte do CLI `gambi`. Este workspace é `private: true`; a distribuiç
 
 O CLI é **resource-oriented e agent-first**: pensado para automação (flags, output estruturado, exit codes previsíveis) e com modo interativo como segunda camada.
 
+## CLI nova (migração para Effect v4, ADR-0007)
+
+`src/cli/` é a CLI nova, sobre `effect/cli`. Ela vive ao lado da atual, que continua sendo o binário até a remoção do código antigo. Tem hoje `hub serve` e `room create|get|list`. Antes de mexer nela, leia a seção "The CLI" de [`docs/reference/effect-conventions.md`](../../docs/reference/effect-conventions.md): como acrescentar um comando, como emitir saída e erro, a tabela de exit codes e como testar um comando.
+
+```bash
+bun packages/cli/src/cli/main.ts <comando> --help
+bun test packages/cli/src/cli/
+```
+
+O restante deste arquivo descreve a CLI atual.
+
 ## Estrutura
 
 - `src/cli.ts` — entrypoint, roteamento de subcomandos.

@@ -170,3 +170,50 @@ Known traps:
 - `bun test` stops a test after 5 s. A live test that compiles or spawns something passes a timeout in milliseconds as the third argument.
 - Biome's `noMisplacedAssertion` accepts `expect` inside `it.effect` and `it.live`, and rejects it inside `.fails` and `.each`. Suppress it there with a reason.
 - A failed Effect test prints its error twice: the helper logs the full cause, then `bun test` reports the rejection.
+
+## The CLI
+
+The new CLI lives in `packages/cli/src/cli/`, beside the current one, on `effect/cli`. `main.ts` is its entrypoint and the only file that imports `@effect/platform-bun`; lint rejects it anywhere else outside the tests.
+
+A command:
+
+- lives in `commands/<group>.ts`, under the group of its resource, and the group is one line in `root.ts`. No flat aliases ([ADR-0002](../adr/0002-agent-first-management-surface.md)).
+- writes only through `Output`: `result` for a one-shot command, `event` for each step of a long-running one. Never `Console` or `process.stdout`: `Output` decides between text for a person and JSON for a program, and keeps stdout for data.
+- fails with a typed error and renders nothing itself. `run.ts` shows the error on stderr and maps it to an exit code.
+- reaches a hub with `withHub(hubUrl, (client) => ...)` and the shared `hubFlag`. It turns a transport failure into `HubUnreachable` and an answer outside the contract into `NotAHub`.
+- asks for a missing required flag with `Flag.withFallbackPrompt`. The prompt only runs on a terminal; without one the flag is reported as missing.
+- when it runs until stopped, awaits `Termination.signal` and then returns, so that a deliberate stop exits with `0`.
+
+`exit-codes.ts` holds the one table from typed error to exit code. A command that can fail with a new error does not compile until the error has a row there.
+
+A boolean flag needs `Flag.withDefault(false)`: without it the flag is required.
+
+### A command in a test
+
+The seam is the CLI as a command: arguments in; stdout, stderr and the exit code out. `packages/cli/src/cli/testing.ts` runs the same `runCli` as the binary.
+
+```ts
+import { expect } from "bun:test";
+import { Hub } from "@gambi/core/hub/hub";
+import { layerHub } from "@gambi/core/testing/hub";
+import { layer } from "@gambi/testing/effect";
+import { Effect } from "effect";
+import { runCommand } from "./testing.ts";
+
+layer(layerHub(), { excludeTestServices: true })("room commands", (it) => {
+  it.effect("a room that does not exist is a remote rejection", () =>
+    Effect.gen(function* () {
+      const hub = yield* Hub;
+      const result = yield* runCommand(["room", "get", "--code", "NOPE00", "--hub", hub.url]);
+      expect(result.exitCode).toBe(4);
+      expect(JSON.parse(result.stderr).error.name).toBe("RoomNotFound");
+    })
+  );
+});
+```
+
+- `runCommand(args, options)` runs to the end. `options.tty` makes stdin and stdout a terminal, `options.answers` types into the prompts, `options.env` sets environment variables.
+- `startCommand(args)` starts a long-running command: read its events with `nextEvent`, send `signal("SIGTERM")`, then await `result`.
+- Assert on stdout, stderr and the exit code. Do not call a handler or `Output` directly.
+- What only the real process shows (the two file descriptors, the exit code of the process, signals) is covered by `main.test.ts`, which spawns the entrypoint.
+
