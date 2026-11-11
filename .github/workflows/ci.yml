@@ -24,7 +24,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: "1.4.4"
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -36,6 +36,17 @@ jobs:
       # platform binary instead of orphaning it (#103). Needs Node on PATH.
       - name: CLI tests
         run: bun test packages/cli/src
+
+      # The hub from the outside: a real hub on a random port, a real
+      # participant runtime and a fake local provider. No network needed.
+      - name: Core tests
+        run: bun test packages/core/src
+
+      - name: SDK tests
+        run: bun test packages/sdk/src
+
+      - name: TUI tests
+        run: bun run --cwd apps/tui test
 
       # The Effect test helper every Effect test in the repo runs on.
       - name: Effect test helper tests

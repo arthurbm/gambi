@@ -133,10 +133,15 @@ const makeTester = <R>(
     test.each([...cases])(name, (row) => run(self, [row]), timeout);
   };
 
+  // Read `test.only` when it is called, not here: `bun test` throws on the
+  // property access itself when `CI=true`.
+  const only: Test<R> = (name, self, timeout) =>
+    register(test.only)(name, self, timeout);
+
   return Object.assign(register(test), {
     each,
     fails: register(test.failing),
-    only: register(test.only),
+    only,
     runIf: (condition: unknown) => register(test.if(Boolean(condition))),
     skip: register(test.skip),
     skipIf: (condition: unknown) => register(test.skipIf(Boolean(condition))),
