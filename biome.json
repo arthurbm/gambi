@@ -43,6 +43,42 @@
   },
   "overrides": [
     {
+      "includes": ["packages/protocol/**/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "Bun": "@gambi/protocol has no platform dependency (ADR-0007). Take the capability as an Effect service and provide it in the entrypoint.",
+                  "process": "@gambi/protocol has no platform dependency (ADR-0007). Take the capability as an Effect service and provide it in the entrypoint."
+                }
+              }
+            },
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "bun",
+                      "bun:*",
+                      "node:*",
+                      "node:*/**",
+                      "@effect/platform-*",
+                      "@effect/platform-*/**"
+                    ],
+                    "message": "@gambi/protocol has no platform dependency (ADR-0007). Import only from `effect`."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["**/*.astro"],
       "linter": {
         "rules": {
