@@ -65,6 +65,15 @@ A name missing from this table is not thereby safe. Check it in the installed so
 
 Because `@gambi/protocol` type-checks without DOM types, a web type such as `Headers` or `ReadableStream` is not in scope there. Take it from an `effect` module instead of the global.
 
+## The management plane contract
+
+`packages/protocol/src/management/api.ts` is the only description of the management plane. The hub's handlers (`packages/core/src/hub/management.ts`), the client (`makeManagementClient`) and the OpenAPI document (`managementOpenApi`, served at `/v1/openapi.json`) derive from it.
+
+- A success schema is wrapped in `success(...)` and an error class in `failure(...)`. They put the envelope on the wire (`{ data, meta }`, `{ error, meta }`) and keep it out of the code: a handler returns the plain value and fails with the typed error; the client gets the same value and the same error back, with `requestId` set.
+- A management error is a `Schema.TaggedError` that spreads `requestIdField` into its fields and declares `static readonly code` and `static readonly status`. Its `message` and optional `hint` are getters built from the fields.
+- Use `Schema.optionalKey` for an optional field of the wire, not `Schema.optional`: the JSON codec turns `undefined` into `null`.
+- Never build the envelope, a status code or a `Response` by hand in a handler.
+
 ## Services
 
 - State lives in a service. Never in a module-level variable: two hubs in one process must not see each other's rooms.
@@ -127,6 +136,33 @@ Rules:
 - Under `it.effect` time does not move by itself. Fork the Effect that sleeps, then call `TestClock.adjust`; joining before adjusting hangs until the `bun test` timeout.
 - Every test body gets a `Scope`, closed when the test ends. `Effect.acquireRelease` and `Effect.addFinalizer` work without `Effect.scoped`.
 - Test behavior seen from outside: an HTTP response, a room event, a line of stdout, an exit code. Do not assert on which services or layers exist.
+
+### A hub in a test
+
+The main seam is the hub seen from outside: a real hub on a free port, called through the client derived from the contract. `@gambi/core/testing/hub` builds it.
+
+```ts
+import { expect } from "bun:test";
+import { layerHub, managementClient } from "@gambi/core/testing/hub";
+import { layer } from "@gambi/testing/effect";
+import { Effect } from "effect";
+
+layer(layerHub(), { excludeTestServices: true })("rooms", (it) => {
+  it.effect("creates a room", () =>
+    Effect.gen(function* () {
+      const client = yield* managementClient;
+      const created = yield* client.rooms.create({ payload: { name: "Frevo" } });
+      expect(created.room.name).toBe("Frevo");
+    })
+  );
+});
+```
+
+- `layerHub()` listens on `127.0.0.1`, port `0`. Read the real port and URL from the `Hub` service. Never pick a port number.
+- A block shares one hub, so its tests share rooms. Assert on what the test created, not on the whole list. A test that needs an empty hub, or closes one, builds its own (see `start` in `packages/core/src/hub/hub-lifecycle.test.ts`).
+- mDNS goes to `Mdns.layerTest`; `Mdns.announced` lists what is published. Logs go nowhere unless you pass `loggers`.
+- Assert on the typed error (`Effect.flip`, then `_tag` or `toBeInstanceOf`). Send a raw request with `HttpClient` only to assert the envelope or the status on the wire.
+- A workspace other than the core adds `@effect/platform-bun` and `@gambi/core` to its `devDependencies` to import the helper.
 
 Known traps:
 

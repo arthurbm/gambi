@@ -73,10 +73,12 @@ describe("effect dependency", () => {
 describe("@gambi/protocol has no platform dependency", () => {
   const probe = join(ROOT, "packages/protocol/src/lint-probe.ts");
   const coreProbe = join(ROOT, "packages/core/src/lint-probe.ts");
+  const hubProbe = join(ROOT, "packages/core/src/hub/lint-probe.ts");
 
   afterEach(async () => {
     await rm(probe, { force: true });
     await rm(coreProbe, { force: true });
+    await rm(hubProbe, { force: true });
   });
 
   /** Lints `source` as a file at `path` and returns the rules it breaks. */
@@ -128,6 +130,17 @@ describe("@gambi/protocol has no platform dependency", () => {
   test("the rule is scoped to the protocol package", async () => {
     const source = "export const version = Bun.version;\n";
     expect(await brokenRules(coreProbe, source)).toEqual([]);
+  });
+
+  test.each([
+    ["Bun.*", "export const version = Bun.version;\n", "noRestrictedGlobals"],
+    [
+      "@effect/platform-bun",
+      'import { BunRuntime } from "@effect/platform-bun";\nexport const run = BunRuntime.runMain;\n',
+      "noRestrictedImports",
+    ],
+  ])("lint rejects %s in the new hub", async (_label, source, rule) => {
+    expect(await brokenRules(hubProbe, source)).toEqual([`lint/style/${rule}`]);
   });
 
   test("its manifest depends on no platform package", async () => {
