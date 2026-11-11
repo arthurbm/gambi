@@ -183,6 +183,7 @@ A command:
 - reaches a hub with `withHub(hubUrl, (client) => ...)` and the shared `hubFlag`. It turns a transport failure into `HubUnreachable` and an answer outside the contract into `NotAHub`.
 - asks for a missing required flag with `Flag.withFallbackPrompt`. The prompt only runs on a terminal; without one the flag is reported as missing.
 - when it runs until stopped, awaits `Termination.signal` and then returns, so that a deliberate stop exits with `0`.
+- reaches the outside through a service, never through a global: the network through `HttpClient`, a subprocess through `ChildProcessSpawner`, a file through `FileSystem`, and what the running process is (`execPath`, `argv`, `platform`, `pid`) through `Installation`. `main.ts` provides the real ones.
 
 `exit-codes.ts` holds the one table from typed error to exit code. A command that can fail with a new error does not compile until the error has a row there.
 
@@ -213,6 +214,9 @@ layer(layerHub(), { excludeTestServices: true })("room commands", (it) => {
 ```
 
 - `runCommand(args, options)` runs to the end. `options.tty` makes stdin and stdout a terminal, `options.answers` types into the prompts, `options.env` sets environment variables.
+- A command in a test reaches this machine only. `fetch` refuses any host but loopback, so serve what the command downloads from a `Bun.serve` on `127.0.0.1`.
+- A command in a test starts no process unless the test says so. `options.spawner: spawnerThat((command) => ({ exitCode, stdout, stderr }))` plays the subprocess and shows the test the command line; without it, spawning fails the test.
+- `options.installation` says what the running `gambi` is (`execPath`, `argv`, `platform`, `arch`, `pid`). The default is an installation of unknown origin.
 - `startCommand(args)` starts a long-running command: read its events with `nextEvent`, send `signal("SIGTERM")`, then await `result`.
 - Assert on stdout, stderr and the exit code. Do not call a handler or `Output` directly.
 - What only the real process shows (the two file descriptors, the exit code of the process, signals) is covered by `main.test.ts`, which spawns the entrypoint.

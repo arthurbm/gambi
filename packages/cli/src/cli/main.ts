@@ -13,6 +13,7 @@ import { Effect, Layer, Runtime } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { HubListen } from "./commands/hub.ts";
 import { ExitCode } from "./exit-codes.ts";
+import { Installation } from "./installation.ts";
 import { type CliEnvironment, processExitCode, runCli } from "./run.ts";
 import {
   makeTermination,
@@ -76,6 +77,13 @@ const runMain = Runtime.makeRunMain(({ fiber, teardown }) => {
 const Platform: Layer.Layer<CliEnvironment> = Layer.mergeAll(
   Layer.succeed(Termination, termination.service),
   Layer.succeed(HubListen, BunHttpServer.layer),
+  Layer.succeed(Installation, {
+    arch: process.arch,
+    argv: process.argv,
+    execPath: process.execPath,
+    pid: process.pid,
+    platform: process.platform,
+  }),
   Mdns.layer,
   FetchHttpClient.layer
 ).pipe(Layer.provideMerge(BunServices.layer));
