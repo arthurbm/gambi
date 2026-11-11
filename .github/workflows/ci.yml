@@ -37,6 +37,17 @@ jobs:
       - name: CLI tests
         run: bun test packages/cli/src
 
+      # The hub from the outside: a real hub on a random port, a real
+      # participant runtime and a fake local provider. No network needed.
+      - name: Core tests
+        run: bun test packages/core/src
+
+      - name: SDK tests
+        run: bun test packages/sdk/src
+
+      - name: TUI tests
+        run: bun run --cwd apps/tui test
+
       # The Effect test helper every Effect test in the repo runs on.
       - name: Effect test helper tests
         run: bun test packages/testing/src
