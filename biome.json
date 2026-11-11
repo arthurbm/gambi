@@ -115,6 +115,44 @@
       }
     },
     {
+      "includes": [
+        "packages/cli/src/cli/**/*.ts",
+        "!packages/cli/src/cli/main.ts",
+        "!packages/cli/src/cli/testing.ts",
+        "!packages/cli/src/cli/**/*.test.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "Bun": "The commands of the CLI use no Bun.* API (ADR-0007). Take the capability as an Effect service; main.ts provides the @effect/platform-bun layer."
+                }
+              }
+            },
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "bun",
+                      "bun:*",
+                      "@effect/platform-*",
+                      "@effect/platform-*/**"
+                    ],
+                    "message": "The commands of the CLI depend on the abstract services of `effect` (ADR-0007). Only main.ts imports @effect/platform-bun."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["**/*.astro"],
       "linter": {
         "rules": {
