@@ -336,7 +336,7 @@ A landing **não** menciona o [Gambiarra Club](https://gambiarra.club). A menç�
 
 #### E6 — Vocabulário interno vs. copy pública
 
-"Substrato", "primitivas sociais" e "social-ready" são vocabulário **interno** (docs de produto e pesquisa). Não entram em copy pública. Registrado no `CONTEXT.md` § Flagged ambiguities.
+"Substrato", "primitivas sociais" e "social-ready" são vocabulário **interno** (docs de produto e pesquisa). Não entram em copy pública. Registrado no `GLOSSARY.md` § Flagged ambiguities.
 
 #### Impacto no mapa de arquivos (seção 4)
 
@@ -421,7 +421,7 @@ lede: Each person connects the agents and models already running on their
 CTAs: comando de install copiável · Get started (único botão) · link "How it works" que desce na página
 ```
 
-A hero continua sem nomear categoria (nem "room", nem "gateway"). "Agents" entra na copy pública para os harnesses, por ser a palavra que o visitante reconhece (exceção registrada no `CONTEXT.md`). O par "Quick start" + "Bring your harness" sai: os dois levavam para fora da página sem explicar nada.
+A hero continua sem nomear categoria (nem "room", nem "gateway"). "Agents" entra na copy pública para os harnesses, por ser a palavra que o visitante reconhece (exceção registrada no `GLOSSARY.md`). O par "Quick start" + "Bring your harness" sai: os dois levavam para fora da página sem explicar nada.
 
 #### E12 — Substitui a E8 e a E9: ordem de seções
 
