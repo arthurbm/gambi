@@ -34,10 +34,13 @@ const temporaryDirectory = Effect.acquireRelease(
 const servingHub = (binary: string) =>
   Effect.acquireRelease(
     Effect.sync(() =>
-      Bun.spawn([binary, "hub", "serve", "--host", "127.0.0.1", "--port", "0"], {
-        stdout: "pipe",
-        stderr: "ignore",
-      })
+      Bun.spawn(
+        [binary, "hub", "serve", "--host", "127.0.0.1", "--port", "0"],
+        {
+          stdout: "pipe",
+          stderr: "ignore",
+        }
+      )
     ),
     (child) =>
       Effect.promise(async () => {
@@ -116,7 +119,9 @@ it.live(
       ]);
       expect(busy.exitCode).toBe(2);
       expect(busy.stdout).toBe("");
-      expect(busy.stderr).toContain(`Port ${started.data.port} is already in use`);
+      expect(busy.stderr).toContain(
+        `Port ${started.data.port} is already in use`
+      );
 
       hub.kill("SIGTERM");
       expect(yield* Effect.promise(() => hub.exited)).toBe(0);
