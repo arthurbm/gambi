@@ -18,6 +18,8 @@ import { Cause, Clock, Effect, Layer, SchemaIssue, type Types } from "effect";
 import { SecureRandom } from "effect/crypto";
 import { HttpRouter } from "effect/http";
 import { HttpApiBuilder, HttpApiError } from "effect/http-api";
+import { Participants } from "./participants.ts";
+import { registerParticipant } from "./registration.ts";
 import { Rooms } from "./rooms.ts";
 
 const HubHandlers = HttpApiBuilder.group(ManagementApi, "hub", (handlers) =>
@@ -41,6 +43,23 @@ const RoomsHandlers = HttpApiBuilder.group(
       create: ({ payload }) => rooms.create(payload),
       get: ({ params }) => rooms.get(params.code),
       list: () => rooms.list,
+    });
+  })
+);
+
+const ParticipantsHandlers = HttpApiBuilder.group(
+  ManagementApi,
+  "participants",
+  Effect.fn(function* (handlers) {
+    const rooms = yield* Rooms;
+    const participants = yield* Participants;
+    return handlers.handleAll({
+      register: ({ params, payload }) =>
+        registerParticipant(params.code, params.id, payload),
+      list: Effect.fn("Participants.list")(function* ({ params }) {
+        const room = yield* rooms.get(params.code);
+        return yield* participants.list(room.code);
+      }),
     });
   })
 );
@@ -115,7 +134,7 @@ export const OPENAPI_PATH = "/v1/openapi.json";
 /** The management plane routes, ready for `HttpRouter.serve`. */
 export const ManagementRoutes = Layer.mergeAll(
   HttpApiBuilder.layer(ManagementApi, { openapiPath: OPENAPI_PATH }).pipe(
-    Layer.provide([HubHandlers, RoomsHandlers]),
+    Layer.provide([HubHandlers, RoomsHandlers, ParticipantsHandlers]),
     Layer.provide(ManagementFailuresLive)
   ),
   HttpRouter.cors()
