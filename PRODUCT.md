@@ -44,7 +44,7 @@ The trust argument is part of the positioning: each person's provider keys (`Par
 - Confirmed capabilities: room lifecycle, participant registration, tunnel-backed dispatch, model-selector routing (`participantId`, `model:<name>`, `*`), management heartbeats vs tunnel ping/pong, SSE room events with baseline metrics (TTFT, duration, tokens, tokens/s), dry-run + NDJSON on operational commands, local network hub/room discovery.
 - Harness participants (ADR-0006): `gambi participant join --harness opencode|claude-code|codex` checks the local login, spawns the harness's ACP agent, and relays ACP v1 frames opaquely; apps attach with `client.harness.attach()`. Harness participants never take inference calls and model routing never picks them. Each session runs in a **Workspace** — a folder the participant picks with `--workspace <dir>`, or an empty one under `~/.gambi/workspaces/<room>/<participantId>/` — and changed files come back as versioned artifacts. `gambi-sdk` exports `createHarnessParticipantSession` for hosted harnesses (Claude Code cannot be hosted for third parties).
 - Invariants future work must preserve: tunnel-first (hub never originates a connection to a participant); `ParticipantAuthHeaders` and harness logins never leave the participant runtime; the hub never writes into a participant's workspace; trusted-network only — no native auth, no public exposure without an external proxy/auth layer.
-- Canonical vocabulary lives in `CONTEXT.md` (hub, room, participant, provider, tunnel, status vs connection). "Agent" is overloaded — never use it unqualified.
+- Canonical vocabulary lives in `GLOSSARY.md` (hub, room, participant, provider, tunnel, status vs connection). "Agent" is overloaded — never use it unqualified.
 - Out of scope today (parked for "Gambi Agents", `docs/product/vision.md`): agent scheduling, workflow graphs, shared memory, task delegation, multi-agent planning, agent identity/trust.
 - Undecided: scope and timing of the social-primitives layer (turns, shared context, personal-agent interaction) — research-frontier material, not product commitment.
 
@@ -52,7 +52,7 @@ The trust argument is part of the positioning: each person's provider keys (`Par
 
 **Binding (revised 2026-11-06): the name and its origin stay; the visual and the voice are serious and direct.** "Gambi" is the short form of "gambiarra", meaning the good kind: improvisation turned into a practical tool. That story lives in the name and in the "Why gambi?" page, not in a playful visual or a joking tone. The 2026-08-10 commitment, which made the gambiarra identity govern voice and look across docs, site, and TUI, is superseded: the hand-painted "feira" landing it produced read as childish.
 
-Public copy may say **agents** for the coding harnesses people share (Claude Code, Codex, OpenCode). It is the word visitors recognise. See the "Agent" entry in `CONTEXT.md`.
+Public copy may say **agents** for the coding harnesses people share (Claude Code, Codex, OpenCode). It is the word visitors recognise. See the "Agent" entry in `GLOSSARY.md`.
 
 Fixed assets: the name **Gambi**, package names (`gambi`, `gambi-sdk`, `gambi-tui`), the `gambi.sh` domain, the ASCII-art wordmark in the README, and the Gambiarra LLM Club (gambiarra.club) affiliation.
 

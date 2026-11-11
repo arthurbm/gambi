@@ -29,7 +29,7 @@ Gambi compartilha endpoints de modelo numa sala. O próximo degrau é compartilh
 ## Consequências
 
 - O risco de termos de uso existe só no harness Claude Code (a Anthropic proíbe intermediar login de assinatura; o desenho fica na exceção de usuário final com binário original). Documentar no adapter; não hospedar Claude Code em nome de terceiros.
-- `CONTEXT.md` ganha a seção "Harness layer" (harness, harness participant, harness session, orchestrator, steerer, squad, draft, decision, dispatch, return).
+- `GLOSSARY.md` ganha a seção "Harness layer" (harness, harness participant, harness session, orchestrator, steerer, squad, draft, decision, dispatch, return).
 - Para o TCC: Gambi como client ACP multi-parte sobre transporte tunnel-first (ACP foi desenhado 1 client ↔ 1 agent via stdio).
 
 ---
@@ -48,4 +48,4 @@ Itens que estavam em `later.md` e são do gambi:
 - **ACP v2**: continua pinado em v1. Acompanhar o draft, que muda `session/prompt` e `session/load`.
 - **Git como publicação**: "contribuir = push" é mais fiel à tese do que observar a pasta. Ficou de fora por exigir git server e push em Windows. Reabrir quando um Workspace precisar publicar para mais de um leitor.
 
-O `CONTEXT.md` mantém Harness, Harness participant, Harness session e ganha **Workspace**. O vocabulário de orquestração vai para o `CONTEXT.md` do lab.
+O `GLOSSARY.md` mantém Harness, Harness participant, Harness session e ganha **Workspace**. O vocabulário de orquestração vai para o `CONTEXT.md` do lab.

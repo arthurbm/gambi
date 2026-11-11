@@ -22,6 +22,10 @@ _Avoid_: Node, peer, agent, worker.
 The actual LLM backend (Ollama, vLLM, OpenRouter, OpenAI, etc.) sitting behind a participant on its own machine. The hub never talks to the provider directly — only through the participant's tunnel.
 _Avoid_: Backend, upstream, model server (when referring to the runtime; use **Model** for the named model itself).
 
+**Participant runtime**:
+The process on a participant's machine (`gambi participant join`) that registers the participant, holds its tunnel open, and calls the provider or harness locally. Bare "runtime" in this repo means this.
+_Avoid_: Client, agent, daemon.
+
 **Model**:
 A named model exposed by a provider (e.g. `llama3.1:8b`, `gpt-4.1`). A participant exposes one or more models; routing selects participants by participant ID, model name, or wildcard.
 _Avoid_: Engine.
@@ -87,7 +91,7 @@ A participant that contributes a harness to a room instead of a bare model endpo
 _Avoid_: Agent participant, worker.
 
 **Harness session**:
-One conversation inside a harness, running in a **Workspace**, with its own native history. A harness participant may hold several. Distinct from a **Room** (which `CONTEXT.md` already forbids calling "session").
+One conversation inside a harness, running in a **Workspace**, with its own native history. A harness participant may hold several. Distinct from a **Room** (which this glossary already forbids calling "session").
 _Avoid_: Session (bare), thread, chat.
 
 **Workspace**:
@@ -134,6 +138,8 @@ Orchestration vocabulary (orchestrator, steerer, squad, dispatch, draft, decisio
 - **"Gambi"** refers to today's product (transport + room hub). The future umbrella brand also called "Gambi" (per ADR-0001) is *brand framing*, not a renamed product. When ambiguity matters, say **Gambi (the hub)** vs **Gambi (the brand)**.
 
 - **"Substrate" / "social primitives"** are **internal vocabulary** — they name the two layers of the product/research model in `docs/product/research-direction.md`: the *substrate* is what Gambi ships today (hub, tunnel, routing, observability); *social primitives* is the layer above it (turn-taking, shared context, agent-to-agent interaction), still research. Use them freely in `docs/` and in design conversation. _Rule_: never in public copy (landing, docs pages, README). A reader who has not read the research doc gets nothing from either term — say the concrete thing instead ("turn-taking, shared context, models talking to models"). Ruled in ADR-0001 § 7 (E6).
+
+- **"Runtime", "layer", "scope"** are domain words here and also construct names in libraries the code uses (for example Effect's `Runtime`, `Layer`, `Scope`). In prose, bare **runtime** means the **participant runtime**, the **harness layer** is the product layer of harness participants, and a room is a "scope" only in the plain-English sense. _Rule_: library constructs are implementation vocabulary and never get an entry in this file; when you mean one, write it as code (`Layer`, `Scope`).
 
 - **"Heartbeat"** is reserved for the management-plane HTTP heartbeat. The tunnel's keepalive is **ping/pong** (`tunnel.ping` / `tunnel.pong`). Saying "the heartbeat failed" implicitly means management; tunnel failures are "ping/pong stopped" or "tunnel closed."
 
