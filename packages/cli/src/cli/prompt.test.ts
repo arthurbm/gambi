@@ -41,4 +41,35 @@ layer(layerHub(), { excludeTestServices: true })("prompts", (it) => {
         expect(result.stderr).toContain("Missing required flag: --code");
       })
   );
+
+  it.effect("a question left unanswered is the missing flag again", () =>
+    Effect.gen(function* () {
+      const hub = yield* Hub;
+
+      const result = yield* runCommand(["room", "get", "--hub", hub.url], {
+        tty: true,
+        answers: [],
+      });
+
+      expect(result.exitCode).toBe(2);
+      expect(result.terminal).toContain("Room code");
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain("Missing required flag: --code");
+    })
+  );
+
+  it.effect("an answer is validated like the flag it stands for", () =>
+    Effect.gen(function* () {
+      const hub = yield* Hub;
+
+      const result = yield* runCommand(["room", "create", "--hub", hub.url], {
+        tty: true,
+        answers: [""],
+      });
+
+      expect(result.exitCode).toBe(2);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain("Error (InvalidValue)");
+    })
+  );
 });
