@@ -35,6 +35,7 @@ import { Participants } from "./participants.ts";
 import { RoomPasswords } from "./room-passwords.ts";
 import { Rooms } from "./rooms.ts";
 import { HubSettings } from "./settings.ts";
+import { TunnelRoute } from "./tunnel-route.ts";
 import { Tunnels } from "./tunnels.ts";
 
 export const DEFAULT_HUB_PORT = 3000;
@@ -152,7 +153,7 @@ export class Hub extends Context.Service<
    */
   static readonly layer = (
     options: HubOptions
-  ): Layer.Layer<Hub, HubStartError, Mdns> => {
+  ): Layer.Layer<Hub | Tunnels, HubStartError, Mdns> => {
     const Settings = Layer.succeed(
       HubSettings,
       HubSettings.of({ version: options.version ?? GAMBI_VERSION })
@@ -165,9 +166,10 @@ export class Hub extends Context.Service<
       Layer.provideMerge(Settings)
     );
 
-    const Served = HttpRouter.serve(ManagementRoutes, {
-      disableListenLog: true,
-    }).pipe(Layer.provide([State, SecureRandom.layerWebCrypto]));
+    const Served = HttpRouter.serve(
+      Layer.mergeAll(ManagementRoutes, TunnelRoute),
+      { disableListenLog: true }
+    ).pipe(Layer.provide(SecureRandom.layerWebCrypto));
 
     const Announced = Layer.effect(
       Hub,
@@ -200,7 +202,21 @@ export class Hub extends Context.Service<
       })
     );
 
-    return Layer.mergeAll(Served, Announced).pipe(
+    // Built last, so released first: the tunnels close before the routes
+    // and the server start to stop. Each tunnel is a request still being
+    // answered, and the server would wait 20 s for it.
+    const TunnelsClosedFirst = Layer.effectDiscard(
+      Effect.gen(function* () {
+        const tunnels = yield* Tunnels;
+        yield* Effect.addFinalizer(() => tunnels.closeAll);
+      })
+    );
+
+    // `Tunnels` is also the in-process way to call a participant, so it is
+    // part of what the layer provides.
+    return TunnelsClosedFirst.pipe(
+      Layer.provideMerge(Layer.mergeAll(Served, Announced)),
+      Layer.provideMerge(State),
       Layer.provide(listening(options))
     );
   };

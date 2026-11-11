@@ -112,7 +112,7 @@ const ManagementFailuresLive = Layer.succeed(ManagementFailures, (httpEffect) =>
  * Gives every request a `RequestId`: the envelope reads it, and every log line
  * and span of the request carries it.
  */
-const RequestIdentity = HttpRouter.middleware<{ provides: RequestId }>()(
+export const RequestIdentity = HttpRouter.middleware<{ provides: RequestId }>()(
   Effect.gen(function* () {
     const random = yield* SecureRandom.SecureRandom;
     return (httpEffect) =>
