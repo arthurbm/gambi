@@ -11,3 +11,4 @@ export * from "./management/envelope.ts";
 export * from "./management/errors.ts";
 export * from "./management/openapi.ts";
 export * from "./room.ts";
+export * from "./participant-status.ts";
