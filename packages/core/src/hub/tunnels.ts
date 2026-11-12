@@ -26,21 +26,27 @@
  */
 import {
   type BootstrapToken,
+  type CallNotSupported,
+  type HarnessDisconnected,
   TunnelRpcs,
   TunnelTokenInvalid,
 } from "@gambi/protocol";
 import {
+  Cause,
   Clock,
   Context,
   Deferred,
   Duration,
   Effect,
   Exit,
+  Fiber,
   Latch,
   Layer,
+  Option,
   Schedule,
   Schema,
   Scope,
+  Stream,
 } from "effect";
 import { SecureRandom } from "effect/crypto";
 import {
@@ -50,6 +56,7 @@ import {
   RpcSerialization,
 } from "effect/rpc";
 import { Socket } from "effect/socket";
+import { HarnessClients } from "./harness-clients.ts";
 import { Participants } from "./participants.ts";
 import { HubSettings } from "./settings.ts";
 
@@ -97,6 +104,32 @@ const closedByHub = (reason: string) =>
   new RpcClientError.RpcClientError({
     reason: new Socket.SocketCloseError({ code: 1001, closeReason: reason }),
   });
+
+/** How long a dropped tunnel waits for its harness stream to end by itself. */
+const HARNESS_STREAM_END_TIMEOUT = Duration.seconds(2);
+
+/**
+ * Why the hub stopped receiving a participant's harness events: the error the
+ * stream ended with. `undefined` when it ended without one of its own, which
+ * is what an interruption looks like; the tunnel's end then says why.
+ */
+const harnessStreamEnd = (
+  exit: Exit.Exit<void, RpcClientError.RpcClientError | CallNotSupported>
+): HarnessDisconnected | undefined => {
+  if (Exit.isSuccess(exit)) {
+    return { type: "harness.disconnected", reason: "StreamEnded" };
+  }
+  const error = Cause.findErrorOption(exit.cause);
+  return Option.isNone(error) ? undefined : disconnectedBy(error.value);
+};
+
+const disconnectedBy = (
+  error: RpcClientError.RpcClientError | CallNotSupported
+): HarnessDisconnected => ({
+  type: "harness.disconnected",
+  reason: error._tag === "RpcClientError" ? error.reason._tag : error._tag,
+  message: error.message,
+});
 
 // A room code never contains a space, so the pair is unambiguous.
 const keyOf = (roomCode: string, participantId: string) =>
@@ -176,6 +209,7 @@ export class Tunnels extends Context.Service<
     Tunnels,
     Effect.gen(function* () {
       const participants = yield* Participants;
+      const harnessClients = yield* HarnessClients;
       const random = yield* SecureRandom.SecureRandom;
       const settings = yield* HubSettings;
       const serialization = yield* RpcSerialization.RpcSerialization;
@@ -240,11 +274,24 @@ export class Tunnels extends Context.Service<
             | ((message: RpcMessage.FromServerEncoded) => Effect.Effect<void>)
             | undefined;
           let tunnel: OpenTunnel | undefined;
+          let harnessStream: Fiber.Fiber<void> | undefined;
+          let saidDisconnected = false;
 
           const end = (error: RpcClientError.RpcClientError) =>
             Effect.suspend(() => {
               ended ??= error;
               return Deferred.succeed(dropped, undefined);
+            });
+
+          // Said once per tunnel: by the harness stream when it ends with an
+          // error of its own, otherwise by `teardown` with the tunnel's.
+          const harnessDisconnected = (event: HarnessDisconnected) =>
+            Effect.suspend(() => {
+              if (saidDisconnected) {
+                return Effect.void;
+              }
+              saidDisconnected = true;
+              return harnessClients.deliver(roomCode, participantId, event);
             });
 
           const teardown = Effect.gen(function* () {
@@ -253,6 +300,16 @@ export class Tunnels extends Context.Service<
             // socket itself failed they already have, and this finds none.
             if (toClient !== undefined) {
               yield* toClient({ _tag: "ClientProtocolError", error: ended });
+            }
+            // By now the harness stream has that error too and ends by
+            // itself. The tunnel is gone only after the attached clients
+            // heard of it, so a tunnel that replaces this one says
+            // `harness.connected` after this one said `harness.disconnected`.
+            if (harnessStream !== undefined) {
+              yield* Fiber.await(harnessStream).pipe(
+                Effect.timeoutOption(HARNESS_STREAM_END_TIMEOUT)
+              );
+              yield* harnessDisconnected(disconnectedBy(ended));
             }
             yield* Scope.close(socketScope, Exit.void);
             if (tunnel !== undefined && open.get(key) === tunnel) {
@@ -355,6 +412,28 @@ export class Tunnels extends Context.Service<
                 hubVersion: settings.version,
               })
               .pipe(Effect.ignore, Effect.forkIn(socketScope));
+            // The long-lived stream: everything that is born on the
+            // participant comes up through this one call, for as long as the
+            // tunnel lives. `deliver` never waits, so this never falls behind
+            // (see `harness-clients.ts` for why it must not). It ends with
+            // the error the tunnel ended with, or at once with
+            // `CallNotSupported` on a participant that has no harness.
+            yield* harnessClients.deliver(roomCode, participantId, {
+              type: "harness.connected",
+            });
+            harnessStream = yield* client.HarnessEvents().pipe(
+              Stream.runForEach((event) =>
+                harnessClients.deliver(roomCode, participantId, event)
+              ),
+              Effect.exit,
+              Effect.flatMap((exit) => {
+                const reason = harnessStreamEnd(exit);
+                return reason === undefined
+                  ? Effect.void
+                  : harnessDisconnected(reason);
+              }),
+              Effect.forkIn(socketScope)
+            );
             yield* Deferred.await(dropped);
           }).pipe(Effect.ensuring(teardown));
         },

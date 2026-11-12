@@ -30,6 +30,7 @@ import {
   HttpRouter,
   HttpServer,
 } from "effect/http";
+import { HarnessClients } from "./harness-clients.ts";
 import { ManagementRoutes } from "./management.ts";
 import { Mdns, type MdnsAnnounceFailed } from "./mdns.ts";
 import { Participants } from "./participants.ts";
@@ -42,6 +43,7 @@ import { Tunnels } from "./tunnels.ts";
 export const DEFAULT_HUB_PORT = 3000;
 export const DEFAULT_HUB_HOSTNAME = "0.0.0.0";
 export const DEFAULT_TUNNEL_PING_INTERVAL: Duration.Input = "5 seconds";
+export const DEFAULT_HARNESS_CLIENT_BUFFER = 1024;
 
 /** The platform services an HTTP server brings: `BunHttpServer.layer` provides all of them. */
 export type HubPlatform =
@@ -52,6 +54,12 @@ export type HubPlatform =
   | Path.Path;
 
 export interface HubOptions {
+  /**
+   * How many events the hub holds for one management client attached to a
+   * harness participant; a client that falls further behind loses its oldest
+   * events. Default 1024.
+   */
+  readonly harnessClientBuffer?: number | undefined;
   /** The interface to listen on. Default `0.0.0.0`. */
   readonly hostname?: string | undefined;
   /**
@@ -160,10 +168,12 @@ export class Hub extends Context.Service<
    */
   static readonly layer = (
     options: HubOptions
-  ): Layer.Layer<Hub | Tunnels, HubStartError, Mdns> => {
+  ): Layer.Layer<Hub | Tunnels | HarnessClients, HubStartError, Mdns> => {
     const Settings = Layer.succeed(
       HubSettings,
       HubSettings.of({
+        harnessClientBuffer:
+          options.harnessClientBuffer ?? DEFAULT_HARNESS_CLIENT_BUFFER,
         tunnelPingInterval: Duration.fromInputUnsafe(
           options.tunnelPingInterval ?? DEFAULT_TUNNEL_PING_INTERVAL
         ),
@@ -172,7 +182,9 @@ export class Hub extends Context.Service<
     );
 
     const State = Layer.mergeAll(Rooms.layer, Tunnels.layer).pipe(
-      Layer.provideMerge(Participants.layer),
+      Layer.provideMerge(
+        Layer.mergeAll(Participants.layer, HarnessClients.layer)
+      ),
       Layer.provide(RoomPasswords.layerWebCrypto),
       Layer.provide(SecureRandom.layerWebCrypto),
       Layer.provideMerge(Settings)
@@ -224,8 +236,9 @@ export class Hub extends Context.Service<
       })
     );
 
-    // `Tunnels` is also the in-process way to call a participant, so it is
-    // part of what the layer provides.
+    // `Tunnels` is also the in-process way to call a participant, and
+    // `HarnessClients` the in-process way to attach to a harness participant,
+    // so they are part of what the layer provides.
     return TunnelsClosedFirst.pipe(
       Layer.provideMerge(Layer.mergeAll(Served, Announced)),
       Layer.provideMerge(State),

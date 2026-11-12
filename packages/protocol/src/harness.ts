@@ -1,0 +1,98 @@
+/**
+ * The schemas of the harness layer (ADR-0006): what a harness participant
+ * sends up to the hub, and what a management client attached to it reads.
+ *
+ * The hub relays and never interprets an ACP message: `AcpMessage` is opaque
+ * on purpose. ACP stays pinned to v1.
+ */
+import { Schema } from "effect";
+
+/** One ACP v1 message: a JSON-RPC 2.0 object. Relayed as it is. */
+export const AcpMessage = Schema.Record(Schema.String, Schema.Unknown);
+export type AcpMessage = typeof AcpMessage.Type;
+
+/**
+ * The id of a harness session, as the hub and the attached clients know it.
+ * The client that opens the session picks it; the participant runtime maps it
+ * to the id the harness itself gave the session, which never leaves the
+ * participant's machine.
+ */
+export const HarnessSessionId = Schema.NonEmptyString;
+export type HarnessSessionId = typeof HarnessSessionId.Type;
+
+/** An ACP message the harness wrote, for the clients of one harness session. */
+export const HarnessMessage = Schema.Struct({
+  type: Schema.tag("harness.message"),
+  sessionId: HarnessSessionId,
+  message: AcpMessage,
+});
+export type HarnessMessage = typeof HarnessMessage.Type;
+
+/**
+ * A harness session changed: it opened, it closed, or something about it
+ * failed (`message` says what).
+ */
+export const HarnessSessionStatus = Schema.Struct({
+  type: Schema.tag("harness.session"),
+  sessionId: HarnessSessionId,
+  status: Schema.Literals(["opened", "closed", "error"]),
+  message: Schema.optionalKey(Schema.String),
+});
+export type HarnessSessionStatus = typeof HarnessSessionStatus.Type;
+
+/**
+ * Everything that is born on a harness participant and goes up to the hub: one
+ * chunk of the `HarnessEvents` tunnel call. A new kind of thing the
+ * participant produces (the artifacts of its Workspace) is a new member here.
+ */
+export const HarnessEvent = Schema.Union([
+  HarnessMessage,
+  HarnessSessionStatus,
+]);
+export type HarnessEvent = typeof HarnessEvent.Type;
+
+/**
+ * The hub is receiving the harness participant's events: its tunnel is open
+ * and the participant serves the `HarnessEvents` call.
+ */
+export const HarnessConnected = Schema.Struct({
+  type: Schema.tag("harness.connected"),
+});
+export type HarnessConnected = typeof HarnessConnected.Type;
+
+/**
+ * The hub is not receiving the harness participant's events. `reason` names
+ * why: `NoTunnel` when the participant has no open tunnel yet, otherwise the
+ * error that ended the stream (`SocketCloseError`, `SocketReadError`,
+ * `CallNotSupported`, ...). A client stays attached and hears
+ * `harness.connected` when the participant is back.
+ */
+export const HarnessDisconnected = Schema.Struct({
+  type: Schema.tag("harness.disconnected"),
+  reason: Schema.String,
+  message: Schema.optionalKey(Schema.String),
+});
+export type HarnessDisconnected = typeof HarnessDisconnected.Type;
+
+/**
+ * This client read too slowly: the hub dropped the `count` oldest events it
+ * was holding for it, at this point of the stream.
+ */
+export const HarnessEventsDropped = Schema.Struct({
+  type: Schema.tag("harness.dropped"),
+  count: Schema.Int,
+});
+export type HarnessEventsDropped = typeof HarnessEventsDropped.Type;
+
+/**
+ * What a management client attached to a harness participant reads: the
+ * participant's events, plus what the hub itself has to say about the stream.
+ */
+export const HarnessAttachEvent = Schema.Union([
+  HarnessMessage,
+  HarnessSessionStatus,
+  HarnessConnected,
+  HarnessDisconnected,
+  HarnessEventsDropped,
+]);
+export type HarnessAttachEvent = typeof HarnessAttachEvent.Type;

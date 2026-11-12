@@ -8,6 +8,7 @@ import { HttpClient } from "effect/http";
 import { Socket } from "effect/socket";
 import { Hub } from "../hub/hub.ts";
 import { TunnelDiagnostics } from "../participant/diagnostics.ts";
+import { HarnessCallsNotSupported } from "../participant/harness-not-supported.ts";
 import {
   type ParticipantProfile,
   ParticipantRuntime,
@@ -17,20 +18,41 @@ import {
   type TunnelOpenFailed,
 } from "../participant/runtime.ts";
 
-export interface TestParticipantOptions
-  extends Partial<Omit<ParticipantRuntimeOptions, "profile" | "roomCode">> {
+export interface TestParticipantOptions<
+  Handlers extends TunnelHandlers = TunnelHandlers,
+> extends Partial<Omit<ParticipantRuntimeOptions, "profile" | "roomCode">> {
   /**
-   * The handlers of the tunnel calls on this participant. Default: the
-   * diagnostics every participant has (`TunnelDiagnostics`).
+   * The handlers this test gives the participant. They go on top of
+   * `defaultHandlers`, so a test passes only the calls it cares about and
+   * keeps compiling when the tunnel gains a call.
    */
-  readonly handlers?: Layer.Layer<TunnelHandlers> | undefined;
+  readonly handlers?: Layer.Layer<Handlers> | undefined;
   /** Where the runtime's log lines go. Default: nowhere. */
   readonly loggers?: readonly Logger.Logger<unknown, unknown>[] | undefined;
   readonly profile?: Partial<ParticipantProfile> | undefined;
   readonly roomCode: string;
 }
 
+/**
+ * The handlers of a participant that shares a model endpoint and does nothing
+ * else: the diagnostics every participant has, and "not supported" for the
+ * calls of the other kinds of participant. A ticket that adds calls to the
+ * tunnel adds their default handlers here.
+ */
+export const defaultHandlers: Layer.Layer<TunnelHandlers> = Layer.mergeAll(
+  TunnelDiagnostics,
+  HarnessCallsNotSupported
+);
+
 export interface TestParticipant {
+  /**
+   * Waits until what the participant sent to the hub satisfies `seen`. It is
+   * checked again on every request and frame, so a test waits for a frame
+   * instead of sleeping.
+   */
+  readonly awaitSent: (
+    seen: (sent: readonly string[]) => boolean
+  ) => Effect.Effect<void>;
   /**
    * Kills the participant's side of the tunnel without a closing handshake,
    * which is what the hub sees when the participant's process dies.
@@ -60,8 +82,8 @@ export interface TestParticipant {
  * const participant = yield* joinParticipant({ roomCode: room.code });
  * const tunnel = yield* (yield* Tunnels).client(room.code, participant.runtime.participant.id);
  */
-export const joinParticipant = (
-  options: TestParticipantOptions
+export const joinParticipant = <Handlers extends TunnelHandlers>(
+  options: TestParticipantOptions<Handlers>
 ): Effect.Effect<
   TestParticipant,
   RegistrationError | TunnelOpenFailed,
@@ -69,15 +91,23 @@ export const joinParticipant = (
 > =>
   Effect.gen(function* () {
     const hub = yield* Hub;
-    const {
-      handlers = TunnelDiagnostics,
-      loggers = [],
-      profile,
-      ...runtimeOptions
-    } = options;
+    const { handlers, loggers = [], profile, ...runtimeOptions } = options;
+    // The last layer merged wins: what the test passed replaces the default
+    // of the same call.
+    const allHandlers: Layer.Layer<TunnelHandlers> =
+      handlers === undefined
+        ? defaultHandlers
+        : Layer.merge(defaultHandlers, handlers);
     const scope = yield* Scope.fork(yield* Effect.scope);
     const dialed: WebSocket[] = [];
     const sent: string[] = [];
+    const watchers = new Set<() => void>();
+    const record = (entry: string) => {
+      sent.push(entry);
+      for (const watcher of [...watchers]) {
+        watcher();
+      }
+    };
     const decoder = new TextDecoder();
     const asText = (data: unknown) =>
       typeof data === "string"
@@ -90,10 +120,10 @@ export const joinParticipant = (
           url,
           options as ConstructorParameters<typeof WebSocket>[1]
         );
-        sent.push(`DIAL ${url} ${JSON.stringify(options ?? null)}`);
+        record(`DIAL ${url} ${JSON.stringify(options ?? null)}`);
         const send = socket.send.bind(socket);
         socket.send = (data) => {
-          sent.push(asText(data));
+          record(asText(data));
           return send(data);
         };
         dialed.push(socket);
@@ -107,7 +137,7 @@ export const joinParticipant = (
         HttpClient.mapRequest((request) => {
           const body =
             request.body._tag === "Uint8Array" ? asText(request.body.body) : "";
-          sent.push(
+          record(
             `${request.method} ${request.url} ${JSON.stringify(request.headers)} ${body}`
           );
           return request;
@@ -126,7 +156,7 @@ export const joinParticipant = (
           ...profile,
         },
       }).pipe(
-        Layer.provide(handlers),
+        Layer.provide(allHandlers),
         Layer.provide(Dialer),
         Layer.provide(RecordedHttp),
         Layer.provide(Logger.layer(loggers))
@@ -134,6 +164,18 @@ export const joinParticipant = (
       scope
     ).pipe(Effect.onError(() => Scope.close(scope, Exit.void)));
     return {
+      awaitSent: (seen) =>
+        Effect.callback<void>((resume) => {
+          const check = () => {
+            if (seen(sent)) {
+              watchers.delete(check);
+              resume(Effect.void);
+            }
+          };
+          watchers.add(check);
+          check();
+          return Effect.sync(() => watchers.delete(check));
+        }),
       kill: Effect.sync(() => {
         for (const socket of dialed) {
           socket.terminate();

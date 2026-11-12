@@ -24,8 +24,10 @@
     "./hub/rooms": "./src/hub/rooms.ts",
     "./hub/participants": "./src/hub/participants.ts",
     "./hub/tunnels": "./src/hub/tunnels.ts",
+    "./hub/harness-clients": "./src/hub/harness-clients.ts",
     "./participant/runtime": "./src/participant/runtime.ts",
     "./participant/diagnostics": "./src/participant/diagnostics.ts",
+    "./participant/harness-not-supported": "./src/participant/harness-not-supported.ts",
     "./testing/hub": "./src/testing/hub.ts",
     "./testing/participant": "./src/testing/participant.ts"
   },

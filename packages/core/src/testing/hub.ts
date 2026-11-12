@@ -12,6 +12,7 @@ import { BunHttpServer } from "@effect/platform-bun";
 import { type ManagementClient, makeManagementClient } from "@gambi/protocol";
 import { Effect, Layer, Logger } from "effect";
 import { FetchHttpClient, type HttpClient } from "effect/http";
+import type { HarnessClients } from "../hub/harness-clients.ts";
 import { Hub, type HubOptions, type HubStartError } from "../hub/hub.ts";
 import { Mdns } from "../hub/mdns.ts";
 import type { Tunnels } from "../hub/tunnels.ts";
@@ -27,7 +28,11 @@ export interface TestHubOptions extends Partial<Omit<HubOptions, "listen">> {
  */
 export const layerHubWithoutMdns = (
   options: TestHubOptions = {}
-): Layer.Layer<Hub | Tunnels | HttpClient.HttpClient, HubStartError, Mdns> => {
+): Layer.Layer<
+  Hub | Tunnels | HarnessClients | HttpClient.HttpClient,
+  HubStartError,
+  Mdns
+> => {
   const { loggers = [], ...hubOptions } = options;
   return Hub.layer({
     hostname: "127.0.0.1",
@@ -49,8 +54,10 @@ export const layerHubWithoutMdns = (
  */
 export const layerHub = (
   options: TestHubOptions = {}
-): Layer.Layer<Hub | Tunnels | Mdns | HttpClient.HttpClient, HubStartError> =>
-  layerHubWithoutMdns(options).pipe(Layer.provideMerge(Mdns.layerTest));
+): Layer.Layer<
+  Hub | Tunnels | HarnessClients | Mdns | HttpClient.HttpClient,
+  HubStartError
+> => layerHubWithoutMdns(options).pipe(Layer.provideMerge(Mdns.layerTest));
 
 /** The management client derived from the contract, pointed at the hub in the environment. */
 export const managementClient: Effect.Effect<

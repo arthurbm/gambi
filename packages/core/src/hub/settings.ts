@@ -11,6 +11,12 @@ export class HubSettings extends Context.Service<
   HubSettings,
   {
     /**
+     * How many events the hub holds for one management client attached to a
+     * harness participant. A client that falls further behind loses its
+     * oldest events.
+     */
+    readonly harnessClientBuffer: number;
+    /**
      * How often the hub pings a tunnel. A tunnel that stays silent for one
      * more interval after a ping is dropped.
      */

@@ -5,6 +5,7 @@
  * No server and no platform dependency: this package must run unchanged in
  * Bun, in Node and in a browser.
  */
+export * from "./harness.ts";
 export * from "./management/api.ts";
 export * from "./management/client.ts";
 export * from "./management/envelope.ts";

@@ -14,6 +14,8 @@
  */
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
+import { HarnessEvent } from "../harness.ts";
+import { CallNotSupported } from "./errors.ts";
 
 /**
  * The hub's first call on a new tunnel. It tells the participant runtime
@@ -48,8 +50,29 @@ export const Ticks = Rpc.make("Ticks", {
   stream: true,
 });
 
+/**
+ * The long-lived stream of a harness participant: everything that is born on
+ * the participant (ACP messages of the harness, the status of its sessions)
+ * goes up as a chunk of this one call. The hub opens it on every tunnel, right
+ * after `Welcome`, and reads it for as long as the tunnel lives; it ends with
+ * the tunnel.
+ *
+ * A participant that shares a model endpoint answers it with
+ * `CallNotSupported`.
+ */
+export const HarnessEvents = Rpc.make("HarnessEvents", {
+  success: HarnessEvent,
+  error: CallNotSupported,
+  stream: true,
+});
+
 /** Every call of the tunnel. The hub's client and the participant's server derive from it. */
-export class TunnelRpcs extends RpcGroup.make(Welcome, Echo, Ticks) {}
+export class TunnelRpcs extends RpcGroup.make(
+  Welcome,
+  Echo,
+  Ticks,
+  HarnessEvents
+) {}
 
 /** The path of the tunnel's WebSocket upgrade on the hub. */
 export const tunnelPath = (roomCode: string, participantId: string): string =>
