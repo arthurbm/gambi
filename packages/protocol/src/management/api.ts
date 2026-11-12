@@ -24,6 +24,7 @@ import {
   RegisterParticipant,
 } from "../participant.ts";
 import { CreateRoom, RoomCode, RoomCreated, RoomSummary } from "../room.ts";
+import { RoomEvent } from "../room-event.ts";
 import { failure, success } from "./envelope.ts";
 import {
   InternalError,
@@ -32,6 +33,7 @@ import {
   RoomNotFound,
   VersionMismatch,
 } from "./errors.ts";
+import { eventStream } from "./event-stream.ts";
 
 export const Health = Schema.Struct({
   status: Schema.Literal("ok"),
@@ -108,8 +110,24 @@ export class ParticipantsGroup extends HttpApiGroup.make("participants")
     })
   ) {}
 
+export class EventsGroup extends HttpApiGroup.make("events")
+  .add(
+    HttpApiEndpoint.get("watch", "/rooms/:code/events", {
+      params: { code: RoomCode },
+      success: eventStream(RoomEvent),
+      error: failure(RoomNotFound),
+    })
+  )
+  .annotateMerge(
+    OpenApi.annotations({
+      title: "Events",
+      description:
+        "Watch a room: a Server-Sent Events stream that starts with a snapshot of the room and then carries every change, one event per change of a participant's status.",
+    })
+  ) {}
+
 export class ManagementApi extends HttpApi.make("gambi-management")
-  .add(HubGroup, RoomsGroup, ParticipantsGroup)
+  .add(HubGroup, RoomsGroup, ParticipantsGroup, EventsGroup)
   .prefix("/v1")
   .middleware(ManagementFailures)
   .annotateMerge(

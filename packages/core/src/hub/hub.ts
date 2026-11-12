@@ -32,7 +32,9 @@ import {
 } from "effect/http";
 import { ManagementRoutes } from "./management.ts";
 import { Mdns, type MdnsAnnounceFailed } from "./mdns.ts";
+import { OpenStreams } from "./open-streams.ts";
 import { Participants } from "./participants.ts";
+import { RoomEvents } from "./room-events.ts";
 import { RoomPasswords } from "./room-passwords.ts";
 import { Rooms } from "./rooms.ts";
 import { HubSettings } from "./settings.ts";
@@ -173,6 +175,7 @@ export class Hub extends Context.Service<
 
     const State = Layer.mergeAll(Rooms.layer, Tunnels.layer).pipe(
       Layer.provideMerge(Participants.layer),
+      Layer.provideMerge(Layer.mergeAll(RoomEvents.layer, OpenStreams.layer)),
       Layer.provide(RoomPasswords.layerWebCrypto),
       Layer.provide(SecureRandom.layerWebCrypto),
       Layer.provideMerge(Settings)
@@ -214,13 +217,18 @@ export class Hub extends Context.Service<
       })
     );
 
-    // Built last, so released first: the tunnels close before the routes
-    // and the server start to stop. Each tunnel is a request still being
-    // answered, and the server would wait 20 s for it.
+    // Built last, so released first: the tunnels and the open streams close
+    // before the routes and the server start to stop. Each of them is a
+    // request still being answered, and the server would wait 20 s for it.
     const TunnelsClosedFirst = Layer.effectDiscard(
       Effect.gen(function* () {
         const tunnels = yield* Tunnels;
-        yield* Effect.addFinalizer(() => tunnels.closeAll);
+        const streams = yield* OpenStreams;
+        // The streams first, so that their watchers see the hub go away
+        // instead of every participant going offline.
+        yield* Effect.addFinalizer(() =>
+          Effect.andThen(streams.closeAll, tunnels.closeAll)
+        );
       })
     );
 
