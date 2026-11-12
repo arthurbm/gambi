@@ -22,6 +22,27 @@ export class RoomNotFound extends Schema.TaggedError<RoomNotFound>()(
   }
 }
 
+/** The room exists and has no participant with that id. */
+export class ParticipantNotFound extends Schema.TaggedError<ParticipantNotFound>()(
+  "ParticipantNotFound",
+  {
+    roomCode: Schema.String,
+    participantId: Schema.String,
+    ...requestIdField,
+  }
+) {
+  static readonly code = "PARTICIPANT_NOT_FOUND";
+  static readonly status = 404;
+
+  override get message(): string {
+    return `Participant '${this.participantId}' is not in room '${this.roomCode}'.`;
+  }
+
+  get hint(): string {
+    return "List the participants of the room to see the ids that are in it.";
+  }
+}
+
 /** The room has a password and the request did not bring the right one. */
 export class InvalidPassword extends Schema.TaggedError<InvalidPassword>()(
   "InvalidPassword",

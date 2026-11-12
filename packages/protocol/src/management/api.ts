@@ -19,6 +19,7 @@ import {
 } from "effect/http-api";
 import {
   ParticipantId,
+  ParticipantLeft,
   ParticipantRegistered,
   ParticipantSummary,
   RegisterParticipant,
@@ -30,6 +31,7 @@ import {
   InternalError,
   InvalidPassword,
   InvalidRequest,
+  ParticipantNotFound,
   RoomNotFound,
   VersionMismatch,
 } from "./errors.ts";
@@ -100,13 +102,18 @@ export class ParticipantsGroup extends HttpApiGroup.make("participants")
       params: { code: RoomCode },
       success: success(Schema.Array(ParticipantSummary)),
       error: failure(RoomNotFound),
+    }),
+    HttpApiEndpoint.delete("remove", "/rooms/:code/participants/:id", {
+      params: { code: RoomCode, id: ParticipantId },
+      success: success(ParticipantLeft),
+      error: [failure(RoomNotFound), failure(ParticipantNotFound)],
     })
   )
   .annotateMerge(
     OpenApi.annotations({
       title: "Participants",
       description:
-        "Register a participant and list the participants of a room. Registration answers with the bootstrap token of the tunnel.",
+        "Register a participant, list the participants of a room, and take one out of it. Registration answers with the bootstrap token of the tunnel. A participant that leaves is removed at once and its tunnel closes; one that only loses its tunnel stays, offline, until it reconnects or the reconnection deadline passes.",
     })
   ) {}
 

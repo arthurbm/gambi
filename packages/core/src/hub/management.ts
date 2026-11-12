@@ -20,7 +20,7 @@ import { HttpRouter } from "effect/http";
 import { HttpApiBuilder, HttpApiError } from "effect/http-api";
 import { OpenStreams } from "./open-streams.ts";
 import { Participants } from "./participants.ts";
-import { registerParticipant } from "./registration.ts";
+import { leaveRoom, registerParticipant } from "./registration.ts";
 import { RoomEvents } from "./room-events.ts";
 import { Rooms } from "./rooms.ts";
 
@@ -62,6 +62,7 @@ const ParticipantsHandlers = HttpApiBuilder.group(
         const room = yield* rooms.get(params.code);
         return yield* participants.list(room.code);
       }),
+      remove: ({ params }) => leaveRoom(params.code, params.id),
     });
   })
 );
