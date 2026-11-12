@@ -3,12 +3,13 @@
  * (`layerHub` from `./hub.ts`). How to use it:
  * `docs/reference/effect-conventions.md`.
  */
-import { Context, Effect, Exit, Layer, Logger, Scope } from "effect";
+import { Context, Effect, Exit, Layer, Logger, Queue, Scope } from "effect";
 import { HttpClient } from "effect/http";
 import { Socket } from "effect/socket";
 import { Hub } from "../hub/hub.ts";
 import { TunnelDiagnostics } from "../participant/diagnostics.ts";
 import {
+  type ParticipantLifecycleEvent,
   type ParticipantProfile,
   ParticipantRuntime,
   type ParticipantRuntimeOptions,
@@ -27,6 +28,12 @@ export interface TestParticipantOptions
   /** Where the runtime's log lines go. Default: nowhere. */
   readonly loggers?: readonly Logger.Logger<unknown, unknown>[] | undefined;
   readonly profile?: Partial<ParticipantProfile> | undefined;
+  /**
+   * Whether the runtime comes back by itself when its tunnel drops. Default
+   * `false` here, unlike the runtime's own default: a test that kills a
+   * participant expects it to stay dead.
+   */
+  readonly reconnect?: boolean | undefined;
   readonly roomCode: string;
 }
 
@@ -36,6 +43,11 @@ export interface TestParticipant {
    * which is what the hub sees when the participant's process dies.
    */
   readonly kill: Effect.Effect<void>;
+  /**
+   * The next lifecycle event of the runtime that the test has not read yet,
+   * from `connected` on. Waits for one when there is none.
+   */
+  readonly nextLifecycleEvent: Effect.Effect<ParticipantLifecycleEvent>;
   readonly runtime: ParticipantRuntime["Service"];
   /**
    * Everything this participant sent to the hub so far, as text: each HTTP
@@ -72,9 +84,12 @@ export const joinParticipant = (
     const {
       handlers = TunnelDiagnostics,
       loggers = [],
+      onLifecycle,
       profile,
+      reconnect = false,
       ...runtimeOptions
     } = options;
+    const lifecycle = yield* Queue.unbounded<ParticipantLifecycleEvent>();
     const scope = yield* Scope.fork(yield* Effect.scope);
     const dialed: WebSocket[] = [];
     const sent: string[] = [];
@@ -119,6 +134,11 @@ export const joinParticipant = (
         hubUrl: hub.url,
         participantId: "participant-1",
         ...runtimeOptions,
+        onLifecycle: (event) =>
+          Queue.offer(lifecycle, event).pipe(
+            Effect.andThen(onLifecycle?.(event) ?? Effect.void)
+          ),
+        reconnect,
         profile: {
           nickname: "Test participant",
           model: "test-model",
@@ -139,6 +159,7 @@ export const joinParticipant = (
           socket.terminate();
         }
       }),
+      nextLifecycleEvent: Queue.take(lifecycle),
       runtime: Context.get(context, ParticipantRuntime),
       sentToHub: Effect.sync(() => [...sent]),
       stop: Scope.close(scope, Exit.void),

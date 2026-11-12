@@ -8,8 +8,10 @@
  *    bootstrap token of the tunnel.
  * 2. `openTunnel`: dials the hub's WebSocket and *serves* the tunnel calls on
  *    it. The participant always dials; the hub never connects back.
- * 3. `ParticipantRuntime.layer`: one registration and one tunnel, for as long
- *    as the layer lives.
+ * 3. `ParticipantRuntime.layer`: the participant in the room for as long as
+ *    the layer lives. It joins with one registration and one tunnel, and
+ *    when the tunnel drops it comes back by itself: it registers again, for
+ *    a new bootstrap token, and dials again, as the same participant.
  *
  * The handlers of the tunnel calls come from the environment: whoever hosts
  * the runtime decides what a call does on this machine. That is also where
@@ -31,12 +33,17 @@ import {
   type VersionMismatch,
 } from "@gambi/protocol";
 import {
+  Cause,
+  Clock,
   Context,
   Deferred,
   Duration,
   Effect,
-  type Exit,
+  Exit,
   Layer,
+  Option,
+  Result,
+  Schedule,
   Schema,
   type Scope,
 } from "effect";
@@ -56,14 +63,85 @@ export type ParticipantProfile = Omit<
   "authHeaders" | "password" | "version"
 >;
 
+/** Why a participant runtime is not connected and is about to try again. */
+export type ReconnectReason =
+  /** The tunnel dropped: the hub closed it, or the connection was lost. */
+  | "tunnelDropped"
+  /** The hub did not answer the registration. */
+  | "hubUnreachable"
+  /** The hub registered the participant, but the tunnel did not open. */
+  | "tunnelOpenFailed"
+  /** The hub answered the registration with an internal error. */
+  | "hubError";
+
+/**
+ * What happens to a participant runtime over its life, as its host is told
+ * (`ParticipantRuntimeOptions.onLifecycle`). Plain JSON, so a host can print
+ * an event or hand it to another process as it is.
+ *
+ * - `connected`: the tunnel is open and the participant is `online`.
+ *   `attempt` is `0` for the join and, after a drop, the number of the
+ *   attempt that brought it back.
+ * - `reconnecting`: the runtime is not connected and tries again in
+ *   `delayMillis`. One event per attempt, counted from `1` after each drop.
+ * - `left`: the runtime ended and tries no more. `stopped`: its host stopped
+ *   it. `refused`: the hub refused it when it tried to come back, and
+ *   `error` says why. `tunnelDropped`: the tunnel dropped and the runtime was
+ *   started with `reconnect: false`.
+ *
+ * A runtime that never joined reports nothing: the join itself fails.
+ */
+export type ParticipantLifecycleEvent =
+  | {
+      readonly type: "connected";
+      readonly roomCode: string;
+      readonly participantId: string;
+      readonly attempt: number;
+      /** The Gambi version of the hub. */
+      readonly hubVersion: string;
+    }
+  | {
+      readonly type: "reconnecting";
+      readonly roomCode: string;
+      readonly participantId: string;
+      readonly attempt: number;
+      readonly delayMillis: number;
+      readonly reason: ReconnectReason;
+    }
+  | {
+      readonly type: "left";
+      readonly roomCode: string;
+      readonly participantId: string;
+      readonly reason: "stopped" | "refused" | "tunnelDropped";
+      /** The typed error behind `refused`: its name and its message. */
+      readonly error?: { readonly name: string; readonly message: string };
+    };
+
+/** The wait before the first attempt to come back; it doubles after each attempt that fails. */
+export const RECONNECT_FIRST_DELAY = Duration.seconds(1);
+/** The longest wait between two attempts to come back. */
+export const RECONNECT_MAX_DELAY = Duration.seconds(30);
+
 export interface ParticipantRuntimeOptions {
   /** Where the hub is, for example `http://192.168.0.10:3000`. */
   readonly hubUrl: string;
+  /**
+   * Called with each lifecycle event, in order, from the join on. The runtime
+   * waits for it, so keep it quick.
+   */
+  readonly onLifecycle?:
+    | ((event: ParticipantLifecycleEvent) => Effect.Effect<void>)
+    | undefined;
   /** The stable id of this participant. Reuse it to come back as the same one. */
   readonly participantId: string;
   /** The room password, when the room has one. */
   readonly password?: string | undefined;
   readonly profile: ParticipantProfile;
+  /**
+   * Whether the runtime comes back by itself when its tunnel drops. Default
+   * `true`. With `false` it ends on the first drop.
+   */
+  readonly reconnect?: boolean | undefined;
   readonly roomCode: string;
   /**
    * How long to wait for the hub to accept the tunnel, from the dial to its
@@ -159,6 +237,8 @@ export const register = Effect.fn("ParticipantRuntime.register")(function* (
 export interface OpenTunnel {
   /** Completes when the tunnel drops, for any reason. */
   readonly dropped: Effect.Effect<void>;
+  /** The Gambi version of the hub, as it said in its `Welcome`. */
+  readonly hubVersion: string;
 }
 
 /**
@@ -177,7 +257,7 @@ export const openTunnel = Effect.fn("ParticipantRuntime.openTunnel")(function* (
   TunnelOpenFailed,
   Socket.WebSocketConstructor | TunnelHandlers | Scope.Scope
 > {
-  const welcomed = yield* Deferred.make<void>();
+  const welcomed = yield* Deferred.make<{ readonly hubVersion: string }>();
   const ended = yield* Deferred.make<Exit.Exit<unknown, unknown>>();
   const dialed = yield* Socket.makeWebSocket(
     tunnelUrl(options.hubUrl, options.roomCode, options.participantId, token)
@@ -198,8 +278,8 @@ export const openTunnel = Effect.fn("ParticipantRuntime.openTunnel")(function* (
         ),
     })
   );
-  const WelcomeHandler = TunnelRpcs.toLayerHandler("Welcome", () =>
-    Effect.asVoid(Deferred.succeed(welcomed, undefined))
+  const WelcomeHandler = TunnelRpcs.toLayerHandler("Welcome", (welcome) =>
+    Effect.asVoid(Deferred.succeed(welcomed, welcome))
   );
 
   yield* Layer.build(
@@ -218,7 +298,7 @@ export const openTunnel = Effect.fn("ParticipantRuntime.openTunnel")(function* (
       participantId: options.participantId,
       cause,
     });
-  yield* Effect.raceFirst(
+  const welcome = yield* Effect.raceFirst(
     Deferred.await(welcomed),
     Deferred.await(ended).pipe(
       Effect.flatMap((exit) => Effect.fail(failed(exit)))
@@ -236,22 +316,66 @@ export const openTunnel = Effect.fn("ParticipantRuntime.openTunnel")(function* (
       participantId: options.participantId,
     })
   );
-  return { dropped: Effect.asVoid(Deferred.await(ended)) };
+  return {
+    dropped: Effect.asVoid(Deferred.await(ended)),
+    hubVersion: welcome.hubVersion,
+  };
 });
+
+/** Whether trying again can help: the hub's refusals are final, the rest is not. */
+const reasonToRetry = (
+  error: RegistrationError | TunnelOpenFailed
+): ReconnectReason | undefined => {
+  switch (error._tag) {
+    case "HubUnreachable":
+      return "hubUnreachable";
+    case "TunnelOpenFailed":
+      return "tunnelOpenFailed";
+    case "InternalError":
+      return "hubError";
+    default:
+      return;
+  }
+};
+
+// 1 s, 2 s, 4 s... up to 30 s.
+const reconnectBackoff = Schedule.min([
+  Schedule.exponential(RECONNECT_FIRST_DELAY),
+  Schedule.spaced(RECONNECT_MAX_DELAY),
+]);
 
 export class ParticipantRuntime extends Context.Service<
   ParticipantRuntime,
   {
-    /** The participant as the hub registered it. */
+    /**
+     * Completes when the runtime has ended and tries no more: with the hub's
+     * refusal as its error when the hub refused it on its way back, and
+     * without one when it was stopped or, with `reconnect: false`, when its
+     * tunnel dropped.
+     */
+    readonly ended: Effect.Effect<void, RegistrationError | TunnelOpenFailed>;
+    /** The participant as the hub registered it when it joined. */
     readonly participant: ParticipantSummary;
-    /** Completes when the tunnel drops. The runtime does not redial. */
+    /**
+     * Completes when the tunnel that is open now drops; at once when none is
+     * open. The runtime dials again unless it was started with
+     * `reconnect: false`.
+     */
     readonly tunnelDropped: Effect.Effect<void>;
   }
 >()("gambi/core/ParticipantRuntime") {
   /**
    * A participant in a room: registered, with its tunnel open, serving the
    * tunnel calls with the handlers of the environment. Building the layer
-   * returns when the participant is `online`; releasing it closes the tunnel.
+   * returns when the participant is `online`, and fails when the join fails;
+   * releasing it closes the tunnel and stops any attempt to come back.
+   *
+   * After the join, a tunnel that drops is opened again, waiting longer after
+   * each attempt that fails (`RECONNECT_FIRST_DELAY`, doubling up to
+   * `RECONNECT_MAX_DELAY`). Each attempt registers again, because a bootstrap
+   * token opens one tunnel, and keeps the `participantId`. A refusal of the
+   * hub (another version, a room that is gone, a wrong password) ends the
+   * runtime instead: see `ended`.
    *
    * The environment provides the platform (`HttpClient`, a
    * `Socket.WebSocketConstructor`) and the handlers (`TunnelHandlers`).
@@ -266,11 +390,116 @@ export class ParticipantRuntime extends Context.Service<
     Layer.effect(
       ParticipantRuntime,
       Effect.gen(function* () {
-        const registered = yield* register(options);
-        const tunnel = yield* openTunnel(options, registered.tunnel.token);
+        type Failure = RegistrationError | TunnelOpenFailed;
+        const joined = yield* Deferred.make<ParticipantSummary, Failure>();
+        const ended = yield* Deferred.make<void, Failure>();
+        const identity = {
+          roomCode: options.roomCode,
+          participantId: options.participantId,
+        };
+        const tell = (event: ParticipantLifecycleEvent) =>
+          options.onLifecycle?.(event) ?? Effect.void;
+        let tunnelDropped: Effect.Effect<void> = Effect.void;
+
+        // One registration and one tunnel. It fails when the tunnel does not
+        // open, and returns when a tunnel that did open drops.
+        const connection = (attempt: number) =>
+          Effect.gen(function* () {
+            const registered = yield* register(options);
+            const tunnel = yield* openTunnel(options, registered.tunnel.token);
+            tunnelDropped = tunnel.dropped;
+            yield* Deferred.succeed(joined, registered.participant);
+            yield* tell({
+              type: "connected",
+              ...identity,
+              attempt,
+              hubVersion: tunnel.hubVersion,
+            });
+            yield* tunnel.dropped;
+            return "tunnelDropped" as ReconnectReason;
+          }).pipe(Effect.scoped);
+
+        // After a drop: tries until a tunnel opens, waiting longer after each
+        // attempt that fails, and returns when that tunnel drops in its turn.
+        // It fails with what no further attempt can fix.
+        const comeBack = Effect.fnUntraced(function* (
+          dropped: ReconnectReason
+        ) {
+          const nextDelay = yield* Schedule.toStep(reconnectBackoff);
+          let reason = dropped;
+          for (let attempt = 1; ; attempt++) {
+            const [, delay] = yield* Effect.orDie(
+              nextDelay(yield* Clock.currentTimeMillis, undefined)
+            );
+            yield* tell({
+              type: "reconnecting",
+              ...identity,
+              attempt,
+              delayMillis: Duration.toMillis(delay),
+              reason,
+            });
+            yield* Effect.sleep(delay);
+            const outcome = yield* Effect.result(connection(attempt));
+            if (Result.isSuccess(outcome)) {
+              return outcome.success;
+            }
+            const retry = reasonToRetry(outcome.failure);
+            if (retry === undefined) {
+              return yield* Effect.fail(outcome.failure);
+            }
+            reason = retry;
+          }
+        });
+
+        // A join that fails is not retried: the host hears it at once.
+        const run = Effect.gen(function* () {
+          let dropped = yield* connection(0);
+          while (options.reconnect !== false) {
+            dropped = yield* comeBack(dropped);
+          }
+        });
+
+        // How the runtime ended, told to whoever waits for it: the build of
+        // the layer when it never joined, the host afterwards.
+        const conclude = (exit: Exit.Exit<void, Failure>) =>
+          Effect.gen(function* () {
+            if (Exit.isFailure(exit) && !(yield* Deferred.isDone(joined))) {
+              yield* Deferred.failCause(joined, exit.cause);
+              return yield* Deferred.done(ended, exit);
+            }
+            if (Exit.isSuccess(exit)) {
+              yield* tell({
+                type: "left",
+                ...identity,
+                reason: "tunnelDropped",
+              });
+            } else if (Cause.hasInterruptsOnly(exit.cause)) {
+              yield* tell({ type: "left", ...identity, reason: "stopped" });
+              return yield* Deferred.succeed(ended, undefined);
+            } else {
+              const error = Cause.findErrorOption(exit.cause);
+              if (Option.isSome(error)) {
+                yield* tell({
+                  type: "left",
+                  ...identity,
+                  reason: "refused",
+                  error: {
+                    name: error.value._tag,
+                    message: error.value.message,
+                  },
+                });
+              }
+            }
+            yield* Deferred.done(ended, exit);
+          });
+
+        yield* run.pipe(Effect.onExit(conclude), Effect.forkScoped);
+
+        const participant = yield* Deferred.await(joined);
         return ParticipantRuntime.of({
-          participant: registered.participant,
-          tunnelDropped: tunnel.dropped,
+          ended: Deferred.await(ended),
+          participant,
+          tunnelDropped: Effect.suspend(() => tunnelDropped),
         });
       })
     );
