@@ -764,3 +764,15 @@ it.live(
       ]);
     })
 );
+
+it.effect("a test that does not script the subprocess starts none", () =>
+  Effect.gen(function* () {
+    const result = yield* runCommand(["self", "update", "--manager", "npm"]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain(
+      "The command spawned `npm install -g gambi@latest`, and the test did not say what it does."
+    );
+  })
+);
