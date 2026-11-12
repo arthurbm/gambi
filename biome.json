@@ -81,7 +81,9 @@
     {
       "includes": [
         "packages/core/src/hub/**/*.ts",
-        "!packages/core/src/hub/**/*.test.ts"
+        "!packages/core/src/hub/**/*.test.ts",
+        "packages/core/src/participant/**/*.ts",
+        "!packages/core/src/participant/**/*.test.ts"
       ],
       "linter": {
         "rules": {
@@ -90,7 +92,7 @@
               "level": "error",
               "options": {
                 "deniedGlobals": {
-                  "Bun": "The new hub uses no Bun.* API (ADR-0007). Take the capability as an Effect service; the entrypoint provides the @effect/platform-bun layer."
+                  "Bun": "The new hub and the new participant runtime use no Bun.* API (ADR-0007). Take the capability as an Effect service; the entrypoint provides the @effect/platform-bun layer."
                 }
               }
             },
@@ -105,7 +107,7 @@
                       "@effect/platform-*",
                       "@effect/platform-*/**"
                     ],
-                    "message": "The new hub depends on the abstract services of `effect` (ADR-0007). Only an entrypoint imports @effect/platform-bun."
+                    "message": "The new hub and the new participant runtime depend on the abstract services of `effect` (ADR-0007). Only an entrypoint imports @effect/platform-bun."
                   }
                 ]
               }

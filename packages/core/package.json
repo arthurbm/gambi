@@ -22,7 +22,12 @@
     "./hub/hub": "./src/hub/hub.ts",
     "./hub/mdns": "./src/hub/mdns.ts",
     "./hub/rooms": "./src/hub/rooms.ts",
-    "./testing/hub": "./src/testing/hub.ts"
+    "./hub/participants": "./src/hub/participants.ts",
+    "./hub/tunnels": "./src/hub/tunnels.ts",
+    "./participant/runtime": "./src/participant/runtime.ts",
+    "./participant/diagnostics": "./src/participant/diagnostics.ts",
+    "./testing/hub": "./src/testing/hub.ts",
+    "./testing/participant": "./src/testing/participant.ts"
   },
   "scripts": {
     "check-types": "tsc --noEmit"

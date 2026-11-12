@@ -34,6 +34,14 @@ export const RuntimeConfigPublic = Schema.Struct({
 });
 export type RuntimeConfigPublic = typeof RuntimeConfigPublic.Type;
 
+/** Redacts a `RuntimeConfig` for display: the instructions text never leaves the hub. */
+export const toRuntimeConfigPublic = (
+  config: RuntimeConfig
+): RuntimeConfigPublic => {
+  const { instructions, ...generation } = config;
+  return { ...generation, hasInstructions: instructions !== undefined };
+};
+
 /** The short code that identifies a room: six characters of `0-9A-Z`. */
 export const RoomCode = Schema.String;
 export type RoomCode = typeof RoomCode.Type;
