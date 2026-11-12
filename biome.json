@@ -43,6 +43,118 @@
   },
   "overrides": [
     {
+      "includes": ["packages/protocol/**/*.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "Bun": "@gambi/protocol has no platform dependency (ADR-0007). Take the capability as an Effect service and provide it in the entrypoint.",
+                  "process": "@gambi/protocol has no platform dependency (ADR-0007). Take the capability as an Effect service and provide it in the entrypoint."
+                }
+              }
+            },
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "bun",
+                      "bun:*",
+                      "node:*",
+                      "node:*/**",
+                      "@effect/platform-*",
+                      "@effect/platform-*/**"
+                    ],
+                    "message": "@gambi/protocol has no platform dependency (ADR-0007). Import only from `effect`."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "packages/core/src/hub/**/*.ts",
+        "!packages/core/src/hub/**/*.test.ts",
+        "packages/core/src/participant/**/*.ts",
+        "!packages/core/src/participant/**/*.test.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "Bun": "The new hub and the new participant runtime use no Bun.* API (ADR-0007). Take the capability as an Effect service; the entrypoint provides the @effect/platform-bun layer."
+                }
+              }
+            },
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "bun",
+                      "bun:*",
+                      "@effect/platform-*",
+                      "@effect/platform-*/**"
+                    ],
+                    "message": "The new hub and the new participant runtime depend on the abstract services of `effect` (ADR-0007). Only an entrypoint imports @effect/platform-bun."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "packages/cli/src/cli/**/*.ts",
+        "!packages/cli/src/cli/main.ts",
+        "!packages/cli/src/cli/testing.ts",
+        "!packages/cli/src/cli/**/*.test.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "Bun": "The commands of the CLI use no Bun.* API (ADR-0007). Take the capability as an Effect service; main.ts provides the @effect/platform-bun layer."
+                }
+              }
+            },
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "bun",
+                      "bun:*",
+                      "@effect/platform-*",
+                      "@effect/platform-*/**"
+                    ],
+                    "message": "The commands of the CLI depend on the abstract services of `effect` (ADR-0007). Only main.ts imports @effect/platform-bun."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "includes": ["**/*.astro"],
       "linter": {
         "rules": {

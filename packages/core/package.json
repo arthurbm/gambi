@@ -18,18 +18,31 @@
     "./discovery": "./src/discovery.ts",
     "./mdns": "./src/mdns.ts",
     "./hub": "./src/hub.ts",
-    "./logo": "./src/logo.ts"
+    "./logo": "./src/logo.ts",
+    "./hub/hub": "./src/hub/hub.ts",
+    "./hub/mdns": "./src/hub/mdns.ts",
+    "./hub/rooms": "./src/hub/rooms.ts",
+    "./hub/participants": "./src/hub/participants.ts",
+    "./hub/tunnels": "./src/hub/tunnels.ts",
+    "./participant/runtime": "./src/participant/runtime.ts",
+    "./participant/diagnostics": "./src/participant/diagnostics.ts",
+    "./testing/hub": "./src/testing/hub.ts",
+    "./testing/participant": "./src/testing/participant.ts"
   },
   "scripts": {
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "1.4.0",
+    "@gambi/protocol": "workspace:*",
     "bonjour-service": "^1.3.0",
+    "effect": "4.1.4",
     "nanoid": "^5.1.5",
     "zod": "^4.1.13"
   },
   "devDependencies": {
+    "@effect/platform-bun": "4.1.4",
+    "@gambi/testing": "workspace:*",
     "@types/bun": "latest",
     "openai": "^6.15.0"
   },
