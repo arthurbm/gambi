@@ -8,6 +8,7 @@
  * |---|---|
  * | the Responses request as a Chat Completions request | `toChatCompletionsRequest` |
  * | a chat completion as a Response | `toResponse` |
+ * | a streamed chat completion as the events of a streamed Response | `toResponseEvents` |
  *
  * A Response built here exists nowhere but in the answer: no provider stores
  * it, so it cannot be read back, deleted or cancelled later.
@@ -16,6 +17,7 @@
  * it is `infer` in `inference.ts`.
  */
 import { Option, Predicate, Schema } from "effect";
+import { Sse } from "effect/encoding";
 import type { RequestBody } from "./inference-request.ts";
 
 /** What every Response of one translated request has in common. */
@@ -248,3 +250,154 @@ export const toResponse = (
       })
     );
   });
+
+/** What the translation reads of one chunk of a streamed chat completion. */
+const ChatChunk = Schema.fromJsonString(
+  Schema.Struct({
+    choices: Schema.optionalKey(
+      Schema.NullOr(
+        Schema.Array(
+          Schema.Struct({
+            finish_reason: Text,
+            delta: Schema.optionalKey(Schema.NullOr(ChatAnswer)),
+          })
+        )
+      )
+    ),
+    usage: Schema.optionalKey(Schema.NullOr(ChatUsage)),
+  })
+);
+const readChatChunk = Schema.decodeUnknownOption(ChatChunk);
+
+/** The last line of the stream, as Chat Completions ends its own. */
+const DONE = Sse.encoder.write({
+  _tag: "Event",
+  event: "message",
+  id: undefined,
+  data: "[DONE]",
+});
+
+/**
+ * A streamed chat completion, rewritten piece by piece as the events of a
+ * streamed Response. Each function answers the text of zero or more whole
+ * events.
+ */
+export interface ResponseEvents {
+  /**
+   * The events that close the Response: each output item, done, and
+   * `response.completed` with the whole Response. Call it when the
+   * provider's stream ended well.
+   */
+  readonly end: () => string;
+  /**
+   * The events for one more piece of the provider's body. A piece may hold
+   * several chunks, or part of one: what is unfinished waits for the next.
+   */
+  readonly piece: (text: string) => string;
+  /** `response.created`, which opens the stream before the provider said anything. */
+  readonly start: string;
+}
+
+/**
+ * Starts the translation of one streamed chat completion.
+ *
+ * The events, in order: `response.created`; when the text starts,
+ * `response.output_item.added` and then one `response.output_text.delta` per
+ * piece of text; at the end, `response.output_item.done`,
+ * `response.completed` and `[DONE]`. Every event carries its `type` and a
+ * `sequence_number` that counts from zero.
+ *
+ * The provider's stream is read with the SSE parser of `effect`.
+ */
+export const toResponseEvents = (translation: Translation): ResponseEvents => {
+  let sequenceNumber = 0;
+  let written: string[] = [];
+  const write = (type: string, fields: object) => {
+    written.push(
+      Sse.encoder.write({
+        _tag: "Event",
+        event: type,
+        id: undefined,
+        data: JSON.stringify({
+          type,
+          sequence_number: sequenceNumber,
+          ...fields,
+        }),
+      })
+    );
+    sequenceNumber += 1;
+  };
+  const takeWritten = () => {
+    const text = written.join("");
+    written = [];
+    return text;
+  };
+
+  let text = "";
+  let finishReason: string | null | undefined;
+  let usage: ChatUsage | null | undefined;
+  const message = messageItem(translation, "");
+
+  const parser = Sse.makeParser((event) => {
+    const chunk =
+      event._tag === "Event"
+        ? Option.getOrUndefined(readChatChunk(event.data))
+        : undefined;
+    // `[DONE]` is not a chunk, and neither is anything else that is not JSON.
+    if (chunk === undefined) {
+      return;
+    }
+    usage = chunk.usage ?? usage;
+    const [choice] = chunk.choices ?? [];
+    finishReason = choice?.finish_reason ?? finishReason;
+    const delta = textOf(choice?.delta?.content);
+    if (delta === "") {
+      return;
+    }
+    if (text === "") {
+      write("response.output_item.added", {
+        output_index: 0,
+        item: { ...message, status: "in_progress", content: [] },
+      });
+    }
+    text += delta;
+    write("response.output_text.delta", {
+      output_index: 0,
+      item_id: message.id,
+      content_index: 0,
+      delta,
+    });
+  });
+
+  write("response.created", {
+    response: responseObject(translation, {
+      status: "in_progress",
+      output: [],
+      outputText: "",
+    }),
+  });
+  return {
+    start: takeWritten(),
+    piece: (piece) => {
+      parser.feed(piece);
+      return takeWritten();
+    },
+    end: () => {
+      const output = text === "" ? [] : [messageItem(translation, text)];
+      for (const [index, item] of output.entries()) {
+        write("response.output_item.done", { output_index: index, item });
+      }
+      write("response.completed", {
+        response: responseObject(translation, {
+          status: "completed",
+          finishReason,
+          output,
+          outputText: text,
+          usage,
+        }),
+      });
+      written.push(DONE);
+      return takeWritten();
+    },
+  };
+};

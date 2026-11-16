@@ -101,6 +101,7 @@ import {
   type Translation,
   toChatCompletionsRequest,
   toResponse,
+  toResponseEvents,
 } from "./responses-translation.ts";
 import { Rooms } from "./rooms.ts";
 import { HubSettings } from "./settings.ts";
@@ -609,6 +610,11 @@ const createResponse = Effect.fnUntraced(function* (
     operation: "chatCompletions.create",
     body: JSON.stringify(toChatCompletionsRequest(body)),
   });
+  if (answer.status < 200 || answer.status >= 300) {
+    // The provider refused the request. Its answer says why, in a format
+    // the two APIs share, so the app gets it as it is.
+    return yield* respond(call, answer, { ...untouched, report });
+  }
   const translation: Translation = {
     responseId: `resp_${(yield* random.uuidV4()).replaceAll("-", "")}`,
     createdAt: Math.floor((yield* Clock.currentTimeMillis) / 1000),
@@ -622,13 +628,21 @@ const createResponse = Effect.fnUntraced(function* (
     translated: true,
   });
   return yield* respond(call, answer, {
-    ...untouched,
     report,
     document: (text) =>
       Option.match(toResponse(translation, text), {
         onNone: () => Effect.succeed(text),
         onSome: (response) => Effect.as(remember, response),
       }),
+    stream: Effect.map(remember, (): StreamForm => {
+      const events = toResponseEvents(translation);
+      return {
+        start: events.start,
+        piece: (text) => Effect.sync(() => events.piece(text)),
+        end: Effect.sync(events.end),
+        errorEvent: toOpenAiStreamError,
+      };
+    }),
   });
 });
 
