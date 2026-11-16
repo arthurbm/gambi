@@ -356,6 +356,9 @@ export class Tunnels extends Context.Service<
                 roomCode,
                 participantId,
                 hubVersion: settings.version,
+                pingIntervalMillis: Duration.toMillis(
+                  settings.tunnelPingInterval
+                ),
               })
               .pipe(Effect.ignore, Effect.forkIn(socketScope));
             yield* Deferred.await(dropped);
