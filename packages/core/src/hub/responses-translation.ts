@@ -336,6 +336,8 @@ const ChatChunk = Schema.fromJsonString(
       )
     ),
     usage: Schema.optionalKey(Schema.NullOr(ChatUsage)),
+    /** A provider that fails after it started to stream says so in a chunk. */
+    error: Schema.optionalKey(Schema.Unknown),
   })
 );
 const readChatChunk = Schema.decodeUnknownOption(ChatChunk);
@@ -495,8 +497,8 @@ const DONE = Sse.encoder.write({
 export interface ResponseEvents {
   /**
    * The events that close the Response: each output item, done, and
-   * `response.completed` with the whole Response. Call it when the
-   * provider's stream ended well.
+   * `response.completed` with the whole Response; or the provider's error,
+   * when it reported one. Call it when the provider's stream ended.
    */
   readonly end: () => string;
   /** The `sequence_number` the next event of the stream takes. */
@@ -520,6 +522,9 @@ export interface ResponseEvents {
  * `response.output_item.done` for each item, `response.completed` and
  * `[DONE]`. Every event carries its `type` and a `sequence_number` that
  * counts from zero.
+ *
+ * A provider that reports an error inside its stream ends this one with an
+ * `error` event instead of the closing events.
  *
  * The provider's stream is read with the SSE parser of `effect`.
  */
@@ -558,6 +563,8 @@ export const toResponseEvents = (translation: Translation): ResponseEvents => {
   const toolCallsAt = new Map<number, number>();
   let finishReason: string | null | undefined;
   let usage: ChatUsage | null | undefined;
+  /** The error the provider reported inside its stream, if it did. */
+  let failure: unknown;
 
   const start = (item: (typeof output)[number]["item"]) => {
     write("response.output_item.added", {
@@ -612,6 +619,7 @@ export const toResponseEvents = (translation: Translation): ResponseEvents => {
       return;
     }
     usage = chunk.usage ?? usage;
+    failure = chunk.error ?? failure;
     const [choice] = chunk.choices ?? [];
     finishReason = choice?.finish_reason ?? finishReason;
     const delta = textOf(choice?.delta?.content);
@@ -640,6 +648,20 @@ export const toResponseEvents = (translation: Translation): ResponseEvents => {
       return takeWritten();
     },
     end: () => {
+      if (failure != null) {
+        // The Response did not complete. The stream ends with the provider's
+        // error, in the two shapes of `toOpenAiStreamError`.
+        const message = fieldOf(failure, "message");
+        write("error", {
+          code: fieldOf(failure, "code") ?? null,
+          message: Predicate.isString(message)
+            ? message
+            : "The provider reported an error.",
+          param: fieldOf(failure, "param") ?? null,
+          error: failure,
+        });
+        return takeWritten();
+      }
       const items = output.map(({ item }) => item);
       for (const [index, item] of items.entries()) {
         write("response.output_item.done", { output_index: index, item });

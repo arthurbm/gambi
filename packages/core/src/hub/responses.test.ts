@@ -1,7 +1,7 @@
 import { expect } from "bun:test";
 import { layer } from "@gambi/testing/effect";
 import { Effect, Fiber } from "effect";
-import { layerHub, managementClient } from "../testing/hub.ts";
+import { layerHub, managementClient, watchRoom } from "../testing/hub.ts";
 import { joinParticipant } from "../testing/participant.ts";
 import {
   FAKE_COMPLETION_TEXT,
@@ -361,6 +361,89 @@ layer(layerHub(), { excludeTestServices: true })("Responses API", (it) => {
         yield* generating.end;
         yield* Effect.promise(async () => await reader?.read());
         expect(yield* statusOfArthur).toBe("online");
+      })
+  );
+
+  it.effect(
+    "an operation on a stored Response is no request of the room: it changes no status and the room hears nothing",
+    () =>
+      Effect.gen(function* () {
+        const { room, id } = yield* makeStoredResponse("Afoxé");
+        const watch = yield* watchRoom(room.code);
+
+        yield* call("GET", room.url(`/responses/${id}`));
+        yield* call("GET", room.url(`/responses/${id}/input_items`));
+        yield* call("POST", room.url(`/responses/${id}/cancel`));
+        yield* call("DELETE", room.url(`/responses/${id}`));
+        // The next thing the room hears is whatever happens after them.
+        yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "depois-1",
+        });
+
+        expect((yield* watch.next).type).toBe("participant.joined");
+      })
+  );
+
+  it.effect(
+    "a stored Response read as a stream arrives as the provider streams it",
+    () =>
+      Effect.gen(function* () {
+        const { room, provider, id } = yield* makeStoredResponse("Jongo");
+
+        const response = yield* call(
+          "GET",
+          room.url(`/responses/${id}?stream=true`)
+        );
+        const body = yield* Effect.promise(() => response.text());
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toBe("text/event-stream");
+        expect(
+          body
+            .split("\n")
+            .filter((line) => line.startsWith("event: "))
+            .map((line) => line.slice("event: ".length))
+        ).toEqual([
+          "response.created",
+          "response.output_text.delta",
+          "response.output_text.delta",
+          "response.completed",
+        ]);
+        expect((yield* provider.nextCall).path).toBe(
+          `/v1/responses/${id}?stream=true`
+        );
+      })
+  );
+
+  it.effect(
+    "a web app may ask the browser's permission to delete a Response",
+    () =>
+      Effect.gen(function* () {
+        const room = yield* makeRoom("Samba de coco");
+
+        const preflight = yield* Effect.promise(() =>
+          fetch(room.url("/responses/resp_1"), {
+            method: "OPTIONS",
+            headers: {
+              Origin: "http://localhost:5173",
+              "Access-Control-Request-Method": "DELETE",
+            },
+          })
+        );
+        const refused = yield* Effect.promise(() =>
+          fetch(room.url("/responses/resp_1"), {
+            method: "DELETE",
+            headers: { Origin: "http://localhost:5173" },
+          })
+        );
+
+        expect(preflight.status).toBe(204);
+        expect(preflight.headers.get("access-control-allow-origin")).toBe("*");
+        expect(preflight.headers.get("access-control-allow-methods")).toContain(
+          "DELETE"
+        );
+        expect(refused.headers.get("access-control-allow-origin")).toBe("*");
       })
   );
 });

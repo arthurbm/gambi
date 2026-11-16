@@ -719,66 +719,62 @@ layer(layerHub(), { excludeTestServices: true })(
         })
     );
 
-    it.effect(
-      "a provider that speaks neither API is a named 501",
-      () =>
-        Effect.gen(function* () {
-          const room = yield* makeRoom("Cavalo-marinho");
-          const provider = yield* fakeProvider({ answer: chatCompletionsOnly });
-          yield* joinParticipant({
-            roomCode: room.code,
-            participantId: "mudo-1",
-            profile: {
-              capabilities: {
-                openResponses: "unsupported",
-                chatCompletions: "unsupported",
-              },
+    it.effect("a provider that speaks neither API is a named 501", () =>
+      Effect.gen(function* () {
+        const room = yield* makeRoom("Cavalo-marinho");
+        const provider = yield* fakeProvider({ answer: chatCompletionsOnly });
+        yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "mudo-1",
+          profile: {
+            capabilities: {
+              openResponses: "unsupported",
+              chatCompletions: "unsupported",
             },
-            provider: { endpoint: provider.url },
-          });
-          // This one may speak Responses, as far as the hub knows. It does not.
-          yield* joinParticipant({
-            roomCode: room.code,
-            participantId: "talvez-1",
-            profile: {
-              capabilities: {
-                openResponses: "unknown",
-                chatCompletions: "unsupported",
-              },
+          },
+          provider: { endpoint: provider.url },
+        });
+        // This one may speak Responses, as far as the hub knows. It does not.
+        yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "talvez-1",
+          profile: {
+            capabilities: {
+              openResponses: "unknown",
+              chatCompletions: "unsupported",
             },
-            provider: { endpoint: provider.url },
-          });
+          },
+          provider: { endpoint: provider.url },
+        });
 
-          const mute = yield* post(room.url("/responses"), {
-            model: "mudo-1",
-            input: "Oi",
-          });
-          const maybe = yield* post(room.url("/responses"), {
-            model: "talvez-1",
-            input: "Oi",
-          });
+        const mute = yield* post(room.url("/responses"), {
+          model: "mudo-1",
+          input: "Oi",
+        });
+        const maybe = yield* post(room.url("/responses"), {
+          model: "talvez-1",
+          input: "Oi",
+        });
 
-          expect(mute.status).toBe(501);
-          expect(yield* json(mute)).toEqual({
-            error: {
-              message:
-                "The provider of participant 'mudo-1' speaks neither the Responses API nor Chat Completions.",
-              type: "api_error",
-              param: null,
-              code: "responses_not_supported",
-            },
-          });
-          expect(maybe.status).toBe(501);
-          expect((yield* json(maybe)).error.code).toBe(
-            "responses_not_supported"
-          );
-          // Only the second participant's provider was asked, and once.
-          expect(
-            (yield* provider.calls).map((call) => `${call.method} ${call.path}`)
-          ).toEqual(["POST /v1/responses"]);
-          expect(yield* room.statusOf("mudo-1")).toBe("online");
-          expect(yield* room.statusOf("talvez-1")).toBe("online");
-        })
+        expect(mute.status).toBe(501);
+        expect(yield* json(mute)).toEqual({
+          error: {
+            message:
+              "The provider of participant 'mudo-1' speaks neither the Responses API nor Chat Completions.",
+            type: "api_error",
+            param: null,
+            code: "responses_not_supported",
+          },
+        });
+        expect(maybe.status).toBe(501);
+        expect((yield* json(maybe)).error.code).toBe("responses_not_supported");
+        // Only the second participant's provider was asked, and once.
+        expect(
+          (yield* provider.calls).map((call) => `${call.method} ${call.path}`)
+        ).toEqual(["POST /v1/responses"]);
+        expect(yield* room.statusOf("mudo-1")).toBe("online");
+        expect(yield* room.statusOf("talvez-1")).toBe("online");
+      })
     );
 
     it.effect(
@@ -909,6 +905,55 @@ layer(layerHub(), { excludeTestServices: true })(
             protocol: "openResponses",
             status: 200,
             metrics: { inputTokens: 3, outputTokens: 4, totalTokens: 7 },
+          });
+        })
+    );
+
+    it.effect(
+      "a provider that reports an error inside its stream ends the translated stream with that error, not with a completed Response",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* makeRoom("Pastoril");
+          const failure = {
+            message: "The model ran out of memory.",
+            type: "server_error",
+            param: null,
+            code: "out_of_memory",
+          };
+          const provider = yield* fakeProvider({
+            answer: () =>
+              sseAnswer([
+                chatChunk({ content: "Olá" }),
+                sseEvent({ error: failure }),
+              ]),
+          });
+          yield* joinParticipant({
+            roomCode: room.code,
+            participantId: "arthur-1",
+            profile: { capabilities: chatOnly },
+            provider: { endpoint: provider.url },
+          });
+
+          const response = yield* post(room.url("/responses"), {
+            model: "arthur-1",
+            input: "Oi",
+            stream: true,
+          });
+          const events = eventsOf(yield* Effect.promise(() => response.text()));
+
+          expect(events.map((event) => event.event)).toEqual([
+            "response.created",
+            "response.output_item.added",
+            "response.output_text.delta",
+            "error",
+          ]);
+          expect(events.at(-1)?.data).toEqual({
+            type: "error",
+            sequence_number: 3,
+            code: "out_of_memory",
+            message: "The model ran out of memory.",
+            param: null,
+            error: failure,
           });
         })
     );
