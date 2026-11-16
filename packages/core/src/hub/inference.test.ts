@@ -1,7 +1,12 @@
 import { expect } from "bun:test";
-import type { ParticipantStatus } from "@gambi/protocol";
+import {
+  type InferenceChunk,
+  type ParticipantStatus,
+  ProviderResponseInterrupted,
+  TunnelRpcs,
+} from "@gambi/protocol";
 import { layer } from "@gambi/testing/effect";
-import { Effect } from "effect";
+import { Effect, Fiber, Stream } from "effect";
 import { layerHub, managementClient } from "../testing/hub.ts";
 import { joinParticipant } from "../testing/participant.ts";
 import {
@@ -66,6 +71,9 @@ const json = (response: Response): Effect.Effect<any> =>
   Effect.promise(() => response.json());
 
 const messages = [{ role: "user", content: "Oi" }];
+
+/** The answer of a provider that never answers. */
+const stillThinking = new Promise<Response>(() => undefined);
 
 /** The reader of a response body, as far as these tests use it. */
 interface BodyReader {
@@ -893,6 +901,192 @@ layer(layerHub(), { excludeTestServices: true })("inference plane", (it) => {
         for (const response of [completion, refused, models]) {
           expect(response.headers.get("access-control-allow-origin")).toBe("*");
         }
+      })
+  );
+
+  it.effect(
+    "cancelling a request that has no answer yet aborts the request to the provider and frees the participant",
+    () =>
+      Effect.gen(function* () {
+        const room = yield* makeRoom("Bumba meu boi");
+        const provider = yield* fakeProvider({ answer: () => stillThinking });
+        yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+          provider: { endpoint: provider.url },
+        });
+        const app = new AbortController();
+
+        const request = yield* Effect.forkChild(
+          Effect.tryPromise(() =>
+            fetch(room.url("/chat/completions"), {
+              method: "POST",
+              body: JSON.stringify({ model: "arthur-1", messages }),
+              signal: app.signal,
+            })
+          )
+        );
+        const call = yield* provider.nextCall;
+        expect(yield* room.statusOf("arthur-1")).toBe("busy");
+
+        app.abort();
+
+        yield* call.aborted;
+        yield* room.awaitStatus("arthur-1", "online");
+        yield* Fiber.await(request);
+      })
+  );
+
+  it.effect(
+    "a participant that dies in the middle of a stream ends it with a named error",
+    () =>
+      Effect.gen(function* () {
+        const tunnels = yield* Tunnels;
+        const room = yield* makeRoom("Nau catarineta");
+        const generating = yield* openStream();
+        const provider = yield* fakeProvider({
+          answer: () => generating.response,
+        });
+        const participant = yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+          provider: { endpoint: provider.url },
+        });
+        yield* generating.send(sseEvent({ delta: "Olá" }));
+        const response = yield* post(room.url("/chat/completions"), {
+          model: "arthur-1",
+          stream: true,
+          messages,
+        });
+        const reader = response.body?.getReader();
+        if (reader === undefined) {
+          return yield* Effect.die(new Error("The response has no body."));
+        }
+        const first = yield* Effect.promise(() => reader.read());
+
+        yield* participant.kill;
+        const rest = yield* readToEnd(reader);
+
+        expect(response.status).toBe(200);
+        expect(decoder.decode(first.value)).toBe(sseEvent({ delta: "Olá" }));
+        const message =
+          "Participant 'arthur-1' disconnected before the response ended.";
+        expect(rest).toBe(
+          `event: error\ndata: ${JSON.stringify({
+            type: "error",
+            code: "participant_disconnected",
+            message,
+            param: null,
+            error: {
+              message,
+              type: "api_error",
+              param: null,
+              code: "participant_disconnected",
+            },
+          })}\n\n`
+        );
+        yield* tunnels.awaitDrop(room.code, "arthur-1");
+        expect(yield* room.statusOf("arthur-1")).toBe("offline");
+      })
+  );
+
+  it.effect(
+    "a participant that dies before it answers is a named 502, also in the middle of a body that is not a stream",
+    () =>
+      Effect.gen(function* () {
+        const room = yield* makeRoom("Fandango");
+        const silent = yield* fakeProvider({ answer: () => stillThinking });
+        const halfway = yield* openStream("application/json");
+        const cut = yield* fakeProvider({ answer: () => halfway.response });
+        yield* halfway.send('{"id":"chatcmpl-fake","choices":[');
+        const dying = (participantId: string, endpoint: string) =>
+          Effect.gen(function* () {
+            const participant = yield* joinParticipant({
+              roomCode: room.code,
+              participantId,
+              provider: { endpoint },
+            });
+            const request = yield* Effect.forkChild(
+              post(room.url("/chat/completions"), {
+                model: participantId,
+                messages,
+              })
+            );
+            return { participant, request };
+          });
+
+        const unanswered = yield* dying("silent-1", silent.url);
+        yield* silent.nextCall;
+        yield* unanswered.participant.kill;
+        const halfAnswered = yield* dying("cut-1", cut.url);
+        yield* cut.nextCall;
+        yield* halfAnswered.participant.kill;
+
+        for (const { request } of [unanswered, halfAnswered]) {
+          const response = yield* Fiber.join(request);
+          expect(response.status).toBe(502);
+          expect((yield* json(response)).error.code).toBe(
+            "participant_disconnected"
+          );
+        }
+      })
+  );
+
+  it.effect(
+    "a stream that breaks in the middle of an event drops the half event, so the error that follows can be read",
+    () =>
+      Effect.gen(function* () {
+        const room = yield* makeRoom("Cavalo-marinho");
+        /** A participant whose provider answers with these pieces and then this end. */
+        const answering = (
+          participantId: string,
+          pieces: readonly string[],
+          end: Stream.Stream<never, ProviderResponseInterrupted>
+        ) =>
+          joinParticipant({
+            roomCode: room.code,
+            participantId,
+            handlers: TunnelRpcs.toLayerHandler("Infer", () =>
+              Stream.make<InferenceChunk[]>(
+                { _tag: "Head", status: 200, contentType: "text/event-stream" },
+                ...pieces.map((text) => ({ _tag: "Body" as const, text }))
+              ).pipe(Stream.concat(end))
+            ),
+          });
+        const bodyOf = (model: string) =>
+          post(room.url("/chat/completions"), {
+            model,
+            stream: true,
+            messages,
+          }).pipe(
+            Effect.flatMap((response) => Effect.promise(() => response.text()))
+          );
+        yield* answering(
+          "broken-1",
+          ['data: {"delta":"Olá"}\n\nda', 'ta: {"delta":"Rec'],
+          Stream.fail(new ProviderResponseInterrupted())
+        );
+        yield* answering(
+          "whole-1",
+          ['data: {"delta":"Olá"}\r\n\r\nda', 'ta: {"delta":"Recife"}'],
+          Stream.empty
+        );
+
+        const broken = yield* bodyOf("broken-1");
+        const whole = yield* bodyOf("whole-1");
+
+        expect(broken.split("\n\n").slice(0, -2)).toEqual([
+          'data: {"delta":"Olá"}',
+        ]);
+        expect(lastEvent(broken).event).toBe("error");
+        expect(lastEvent(broken).data.error.code).toBe(
+          "provider_response_interrupted"
+        );
+        // A stream that ends well is passed on to the last byte, even when
+        // the provider did not finish its last event with a blank line.
+        expect(whole).toBe(
+          'data: {"delta":"Olá"}\r\n\r\ndata: {"delta":"Recife"}'
+        );
       })
   );
 });
