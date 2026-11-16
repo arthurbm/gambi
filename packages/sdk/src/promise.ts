@@ -85,19 +85,29 @@ const stoppable = <A>(
     return open();
   };
 
+  const pull = async (): Promise<IteratorResult<A, undefined>> => {
+    if (finished || stops.some((stop) => stop.aborted)) {
+      return finish();
+    }
+    opening ??= start();
+    try {
+      const result = await (await opening).next();
+      return result.done === true ? await finish() : result;
+    } catch (error) {
+      await finish();
+      throw error;
+    }
+  };
+  // The inner iterator takes one pull at a time: two at once would each open
+  // the stream. A `next()` waits for the one before it; `finish` does not
+  // wait, so leaving or stopping still interrupts the pull in progress.
+  let previous: Promise<unknown> = Promise.resolve();
+
   return {
-    next: async () => {
-      if (finished || stops.some((stop) => stop.aborted)) {
-        return finish();
-      }
-      opening ??= start();
-      try {
-        const result = await (await opening).next();
-        return result.done === true ? await finish() : result;
-      } catch (error) {
-        await finish();
-        throw error;
-      }
+    next: () => {
+      const result = previous.then(pull, pull);
+      previous = result;
+      return result;
     },
     return: finish,
   };

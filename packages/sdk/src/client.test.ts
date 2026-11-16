@@ -381,6 +381,30 @@ layer(layerHub(), { excludeTestServices: true })(
         })
     );
 
+    it.effect("two reads asked for at once take two events, in order", () =>
+      Effect.gen(function* () {
+        const client = yield* hubClient;
+        const { room } = yield* Effect.promise(() =>
+          client.rooms.create({ name: "Afoxé" })
+        );
+        const watch = client.events.watch(room.code)[Symbol.asyncIterator]();
+
+        const first = watch.next();
+        const second = watch.next();
+        const snapshot = yield* Effect.promise(() => first);
+        yield* Effect.promise(() =>
+          client.participants.register(room.code, "lia-1", {
+            nickname: "Lia",
+            model: "llama3",
+          })
+        );
+        const joined = yield* Effect.promise(() => second);
+
+        expect(snapshot.value?.type).toBe("room.snapshot");
+        expect(joined.value?.type).toBe("participant.joined");
+      })
+    );
+
     it.effect("a watch carries each inference request of the room", () =>
       Effect.gen(function* () {
         const hub = yield* Hub;
