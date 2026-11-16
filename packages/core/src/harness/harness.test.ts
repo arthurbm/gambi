@@ -219,6 +219,39 @@ layer(BunServices.layer, { excludeTestServices: true })(
         })
     );
 
+    it.effect(
+      "two clients that open the same session at the same time get one session in the harness",
+      () =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const seen = yield* fs.makeTempFileScoped();
+          const { harness } = yield* start({
+            command: fixtureHarness("recording", seen),
+          });
+
+          yield* Effect.all(
+            [harness.openSession("squad-a"), harness.openSession("squad-a")],
+            { concurrency: "unbounded" }
+          );
+          yield* Effect.all(
+            [harness.closeSession("squad-a"), harness.closeSession("squad-a")],
+            { concurrency: "unbounded" }
+          );
+
+          const methods = (yield* fs.readFileString(seen))
+            .trim()
+            .split("\n")
+            .map((line) => JSON.parse(line).method);
+          // The session the runtime opened at start, then one more, closed once.
+          expect(methods).toEqual([
+            "initialize",
+            "session/new",
+            "session/new",
+            "session/close",
+          ]);
+        })
+    );
+
     it.effect("a session cannot leave the Workspace", () =>
       Effect.gen(function* () {
         const { harness, next, workspacePath } = yield* start();

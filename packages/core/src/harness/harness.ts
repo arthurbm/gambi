@@ -46,6 +46,7 @@ import {
   Queue,
   Random,
   Schema,
+  Semaphore,
   Stream,
 } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
@@ -400,6 +401,11 @@ export class Harness extends Context.Service<
           ) as Effect.Effect<Result["Type"], HarnessFailed>;
         });
 
+        // One session opens or closes at a time. Two clients that open the
+        // same id together would otherwise both find it closed and open two
+        // sessions in the harness, one of which nobody could close.
+        const oneAtATime = Semaphore.withPermit(yield* Semaphore.make(1));
+
         const openSession = Effect.fn("Harness.openSession")(function* (
           sessionId: string,
           cwd?: string
@@ -424,7 +430,7 @@ export class Harness extends Context.Service<
           yield* Effect.logInfo("harness session opened").pipe(
             Effect.annotateLogs({ sessionId })
           );
-        });
+        }, oneAtATime);
 
         const closeSession = Effect.fn("Harness.closeSession")(function* (
           sessionId: string
@@ -437,7 +443,7 @@ export class Harness extends Context.Service<
           innerOf.delete(sessionId);
           outerOf.delete(inner);
           yield* emit({ type: "harness.session", sessionId, status: "closed" });
-        });
+        }, oneAtATime);
 
         const send = Effect.fn("Harness.send")(function* (
           sessionId: string,
