@@ -36,6 +36,7 @@ import {
   HarnessSessionOutsideWorkspace,
 } from "@gambi/protocol";
 import {
+  Array as Arr,
   Context,
   Deferred,
   Duration,
@@ -160,6 +161,15 @@ export class Harness extends Context.Service<
      */
     readonly exited: Effect.Effect<HarnessFailed>;
     /**
+     * Waits while what was produced so far is on its way to the hub. It
+     * completes when the hub has read all of it, and also when it cannot get
+     * there: at once when nobody reads `events` (the tunnel is down), and
+     * when the reader goes away. It is how the last thing a participant has
+     * to say is given the time to leave before the tunnel closes; put a
+     * timeout on it, since a hub may stop reading without going away.
+     */
+    readonly flushed: Effect.Effect<void>;
+    /**
      * Opens a harness session under an id the caller picks, in `cwd` (default:
      * the Workspace). One that is already open stays as it is. Says `opened`
      * in `events`.
@@ -216,9 +226,30 @@ export class Harness extends Context.Service<
           options.sessionId ??
           `session-${Math.abs(yield* Random.nextInt).toString(36)}${Math.abs(yield* Random.nextInt).toString(36)}`;
 
-        const outbox = yield* Queue.sliding<HarnessEvent>(
-          options.outbox ?? DEFAULT_HARNESS_OUTBOX
-        );
+        // What waits for the hub, numbered in the order it was produced.
+        const outbox = yield* Queue.sliding<{
+          readonly event: HarnessEvent;
+          readonly number: number;
+        }>(options.outbox ?? DEFAULT_HARNESS_OUTBOX);
+        /** The number of the last event produced. */
+        let produced = 0;
+        /** Every event up to this number is with the hub, or lost. */
+        let passed = 0;
+        /** How many readers `events` has now: one while a tunnel is open. */
+        let readers = 0;
+        const flushing = new Set<{
+          readonly upTo: number;
+          readonly done: () => void;
+        }>();
+        const pass = (upTo: number) => {
+          passed = Math.max(passed, upTo);
+          for (const waiter of [...flushing]) {
+            if (waiter.upTo <= passed || readers === 0) {
+              flushing.delete(waiter);
+              waiter.done();
+            }
+          }
+        };
         const stdin = yield* Queue.unbounded<string>();
         const exited = yield* Deferred.make<HarnessFailed>();
         /** The runtime's own calls that the harness has not answered yet. */
@@ -243,7 +274,46 @@ export class Harness extends Context.Service<
         let requests = 0;
 
         const emit = (event: HarnessEvent) =>
-          Effect.asVoid(Queue.offer(outbox, event));
+          Effect.suspend(() =>
+            Effect.asVoid(Queue.offer(outbox, { event, number: ++produced }))
+          );
+        // The reader pulls one batch at a time, and the tunnel's stream call
+        // pulls the next only after the hub acknowledged the one before
+        // (`effect/rpc` waits for the `Ack` of each chunk). So a reader that
+        // asks for more has delivered everything it took.
+        const events: Stream.Stream<HarnessEvent> = Stream.suspend(() => {
+          let taken = 0;
+          readers++;
+          return Stream.fromEffectRepeat(
+            Effect.suspend(() => {
+              pass(taken);
+              return Queue.takeAll(outbox);
+            })
+          ).pipe(
+            Stream.map((batch) => {
+              taken = Arr.lastNonEmpty(batch).number;
+              return Arr.map(batch, (entry) => entry.event);
+            }),
+            Stream.flattenArray,
+            // A reader that goes away took what it took with it: whether or
+            // not the hub got its last batch, nothing of it is on its way.
+            Stream.ensuring(
+              Effect.sync(() => {
+                readers--;
+                pass(taken);
+              })
+            )
+          );
+        });
+        const flushed = Effect.callback<void>((resume) => {
+          if (produced <= passed || readers === 0) {
+            resume(Effect.void);
+            return;
+          }
+          const waiter = { upTo: produced, done: () => resume(Effect.void) };
+          flushing.add(waiter);
+          return Effect.sync(() => flushing.delete(waiter));
+        });
         const write = (message: AcpMessage) =>
           Effect.asVoid(Queue.offer(stdin, `${JSON.stringify(message)}\n`));
 
@@ -533,8 +603,9 @@ export class Harness extends Context.Service<
 
         return Harness.of({
           closeSession,
-          events: Stream.fromQueue(outbox),
+          events,
           exited: Deferred.await(exited),
+          flushed,
           openSession,
           pid: Number(handle.pid),
           publish: emit,
