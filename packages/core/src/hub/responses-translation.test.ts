@@ -272,6 +272,7 @@ layer(layerHub(), { excludeTestServices: true })(
           expect(events.map((event) => event.event)).toEqual([
             "response.created",
             "response.output_item.added",
+            "response.content_part.added",
             "response.output_text.delta",
             "response.output_text.delta",
             "response.output_item.done",
@@ -284,12 +285,27 @@ layer(layerHub(), { excludeTestServices: true })(
             named.map((event) => event.event)
           );
           expect(named.map((event) => event.data.sequence_number)).toEqual([
-            0, 1, 2, 3, 4, 5,
+            0, 1, 2, 3, 4, 5, 6,
           ]);
           expect(events.at(-1)?.data).toBe("[DONE]");
 
-          const [created, added, firstDelta, secondDelta, done, completed] =
-            named.map((event) => event.data);
+          const [
+            created,
+            added,
+            part,
+            firstDelta,
+            secondDelta,
+            done,
+            completed,
+          ] = named.map((event) => event.data);
+          // The text has a part to go into before its first piece arrives: a
+          // client that builds the Response from the events needs it.
+          expect(part).toMatchObject({
+            output_index: 0,
+            item_id: added.item.id,
+            content_index: 0,
+            part: { type: "output_text", text: "", annotations: [] },
+          });
           expect(created.response).toMatchObject({
             object: "response",
             status: "in_progress",
@@ -431,12 +447,13 @@ layer(layerHub(), { excludeTestServices: true })(
           expect(events.map((event) => event.event)).toEqual([
             "response.created",
             "response.output_item.added",
+            "response.content_part.added",
             "response.output_text.delta",
             "error",
           ]);
           expect(events.at(-1)?.data).toMatchObject({
             type: "error",
-            sequence_number: 3,
+            sequence_number: 4,
             code: "participant_disconnected",
             error: { code: "participant_disconnected", type: "api_error" },
           });
@@ -648,14 +665,15 @@ layer(layerHub(), { excludeTestServices: true })(
           const provider = yield* fakeProvider({
             answer: () =>
               sseAnswer([
+                // Some providers send arguments with the name, in the first
+                // piece of the call; others start with none.
                 chatChunk(
                   toolCall({
                     id: "call_2",
                     type: "function",
-                    function: { name: "hora", arguments: "" },
+                    function: { name: "hora", arguments: '{"cidade":' },
                   })
                 ),
-                chatChunk(toolCall({ function: { arguments: '{"cidade":' } })),
                 chatChunk(toolCall({ function: { arguments: '"Olinda"}' } })),
                 chatChunk({}, "tool_calls"),
                 sseEvent("[DONE]"),
@@ -944,12 +962,13 @@ layer(layerHub(), { excludeTestServices: true })(
           expect(events.map((event) => event.event)).toEqual([
             "response.created",
             "response.output_item.added",
+            "response.content_part.added",
             "response.output_text.delta",
             "error",
           ]);
           expect(events.at(-1)?.data).toEqual({
             type: "error",
-            sequence_number: 3,
+            sequence_number: 4,
             code: "out_of_memory",
             message: "The model ran out of memory.",
             param: null,

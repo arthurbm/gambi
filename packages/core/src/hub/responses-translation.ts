@@ -517,8 +517,8 @@ export interface ResponseEvents {
  *
  * The events, in order: `response.created`; for each output item, in the
  * order the provider started them, `response.output_item.added` and then its
- * deltas (`response.output_text.delta` for the text,
- * `response.function_call_arguments.delta` for a tool call); at the end,
+ * deltas (`response.content_part.added` and `response.output_text.delta` for
+ * the text, `response.function_call_arguments.delta` for a tool call); at the end,
  * `response.output_item.done` for each item, `response.completed` and
  * `[DONE]`. Every event carries its `type` and a `sequence_number` that
  * counts from zero.
@@ -579,7 +579,17 @@ export const toResponseEvents = (translation: Translation): ResponseEvents => {
   };
 
   const onText = (delta: string) => {
-    messageAt ??= start(messageItem(translation, ""));
+    if (messageAt === undefined) {
+      messageAt = start(messageItem(translation, ""));
+      // The part the text goes into. A client that builds the Response from
+      // the events (the OpenAI SDK does) has nowhere to put a delta without it.
+      write("response.content_part.added", {
+        output_index: messageAt,
+        item_id: itemId(translation, "msg"),
+        content_index: 0,
+        part: { type: "output_text", text: "", annotations: [] },
+      });
+    }
     text += delta;
     output[messageAt] = { item: messageItem(translation, text) };
     write("response.output_text.delta", {
@@ -592,9 +602,16 @@ export const toResponseEvents = (translation: Translation): ResponseEvents => {
 
   const onToolCall = (delta: ChatToolCall) => {
     const index = delta.index ?? 0;
+    // The item starts with no arguments: the ones in this first piece are
+    // added below, once, like those of every later piece.
     const at =
       toolCallsAt.get(index) ??
-      start(functionCallItem(translation, index, delta));
+      start(
+        functionCallItem(translation, index, {
+          ...delta,
+          function: { ...delta.function, arguments: "" },
+        })
+      );
     toolCallsAt.set(index, at);
     const item = output[at]?.item;
     const more = delta.function?.arguments ?? "";

@@ -187,7 +187,7 @@ it.effect(
       expect(JSON.parse(last)).toMatchObject({
         type: "error",
         code: "inference_timeout",
-        sequence_number: 3,
+        sequence_number: 4,
       });
       expect((yield* Effect.promise(() => reader.read())).done).toBe(true);
       yield* call.aborted;
