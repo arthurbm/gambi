@@ -10,13 +10,19 @@
  * | a chat completion as a Response | `toResponse` |
  * | a streamed chat completion as the events of a streamed Response | `toResponseEvents` |
  *
+ * What crosses: text (instructions, messages, the answer), function tools,
+ * tool calls and their outputs, the sampling parameters and the token
+ * counts. A request that uses anything else of the Responses API is refused
+ * with `RequestNotTranslatable`, which names the field.
+ *
  * A Response built here exists nowhere but in the answer: no provider stores
  * it, so it cannot be read back, deleted or cancelled later.
  *
  * Everything here is a pure function of its arguments. The route that uses
  * it is `infer` in `inference.ts`.
  */
-import { Option, Predicate, Schema } from "effect";
+import { RequestNotTranslatable } from "@gambi/protocol";
+import { Effect, Option, Predicate, Schema } from "effect";
 import { Sse } from "effect/encoding";
 import type { RequestBody } from "./inference-request.ts";
 
@@ -32,6 +38,10 @@ export interface Translation {
   readonly responseId: string;
 }
 
+/** The value of a field of something that may not even be an object. */
+const fieldOf = (value: unknown, name: string): unknown =>
+  Predicate.hasProperty(value, name) ? value[name] : undefined;
+
 /**
  * The text of a message content of either API: the string itself, or the
  * text parts of a list of parts, one per line. A part that is not text (an
@@ -46,13 +56,8 @@ const textOf = (content: unknown): string => {
   }
   return content
     .map((part: unknown) => {
-      if (Predicate.isString(part)) {
-        return part;
-      }
-      return Predicate.hasProperty(part, "text") &&
-        Predicate.isString(part.text)
-        ? part.text
-        : "";
+      const text = Predicate.isString(part) ? part : fieldOf(part, "text");
+      return Predicate.isString(text) ? text : "";
     })
     .filter((text) => text !== "")
     .join("\n");
@@ -61,26 +66,161 @@ const textOf = (content: unknown): string => {
 /** A message of a Chat Completions request. */
 type ChatMessage = Readonly<Record<string, unknown>>;
 
-/** The chat message an item of `input` or of `instructions` stands for. */
-const toChatMessage = (item: unknown): ChatMessage => {
-  const role = Predicate.hasProperty(item, "role") ? item.role : undefined;
+const MESSAGE_ROLES: Readonly<Record<string, string>> = {
+  user: "user",
+  assistant: "assistant",
+  system: "system",
+  // Chat Completions providers know `system`, not `developer`.
+  developer: "system",
+};
+
+/**
+ * The messages with one more tool call of the assistant. In Chat Completions
+ * the calls an assistant made in one turn are one message, so a call joins
+ * the assistant message right before it.
+ */
+const withToolCall = (
+  messages: readonly ChatMessage[],
+  item: unknown
+): readonly ChatMessage[] => {
+  const toolCall = {
+    id: fieldOf(item, "call_id"),
+    type: "function",
+    function: {
+      name: fieldOf(item, "name"),
+      arguments: fieldOf(item, "arguments"),
+    },
+  };
+  const last = messages.at(-1);
+  if (last?.role !== "assistant") {
+    return [
+      ...messages,
+      { role: "assistant", content: null, tool_calls: [toolCall] },
+    ];
+  }
+  const toolCalls = Array.isArray(last.tool_calls) ? last.tool_calls : [];
+  return [
+    ...messages.slice(0, -1),
+    { ...last, tool_calls: [...toolCalls, toolCall] },
+  ];
+};
+
+/** The `tool` message that carries the output of a tool call back to the model. */
+const toToolMessage = (item: unknown): ChatMessage => {
+  const output = fieldOf(item, "output");
   return {
-    // Chat Completions providers know `system`, not `developer`.
-    role: role === "developer" ? "system" : role,
-    content: textOf(Predicate.hasProperty(item, "content") ? item.content : ""),
+    role: "tool",
+    tool_call_id: fieldOf(item, "call_id"),
+    content: Predicate.isString(output)
+      ? output
+      : JSON.stringify(output ?? null),
   };
 };
 
-/** The chat messages a string or a list of items of a Responses request stands for. */
-const toChatMessages = (
-  value: unknown,
-  role: "system" | "user"
-): readonly ChatMessage[] => {
-  if (Predicate.isString(value)) {
-    return [{ role, content: value }];
+/** The messages with what one more item of `instructions` or of `input` stands for. */
+const withItem = Effect.fnUntraced(function* (
+  messages: readonly ChatMessage[],
+  item: unknown,
+  param: "instructions" | "input"
+): Effect.fn.Return<readonly ChatMessage[], RequestNotTranslatable> {
+  const type = fieldOf(item, "type") ?? "message";
+  if (type === "function_call") {
+    return withToolCall(messages, item);
   }
-  return Array.isArray(value) ? value.map(toChatMessage) : [];
-};
+  if (type === "function_call_output") {
+    return [...messages, toToolMessage(item)];
+  }
+  if (type !== "message") {
+    return yield* new RequestNotTranslatable({
+      param,
+      issue: `An item of type '${String(type)}' has no equivalent in Chat Completions.`,
+    });
+  }
+  const role = MESSAGE_ROLES[String(fieldOf(item, "role"))];
+  if (role === undefined) {
+    return yield* new RequestNotTranslatable({
+      param,
+      issue: `A message with role '${String(fieldOf(item, "role"))}' has no equivalent in Chat Completions.`,
+    });
+  }
+  return [...messages, { role, content: textOf(fieldOf(item, "content")) }];
+});
+
+/**
+ * The chat messages that `instructions` or `input` of a Responses request
+ * stand for: one message for a string, and what each item stands for in a
+ * list.
+ */
+const toChatMessages = Effect.fnUntraced(function* (
+  param: "instructions" | "input",
+  value: unknown
+): Effect.fn.Return<readonly ChatMessage[], RequestNotTranslatable> {
+  if (Predicate.isString(value)) {
+    return [
+      { role: param === "instructions" ? "system" : "user", content: value },
+    ];
+  }
+  let messages: readonly ChatMessage[] = [];
+  for (const item of Array.isArray(value) ? value : []) {
+    messages = yield* withItem(messages, item, param);
+  }
+  return messages;
+});
+
+/**
+ * The `tools` of a Chat Completions request. The two APIs write a function
+ * tool differently: the Responses API has its name and parameters at the top
+ * of the tool, Chat Completions under `function`.
+ */
+const toChatTools = Effect.fnUntraced(function* (
+  tools: unknown
+): Effect.fn.Return<readonly unknown[], RequestNotTranslatable> {
+  const chatTools: unknown[] = [];
+  for (const tool of Array.isArray(tools) ? tools : []) {
+    if (fieldOf(tool, "type") !== "function") {
+      return yield* new RequestNotTranslatable({
+        param: "tools",
+        issue: "Only function tools have an equivalent in Chat Completions.",
+      });
+    }
+    chatTools.push(
+      Predicate.hasProperty(tool, "function")
+        ? tool
+        : {
+            type: "function",
+            function: {
+              name: fieldOf(tool, "name"),
+              description: fieldOf(tool, "description"),
+              parameters: fieldOf(tool, "parameters"),
+              strict: fieldOf(tool, "strict"),
+            },
+          }
+    );
+  }
+  return chatTools;
+});
+
+/** The `tool_choice` of a Chat Completions request: a named function goes under `function`. */
+const toChatToolChoice = (toolChoice: unknown): unknown =>
+  fieldOf(toolChoice, "type") === "function" &&
+  !Predicate.hasProperty(toolChoice, "function")
+    ? { type: "function", function: { name: fieldOf(toolChoice, "name") } }
+    : toolChoice;
+
+/**
+ * The fields of a Responses request that need what only a provider that
+ * speaks the Responses API has: stored conversations, background work,
+ * reasoning, output formats.
+ */
+const NO_EQUIVALENT = [
+  "background",
+  "conversation",
+  "previous_response_id",
+  "reasoning",
+  "store",
+  "text",
+  "truncation",
+] as const;
 
 /** The fields both APIs have, under the name each gives them. */
 const SHARED_FIELDS: Readonly<Record<string, string>> = {
@@ -97,15 +237,38 @@ const SHARED_FIELDS: Readonly<Record<string, string>> = {
 /**
  * The Chat Completions request that asks for what a Responses request asks.
  * `instructions` become the first `system` message and `input` the messages
- * that follow it.
+ * that follow it. A field the translation does not know is left out.
+ *
+ * It fails when the request uses something Chat Completions cannot carry.
  */
-export const toChatCompletionsRequest = (request: RequestBody): RequestBody => {
+export const toChatCompletionsRequest = Effect.fnUntraced(function* (
+  request: RequestBody
+): Effect.fn.Return<RequestBody, RequestNotTranslatable> {
+  const unsupported = NO_EQUIVALENT.find((field) => request[field] != null);
+  if (unsupported !== undefined) {
+    return yield* new RequestNotTranslatable({
+      param: unsupported,
+      issue: "Chat Completions has no equivalent.",
+    });
+  }
+  const messages = [
+    ...(yield* toChatMessages("instructions", request.instructions)),
+    ...(yield* toChatMessages("input", request.input)),
+  ];
+  if (messages.length === 0) {
+    return yield* new RequestNotTranslatable({
+      param: "input",
+      issue: "Expected text in `input` or in `instructions`.",
+    });
+  }
+  const tools = yield* toChatTools(request.tools);
   const chat: Record<string, unknown> = {
     model: request.model,
-    messages: [
-      ...toChatMessages(request.instructions, "system"),
-      ...toChatMessages(request.input, "user"),
-    ],
+    messages,
+    ...(tools.length === 0 ? {} : { tools }),
+    ...(request.tool_choice == null
+      ? {}
+      : { tool_choice: toChatToolChoice(request.tool_choice) }),
   };
   for (const [field, chatField] of Object.entries(SHARED_FIELDS)) {
     if (request[field] != null) {
@@ -113,28 +276,41 @@ export const toChatCompletionsRequest = (request: RequestBody): RequestBody => {
     }
   }
   return chat;
-};
+});
 
-const Tokens = Schema.optionalKey(Schema.NullOr(Schema.Finite));
+const Count = Schema.optionalKey(Schema.NullOr(Schema.Finite));
 const Text = Schema.optionalKey(Schema.NullOr(Schema.String));
 
 /** The token counts of a chat completion. */
 const ChatUsage = Schema.Struct({
-  prompt_tokens: Tokens,
-  completion_tokens: Tokens,
-  total_tokens: Tokens,
+  prompt_tokens: Count,
+  completion_tokens: Count,
+  total_tokens: Count,
 });
 type ChatUsage = typeof ChatUsage.Type;
+
+/** A tool call of the assistant: whole in a message, in pieces in the deltas of a stream. */
+const ChatToolCall = Schema.Struct({
+  /** Which call of the turn a streamed piece belongs to. */
+  index: Count,
+  id: Text,
+  type: Text,
+  function: Schema.optionalKey(
+    Schema.NullOr(Schema.Struct({ name: Text, arguments: Text }))
+  ),
+});
+type ChatToolCall = typeof ChatToolCall.Type;
 
 /** What the translation reads of an assistant message, whole or as the delta of a chunk. */
 const ChatAnswer = Schema.Struct({
   content: Schema.optionalKey(Schema.Unknown),
+  tool_calls: Schema.optionalKey(Schema.NullOr(Schema.Array(ChatToolCall))),
 });
 
 /** What the translation reads of a chat completion. A provider may send more; it is not read. */
 const ChatCompletion = Schema.fromJsonString(
   Schema.Struct({
-    created: Tokens,
+    created: Count,
     choices: Schema.Array(
       Schema.Struct({
         finish_reason: Text,
@@ -145,6 +321,24 @@ const ChatCompletion = Schema.fromJsonString(
   })
 );
 const readChatCompletion = Schema.decodeUnknownOption(ChatCompletion);
+
+/** What the translation reads of one chunk of a streamed chat completion. */
+const ChatChunk = Schema.fromJsonString(
+  Schema.Struct({
+    choices: Schema.optionalKey(
+      Schema.NullOr(
+        Schema.Array(
+          Schema.Struct({
+            finish_reason: Text,
+            delta: Schema.optionalKey(Schema.NullOr(ChatAnswer)),
+          })
+        )
+      )
+    ),
+    usage: Schema.optionalKey(Schema.NullOr(ChatUsage)),
+  })
+);
+const readChatChunk = Schema.decodeUnknownOption(ChatChunk);
 
 const numberOrNull = (value: unknown): number | null =>
   Predicate.isNumber(value) ? value : null;
@@ -172,10 +366,14 @@ const toIncompleteDetails = (finishReason: string | null | undefined) => {
     : null;
 };
 
-/** The id of an output item of a translated Response, derived from the id of the Response. */
+/**
+ * The id of an output item of a translated Response. The hub derives it from
+ * the id of the Response, so it needs no other source of ids.
+ */
 const itemId = (translation: Translation, prefix: string) =>
   `${prefix}_${translation.responseId.replace("resp_", "")}`;
 
+/** The one message of a translated Response: the text the assistant answered. */
 const messageItem = (translation: Translation, text: string) => ({
   id: itemId(translation, "msg"),
   type: "message",
@@ -183,6 +381,27 @@ const messageItem = (translation: Translation, text: string) => ({
   status: "completed",
   content: [{ type: "output_text", text, annotations: [] }],
 });
+
+/** The output item of a tool call. `index` is its place among the calls of the turn. */
+const functionCallItem = (
+  translation: Translation,
+  index: number,
+  toolCall: ChatToolCall
+) => {
+  const id = `${itemId(translation, "fc")}_${index}`;
+  return {
+    id,
+    type: "function_call",
+    status: "completed",
+    call_id: toolCall.id ?? id,
+    name: toolCall.function?.name ?? "",
+    arguments: toolCall.function?.arguments ?? "",
+  };
+};
+
+/** A tool call that is a function call: the only kind the Responses API has an item for here. */
+const isFunctionCall = (toolCall: ChatToolCall) =>
+  toolCall.type == null || toolCall.type === "function";
 
 /** A Response object: what the request says of it, and what the answer added. */
 const responseObject = (
@@ -229,7 +448,8 @@ const responseObject = (
 };
 
 /**
- * The Response a chat completion stands for, as JSON text. `None` when
+ * The Response a chat completion stands for, as JSON text: the text of the
+ * answer as a message, then each tool call as a function call. `None` when
  * `document` is not a chat completion: then the hub has nothing to translate.
  */
 export const toResponse = (
@@ -239,35 +459,25 @@ export const toResponse = (
   Option.map(readChatCompletion(document), (completion) => {
     const [choice] = completion.choices;
     const text = textOf(choice?.message?.content);
+    const toolCalls = (choice?.message?.tool_calls ?? []).filter(
+      isFunctionCall
+    );
     return JSON.stringify(
       responseObject(translation, {
         status: "completed",
         createdAt: completion.created,
         finishReason: choice?.finish_reason,
-        output: text === "" ? [] : [messageItem(translation, text)],
+        output: [
+          ...(text === "" ? [] : [messageItem(translation, text)]),
+          ...toolCalls.map((toolCall, index) =>
+            functionCallItem(translation, index, toolCall)
+          ),
+        ],
         outputText: text,
         usage: completion.usage,
       })
     );
   });
-
-/** What the translation reads of one chunk of a streamed chat completion. */
-const ChatChunk = Schema.fromJsonString(
-  Schema.Struct({
-    choices: Schema.optionalKey(
-      Schema.NullOr(
-        Schema.Array(
-          Schema.Struct({
-            finish_reason: Text,
-            delta: Schema.optionalKey(Schema.NullOr(ChatAnswer)),
-          })
-        )
-      )
-    ),
-    usage: Schema.optionalKey(Schema.NullOr(ChatUsage)),
-  })
-);
-const readChatChunk = Schema.decodeUnknownOption(ChatChunk);
 
 /** The last line of the stream, as Chat Completions ends its own. */
 const DONE = Sse.encoder.write({
@@ -303,11 +513,13 @@ export interface ResponseEvents {
 /**
  * Starts the translation of one streamed chat completion.
  *
- * The events, in order: `response.created`; when the text starts,
- * `response.output_item.added` and then one `response.output_text.delta` per
- * piece of text; at the end, `response.output_item.done`,
- * `response.completed` and `[DONE]`. Every event carries its `type` and a
- * `sequence_number` that counts from zero.
+ * The events, in order: `response.created`; for each output item, in the
+ * order the provider started them, `response.output_item.added` and then its
+ * deltas (`response.output_text.delta` for the text,
+ * `response.function_call_arguments.delta` for a tool call); at the end,
+ * `response.output_item.done` for each item, `response.completed` and
+ * `[DONE]`. Every event carries its `type` and a `sequence_number` that
+ * counts from zero.
  *
  * The provider's stream is read with the SSE parser of `effect`.
  */
@@ -335,10 +547,60 @@ export const toResponseEvents = (translation: Translation): ResponseEvents => {
     return text;
   };
 
+  /** The output items so far, in the order the provider started them. */
+  const output: {
+    item: ReturnType<typeof functionCallItem> | ReturnType<typeof messageItem>;
+  }[] = [];
+  /** Where the message is in `output`, once the text started. */
+  let messageAt: number | undefined;
   let text = "";
+  /** Where each tool call is in `output`, by its index in the turn. */
+  const toolCallsAt = new Map<number, number>();
   let finishReason: string | null | undefined;
   let usage: ChatUsage | null | undefined;
-  const message = messageItem(translation, "");
+
+  const start = (item: (typeof output)[number]["item"]) => {
+    write("response.output_item.added", {
+      output_index: output.length,
+      item: {
+        ...item,
+        status: "in_progress",
+        ...("content" in item ? { content: [] } : {}),
+      },
+    });
+    return output.push({ item }) - 1;
+  };
+
+  const onText = (delta: string) => {
+    messageAt ??= start(messageItem(translation, ""));
+    text += delta;
+    output[messageAt] = { item: messageItem(translation, text) };
+    write("response.output_text.delta", {
+      output_index: messageAt,
+      item_id: itemId(translation, "msg"),
+      content_index: 0,
+      delta,
+    });
+  };
+
+  const onToolCall = (delta: ChatToolCall) => {
+    const index = delta.index ?? 0;
+    const at =
+      toolCallsAt.get(index) ??
+      start(functionCallItem(translation, index, delta));
+    toolCallsAt.set(index, at);
+    const item = output[at]?.item;
+    const more = delta.function?.arguments ?? "";
+    if (item === undefined || !("arguments" in item) || more === "") {
+      return;
+    }
+    output[at] = { item: { ...item, arguments: item.arguments + more } };
+    write("response.function_call_arguments.delta", {
+      output_index: at,
+      item_id: item.id,
+      delta: more,
+    });
+  };
 
   const parser = Sse.makeParser((event) => {
     const chunk =
@@ -353,22 +615,14 @@ export const toResponseEvents = (translation: Translation): ResponseEvents => {
     const [choice] = chunk.choices ?? [];
     finishReason = choice?.finish_reason ?? finishReason;
     const delta = textOf(choice?.delta?.content);
-    if (delta === "") {
-      return;
+    if (delta !== "") {
+      onText(delta);
     }
-    if (text === "") {
-      write("response.output_item.added", {
-        output_index: 0,
-        item: { ...message, status: "in_progress", content: [] },
-      });
+    for (const toolCall of choice?.delta?.tool_calls ?? []) {
+      if (isFunctionCall(toolCall)) {
+        onToolCall(toolCall);
+      }
     }
-    text += delta;
-    write("response.output_text.delta", {
-      output_index: 0,
-      item_id: message.id,
-      content_index: 0,
-      delta,
-    });
   });
 
   write("response.created", {
@@ -386,15 +640,15 @@ export const toResponseEvents = (translation: Translation): ResponseEvents => {
       return takeWritten();
     },
     end: () => {
-      const output = text === "" ? [] : [messageItem(translation, text)];
-      for (const [index, item] of output.entries()) {
+      const items = output.map(({ item }) => item);
+      for (const [index, item] of items.entries()) {
         write("response.output_item.done", { output_index: index, item });
       }
       write("response.completed", {
         response: responseObject(translation, {
           status: "completed",
           finishReason,
-          output,
+          output: items,
           outputText: text,
           usage,
         }),

@@ -606,9 +606,10 @@ const createResponse = Effect.fnUntraced(function* (
     return yield* new ResponsesNotSupported({ roomCode, participantId });
   }
 
+  const chatBody = yield* toChatCompletionsRequest(body);
   const answer = yield* askProvider(roomCode, participantId, {
     operation: "chatCompletions.create",
-    body: JSON.stringify(toChatCompletionsRequest(body)),
+    body: JSON.stringify(chatBody),
   });
   if (answer.status < 200 || answer.status >= 300) {
     // The provider refused the request. Its answer says why, in a format

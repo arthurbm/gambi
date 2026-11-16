@@ -8,7 +8,9 @@ import {
   chatCompletionsOnly,
   FAKE_COMPLETION_TEXT,
   fakeProvider,
+  jsonAnswer,
   openStream,
+  sseAnswer,
   sseEvent,
 } from "../testing/provider.ts";
 import { Hub } from "./hub.ts";
@@ -73,7 +75,9 @@ const chatChunk = (delta: object, finishReason: string | null = null) =>
 
 /** Reads a streamed body until `text` shows up in it; answers what was read. */
 const readUntil = (
-  reader: ReadableStreamDefaultReader<Uint8Array>,
+  reader: {
+    read(): Promise<{ done: boolean; value?: Uint8Array | undefined }>;
+  },
   text: string
 ) =>
   Effect.promise(async () => {
@@ -434,6 +438,282 @@ layer(layerHub(), { excludeTestServices: true })(
             sequence_number: 3,
             code: "participant_disconnected",
             error: { code: "participant_disconnected", type: "api_error" },
+          });
+        })
+    );
+
+    it.effect(
+      "a request that Chat Completions cannot carry is a named 400 that says which field, and the provider is not asked",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* makeRoom("Forró");
+          const provider = yield* fakeProvider({ answer: chatCompletionsOnly });
+          yield* joinParticipant({
+            roomCode: room.code,
+            participantId: "arthur-1",
+            profile: { capabilities: chatOnly },
+            provider: { endpoint: provider.url },
+          });
+          const refusal = (body: object) =>
+            post(room.url("/responses"), { model: "arthur-1", ...body }).pipe(
+              Effect.flatMap((response) =>
+                Effect.map(json(response), (answer) => ({
+                  status: response.status,
+                  code: answer.error.code,
+                  param: answer.error.param,
+                }))
+              )
+            );
+          const untranslatable = (param: string) => ({
+            status: 400,
+            code: "request_not_translatable",
+            param,
+          });
+
+          // A stored conversation exists only on a provider that stores Responses.
+          expect(
+            yield* refusal({ input: "Oi", previous_response_id: "resp_1" })
+          ).toEqual(untranslatable("previous_response_id"));
+          expect(
+            yield* refusal({ input: "Oi", tools: [{ type: "web_search" }] })
+          ).toEqual(untranslatable("tools"));
+          expect(
+            yield* refusal({ input: [{ type: "reasoning", summary: [] }] })
+          ).toEqual(untranslatable("input"));
+          expect(yield* refusal({})).toEqual(untranslatable("input"));
+
+          const whole = yield* json(
+            yield* post(room.url("/responses"), {
+              model: "arthur-1",
+              input: "Oi",
+              background: true,
+            })
+          );
+          expect(whole).toEqual({
+            error: {
+              message:
+                "The participant's provider is reached through Chat Completions, which cannot carry this request: background: Chat Completions has no equivalent.",
+              type: "invalid_request_error",
+              param: "background",
+              code: "request_not_translatable",
+            },
+          });
+          expect(yield* provider.calls).toHaveLength(0);
+          expect(yield* room.statusOf("arthur-1")).toBe("online");
+        })
+    );
+
+    it.effect(
+      "function tools, tool calls and their outputs cross the translation in both directions",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* makeRoom("Caboclinho");
+          const provider = yield* fakeProvider({
+            answer: () =>
+              jsonAnswer({
+                id: "chatcmpl-fake",
+                object: "chat.completion",
+                created: 1_700_000_000,
+                model: "test-model",
+                choices: [
+                  {
+                    index: 0,
+                    message: {
+                      role: "assistant",
+                      content: null,
+                      tool_calls: [
+                        {
+                          id: "call_2",
+                          type: "function",
+                          function: {
+                            name: "hora",
+                            arguments: '{"cidade":"Olinda"}',
+                          },
+                        },
+                      ],
+                    },
+                    finish_reason: "tool_calls",
+                  },
+                ],
+              }),
+          });
+          yield* joinParticipant({
+            roomCode: room.code,
+            participantId: "arthur-1",
+            profile: { capabilities: chatOnly },
+            provider: { endpoint: provider.url },
+          });
+          const parameters = {
+            type: "object",
+            properties: { cidade: { type: "string" } },
+          };
+
+          const response = yield* post(room.url("/responses"), {
+            model: "arthur-1",
+            input: [
+              {
+                role: "user",
+                content: [
+                  { type: "input_text", text: "Que horas são no Recife?" },
+                ],
+              },
+              {
+                type: "function_call",
+                call_id: "call_1",
+                name: "hora",
+                arguments: '{"cidade":"Recife"}',
+              },
+              {
+                type: "function_call_output",
+                call_id: "call_1",
+                output: "14h",
+              },
+              { role: "user", content: "E em Olinda?" },
+            ],
+            tools: [
+              {
+                type: "function",
+                name: "hora",
+                description: "Diz a hora numa cidade.",
+                parameters,
+                strict: true,
+              },
+            ],
+            tool_choice: { type: "function", name: "hora" },
+          });
+          const created = yield* json(response);
+
+          const [call] = yield* provider.calls;
+          expect(call?.body).toEqual({
+            model: "test-model",
+            messages: [
+              { role: "user", content: "Que horas são no Recife?" },
+              {
+                role: "assistant",
+                content: null,
+                tool_calls: [
+                  {
+                    id: "call_1",
+                    type: "function",
+                    function: {
+                      name: "hora",
+                      arguments: '{"cidade":"Recife"}',
+                    },
+                  },
+                ],
+              },
+              { role: "tool", tool_call_id: "call_1", content: "14h" },
+              { role: "user", content: "E em Olinda?" },
+            ],
+            tools: [
+              {
+                type: "function",
+                function: {
+                  name: "hora",
+                  description: "Diz a hora numa cidade.",
+                  parameters,
+                  strict: true,
+                },
+              },
+            ],
+            tool_choice: { type: "function", function: { name: "hora" } },
+          });
+          expect(response.status).toBe(200);
+          expect(created).toMatchObject({
+            status: "completed",
+            created_at: 1_700_000_000,
+            output_text: "",
+            output: [
+              {
+                type: "function_call",
+                status: "completed",
+                call_id: "call_2",
+                name: "hora",
+                arguments: '{"cidade":"Olinda"}',
+              },
+            ],
+          });
+        })
+    );
+
+    it.effect(
+      "a streamed tool call arrives as a function call item and the deltas of its arguments",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* makeRoom("Maxixe");
+          const toolCall = (fields: object) => ({
+            tool_calls: [{ index: 0, ...fields }],
+          });
+          const provider = yield* fakeProvider({
+            answer: () =>
+              sseAnswer([
+                chatChunk(
+                  toolCall({
+                    id: "call_2",
+                    type: "function",
+                    function: { name: "hora", arguments: "" },
+                  })
+                ),
+                chatChunk(toolCall({ function: { arguments: '{"cidade":' } })),
+                chatChunk(toolCall({ function: { arguments: '"Olinda"}' } })),
+                chatChunk({}, "tool_calls"),
+                sseEvent("[DONE]"),
+              ]),
+          });
+          yield* joinParticipant({
+            roomCode: room.code,
+            participantId: "arthur-1",
+            profile: { capabilities: chatOnly },
+            provider: { endpoint: provider.url },
+          });
+
+          const response = yield* post(room.url("/responses"), {
+            model: "arthur-1",
+            input: "Que horas são em Olinda?",
+            stream: true,
+          });
+          const events = eventsOf(yield* Effect.promise(() => response.text()));
+
+          expect(events.map((event) => event.event)).toEqual([
+            "response.created",
+            "response.output_item.added",
+            "response.function_call_arguments.delta",
+            "response.function_call_arguments.delta",
+            "response.output_item.done",
+            "response.completed",
+            "message",
+          ]);
+          const [, added, firstDelta, secondDelta, done, completed] =
+            events.map((event) => event.data);
+          expect(added).toMatchObject({
+            output_index: 0,
+            item: {
+              type: "function_call",
+              status: "in_progress",
+              call_id: "call_2",
+              name: "hora",
+              arguments: "",
+            },
+          });
+          expect(firstDelta).toMatchObject({
+            output_index: 0,
+            item_id: added.item.id,
+            delta: '{"cidade":',
+          });
+          expect(secondDelta.delta).toBe('"Olinda"}');
+          const functionCall = {
+            id: added.item.id,
+            type: "function_call",
+            status: "completed",
+            call_id: "call_2",
+            name: "hora",
+            arguments: '{"cidade":"Olinda"}',
+          };
+          expect(done).toMatchObject({ output_index: 0, item: functionCall });
+          expect(completed.response).toMatchObject({
+            status: "completed",
+            output: [functionCall],
+            output_text: "",
           });
         })
     );

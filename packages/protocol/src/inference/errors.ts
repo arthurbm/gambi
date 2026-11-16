@@ -146,6 +146,25 @@ export class ResponseNotFound extends Schema.TaggedError<ResponseNotFound>()(
 }
 
 /**
+ * The participant's provider has no Responses API, so the hub would ask it
+ * through Chat Completions, and the request uses something Chat Completions
+ * cannot carry: a stored conversation, a tool that is not a function, an
+ * input item with no equivalent.
+ */
+export class RequestNotTranslatable extends Schema.TaggedError<RequestNotTranslatable>()(
+  "RequestNotTranslatable",
+  {
+    /** The field of the request that cannot be carried. */
+    param: Schema.String,
+    issue: Schema.String,
+  }
+) {
+  override get message(): string {
+    return `The participant's provider is reached through Chat Completions, which cannot carry this request: ${this.param}: ${this.issue}`;
+  }
+}
+
+/**
  * The Response was built by the hub from a Chat Completions answer, for a
  * provider that has no Responses API. No provider stores it, so there is
  * nothing to read back, delete or cancel.
@@ -184,6 +203,7 @@ export type InferenceError =
   | InferenceTimedOut
   | ProviderResponseTooLarge
   | ConsumerTooSlow
+  | RequestNotTranslatable
   | ResponseNotFound
   | ResponseNotStored
   | ResponsesNotSupported
@@ -215,6 +235,7 @@ export const INFERENCE_FAILURES: {
   },
   // Only ever sent inside a stream, where the status is already 200.
   ConsumerTooSlow: { code: "consumer_too_slow", status: 408 },
+  RequestNotTranslatable: { code: "request_not_translatable", status: 400 },
   ResponseNotFound: { code: "response_not_found", status: 404 },
   ResponseNotStored: { code: "response_not_stored", status: 501 },
   ResponsesNotSupported: { code: "responses_not_supported", status: 501 },
@@ -254,7 +275,8 @@ export const toOpenAiError = (
         message: error.message,
         type: errorType(status),
         param:
-          error._tag === "InvalidInferenceRequest"
+          error._tag === "InvalidInferenceRequest" ||
+          error._tag === "RequestNotTranslatable"
             ? (error.param ?? null)
             : null,
         code,
