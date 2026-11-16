@@ -50,7 +50,7 @@ import {
   InvalidInferenceRequest,
   OPENAI_INTERNAL_ERROR,
   ParticipantDisconnected,
-  ParticipantOffline,
+  ParticipantIsOffline,
   ProviderResponseInterrupted,
   ProviderResponseTooLarge,
   type ProviderUnreachable,
@@ -195,7 +195,7 @@ const infer = (operation: InferenceOperation) =>
         const tunnel = yield* tunnels.client(roomCode, participantId).pipe(
           // The tunnel dropped between the routing and here.
           Effect.mapError(
-            () => new ParticipantOffline({ roomCode, participantId })
+            () => new ParticipantIsOffline({ roomCode, participantId })
           )
         );
         const chunks = yield* tunnel.Infer(

@@ -6,30 +6,12 @@
  * It is not part of the management contract, because an upgrade is not a
  * request and response. A refusal still answers in the management envelope.
  */
-import {
-  failure,
-  InvalidRequest,
-  type ManagementError,
-  type ManagementErrorClass,
-  TunnelTokenInvalid,
-} from "@gambi/protocol";
-import { Effect, Layer, Schema } from "effect";
+import { InvalidRequest, TunnelTokenInvalid } from "@gambi/protocol";
+import { Effect, Layer } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
-import { RequestIdentity } from "./management.ts";
+import { RequestIdentity, refuse } from "./management.ts";
 import { Rooms } from "./rooms.ts";
 import { Tunnels } from "./tunnels.ts";
-
-/** Answers a refusal in the management envelope, with the status the error declares. */
-const refuse = <Self extends ManagementError>(
-  errorClass: ManagementErrorClass<Self>,
-  error: Self
-) =>
-  Schema.encodeEffect(failure(errorClass))(error).pipe(
-    Effect.orDie,
-    Effect.map((body) =>
-      HttpServerResponse.jsonUnsafe(body, { status: errorClass.status })
-    )
-  );
 
 const openTunnel = Effect.fn("Hub.openTunnel")(function* (
   request: HttpServerRequest.HttpServerRequest

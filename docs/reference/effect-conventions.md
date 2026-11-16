@@ -98,10 +98,31 @@ Rules:
 - The handlers belong to the host of the runtime, not to the runtime. That is where `ParticipantAuthHeaders` live; the runtime never receives them, so nothing it sends to the hub can carry them.
 - A handler does its work in its own fiber and scope. Interrupting the call on the hub interrupts the handler, so anything it started (a request to the provider, a subprocess) must stop when it is interrupted.
 - `Tunnels.client` needs a `Scope` and the client is good until that scope closes. If the tunnel drops meanwhile, the calls fail with `RpcClientError`; `error.reason` says why (`SocketCloseError` with the close code, `SocketReadError` on a ping timeout). Never keep a client past the scope it was taken in: a call on a client that was let go of is interrupted instead of failed.
-- A participant's status changes only in `Participants.transition`, which runs the event through `transitionStatus`. Do not write a status anywhere else. What must follow a change (a room event) goes there.
+- A participant's status changes only in `Participants.transition`, which runs the event through `transitionStatus` and publishes the room event of the change. Do not write a status anywhere else, and do not publish a status event yourself. What else must follow a change goes there.
 - The hub's wiring of a tunnel (`Tunnels.serve`) has three load-bearing details, listed at the top of `tunnels.ts`. Read them before changing it.
 - The hub pings every 5 s (`HubOptions.tunnelPingInterval`) and drops a tunnel that stays silent for one more interval. The participant has no ping of its own.
 - A knob of the hub is a field of `HubSettings` (`packages/core/src/hub/settings.ts`), with its default resolved in `Hub.layer`. Services read it from there, not from parameters.
+- A participant that is `offline` is removed after `HubSettings.reconnectDeadline` (60 s). Going online cancels the deadline; registering again restarts it.
+
+## Room events and event streams
+
+A room event tells whoever watches a room that something happened. The events are a union of structs told apart by `type`, in `packages/protocol/src/room-event.ts`; the hub publishes them through `RoomEvents` (`packages/core/src/hub/room-events.ts`) and streams them at `GET /v1/rooms/:code/events`.
+
+To add an event:
+
+1. Define it with `roomEvent("<thing>.<what happened>", { ...fields })` in `room-event.ts` and add it to the `RoomEvent` union. `roomEvent` adds `type`, `roomCode` and `timestamp`.
+2. Publish it where it happens: `yield* (yield* RoomEvents).publish(roomCode, { type: "<thing>.<what happened>", ...fields })`. The hub stamps the room code and the time.
+
+The stream, the derived client and the OpenAPI document take the new event from the union.
+
+Rules:
+
+- `publish` never waits for a watcher and never fails. A room keeps its last 256 events for a watcher that is behind; one that falls further behind loses the oldest. Do not build a second fan-out for room events.
+- Every stream of a room starts with `room.snapshot`: the room and its participants when the stream started. A client that keeps state applies the snapshot and then each event in order; it needs no `list` first.
+- An endpoint that streams events declares `success: eventStream(Schema)` (`packages/protocol/src/management/event-stream.ts`), where the schema is a struct with a string `type` or a union of them. On the wire it is Server-Sent Events, one JSON object per event, with the `type` repeated on the `event:` line.
+- Its handler returns a `Stream` and passes it through `OpenStreams.untilHubCloses` (`packages/core/src/hub/open-streams.ts`). A stream that skips it holds the hub open for 20 s when it closes.
+- The method of the derived client answers an `Effect` of a `Stream`: `Stream.unwrap(client.events.watch({ params: { code } }))`. That is the one SSE parser of the management plane (`effect/encoding/Sse`, inside `HttpApiClient`). Do not write another, and do not read the response body by hand.
+- The stream completes, without an error, when the hub closes. A client that wants to keep watching reconnects when it does.
 
 ## Services
 
@@ -227,6 +248,20 @@ it.effect("answers through the tunnel", () =>
 - `participant.sentToHub` is everything the runtime sent to the hub (HTTP requests and tunnel frames), for asserting what must never leave the participant's machine.
 - `register` and `openTunnel` are exported for a test that needs the two steps apart (`packages/core/src/hub/bootstrap-token.test.ts`).
 
+### Room events in a test
+
+`watchRoom` from `@gambi/core/testing/hub` watches a room through the derived client until the test ends. It returns once the stream is open, so whatever the test does next is in `next`.
+
+```ts
+const watch = yield* watchRoom(room.code);
+yield* joinParticipant({ roomCode: room.code, participantId: "arthur-1" });
+expect((yield* watch.next).type).toBe("participant.joined");
+expect((yield* watch.next).type).toBe("participant.online");
+```
+
+- `watch.snapshot` is the first event; `watch.next` hands out each later event once, in order, and waits for one that has not arrived. Never sleep to "let the event arrive".
+- An event that must not happen cannot be waited for. Do something whose event you can wait for, and assert it is the next one.
+
 Known traps:
 
 - The `it` inside a `layer` block has no `live`. For a block that needs the real clock, pass `excludeTestServices: true` and use `it.effect`.
@@ -235,6 +270,7 @@ Known traps:
 - A failed Effect test prints its error twice: the helper logs the full cause, then `bun test` reports the rejection.
 - Moving the test clock while a tunnel is open can drop the tunnel: a jump leaves no time for a pong, and the hub's ping timeout fires (`adjust("4 seconds")` then `adjust("6 seconds")` does it with the default interval). A test that needs the clock and an open tunnel starts its hub with `layerHub({ tunnelPingInterval: "1 hour" })`.
 - A hub built inside `it.effect` (`Effect.provide(layerHub())`) reads the test clock; one shared with `layer(layerHub(), { excludeTestServices: true })` reads the real one.
+- Under the test clock a participant that is `offline` is removed once the clock moves 60 s. A test that moves the clock for another reason and needs the participant to stay starts its hub with `layerHub({ reconnectDeadline: "1 hour" })`.
 
 ## The CLI
 
@@ -248,6 +284,7 @@ A command:
 - reaches a hub with `withHub(hubUrl, (client) => ...)` and the shared `hubFlag`. It turns a transport failure into `HubUnreachable` and an answer outside the contract into `NotAHub`.
 - asks for a missing required flag with `Flag.withFallbackPrompt`. The prompt only runs on a terminal; without one the flag is reported as missing.
 - when it runs until stopped, awaits `Termination.signal` and then returns, so that a deliberate stop exits with `0`.
+- reaches the outside through a service, never through a global: the network through `HttpClient`, a subprocess through `ChildProcessSpawner`, a file through `FileSystem`, and what the running process is (`execPath`, `argv`, `platform`, `pid`) through `Installation`. `main.ts` provides the real ones.
 
 `exit-codes.ts` holds the one table from typed error to exit code. A command that can fail with a new error does not compile until the error has a row there.
 
@@ -278,6 +315,9 @@ layer(layerHub(), { excludeTestServices: true })("room commands", (it) => {
 ```
 
 - `runCommand(args, options)` runs to the end. `options.tty` makes stdin and stdout a terminal, `options.answers` types into the prompts, `options.env` sets environment variables.
+- A command in a test reaches this machine only. `fetch` refuses any host but loopback, so serve what the command downloads from a `Bun.serve` on `127.0.0.1`.
+- A command in a test starts no process unless the test says so. `options.spawner: spawnerThat((command) => ({ exitCode, stdout, stderr }))` plays the subprocess and shows the test the command line; without it, spawning fails the test.
+- `options.installation` says what the running `gambi` is (`execPath`, `argv`, `platform`, `arch`, `pid`). The default is an installation of unknown origin.
 - `startCommand(args)` starts a long-running command: read its events with `nextEvent`, send `signal("SIGTERM")`, then await `result`.
 - Assert on stdout, stderr and the exit code. Do not call a handler or `Output` directly.
 - What only the real process shows (the two file descriptors, the exit code of the process, signals) is covered by `main.test.ts`, which spawns the entrypoint.

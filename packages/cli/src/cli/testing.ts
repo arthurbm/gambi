@@ -18,13 +18,19 @@ import {
   Fiber,
   Layer,
   Option,
+  PlatformError,
   Queue,
+  Redacted,
   type Scope,
+  Sink,
   Stdio,
+  Stream,
   Terminal,
 } from "effect";
 import { FetchHttpClient } from "effect/http";
+import { type ChildProcess, ChildProcessSpawner } from "effect/process";
 import { HubListen } from "./commands/hub.ts";
+import { Installation } from "./installation.ts";
 import { processExitCode, runCli } from "./run.ts";
 import {
   makeTermination,
@@ -52,11 +58,151 @@ export interface RunOptions {
    * does not change what a command does.
    */
   readonly env?: Readonly<Record<string, string>> | undefined;
+  /**
+   * What the running `gambi` knows about itself, over `UNKNOWN_INSTALLATION`.
+   * Default: an executable `self update` cannot tell the origin of.
+   */
+  readonly installation?: Partial<Installation["Service"]> | undefined;
   /** The mDNS responder. Default: `Mdns.layerTest`, which touches no network. */
   readonly mdns?: Layer.Layer<Mdns> | undefined;
+  /**
+   * What starts subprocesses. Default: nothing does, and a command that
+   * spawns one fails the test. Pass `spawnerThat(...)` to play the
+   * subprocess, or `BunChildProcessSpawner.layer` to really start it.
+   */
+  readonly spawner?:
+    | Layer.Layer<ChildProcessSpawner.ChildProcessSpawner>
+    | undefined;
   /** Whether stdin and stdout are a terminal. Default `false`: a pipe. */
   readonly tty?: boolean | undefined;
 }
+
+/**
+ * An installation that is neither a package of a package manager nor a
+ * standalone binary, so that no test updates anything by accident.
+ */
+export const UNKNOWN_INSTALLATION: Installation["Service"] = {
+  arch: "x64",
+  argv: ["bun", "/workspace/packages/cli/src/cli/main.ts"],
+  execPath: "/workspace/bin/bun",
+  pid: 4242,
+  platform: "linux",
+};
+
+/** A command as the CLI handed it to the spawner. */
+export interface SpawnedCommand {
+  readonly args: readonly string[];
+  readonly command: string;
+  /**
+   * Whether the CLI let go of the subprocess (`unref`), so that it keeps
+   * running after the command ends. A subprocess the CLI still holds is
+   * killed when the command ends.
+   */
+  readonly keptAlive: boolean;
+  readonly options: ChildProcess.CommandOptions;
+}
+
+/** A subprocess as a test plays it: what it prints and how it ends. */
+export interface SubprocessScript {
+  /** Default `0`. */
+  readonly exitCode?: number | undefined;
+  readonly stderr?: string | undefined;
+  readonly stdout?: string | undefined;
+}
+
+const scriptedOutput = (
+  destination: ChildProcess.CommandOptions["stdout"],
+  text: string | undefined
+): Stream.Stream<Uint8Array> =>
+  // Only a piped output reaches the CLI. An inherited one goes to the
+  // terminal, an ignored one nowhere.
+  destination === undefined || destination === "pipe"
+    ? Stream.encodeText(Stream.make(text ?? ""))
+    : Stream.empty;
+
+/**
+ * A `ChildProcessSpawner` that starts no process. `respond` receives each
+ * command the CLI spawns and answers with what the subprocess prints and its
+ * exit code, or with the error of a subprocess that could not start.
+ */
+export const spawnerThat = (
+  respond: (
+    command: SpawnedCommand
+  ) => SubprocessScript | PlatformError.PlatformError
+): Layer.Layer<ChildProcessSpawner.ChildProcessSpawner> =>
+  Layer.succeed(
+    ChildProcessSpawner.ChildProcessSpawner,
+    ChildProcessSpawner.make((command) => {
+      if (command._tag !== "StandardCommand") {
+        return Effect.die(new Error("spawnerThat does not play a pipeline."));
+      }
+      let referenced = true;
+      const script = respond({
+        command: command.command,
+        args: command.args.map((arg) =>
+          Redacted.isRedacted(arg) ? "<redacted>" : arg
+        ),
+        options: command.options,
+        get keptAlive() {
+          return !referenced;
+        },
+      });
+      if (script instanceof PlatformError.PlatformError) {
+        return Effect.fail(script);
+      }
+      const stdout = scriptedOutput(command.options.stdout, script.stdout);
+      const stderr = scriptedOutput(command.options.stderr, script.stderr);
+      return Effect.succeed(
+        ChildProcessSpawner.makeHandle({
+          pid: ChildProcessSpawner.ProcessId(1),
+          exitCode: Effect.succeed(
+            ChildProcessSpawner.ExitCode(script.exitCode ?? 0)
+          ),
+          isRunning: Effect.succeed(false),
+          kill: () => Effect.void,
+          stdin: Sink.drain,
+          stdout,
+          stderr,
+          all: Stream.merge(stdout, stderr),
+          getInputFd: () => Sink.drain,
+          getOutputFd: () => Stream.empty,
+          unref: Effect.sync(() => {
+            referenced = false;
+            return Effect.sync(() => {
+              referenced = true;
+            });
+          }),
+        })
+      );
+    })
+  );
+
+/** No test starts a real process without saying so. */
+const refuseToSpawn = spawnerThat(({ args, command }) => {
+  throw new Error(
+    `The command spawned \`${[command, ...args].join(" ")}\`, and the test did not say what it does. Pass \`spawner\` to runCommand.`
+  );
+});
+
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
+
+/**
+ * `fetch` for a test: it reaches this machine only. A command that calls
+ * anything else gets a transport failure, never the real network.
+ */
+const loopbackOnlyFetch: typeof globalThis.fetch = Object.assign(
+  (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : input);
+    return LOOPBACK_HOSTS.has(url.hostname)
+      ? globalThis.fetch(input, init)
+      : Promise.reject(
+          new Error(
+            `The command requested ${url.origin}. A test only reaches a server on loopback.`
+          )
+        );
+  },
+  { preconnect: globalThis.fetch.preconnect }
+);
 
 /** One event of a long-running command, as it is on a line of stdout. */
 export interface CommandEventLine {
@@ -159,8 +305,14 @@ export const startCommand = (
           Layer.succeed(Terminal.Terminal, terminal),
           Layer.succeed(Termination, termination.service),
           Layer.succeed(HubListen, BunHttpServer.layer),
+          Layer.succeed(Installation, {
+            ...UNKNOWN_INSTALLATION,
+            ...options.installation,
+          }),
           options.mdns ?? Mdns.layerTest,
-          FetchHttpClient.layer
+          options.spawner ?? refuseToSpawn,
+          FetchHttpClient.layer,
+          Layer.succeed(FetchHttpClient.Fetch, loopbackOnlyFetch)
         )
       ),
       Effect.provide(BunServices.layer),

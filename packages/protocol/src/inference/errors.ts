@@ -47,8 +47,8 @@ export class NoParticipantAvailable extends Schema.TaggedError<NoParticipantAvai
 }
 
 /** The model selector names a participant that is handling another request. */
-export class ParticipantBusy extends Schema.TaggedError<ParticipantBusy>()(
-  "ParticipantBusy",
+export class ParticipantIsBusy extends Schema.TaggedError<ParticipantIsBusy>()(
+  "ParticipantIsBusy",
   { roomCode: Schema.String, participantId: Schema.String }
 ) {
   override get message(): string {
@@ -57,8 +57,8 @@ export class ParticipantBusy extends Schema.TaggedError<ParticipantBusy>()(
 }
 
 /** The model selector names a participant whose tunnel is not open. */
-export class ParticipantOffline extends Schema.TaggedError<ParticipantOffline>()(
-  "ParticipantOffline",
+export class ParticipantIsOffline extends Schema.TaggedError<ParticipantIsOffline>()(
+  "ParticipantIsOffline",
   { roomCode: Schema.String, participantId: Schema.String }
 ) {
   override get message(): string {
@@ -136,8 +136,8 @@ export type InferenceError =
   | InvalidInferenceRequest
   | RoomNotFound
   | NoParticipantAvailable
-  | ParticipantBusy
-  | ParticipantOffline
+  | ParticipantIsBusy
+  | ParticipantIsOffline
   | ParticipantDisconnected
   | InferenceTimedOut
   | ProviderResponseTooLarge
@@ -160,8 +160,8 @@ export const INFERENCE_FAILURES: {
   RoomNotFound: { code: "room_not_found", status: 404 },
   // The code an OpenAI client already knows for "nothing serves this model".
   NoParticipantAvailable: { code: "model_not_found", status: 404 },
-  ParticipantBusy: { code: "participant_busy", status: 409 },
-  ParticipantOffline: { code: "participant_offline", status: 503 },
+  ParticipantIsBusy: { code: "participant_busy", status: 409 },
+  ParticipantIsOffline: { code: "participant_offline", status: 503 },
   ParticipantDisconnected: { code: "participant_disconnected", status: 502 },
   InferenceTimedOut: { code: "inference_timeout", status: 504 },
   ProviderResponseTooLarge: {
