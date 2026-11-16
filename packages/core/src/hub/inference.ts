@@ -581,6 +581,12 @@ const infer = (operation: InferenceCreation) =>
     );
   }, answeringFailures(operation));
 
+/** The query string of a request URL, without the `?`; empty when it has none. */
+const queryOf = (url: string): string => {
+  const at = url.indexOf("?");
+  return at === -1 ? "" : url.slice(at + 1);
+};
+
 /**
  * A route about a Response a provider stored: reading it, deleting it,
  * cancelling it, listing its input items. It goes to the participant that
@@ -590,7 +596,7 @@ const infer = (operation: InferenceCreation) =>
  */
 const storedResponse = (operation: StoredResponseOperation) =>
   Effect.fn("Hub.storedResponse")(function* (
-    _request: HttpServerRequest.HttpServerRequest
+    request: HttpServerRequest.HttpServerRequest
   ) {
     const rooms = yield* Rooms;
     const stored = yield* StoredResponses;
@@ -603,6 +609,9 @@ const storedResponse = (operation: StoredResponseOperation) =>
       return yield* new ResponseNotFound({ roomCode, responseId });
     }
     const { participantId } = known;
+    // Cancelling takes no parameters; the other operations take theirs in
+    // the query, which goes to the provider as the app wrote it.
+    const query = operation === "responses.cancel" ? "" : queryOf(request.url);
     yield* Effect.annotateCurrentSpan({
       "gambi.room_code": roomCode,
       "gambi.participant_id": participantId,
@@ -615,7 +624,12 @@ const storedResponse = (operation: StoredResponseOperation) =>
         const answer = yield* askProvider(roomCode, participantId, {
           operation,
           responseId,
+          ...(query === "" ? {} : { query }),
         });
+        const succeeded = answer.status >= 200 && answer.status < 300;
+        if (operation === "responses.delete" && succeeded) {
+          yield* stored.forget(roomCode, responseId);
+        }
         return yield* respond(call, answer, untouched);
       })
     );
@@ -674,5 +688,20 @@ export const InferenceRoutes = Layer.mergeAll(
     "GET",
     "/rooms/:code/v1/responses/:id",
     storedResponse("responses.retrieve")
+  ),
+  HttpRouter.add(
+    "DELETE",
+    "/rooms/:code/v1/responses/:id",
+    storedResponse("responses.delete")
+  ),
+  HttpRouter.add(
+    "POST",
+    "/rooms/:code/v1/responses/:id/cancel",
+    storedResponse("responses.cancel")
+  ),
+  HttpRouter.add(
+    "GET",
+    "/rooms/:code/v1/responses/:id/input_items",
+    storedResponse("responses.inputItems.list")
   )
 ).pipe(Layer.provide(RequestIdentity));
