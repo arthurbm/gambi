@@ -1,7 +1,7 @@
 /**
  * `gambi-sdk`: the management client and the inference provider. This entry
- * runs in Node, in Bun and in a browser: it reaches a hub with `fetch` and
- * brings no server, no socket and nothing of Bun.
+ * runs in Node and in Bun: it reaches a hub with `fetch`, imports no built-in
+ * module, and brings no server, no socket and nothing of Bun.
  *
  * Other entries: `gambi-sdk/discovery` finds hubs on the local network.
  *

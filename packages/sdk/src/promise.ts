@@ -7,7 +7,14 @@
  * Internal: an entry of the SDK builds its public object on top of this and
  * exports only that object.
  */
-import { Effect, type Layer, ManagedRuntime, Stream } from "effect";
+import {
+  Cause,
+  type Effect,
+  Exit,
+  type Layer,
+  ManagedRuntime,
+  Stream,
+} from "effect";
 
 export interface IterateOptions {
   /** Ends the iteration, without an error, when it aborts. */
@@ -16,16 +23,18 @@ export interface IterateOptions {
 
 export interface PromiseBoundary<R> {
   /**
-   * Releases what the layer acquired and ends every open iteration. Later
-   * calls are refused.
+   * Releases what the layer acquired, ends every open iteration and
+   * interrupts the calls in flight, which reject. Later calls are refused.
    */
   readonly close: () => Promise<void>;
   /**
    * The stream as an `AsyncIterable`. Nothing runs until the first `next()`.
    * It is pulled one element at a time, so a slow consumer slows the stream
-   * instead of buffering it. Leaving the loop early (`break`, `return()`)
-   * interrupts the stream. A failure of the stream is thrown from the loop as
-   * it is: fail with the error the consumer should catch.
+   * instead of buffering it. The stream is interrupted as soon as the
+   * consumer leaves the loop (`break`, `return()`), `signal` aborts or the
+   * boundary closes, whether or not a `next()` is waiting. A failure of the
+   * stream is thrown from the loop as it is: fail with the error the consumer
+   * should catch.
    */
   readonly iterate: <A>(
     stream: Stream.Stream<A, unknown, R>,
@@ -38,24 +47,66 @@ export interface PromiseBoundary<R> {
   readonly run: <A>(effect: Effect.Effect<A, unknown, R>) => Promise<A>;
 }
 
-/** Completes when `signal` aborts. */
-const aborted = (signal: AbortSignal): Effect.Effect<void> =>
-  Effect.callback<void>((resume) => {
-    if (signal.aborted) {
-      resume(Effect.void);
-      return;
-    }
-    const onAbort = () => resume(Effect.void);
-    signal.addEventListener("abort", onAbort, { once: true });
-    return Effect.sync(() => signal.removeEventListener("abort", onAbort));
-  });
-
 const DONE: IteratorReturnResult<undefined> = { done: true, value: undefined };
 
 /**
+ * The iterator `open` yields, opened by the first `next()` and interrupted,
+ * once, when the consumer leaves it or one of `stops` aborts.
+ */
+const stoppable = <A>(
+  open: () => Promise<AsyncIterator<A>>,
+  stops: readonly AbortSignal[]
+): AsyncIterator<A, undefined> => {
+  let opening: Promise<AsyncIterator<A>> | undefined;
+  let finished = false;
+
+  /** Safe to call at any moment, and more than once. */
+  const finish = async (): Promise<typeof DONE> => {
+    if (!finished) {
+      finished = true;
+      for (const stop of stops) {
+        stop.removeEventListener("abort", onStop);
+      }
+      // Closing the inner iterator also settles a `next()` that waits.
+      await opening?.then(
+        (opened) => opened.return?.(),
+        () => undefined
+      );
+    }
+    return DONE;
+  };
+  const onStop = (): void => {
+    finish().catch(() => undefined);
+  };
+  const start = (): Promise<AsyncIterator<A>> => {
+    for (const stop of stops) {
+      stop.addEventListener("abort", onStop, { once: true });
+    }
+    return open();
+  };
+
+  return {
+    next: async () => {
+      if (finished || stops.some((stop) => stop.aborted)) {
+        return finish();
+      }
+      opening ??= start();
+      try {
+        const result = await (await opening).next();
+        return result.done === true ? await finish() : result;
+      } catch (error) {
+        await finish();
+        throw error;
+      }
+    },
+    return: finish,
+  };
+};
+
+/**
  * Builds the boundary over `layer`. The layer is built by the first call and
- * released by `close`. `what` names the thing in the error of a call made
- * after `close` ("The client").
+ * released by `close`. `what` names the thing in the error of a call refused
+ * because of `close` ("The client").
  */
 export const makePromiseBoundary = <R, E>(
   layer: Layer.Layer<R, E>,
@@ -67,47 +118,46 @@ export const makePromiseBoundary = <R, E>(
   const closing = new AbortController();
   let closed: Promise<void> | undefined;
 
-  const refuseWhenClosed = (): void => {
-    if (closed !== undefined) {
-      throw new Error(`${what} is closed.`);
-    }
-  };
+  const closedError = (): Error => new Error(`${what} is closed.`);
 
   return {
     run: async (effect) => {
-      refuseWhenClosed();
-      return await runtime.runPromise(effect);
+      if (closed !== undefined) {
+        throw closedError();
+      }
+      const exit = await runtime.runPromiseExit(effect);
+      if (Exit.isSuccess(exit)) {
+        return exit.value;
+      }
+      // Nothing but `close` interrupts a call.
+      throw Cause.hasInterruptsOnly(exit.cause)
+        ? closedError()
+        : Cause.squash(exit.cause);
     },
     iterate: <A>(
       stream: Stream.Stream<A, unknown, R>,
       options: IterateOptions = {}
     ): AsyncIterable<A> => {
-      refuseWhenClosed();
-      const stop =
+      if (closed !== undefined) {
+        throw closedError();
+      }
+      const stops =
         options.signal === undefined
-          ? closing.signal
-          : AbortSignal.any([closing.signal, options.signal]);
+          ? [closing.signal]
+          : [closing.signal, options.signal];
       return {
-        [Symbol.asyncIterator]: (): AsyncIterator<A, undefined> => {
-          let opened: AsyncIterator<A> | undefined;
-          return {
-            next: async () => {
-              if (stop.aborted) {
-                return DONE;
-              }
-              opened ??= Stream.toAsyncIterableWith(
-                stream.pipe(Stream.interruptWhen(aborted(stop))),
-                await runtime.context()
-              )[Symbol.asyncIterator]();
-              const result = await opened.next();
-              return result.done === true ? DONE : result;
-            },
-            return: async () => {
-              await opened?.return?.();
-              return DONE;
-            },
-          };
-        },
+        [Symbol.asyncIterator]: () =>
+          stoppable(
+            () =>
+              runtime
+                .context()
+                .then((context) =>
+                  Stream.toAsyncIterableWith(stream, context)[
+                    Symbol.asyncIterator
+                  ]()
+                ),
+            stops
+          ),
       };
     },
     close: () => {

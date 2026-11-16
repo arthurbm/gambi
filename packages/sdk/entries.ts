@@ -18,8 +18,8 @@ export interface Entry {
   /**
    * What the published JavaScript of the entry may take from its runtime:
    *
-   * - `anywhere`: no built-in module at all, so it runs wherever `fetch`
-   *   does (Node, Bun, a browser);
+   * - `anywhere`: no built-in module at all, so nothing ties it to one
+   *   runtime: it needs `fetch` and runs in Node and in Bun;
    * - `node`: Node's built-in modules, so it runs in Node and in Bun;
    * - `bun`: also `bun` and `bun:*`, so it only runs in Bun.
    */

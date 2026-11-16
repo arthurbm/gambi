@@ -1,8 +1,8 @@
 /**
  * The management client: rooms, participants and room events of one hub, in
  * `Promise`. It is the client derived from the management contract behind a
- * `Promise` boundary, so it calls the hub with `fetch` and runs in Node, in
- * Bun and in a browser.
+ * `Promise` boundary. It calls the hub with `fetch`, so it runs in Node and
+ * in Bun alike.
  */
 import { GAMBI_VERSION } from "@gambi/protocol";
 import { Effect, Stream } from "effect";

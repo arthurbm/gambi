@@ -6,7 +6,7 @@ import { it, layer } from "@gambi/testing/effect";
 import { Context, Deferred, Effect, Exit, Layer, Scope } from "effect";
 import { createClient } from "./client.ts";
 import { ClientError } from "./client-error.ts";
-import type { RoomEvent } from "./types.ts";
+import type { RegisterParticipantInput, RoomEvent } from "./types.ts";
 
 /** The client a consumer would build for the hub of the block. */
 const hubClient = Effect.gen(function* () {
@@ -33,11 +33,51 @@ const rejection = (call: () => Promise<unknown>) =>
   );
 
 /** A server on a free loopback port, stopped when the test ends. */
-const serving = (fetch: (request: Request) => Response) =>
+const serving = (fetch: (request: Request) => Response | Promise<Response>) =>
   Effect.acquireRelease(
     Effect.sync(() => Bun.serve({ hostname: "127.0.0.1", port: 0, fetch })),
     (server) => Effect.promise(() => server.stop(true))
   ).pipe(Effect.map((server) => `http://127.0.0.1:${server.port}`));
+
+const SNAPSHOT: RoomEvent = {
+  type: "room.snapshot",
+  roomCode: "ABC123",
+  timestamp: 1_790_000_000_000,
+  room: {
+    id: "room-1",
+    code: "ABC123",
+    name: "Frevo",
+    hostId: "host-1",
+    createdAt: 1_790_000_000_000,
+    passwordProtected: false,
+    participantCount: 0,
+  },
+  participants: [],
+};
+
+/**
+ * A server that answers a watch the way a hub does, with the snapshot of a
+ * room, and then stays quiet. `cancelled` completes when the client drops the
+ * request, which a real hub gives no way to see from outside.
+ */
+const quietHub = Effect.gen(function* () {
+  const cancelled = yield* Deferred.make<void>();
+  const url = yield* serving((request) => {
+    request.signal.addEventListener("abort", () =>
+      Effect.runFork(Deferred.succeed(cancelled, undefined))
+    );
+    return new Response(
+      new ReadableStream({
+        start: (controller) =>
+          controller.enqueue(
+            `event: room.snapshot\ndata: ${JSON.stringify(SNAPSHOT)}\n\n`
+          ),
+      }),
+      { headers: { "content-type": "text/event-stream" } }
+    );
+  });
+  return { cancelled, url };
+});
 
 /** The next event of a watch. Fails the test when the watch has ended. */
 const nextEvent = (watch: AsyncIterator<RoomEvent>) =>
@@ -231,6 +271,38 @@ layer(layerHub(), { excludeTestServices: true })(
       })
     );
 
+    it.effect(
+      "a registration that carries auth headers never leaves the machine",
+      () =>
+        Effect.gen(function* () {
+          const client = yield* hubClient;
+          const { room } = yield* Effect.promise(() =>
+            client.rooms.create({ name: "Maxixe" })
+          );
+          // What a caller without the types could write.
+          const withSecret = {
+            nickname: "Lia",
+            model: "llama3",
+            authHeaders: { authorization: "Bearer segredo" },
+          } as RegisterParticipantInput;
+
+          const error = yield* rejection(() =>
+            client.participants.register(room.code, "lia-1", withSecret)
+          );
+
+          expect(error.code).toBe("INVALID_REQUEST");
+          // No status and no request id: the hub was never asked.
+          expect(error.status).toBeUndefined();
+          expect(error.requestId).toBeUndefined();
+          expect(
+            `${error.message} ${JSON.stringify(error.details)}`
+          ).not.toContain("segredo");
+          expect(
+            yield* Effect.promise(() => client.participants.list(room.code))
+          ).toEqual([]);
+        })
+    );
+
     it.effect("a registration without the room password is refused", () =>
       Effect.gen(function* () {
         const client = yield* hubClient;
@@ -401,38 +473,8 @@ describe("management client: the end of a watch", () => {
 
   it.live("leaving the loop cancels the request to the hub", () =>
     Effect.gen(function* () {
-      const cancelled = yield* Deferred.make<void>();
-      const snapshot: RoomEvent = {
-        type: "room.snapshot",
-        roomCode: "ABC123",
-        timestamp: 1_790_000_000_000,
-        room: {
-          id: "room-1",
-          code: "ABC123",
-          name: "Frevo",
-          hostId: "host-1",
-          createdAt: 1_790_000_000_000,
-          passwordProtected: false,
-          participantCount: 0,
-        },
-        participants: [],
-      };
-      // Answers like a hub that sends the snapshot and then stays quiet.
-      const hubUrl = yield* serving((request) => {
-        request.signal.addEventListener("abort", () =>
-          Effect.runFork(Deferred.succeed(cancelled, undefined))
-        );
-        return new Response(
-          new ReadableStream({
-            start: (controller) =>
-              controller.enqueue(
-                `event: room.snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`
-              ),
-          }),
-          { headers: { "content-type": "text/event-stream" } }
-        );
-      });
-      const client = createClient({ hubUrl });
+      const hub = yield* quietHub;
+      const client = createClient({ hubUrl: hub.url });
       const seen: RoomEvent[] = [];
 
       yield* Effect.promise(async () => {
@@ -441,9 +483,71 @@ describe("management client: the end of a watch", () => {
           break;
         }
       });
-      yield* Deferred.await(cancelled);
+      yield* Deferred.await(hub.cancelled);
 
-      expect(seen).toEqual([snapshot]);
+      expect(seen).toEqual([SNAPSHOT]);
+    })
+  );
+
+  it.live(
+    "aborting a watch nobody is reading cancels the request to the hub",
+    () =>
+      Effect.gen(function* () {
+        const hub = yield* quietHub;
+        const client = createClient({ hubUrl: hub.url });
+        const stop = new AbortController();
+        const watch = client.events
+          .watch("ABC123", { signal: stop.signal })
+          [Symbol.asyncIterator]();
+        yield* nextEvent(watch);
+
+        stop.abort();
+        yield* Deferred.await(hub.cancelled);
+
+        expect(yield* Effect.promise(() => watch.next())).toEqual({
+          done: true,
+          value: undefined,
+        });
+      })
+  );
+
+  it.live("closing the client cancels a watch nobody is reading", () =>
+    Effect.gen(function* () {
+      const hub = yield* quietHub;
+      const client = createClient({ hubUrl: hub.url });
+      const watch = client.events.watch("ABC123")[Symbol.asyncIterator]();
+      yield* nextEvent(watch);
+
+      yield* Effect.promise(() => client.close());
+      yield* Deferred.await(hub.cancelled);
+
+      expect(yield* Effect.promise(() => watch.next())).toEqual({
+        done: true,
+        value: undefined,
+      });
+    })
+  );
+
+  it.live("closing the client refuses the call it interrupts", () =>
+    Effect.gen(function* () {
+      const asked = yield* Deferred.make<void>();
+      // Takes the request and never answers it.
+      const hubUrl = yield* serving(() => {
+        Effect.runFork(Deferred.succeed(asked, undefined));
+        return new Promise<Response>(() => undefined);
+      });
+      const client = createClient({ hubUrl });
+
+      const listing = client.rooms.list().then(
+        () => undefined,
+        (error: unknown) => error
+      );
+      yield* Deferred.await(asked);
+      yield* Effect.promise(() => client.close());
+
+      expect(yield* Effect.promise(() => listing)).toEqual(
+        new Error("The client is closed.")
+      );
     })
   );
 });
