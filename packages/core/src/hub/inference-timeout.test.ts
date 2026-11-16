@@ -118,6 +118,83 @@ it.effect(
     }).pipe(Effect.provide(layerHubOnTestClock()))
 );
 
+it.effect(
+  "a Response that goes through Chat Completions and goes quiet ends with a named error too",
+  () =>
+    Effect.gen(function* () {
+      const hub = yield* Hub;
+      const client = yield* managementClient;
+      const generating = yield* openStream();
+      const provider = yield* fakeProvider({
+        answer: () => generating.response,
+      });
+      const { room } = yield* client.rooms.create({
+        payload: { name: "Frevo" },
+      });
+      yield* joinParticipant({
+        roomCode: room.code,
+        participantId: "arthur-1",
+        profile: {
+          capabilities: {
+            openResponses: "unsupported",
+            chatCompletions: "supported",
+          },
+        },
+        provider: { endpoint: provider.url },
+      });
+      const status = client.participants
+        .list({ params: { code: room.code } })
+        .pipe(Effect.map(([participant]) => participant?.status));
+      yield* generating.send(
+        sseEvent({ choices: [{ index: 0, delta: { content: "Olá" } }] })
+      );
+
+      const response = yield* Effect.promise(() =>
+        fetch(`${hub.url}/rooms/${room.code}/v1/responses`, {
+          method: "POST",
+          body: JSON.stringify({
+            model: "arthur-1",
+            input: "Oi",
+            stream: true,
+          }),
+        })
+      );
+      const reader = response.body?.getReader();
+      if (reader === undefined) {
+        return yield* Effect.die(new Error("The response has no body."));
+      }
+      const decoder = new TextDecoder();
+      let read = "";
+      const readUntil = (text: string) =>
+        Effect.promise(async () => {
+          while (!read.includes(text)) {
+            const { done, value } = await reader.read();
+            if (done) {
+              return;
+            }
+            read += decoder.decode(value, { stream: true });
+          }
+        });
+      yield* readUntil("response.output_text.delta");
+      const call = yield* provider.nextCall;
+
+      yield* TestClock.adjust("299 seconds");
+      expect(yield* status).toBe("busy");
+      yield* TestClock.adjust("1 second");
+
+      yield* readUntil("event: error");
+      const last = read.slice(read.lastIndexOf("data: ") + "data: ".length);
+      expect(JSON.parse(last)).toMatchObject({
+        type: "error",
+        code: "inference_timeout",
+        sequence_number: 3,
+      });
+      expect((yield* Effect.promise(() => reader.read())).done).toBe(true);
+      yield* call.aborted;
+      expect(yield* status).toBe("online");
+    }).pipe(Effect.provide(layerHubOnTestClock()))
+);
+
 it.effect("the hub is started with the timeout it should use", () =>
   Effect.gen(function* () {
     const provider = yield* fakeProvider({ answer: () => stillThinking });

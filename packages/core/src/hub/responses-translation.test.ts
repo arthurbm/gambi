@@ -1,8 +1,9 @@
 import { expect } from "bun:test";
+import type { RoomEvent } from "@gambi/protocol";
 import { layer } from "@gambi/testing/effect";
 import { Effect } from "effect";
 import { Sse } from "effect/encoding";
-import { layerHub, managementClient } from "../testing/hub.ts";
+import { layerHub, managementClient, watchRoom } from "../testing/hub.ts";
 import { joinParticipant } from "../testing/participant.ts";
 import {
   chatCompletionsOnly,
@@ -714,6 +715,200 @@ layer(layerHub(), { excludeTestServices: true })(
             status: "completed",
             output: [functionCall],
             output_text: "",
+          });
+        })
+    );
+
+    it.effect(
+      "a provider that speaks neither API is a named 501",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* makeRoom("Cavalo-marinho");
+          const provider = yield* fakeProvider({ answer: chatCompletionsOnly });
+          yield* joinParticipant({
+            roomCode: room.code,
+            participantId: "mudo-1",
+            profile: {
+              capabilities: {
+                openResponses: "unsupported",
+                chatCompletions: "unsupported",
+              },
+            },
+            provider: { endpoint: provider.url },
+          });
+          // This one may speak Responses, as far as the hub knows. It does not.
+          yield* joinParticipant({
+            roomCode: room.code,
+            participantId: "talvez-1",
+            profile: {
+              capabilities: {
+                openResponses: "unknown",
+                chatCompletions: "unsupported",
+              },
+            },
+            provider: { endpoint: provider.url },
+          });
+
+          const mute = yield* post(room.url("/responses"), {
+            model: "mudo-1",
+            input: "Oi",
+          });
+          const maybe = yield* post(room.url("/responses"), {
+            model: "talvez-1",
+            input: "Oi",
+          });
+
+          expect(mute.status).toBe(501);
+          expect(yield* json(mute)).toEqual({
+            error: {
+              message:
+                "The provider of participant 'mudo-1' speaks neither the Responses API nor Chat Completions.",
+              type: "api_error",
+              param: null,
+              code: "responses_not_supported",
+            },
+          });
+          expect(maybe.status).toBe(501);
+          expect((yield* json(maybe)).error.code).toBe(
+            "responses_not_supported"
+          );
+          // Only the second participant's provider was asked, and once.
+          expect(
+            (yield* provider.calls).map((call) => `${call.method} ${call.path}`)
+          ).toEqual(["POST /v1/responses"]);
+          expect(yield* room.statusOf("mudo-1")).toBe("online");
+          expect(yield* room.statusOf("talvez-1")).toBe("online");
+        })
+    );
+
+    it.effect(
+      "a refusal of the provider on the Chat Completions request reaches the app as the provider wrote it",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* makeRoom("Afoxé");
+          const refusal = {
+            error: {
+              message: "Rate limit reached.",
+              type: "rate_limit_error",
+              param: null,
+              code: "rate_limit_exceeded",
+            },
+          };
+          const provider = yield* fakeProvider({
+            answer: () => jsonAnswer(refusal, 429),
+          });
+          yield* joinParticipant({
+            roomCode: room.code,
+            participantId: "arthur-1",
+            profile: { capabilities: chatOnly },
+            provider: { endpoint: provider.url },
+          });
+
+          const response = yield* post(room.url("/responses"), {
+            model: "arthur-1",
+            input: "Oi",
+            stream: true,
+          });
+
+          expect(response.status).toBe(429);
+          expect(yield* json(response)).toEqual(refusal);
+        })
+    );
+
+    it.effect(
+      "the defaults of the room and of the participant fill a translated request too",
+      () =>
+        Effect.gen(function* () {
+          const hub = yield* Hub;
+          const client = yield* managementClient;
+          const { room } = yield* client.rooms.create({
+            payload: {
+              name: "Samba de coco",
+              defaults: {
+                instructions: "Responda em português.",
+                max_tokens: 128,
+                temperature: 0.9,
+              },
+            },
+          });
+          const provider = yield* fakeProvider({ answer: chatCompletionsOnly });
+          yield* joinParticipant({
+            roomCode: room.code,
+            participantId: "arthur-1",
+            profile: {
+              capabilities: chatOnly,
+              config: { temperature: 0.1, stop: ["FIM"] },
+            },
+            provider: { endpoint: provider.url },
+          });
+
+          const response = yield* post(
+            `${hub.url}/rooms/${room.code}/v1/responses`,
+            { model: "arthur-1", input: "Oi", seed: 7 }
+          );
+          const created = yield* json(response);
+
+          const [call] = yield* provider.calls;
+          expect(call?.body).toEqual({
+            model: "test-model",
+            messages: [
+              { role: "system", content: "Responda em português." },
+              { role: "user", content: "Oi" },
+            ],
+            // The participant's value wins over the room's.
+            temperature: 0.1,
+            max_tokens: 128,
+            stop: ["FIM"],
+            seed: 7,
+          });
+          expect(created).toMatchObject({
+            instructions: "Responda em português.",
+            temperature: 0.1,
+            max_output_tokens: 128,
+          });
+        })
+    );
+
+    it.effect(
+      "the room hears of a translated request as a request of the Responses API, with the token counts of the chat completion",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* makeRoom("Jongo");
+          const provider = yield* fakeProvider({ answer: chatCompletionsOnly });
+          yield* joinParticipant({
+            roomCode: room.code,
+            participantId: "arthur-1",
+            profile: { model: "llama3.1:8b" },
+            provider: { endpoint: provider.url },
+          });
+          const watch = yield* watchRoom(room.code);
+
+          const response = yield* post(room.url("/responses"), {
+            model: "*",
+            input: "Oi",
+          });
+          yield* Effect.promise(() => response.text());
+
+          const events: RoomEvent[] = [];
+          while (events.length < 4) {
+            events.push(yield* watch.next);
+          }
+          expect(events.map((event) => event.type)).toEqual([
+            "participant.busy",
+            "llm.request",
+            "llm.complete",
+            "participant.online",
+          ]);
+          expect(events[1]).toMatchObject({
+            participantId: "arthur-1",
+            model: "llama3.1:8b",
+            modelSelector: "*",
+            protocol: "openResponses",
+          });
+          expect(events[2]).toMatchObject({
+            protocol: "openResponses",
+            status: 200,
+            metrics: { inputTokens: 3, outputTokens: 4, totalTokens: 7 },
           });
         })
     );
