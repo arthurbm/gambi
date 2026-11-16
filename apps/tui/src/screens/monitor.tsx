@@ -42,7 +42,6 @@ export function Monitor({
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const session = useParticipantSession();
   const healthStatus = useSessionStore((s) => s.healthStatus);
-  const lastHealthCheck = useSessionStore((s) => s.lastHealthCheck);
 
   const handleCycleRooms = useCallback(() => {
     const roomList = [...rooms.keys()];
@@ -113,7 +112,7 @@ export function Monitor({
   if (showLeaveConfirm) {
     return (
       <ConfirmModal
-        message={`Leave room ${session.roomCode}? Health checks will stop.`}
+        message={`Leave room ${session.roomCode}? Your model stops receiving requests.`}
         onCancel={handleLeaveCancel}
         onConfirm={handleLeaveConfirm}
         title="Confirm Leave"
@@ -135,12 +134,7 @@ export function Monitor({
             <text fg={colors.success}>
               ◉ Joined as participant in {session.roomCode}
             </text>
-            <HealthIndicator
-              lastCheck={lastHealthCheck}
-              showLabel
-              showLastCheck
-              status={healthStatus}
-            />
+            <HealthIndicator showLabel status={healthStatus} />
           </box>
         )}
       </box>

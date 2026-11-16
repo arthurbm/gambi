@@ -32,5 +32,8 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
-  }
+  },
+  // The built bundle is JavaScript (`allowJs`), and it embeds Effect: the
+  // compiler overflows its stack on it.
+  "exclude": ["dist", "node_modules"]
 }

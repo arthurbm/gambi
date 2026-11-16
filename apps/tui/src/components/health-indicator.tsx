@@ -4,8 +4,6 @@ import { colors } from "../types";
 interface HealthIndicatorProps {
   status: HealthStatus;
   showLabel?: boolean;
-  lastCheck?: Date | null;
-  showLastCheck?: boolean;
 }
 
 const STATUS_CONFIG = {
@@ -26,56 +24,20 @@ const STATUS_CONFIG = {
   },
 } as const;
 
-const STALE_THRESHOLD_MS = 30_000; // 30 seconds
-
 /**
- * Format time since last check in a human-readable way.
+ * How a participant runtime is doing: `healthy` while its tunnel is open,
+ * `degraded` while it tries to come back, `unhealthy` once it ended.
  */
-function formatTimeSince(date: Date): string {
-  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (seconds < 60) {
-    return `${seconds}s ago`;
-  }
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}m ago`;
-}
-
-/**
- * Compute effective status considering staleness.
- * If last check is > 30s ago, consider degraded.
- */
-function getEffectiveStatus(
-  status: HealthStatus,
-  lastCheck: Date | null | undefined
-): HealthStatus {
-  if (!lastCheck) {
-    return status;
-  }
-  const timeSince = Date.now() - lastCheck.getTime();
-  if (timeSince > STALE_THRESHOLD_MS && status === "healthy") {
-    return "degraded";
-  }
-  return status;
-}
-
 export function HealthIndicator({
   status,
   showLabel = false,
-  lastCheck,
-  showLastCheck = false,
 }: HealthIndicatorProps) {
-  // Auto-degrade if last check is stale
-  const effectiveStatus = getEffectiveStatus(status, lastCheck);
-  const config = STATUS_CONFIG[effectiveStatus];
-
-  const lastCheckText =
-    showLastCheck && lastCheck ? ` (${formatTimeSince(lastCheck)})` : "";
+  const config = STATUS_CONFIG[status];
 
   return (
     <text>
       <span fg={config.color}>{config.icon}</span>
       {showLabel && <span fg={config.color}> {config.label}</span>}
-      {lastCheckText && <span fg={colors.muted}>{lastCheckText}</span>}
     </text>
   );
 }

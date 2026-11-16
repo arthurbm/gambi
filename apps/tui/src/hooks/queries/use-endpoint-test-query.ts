@@ -1,12 +1,10 @@
 import { probeEndpoint } from "@gambi/core/endpoint";
-import type {
-  ParticipantAuthHeaders,
-  ParticipantInfo,
-} from "@gambi/core/types";
 import { useQuery } from "@tanstack/react-query";
+import type { ParticipantAuthHeaders } from "../../hosting/participant";
+import type { ParticipantCapabilities } from "../../types";
 
 interface EndpointTestResult {
-  capabilities: ParticipantInfo["capabilities"];
+  capabilities: ParticipantCapabilities;
   success: boolean;
   models: string[];
 }
