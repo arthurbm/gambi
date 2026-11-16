@@ -6,6 +6,12 @@
  * the room event of the change. Whatever else must follow a change of status
  * belongs there.
  *
+ * A participant that is `offline` has a deadline to reconnect
+ * (`HubSettings.reconnectDeadline`); past it, the participant is removed.
+ * Going online cancels the deadline, and registering again restarts it: that
+ * is the first step of coming back, and it issues a bootstrap token that
+ * needs the participant to still be in the room.
+ *
  * The service does not know rooms: the caller answers for the room existing.
  * `Rooms` reads `count` for its summaries.
  */
@@ -21,8 +27,9 @@ import {
   toRuntimeConfigPublic,
   transitionStatus,
 } from "@gambi/protocol";
-import { Clock, Context, Effect, Layer } from "effect";
+import { Clock, Context, Effect, FiberMap, Layer } from "effect";
 import { RoomEvents } from "./room-events.ts";
+import { HubSettings } from "./settings.ts";
 
 /** What a registration says about the participant: everything but the password and the version. */
 export type ParticipantProfile = Omit<
@@ -72,6 +79,10 @@ const toSummary = (participant: ParticipantState): ParticipantSummary => ({
   joinedAt: participant.joinedAt,
   updatedAt: participant.updatedAt,
 });
+
+// A room code never contains a space, so the pair is unambiguous.
+const keyOf = (roomCode: string, participantId: string) =>
+  `${roomCode} ${participantId}`;
 
 /** The room event of a change of status: one per row of the status table. */
 const eventOf = (
@@ -133,6 +144,9 @@ export class Participants extends Context.Service<
     Participants,
     Effect.gen(function* () {
       const events = yield* RoomEvents;
+      const settings = yield* HubSettings;
+      // One fiber per offline participant, sleeping until its deadline.
+      const deadlines = yield* FiberMap.make<string>();
       const byRoom = new Map<string, Map<string, ParticipantState>>();
 
       const roomOf = (roomCode: string) => {
@@ -144,7 +158,22 @@ export class Participants extends Context.Service<
         return room;
       };
 
-      const transition = Effect.fn("Participants.transition")(function* (
+      // (Re)starts the time an offline participant has to reconnect.
+      const startDeadline = (
+        roomCode: string,
+        participantId: string
+      ): Effect.Effect<void> =>
+        Effect.sleep(settings.reconnectDeadline).pipe(
+          Effect.andThen(
+            transition(roomCode, participantId, "reconnectDeadlinePassed")
+          ),
+          FiberMap.run(deadlines, keyOf(roomCode, participantId)),
+          Effect.asVoid
+        );
+
+      const transition: Participants["Service"]["transition"] = Effect.fn(
+        "Participants.transition"
+      )(function* (
         roomCode: string,
         participantId: string,
         event: StatusEvent
@@ -180,6 +209,12 @@ export class Participants extends Context.Service<
           Effect.annotateLogs({ ...change })
         );
         yield* events.publish(roomCode, eventOf(change, participant, after));
+        if (to === "offline") {
+          yield* startDeadline(roomCode, participantId);
+        } else if (event !== "reconnectDeadlinePassed") {
+          // The deadline that passed is the fiber running this.
+          yield* FiberMap.remove(deadlines, keyOf(roomCode, participantId));
+        }
         return change;
       });
 
@@ -218,6 +253,9 @@ export class Participants extends Context.Service<
             ? "participant registered"
             : "participant updated"
         ).pipe(Effect.annotateLogs({ roomCode, participantId }));
+        if (status === "offline") {
+          yield* startDeadline(roomCode, participantId);
+        }
         const summary = toSummary(participant);
         yield* events.publish(roomCode, {
           type:

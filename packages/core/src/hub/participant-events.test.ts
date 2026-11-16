@@ -1,15 +1,22 @@
 import { expect } from "bun:test";
 import type { RoomEvent, StatusEvent } from "@gambi/protocol";
 import { it } from "@gambi/testing/effect";
-import { Effect, Layer, Queue, Stream } from "effect";
+import { Duration, Effect, Layer, Queue, Stream } from "effect";
 import { Participants } from "./participants.ts";
 import { RoomEvents } from "./room-events.ts";
+import { HubSettings } from "./settings.ts";
 
 const ROOM = "FREVO1";
 const profile = { nickname: "Arthur", model: "llama3.1:8b" };
 
+// `Participants` reads one setting of the hub, the reconnection deadline.
+const Settings = Layer.succeed(HubSettings, {
+  reconnectDeadline: Duration.seconds(60),
+} as HubSettings["Service"]);
+
 const layerParticipants = Participants.layer.pipe(
-  Layer.provideMerge(RoomEvents.layer)
+  Layer.provideMerge(RoomEvents.layer),
+  Layer.provide(Settings)
 );
 
 /** Starts watching the room; `next` is each event after the snapshot, in order. */

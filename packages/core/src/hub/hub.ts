@@ -44,6 +44,7 @@ import { Tunnels } from "./tunnels.ts";
 export const DEFAULT_HUB_PORT = 3000;
 export const DEFAULT_HUB_HOSTNAME = "0.0.0.0";
 export const DEFAULT_TUNNEL_PING_INTERVAL: Duration.Input = "5 seconds";
+export const DEFAULT_RECONNECT_DEADLINE: Duration.Input = "60 seconds";
 
 /** The platform services an HTTP server brings: `BunHttpServer.layer` provides all of them. */
 export type HubPlatform =
@@ -68,6 +69,11 @@ export interface HubOptions {
   readonly mdns?: boolean | undefined;
   /** The port to listen on; `0` takes any free port. Default `3000`. */
   readonly port?: number | undefined;
+  /**
+   * How long a participant may stay `offline` before the hub removes it from
+   * the room. Reconnecting before that keeps it. Default 60 seconds.
+   */
+  readonly reconnectDeadline?: Duration.Input | undefined;
   /**
    * How often the hub pings each tunnel; a tunnel that stays silent for one
    * more interval is dropped. Default 5 seconds.
@@ -166,6 +172,9 @@ export class Hub extends Context.Service<
     const Settings = Layer.succeed(
       HubSettings,
       HubSettings.of({
+        reconnectDeadline: Duration.fromInputUnsafe(
+          options.reconnectDeadline ?? DEFAULT_RECONNECT_DEADLINE
+        ),
         tunnelPingInterval: Duration.fromInputUnsafe(
           options.tunnelPingInterval ?? DEFAULT_TUNNEL_PING_INTERVAL
         ),
