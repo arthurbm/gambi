@@ -66,7 +66,6 @@ import {
   Duration,
   Effect,
   Exit,
-  identity,
   Layer,
   Option,
   Queue,
@@ -74,6 +73,7 @@ import {
   Scope,
   Stream,
 } from "effect";
+import { Sse } from "effect/encoding";
 import {
   HttpRouter,
   type HttpServerRequest,
@@ -311,11 +311,11 @@ const askProvider = Effect.fnUntraced(function* (
 /** What the hub does to a streamed answer on its way to the app. */
 interface StreamForm {
   /** What goes to the app after the provider's last piece. */
-  readonly end: () => string;
+  readonly end: Effect.Effect<string>;
   /** The last event of a stream that failed: the name of what went wrong. */
   readonly errorEvent: (error: InferenceError) => string;
   /** What goes to the app for one piece of the provider's body. */
-  readonly piece: (text: string) => string;
+  readonly piece: (text: string) => Effect.Effect<string>;
   /** What goes to the app before the provider's first piece. */
   readonly start: string;
 }
@@ -323,10 +323,49 @@ interface StreamForm {
 /** A streamed answer that goes to the app as the provider sent it. */
 const untouchedStream: StreamForm = {
   start: "",
-  piece: identity,
-  end: () => "",
+  piece: Effect.succeed,
+  end: Effect.succeed(""),
   errorEvent: toOpenAiStreamError,
 };
+
+/** The id of the Response an event of a streamed Response is about. */
+const ResponseEvent = Schema.fromJsonString(
+  Schema.Struct({ response: Schema.Struct({ id: Schema.String }) })
+);
+const readEventResponseId = Schema.decodeUnknownOption(ResponseEvent);
+
+/**
+ * A streamed Response that goes to the app as the provider sent it, while
+ * the hub reads its events until one says the id of the Response (the first
+ * one does), and calls `remember` with it.
+ */
+const streamOfStoredResponse = (
+  remember: (responseId: string) => Effect.Effect<void>
+): Effect.Effect<StreamForm> =>
+  Effect.sync(() => {
+    let searching = true;
+    let found: string | undefined;
+    const parser = Sse.makeParser((event) => {
+      if (searching && event._tag === "Event") {
+        found = Option.getOrUndefined(readEventResponseId(event.data))?.response
+          .id;
+        searching = found === undefined;
+      }
+    });
+    return {
+      ...untouchedStream,
+      piece: (text) => {
+        if (!searching) {
+          return Effect.succeed(text);
+        }
+        // An event too long to be parsed is not the one with the id.
+        searching = parser.feed(text) === undefined && searching;
+        return found === undefined
+          ? Effect.succeed(text)
+          : Effect.as(remember(found), text);
+      },
+    };
+  });
 
 /** What the hub does to a provider's answer on its way to the app. */
 interface AnswerForm {
@@ -426,10 +465,10 @@ const respond = Effect.fnUntraced(function* (
     Effect.andThen(
       answer.eachPiece((text) => {
         report.piece();
-        return send(stream.piece(text));
+        return Effect.flatMap(stream.piece(text), send);
       })
     ),
-    Effect.andThen(Effect.suspend(() => send(stream.end()))),
+    Effect.andThen(Effect.flatMap(stream.end, send)),
     Effect.tap(() => Effect.sync(() => report.completed(answer.status))),
     Effect.tapError((error) => {
       report.failed(error);
@@ -573,6 +612,7 @@ const infer = (operation: InferenceCreation) =>
                 onNone: () => Effect.void,
                 onSome: ({ id }) => remember(id),
               }).pipe(Effect.as(text)),
+            stream: streamOfStoredResponse(remember),
           });
         }).pipe(
           Effect.tapError((error) => Effect.sync(() => report.failed(error)))
@@ -599,6 +639,7 @@ const storedResponse = (operation: StoredResponseOperation) =>
     request: HttpServerRequest.HttpServerRequest
   ) {
     const rooms = yield* Rooms;
+    const participants = yield* Participants;
     const stored = yield* StoredResponses;
     const params = yield* HttpRouter.params;
     const room = yield* rooms.get(params.code ?? "");
@@ -609,6 +650,12 @@ const storedResponse = (operation: StoredResponseOperation) =>
       return yield* new ResponseNotFound({ roomCode, responseId });
     }
     const { participantId } = known;
+    // Without its participant in the room nobody can reach the Response. The
+    // hub keeps what it knows: a participant that comes back under its id
+    // brings its provider, and the Response, back with it.
+    if ((yield* participants.status(roomCode, participantId)) === undefined) {
+      return yield* new ResponseNotFound({ roomCode, responseId });
+    }
     // Cancelling takes no parameters; the other operations take theirs in
     // the query, which goes to the provider as the app wrote it.
     const query = operation === "responses.cancel" ? "" : queryOf(request.url);

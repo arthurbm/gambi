@@ -1,6 +1,6 @@
 import { expect } from "bun:test";
 import { layer } from "@gambi/testing/effect";
-import { Effect } from "effect";
+import { Effect, Fiber } from "effect";
 import { layerHub, managementClient } from "../testing/hub.ts";
 import { joinParticipant } from "../testing/participant.ts";
 import {
@@ -8,9 +8,12 @@ import {
   fakeProvider,
   jsonAnswer,
   openAiAnswer,
+  openStream,
+  sseEvent,
   storingResponses,
 } from "../testing/provider.ts";
 import { Hub } from "./hub.ts";
+import { Tunnels } from "./tunnels.ts";
 
 /** A new room and the URL of its inference plane. */
 const makeRoom = (name: string) =>
@@ -258,5 +261,106 @@ layer(layerHub(), { excludeTestServices: true })("Responses API", (it) => {
       expect(response.status).toBe(204);
       expect(yield* Effect.promise(() => response.text())).toBe("");
     })
+  );
+
+  it.effect(
+    "a Response of a participant that is offline is a named 503, and of one that left the room a 404",
+    () =>
+      Effect.gen(function* () {
+        const tunnels = yield* Tunnels;
+        const client = yield* managementClient;
+        const room = yield* makeRoom("Maxixe");
+        const provider = yield* fakeProvider({ answer: storingResponses() });
+        const participant = yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+          provider: { endpoint: provider.url },
+        });
+        const created = yield* json(
+          yield* call("POST", room.url("/responses"), {
+            model: "arthur-1",
+            input: "Oi",
+          })
+        );
+
+        yield* participant.kill;
+        yield* tunnels.awaitDrop(room.code, "arthur-1");
+        const offline = yield* call(
+          "GET",
+          room.url(`/responses/${created.id}`)
+        );
+        yield* client.participants.remove({
+          params: { code: room.code, id: "arthur-1" },
+        });
+        const left = yield* call("GET", room.url(`/responses/${created.id}`));
+
+        expect(offline.status).toBe(503);
+        expect((yield* json(offline)).error.code).toBe("participant_offline");
+        expect(left.status).toBe(404);
+        expect((yield* json(left)).error.code).toBe("response_not_found");
+      })
+  );
+
+  it.effect(
+    "a Response that is still streaming is cancelled through the hub while its participant is busy with it",
+    () =>
+      Effect.gen(function* () {
+        const client = yield* managementClient;
+        const room = yield* makeRoom("Cavalo-marinho");
+        const generating = yield* openStream();
+        const provider = yield* fakeProvider({
+          answer: (asked) =>
+            asked.path === "/v1/responses"
+              ? generating.response
+              : jsonAnswer({ id: "resp_ao_vivo", status: "cancelled" }),
+        });
+        yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+          provider: { endpoint: provider.url },
+        });
+        const statusOfArthur = client.participants
+          .list({ params: { code: room.code } })
+          .pipe(Effect.map(([arthur]) => arthur?.status));
+        // The first event of a streamed Response says its id. It arrives
+        // here split in two pieces, as a network may deliver it.
+        const first = sseEvent(
+          {
+            type: "response.created",
+            response: { id: "resp_ao_vivo", status: "in_progress" },
+          },
+          "response.created"
+        );
+        yield* generating.send(first.slice(0, 40));
+        const asking = yield* Effect.forkChild(
+          call("POST", room.url("/responses"), {
+            model: "arthur-1",
+            input: "Oi",
+            stream: true,
+          })
+        );
+        yield* provider.nextCall;
+        yield* generating.send(first.slice(40));
+        const streaming = yield* Fiber.join(asking);
+        const reader = streaming.body?.getReader();
+        yield* Effect.promise(async () => await reader?.read());
+
+        const cancelled = yield* call(
+          "POST",
+          room.url("/responses/resp_ao_vivo/cancel")
+        );
+
+        expect(cancelled.status).toBe(200);
+        expect((yield* json(cancelled)).status).toBe("cancelled");
+        expect((yield* provider.calls).map((asked) => asked.path)).toEqual([
+          "/v1/responses",
+          "/v1/responses/resp_ao_vivo/cancel",
+        ]);
+        // The cancellation went past the request in flight and left it alone.
+        expect(yield* statusOfArthur).toBe("busy");
+        yield* generating.end;
+        yield* Effect.promise(async () => await reader?.read());
+        expect(yield* statusOfArthur).toBe("online");
+      })
   );
 });
