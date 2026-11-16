@@ -104,9 +104,9 @@ export const openStream = (
       send: (text) =>
         Effect.sync(() => controller?.enqueue(encoder.encode(text))),
       end: Effect.sync(() => controller?.close()),
-      fail: Effect.sync(() =>
-        controller?.error(new Error("The fake provider crashed."))
-      ),
+      // Without a reason: Bun prints the reason of a response it could
+      // not finish, and a crash asked for is not worth a line of output.
+      fail: Effect.sync(() => controller?.error()),
     };
   });
 
