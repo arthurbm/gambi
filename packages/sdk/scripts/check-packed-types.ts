@@ -87,12 +87,24 @@ async function watch(roomCode: string, signal: AbortSignal): Promise<string[]> {
   const seen: string[] = [];
   const events: AsyncIterable<RoomEvent> = client.events.watch(roomCode, { signal });
   for await (const event of events) {
-    if (event.type === "room.snapshot") {
-      seen.push(...event.participants.map((participant) => participant.id));
-    } else if (event.type === "participant.removed") {
-      seen.push(\`\${event.participantId} \${event.reason}\`);
-    } else {
-      seen.push(event.participant.id);
+    switch (event.type) {
+      case "room.snapshot":
+        seen.push(...event.participants.map((participant) => participant.id));
+        break;
+      case "participant.removed":
+        seen.push(\`\${event.participantId} \${event.reason}\`);
+        break;
+      case "llm.request":
+        seen.push(\`\${event.requestId} \${event.modelSelector}\`);
+        break;
+      case "llm.complete":
+        seen.push(\`\${event.requestId} \${event.status} \${event.metrics.durationMs}\`);
+        break;
+      case "llm.error":
+        seen.push(\`\${event.requestId} \${event.stage} \${event.code}\`);
+        break;
+      default:
+        seen.push(\`\${event.participant.id} \${event.participant.status}\`);
     }
   }
   return seen;

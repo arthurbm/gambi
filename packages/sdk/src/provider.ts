@@ -2,7 +2,11 @@ import { createOpenResponses } from "@ai-sdk/open-responses";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { createClient, DEFAULT_HUB_URL, type GambiClient } from "./client.ts";
-import type { ParticipantCapabilities, ParticipantSummary } from "./types.ts";
+import type {
+  ParticipantCapabilities,
+  ParticipantStatus,
+  ParticipantSummary,
+} from "./types.ts";
 
 export type GambiProtocol = "openResponses" | "chatCompletions";
 const DEFAULT_PROTOCOL: GambiProtocol = "openResponses";
@@ -13,12 +17,16 @@ export interface GambiOptions {
   defaultProtocol?: GambiProtocol;
 }
 
+/** A participant the room can be asked for: one that shares a model and is not offline. */
 export interface GambiModel {
+  /** The participant id, which is also a model selector. */
   id: string;
   nickname: string;
   model: string;
   endpoint: string;
   capabilities: ParticipantCapabilities;
+  /** `busy` while the participant answers another request. */
+  status: Exclude<ParticipantStatus, "offline">;
 }
 
 interface ModelsResponse {
@@ -33,6 +41,7 @@ interface ModelsResponse {
       model: string;
       endpoint: string;
       capabilities?: ParticipantCapabilities;
+      status?: GambiModel["status"];
     };
   }>;
 }
@@ -140,6 +149,7 @@ export function createGambi(options: GambiOptions): GambiProvider {
           openResponses: "unknown",
           chatCompletions: "unknown",
         },
+        status: model.gambi?.status ?? "online",
       }));
     },
 

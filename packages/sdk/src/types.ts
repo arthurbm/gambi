@@ -205,6 +205,74 @@ export interface ParticipantRemoved extends RoomEventBase {
   readonly type: "participant.removed";
 }
 
+/** The inference API a request came through. */
+export type InferenceProtocol = "chatCompletions" | "openResponses";
+
+/** What the three events of one inference request have in common. */
+interface InferenceRequestEvent extends RoomEventBase {
+  /** The participant's model, which is the one the provider was asked for. */
+  readonly model: string;
+  /** The participant the request was dispatched to. */
+  readonly participantId: string;
+  readonly protocol: InferenceProtocol;
+  /** The id of the HTTP request on the hub: the same in the three events and in the hub's log. */
+  readonly requestId: string;
+}
+
+/**
+ * The hub dispatched an inference request to a participant. One of
+ * `llm.complete` and `llm.error` follows, with the same `requestId`.
+ */
+export interface LlmRequest extends InferenceRequestEvent {
+  /** The model selector the app asked for. */
+  readonly modelSelector: string;
+  readonly type: "llm.request";
+}
+
+/**
+ * How long a request took, as the hub saw it, and the tokens the provider
+ * reported. The token counts come from the `usage` of an answer that is not
+ * a stream; a streamed answer has none.
+ */
+export interface RequestMetrics {
+  /** Milliseconds from the dispatch to the end of the answer. */
+  readonly durationMs: number;
+  readonly inputTokens?: number;
+  readonly outputTokens?: number;
+  readonly tokensPerSecond?: number;
+  readonly totalTokens?: number;
+  /** Milliseconds from the dispatch to the first piece of the answer's body. */
+  readonly ttftMs: number;
+}
+
+/**
+ * The provider's answer to a request ended. It may be an error of the
+ * provider itself: `status` is the HTTP status it answered with.
+ */
+export interface LlmComplete extends InferenceRequestEvent {
+  readonly metrics: RequestMetrics;
+  readonly status: number;
+  readonly type: "llm.complete";
+}
+
+/** A dispatched request ended without the provider's whole answer. */
+export interface LlmError extends InferenceRequestEvent {
+  /**
+   * The `code` of the inference error the app got (`participant_disconnected`,
+   * `inference_timeout`, ...), or `request_cancelled` when the app itself gave
+   * the request up.
+   */
+  readonly code: string;
+  /** The message of the error. */
+  readonly error: string;
+  /**
+   * `dispatch` when the app had received nothing yet, `stream` when a
+   * streamed answer was already on its way.
+   */
+  readonly stage: "dispatch" | "stream";
+  readonly type: "llm.error";
+}
+
 /** Every event a room's stream can carry, told apart by `type`. */
 export type RoomEvent =
   | RoomSnapshot
@@ -213,4 +281,7 @@ export type RoomEvent =
   | ParticipantOnline
   | ParticipantBusy
   | ParticipantOffline
-  | ParticipantRemoved;
+  | ParticipantRemoved
+  | LlmRequest
+  | LlmComplete
+  | LlmError;

@@ -2,6 +2,7 @@ import { describe, expect } from "bun:test";
 import { Hub } from "@gambi/core/hub/hub";
 import { layerHub } from "@gambi/core/testing/hub";
 import { joinParticipant } from "@gambi/core/testing/participant";
+import { fakeProvider } from "@gambi/core/testing/provider";
 import { it, layer } from "@gambi/testing/effect";
 import { Context, Deferred, Effect, Exit, Layer, Scope } from "effect";
 import { createClient } from "./client.ts";
@@ -378,6 +379,56 @@ layer(layerHub(), { excludeTestServices: true })(
             reason: "left",
           });
         })
+    );
+
+    it.effect("a watch carries each inference request of the room", () =>
+      Effect.gen(function* () {
+        const hub = yield* Hub;
+        const client = yield* hubClient;
+        const { room } = yield* Effect.promise(() =>
+          client.rooms.create({ name: "Bumba meu boi" })
+        );
+        const local = yield* fakeProvider();
+        yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "ze-1",
+          profile: { model: "llama3" },
+          provider: { endpoint: local.url },
+        });
+        const watch = client.events.watch(room.code)[Symbol.asyncIterator]();
+        yield* nextEvent(watch);
+
+        yield* Effect.promise(() =>
+          fetch(`${hub.url}/rooms/${room.code}/v1/chat/completions`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              model: "*",
+              messages: [{ role: "user", content: "Oi" }],
+            }),
+          }).then((response) => response.text())
+        );
+        const busy = yield* nextEvent(watch);
+        const requested = yield* nextEvent(watch);
+        const completed = yield* nextEvent(watch);
+        const online = yield* nextEvent(watch);
+
+        expect(busy.type).toBe("participant.busy");
+        expect(requested).toMatchObject({
+          type: "llm.request",
+          participantId: "ze-1",
+          model: "llama3",
+          modelSelector: "*",
+          protocol: "chatCompletions",
+        });
+        expect(completed).toMatchObject({
+          type: "llm.complete",
+          participantId: "ze-1",
+          status: 200,
+          metrics: { inputTokens: 3, outputTokens: 4, totalTokens: 7 },
+        });
+        expect(online.type).toBe("participant.online");
+      })
     );
 
     it.effect(
