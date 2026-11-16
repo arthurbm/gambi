@@ -7,6 +7,7 @@ import { joinParticipant } from "../testing/participant.ts";
 import {
   FAKE_COMPLETION_TEXT,
   fakeProvider,
+  jsonAnswer,
   openAiAnswer,
   openStream,
   sseEvent,
@@ -545,5 +546,353 @@ layer(layerHub(), { excludeTestServices: true })("inference plane", (it) => {
       expect(models.status).toBe(404);
       expect((yield* json(models)).error.code).toBe("room_not_found");
     })
+  );
+
+  it.effect(
+    "the hub checks only model and stream: a field it does not know reaches the provider as it came",
+    () =>
+      Effect.gen(function* () {
+        const room = yield* makeRoom("Lundu");
+        const provider = yield* fakeProvider();
+        yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+          provider: { endpoint: provider.url },
+        });
+        const unknownToTheHub = {
+          messages: [
+            { role: "user", content: [{ type: "text", text: "Oi" }], name: 7 },
+          ],
+          temperature: "hot",
+          logit_bias: { "50256": -100 },
+          vendor_options: { nested: [1, null, "x", { deep: true }] },
+          stream_options: { include_usage: true },
+          tools: [{ type: "function", function: { name: "f" } }],
+        };
+
+        const response = yield* post(room.url("/chat/completions"), {
+          model: "arthur-1",
+          stream: false,
+          ...unknownToTheHub,
+        });
+
+        expect(response.status).toBe(200);
+        expect((yield* provider.nextCall).body).toEqual({
+          model: "test-model",
+          stream: false,
+          ...unknownToTheHub,
+        });
+      })
+  );
+
+  it.effect(
+    "a body the hub cannot route is refused before any participant is asked",
+    () =>
+      Effect.gen(function* () {
+        const room = yield* makeRoom("Samba de coco");
+        const provider = yield* fakeProvider();
+        yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+          provider: { endpoint: provider.url },
+        });
+        /** The status and the error of a request with this body, sent as it is. */
+        const refusal = (body: string) =>
+          Effect.gen(function* () {
+            const response = yield* Effect.promise(() =>
+              fetch(room.url("/chat/completions"), { method: "POST", body })
+            );
+            const { error } = yield* json(response);
+            return [response.status, error.code, error.param];
+          });
+
+        expect(yield* refusal("{not json")).toEqual([
+          400,
+          "invalid_request",
+          null,
+        ]);
+        expect(yield* refusal(JSON.stringify(["*"]))).toEqual([
+          400,
+          "invalid_request",
+          null,
+        ]);
+        expect(yield* refusal(JSON.stringify({ messages }))).toEqual([
+          400,
+          "invalid_request",
+          "model",
+        ]);
+        expect(
+          yield* refusal(JSON.stringify({ model: "*", stream: "yes" }))
+        ).toEqual([400, "invalid_request", "stream"]);
+        expect(yield* provider.calls).toEqual([]);
+        expect(yield* room.statusOf("arthur-1")).toBe("online");
+      })
+  );
+
+  it.effect(
+    "what the app left out is filled from the defaults of the room and of the participant, and the participant's win",
+    () =>
+      Effect.gen(function* () {
+        const hub = yield* Hub;
+        const client = yield* managementClient;
+        const { room } = yield* client.rooms.create({
+          payload: {
+            name: "Pastoril",
+            defaults: {
+              instructions: "Responda como quem é do Recife.",
+              temperature: 0.2,
+              max_tokens: 100,
+              stop: ["FIM"],
+            },
+          },
+        });
+        const provider = yield* fakeProvider();
+        yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+          profile: { model: "llama3.1:8b", config: { temperature: 0.7 } },
+          provider: { endpoint: provider.url },
+        });
+        const url = (path: string) => `${hub.url}/rooms/${room.code}/v1${path}`;
+        const sentToProvider = (path: string, body: object) =>
+          Effect.gen(function* () {
+            const response = yield* post(url(path), body);
+            yield* Effect.promise(() => response.text());
+            return (yield* provider.nextCall).body;
+          });
+
+        expect(
+          yield* sentToProvider("/chat/completions", {
+            model: "arthur-1",
+            messages,
+          })
+        ).toEqual({
+          model: "llama3.1:8b",
+          messages: [
+            { role: "system", content: "Responda como quem é do Recife." },
+            ...messages,
+          ],
+          temperature: 0.7,
+          max_tokens: 100,
+          stop: ["FIM"],
+        });
+        // What the app said stays as the app said it.
+        const own = {
+          model: "arthur-1",
+          messages: [{ role: "system", content: "Seja breve." }, ...messages],
+          temperature: 1.5,
+          max_tokens: 5,
+          stop: "\n",
+        };
+        expect(yield* sentToProvider("/chat/completions", own)).toEqual({
+          ...own,
+          model: "llama3.1:8b",
+        });
+        // The Responses API takes the same defaults under its own names.
+        expect(
+          yield* sentToProvider("/responses", {
+            model: "arthur-1",
+            input: "Oi",
+            temperature: null,
+          })
+        ).toEqual({
+          model: "llama3.1:8b",
+          input: "Oi",
+          instructions: "Responda como quem é do Recife.",
+          temperature: 0.7,
+          max_output_tokens: 100,
+          stop_sequences: ["FIM"],
+        });
+      })
+  );
+
+  it.effect(
+    "ParticipantAuthHeaders go to the provider and to nowhere else",
+    () =>
+      Effect.gen(function* () {
+        const client = yield* managementClient;
+        const room = yield* makeRoom("Reisado");
+        const provider = yield* fakeProvider();
+        const secret = "Bearer segredo-do-arthur";
+        const participant = yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+          provider: {
+            endpoint: provider.url,
+            authHeaders: { Authorization: secret, "X-Org": "gambiarra" },
+          },
+        });
+
+        const response = yield* post(room.url("/chat/completions"), {
+          model: "arthur-1",
+          stream: true,
+          messages,
+        });
+        const body = yield* Effect.promise(() => response.text());
+        const models = yield* Effect.promise(() =>
+          fetch(room.url("/models")).then((answer) => answer.text())
+        );
+        const listed = yield* client.participants.list({
+          params: { code: room.code },
+        });
+
+        const call = yield* provider.nextCall;
+        expect(call.headers.authorization).toBe(secret);
+        expect(call.headers["x-org"]).toBe("gambiarra");
+        // Nothing the runtime sent to the hub, and nothing the hub shows,
+        // carries them.
+        const leaked = [
+          ...(yield* participant.sentToHub),
+          body,
+          models,
+          JSON.stringify(listed),
+          JSON.stringify([...response.headers]),
+        ].filter(
+          (text) => text.includes("segredo-do-arthur") || text.includes("X-Org")
+        );
+        expect(leaked).toEqual([]);
+        // The request to the provider carries nothing of the hub either,
+        // such as trace headers: only what an HTTP client sends by itself.
+        const ofAnyHttpClient = new Set([
+          "accept",
+          "accept-encoding",
+          "connection",
+          "content-length",
+          "content-type",
+          "host",
+          "user-agent",
+        ]);
+        expect(
+          Object.keys(call.headers).filter((name) => !ofAnyHttpClient.has(name))
+        ).toEqual(["authorization", "x-org"]);
+      })
+  );
+
+  it.effect(
+    "an error the provider answers with passes through with its status and its body",
+    () =>
+      Effect.gen(function* () {
+        const room = yield* makeRoom("Mazurca");
+        const refused = {
+          error: {
+            message: "You exceeded your current quota.",
+            type: "insufficient_quota",
+            param: null,
+            code: "insufficient_quota",
+          },
+        };
+        const provider = yield* fakeProvider({
+          answer: () => jsonAnswer(refused, 429),
+        });
+        yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+          provider: { endpoint: provider.url },
+        });
+
+        const response = yield* post(room.url("/chat/completions"), {
+          model: "arthur-1",
+          stream: true,
+          messages,
+        });
+
+        expect(response.status).toBe(429);
+        expect(yield* json(response)).toEqual(refused);
+        expect(yield* room.statusOf("arthur-1")).toBe("online");
+      })
+  );
+
+  it.effect("a provider that does not answer is a named 502", () =>
+    Effect.gen(function* () {
+      const room = yield* makeRoom("Toré");
+      // A provider that was there and is gone: nothing listens on its port.
+      const stopped = yield* Effect.scoped(fakeProvider());
+      yield* joinParticipant({
+        roomCode: room.code,
+        participantId: "arthur-1",
+        provider: { endpoint: stopped.url },
+      });
+
+      const response = yield* post(room.url("/chat/completions"), {
+        model: "arthur-1",
+        messages,
+      });
+
+      expect(response.status).toBe(502);
+      expect((yield* json(response)).error.code).toBe("provider_unreachable");
+      expect(yield* room.statusOf("arthur-1")).toBe("online");
+    })
+  );
+
+  it.effect(
+    "a participant that shares no model endpoint refuses inference with a named error",
+    () =>
+      Effect.gen(function* () {
+        const room = yield* makeRoom("Guerreiro");
+        yield* joinParticipant({ roomCode: room.code, participantId: "h-1" });
+
+        const response = yield* post(room.url("/chat/completions"), {
+          model: "h-1",
+          messages,
+        });
+
+        expect(response.status).toBe(400);
+        expect((yield* json(response)).error.code).toBe(
+          "inference_not_supported"
+        );
+        expect(yield* room.statusOf("h-1")).toBe("online");
+      })
+  );
+
+  it.effect(
+    "a browser app on another origin may call the inference plane",
+    () =>
+      Effect.gen(function* () {
+        const room = yield* makeRoom("Ciranda de Lia");
+        const provider = yield* fakeProvider();
+        yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+          provider: { endpoint: provider.url },
+        });
+        const origin = { Origin: "http://localhost:5173" };
+
+        const preflight = yield* Effect.promise(() =>
+          fetch(room.url("/chat/completions"), {
+            method: "OPTIONS",
+            headers: {
+              ...origin,
+              "Access-Control-Request-Method": "POST",
+              "Access-Control-Request-Headers": "content-type, authorization",
+            },
+          })
+        );
+        const completion = yield* Effect.promise(() =>
+          fetch(room.url("/chat/completions"), {
+            method: "POST",
+            headers: { ...origin, "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "arthur-1", stream: true, messages }),
+          })
+        );
+        const refused = yield* Effect.promise(() =>
+          fetch(room.url("/chat/completions"), {
+            method: "POST",
+            headers: origin,
+            body: JSON.stringify({ model: "nobody", messages }),
+          })
+        );
+        const models = yield* Effect.promise(() =>
+          fetch(room.url("/models"), { headers: origin })
+        );
+
+        expect(preflight.status).toBe(204);
+        expect(preflight.headers.get("access-control-allow-origin")).toBe("*");
+        expect(preflight.headers.get("access-control-allow-headers")).toBe(
+          "content-type, authorization"
+        );
+        for (const response of [completion, refused, models]) {
+          expect(response.headers.get("access-control-allow-origin")).toBe("*");
+        }
+      })
   );
 });
