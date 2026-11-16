@@ -25,7 +25,7 @@ import {
   TunnelRpcs,
 } from "@gambi/protocol";
 import { Effect, identity, type Layer, Stream } from "effect";
-import { HttpClient, HttpClientRequest } from "effect/http";
+import { HttpClient, HttpClientError, HttpClientRequest } from "effect/http";
 import type { Rpc } from "effect/rpc";
 
 /**
@@ -94,6 +94,10 @@ const providerPath = (request: InferenceRequest): string => {
 
 const TRAILING_SLASHES = /\/+$/;
 
+const hasNoBody = (error: unknown): boolean =>
+  HttpClientError.isHttpClientError(error) &&
+  error.reason._tag === "EmptyBodyError";
+
 /**
  * Serves `Infer` by calling the local provider. The response comes back as it
  * is: the status, the content type and the body, piece by piece as the
@@ -136,6 +140,8 @@ export const providerInference = (
               ...(contentType === undefined ? {} : { contentType }),
             };
             return response.stream.pipe(
+              // An answer with no body (a 204) is an answer that ended.
+              Stream.catchIf(hasNoBody, () => Stream.empty),
               Stream.decodeText(),
               Stream.filter((text) => text !== ""),
               Stream.map((text): InferenceChunk => ({ _tag: "Body", text })),

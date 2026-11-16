@@ -6,6 +6,8 @@ import { joinParticipant } from "../testing/participant.ts";
 import {
   FAKE_COMPLETION_TEXT,
   fakeProvider,
+  jsonAnswer,
+  openAiAnswer,
   storingResponses,
 } from "../testing/provider.ts";
 import { Hub } from "./hub.ts";
@@ -162,5 +164,99 @@ layer(layerHub(), { excludeTestServices: true })("Responses API", (it) => {
         expect(asked.method).toBe("GET");
         expect(asked.path).toBe(`/v1/responses/${id}/input_items${query}`);
       })
+  );
+
+  it.effect("a Response the hub does not know is a named 404", () =>
+    Effect.gen(function* () {
+      const { provider, id } = yield* makeStoredResponse("Xote");
+      const other = yield* makeRoom("Baião");
+
+      const unknown = yield* call(
+        "GET",
+        other.url("/responses/resp_que_ninguem_criou")
+      );
+      // A Response belongs to the room it was created in.
+      const elsewhere = yield* call("GET", other.url(`/responses/${id}`));
+
+      expect(unknown.status).toBe(404);
+      expect(yield* json(unknown)).toEqual({
+        error: {
+          message: `Response 'resp_que_ninguem_criou' was not found in room '${other.code}'.`,
+          type: "invalid_request_error",
+          param: null,
+          code: "response_not_found",
+        },
+      });
+      expect(elsewhere.status).toBe(404);
+      expect((yield* json(elsewhere)).error.code).toBe("response_not_found");
+      expect(yield* provider.calls).toHaveLength(1);
+    })
+  );
+
+  it.effect(
+    "a Response the provider no longer has is forgotten by the hub too",
+    () =>
+      Effect.gen(function* () {
+        const room = yield* makeRoom("Caboclinho");
+        const provider = yield* fakeProvider({
+          // A provider that creates a Response and does not keep it.
+          answer: (asked) =>
+            asked.method === "POST"
+              ? openAiAnswer(asked)
+              : jsonAnswer({ error: { message: "Gone." } }, 404),
+        });
+        yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+          provider: { endpoint: provider.url },
+        });
+        const created = yield* json(
+          yield* call("POST", room.url("/responses"), {
+            model: "arthur-1",
+            input: "Oi",
+          })
+        );
+
+        const first = yield* call("GET", room.url(`/responses/${created.id}`));
+        const second = yield* call("GET", room.url(`/responses/${created.id}`));
+
+        // The first answer is the provider's own; the second is the hub's.
+        expect(first.status).toBe(404);
+        expect(yield* json(first)).toEqual({ error: { message: "Gone." } });
+        expect(second.status).toBe(404);
+        expect((yield* json(second)).error.code).toBe("response_not_found");
+        expect(yield* provider.calls).toHaveLength(2);
+      })
+  );
+
+  it.effect("an answer of the provider that has no body comes back empty", () =>
+    Effect.gen(function* () {
+      const room = yield* makeRoom("Forró");
+      const provider = yield* fakeProvider({
+        answer: (asked) =>
+          asked.method === "DELETE"
+            ? new Response(null, { status: 204 })
+            : openAiAnswer(asked),
+      });
+      yield* joinParticipant({
+        roomCode: room.code,
+        participantId: "arthur-1",
+        provider: { endpoint: provider.url },
+      });
+      const created = yield* json(
+        yield* call("POST", room.url("/responses"), {
+          model: "arthur-1",
+          input: "Oi",
+        })
+      );
+
+      const response = yield* call(
+        "DELETE",
+        room.url(`/responses/${created.id}`)
+      );
+
+      expect(response.status).toBe(204);
+      expect(yield* Effect.promise(() => response.text())).toBe("");
+    })
   );
 });

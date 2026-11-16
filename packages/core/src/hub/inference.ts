@@ -627,7 +627,13 @@ const storedResponse = (operation: StoredResponseOperation) =>
           ...(query === "" ? {} : { query }),
         });
         const succeeded = answer.status >= 200 && answer.status < 300;
-        if (operation === "responses.delete" && succeeded) {
+        // The Response is gone from the provider: deleted now, or found
+        // missing by an operation on the Response itself.
+        const gone =
+          operation === "responses.delete"
+            ? succeeded || answer.status === 404
+            : operation === "responses.retrieve" && answer.status === 404;
+        if (gone) {
           yield* stored.forget(roomCode, responseId);
         }
         return yield* respond(call, answer, untouched);
