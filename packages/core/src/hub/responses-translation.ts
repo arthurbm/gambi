@@ -289,6 +289,8 @@ export interface ResponseEvents {
    * provider's stream ended well.
    */
   readonly end: () => string;
+  /** The `sequence_number` the next event of the stream takes. */
+  readonly nextSequenceNumber: () => number;
   /**
    * The events for one more piece of the provider's body. A piece may hold
    * several chunks, or part of one: what is unfinished waits for the next.
@@ -378,6 +380,7 @@ export const toResponseEvents = (translation: Translation): ResponseEvents => {
   });
   return {
     start: takeWritten(),
+    nextSequenceNumber: () => sequenceNumber,
     piece: (piece) => {
       parser.feed(piece);
       return takeWritten();

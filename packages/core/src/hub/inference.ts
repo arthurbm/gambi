@@ -640,7 +640,8 @@ const createResponse = Effect.fnUntraced(function* (
         start: events.start,
         piece: (text) => Effect.sync(() => events.piece(text)),
         end: Effect.sync(events.end),
-        errorEvent: toOpenAiStreamError,
+        errorEvent: (error) =>
+          toOpenAiStreamError(error, events.nextSequenceNumber()),
       };
     }),
   });

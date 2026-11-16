@@ -8,6 +8,8 @@ import {
   chatCompletionsOnly,
   FAKE_COMPLETION_TEXT,
   fakeProvider,
+  openStream,
+  sseEvent,
 } from "../testing/provider.ts";
 import { Hub } from "./hub.ts";
 
@@ -58,6 +60,34 @@ const post = (url: string, body: unknown, signal?: AbortSignal) =>
 /** The JSON body of a response. A test asserts on what it expects to find there. */
 const json = (response: Response): Effect.Effect<any> =>
   Effect.promise(() => response.json());
+
+/** One chunk of a streamed chat completion, as a provider writes it. */
+const chatChunk = (delta: object, finishReason: string | null = null) =>
+  sseEvent({
+    id: "chatcmpl-fake",
+    object: "chat.completion.chunk",
+    created: 0,
+    model: "test-model",
+    choices: [{ index: 0, delta, finish_reason: finishReason }],
+  });
+
+/** Reads a streamed body until `text` shows up in it; answers what was read. */
+const readUntil = (
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  text: string
+) =>
+  Effect.promise(async () => {
+    const decoder = new TextDecoder();
+    let read = "";
+    while (!read.includes(text)) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      read += decoder.decode(value, { stream: true });
+    }
+    return read;
+  });
 
 /** The server-sent events of a body, in order: the name of each and its data, parsed when it is JSON. */
 const eventsOf = (body: string) => {
@@ -308,6 +338,103 @@ layer(layerHub(), { excludeTestServices: true })(
             stream: true,
           });
           expect(yield* room.statusOf("arthur-1")).toBe("online");
+        })
+    );
+
+    it.effect(
+      "cancelling a streamed Response that goes through Chat Completions aborts the request to the provider and frees the participant",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* makeRoom("Xote");
+          const generating = yield* openStream();
+          const provider = yield* fakeProvider({
+            answer: (asked) =>
+              asked.path === "/v1/chat/completions"
+                ? generating.response
+                : chatCompletionsOnly(asked),
+          });
+          yield* joinParticipant({
+            roomCode: room.code,
+            participantId: "arthur-1",
+            provider: { endpoint: provider.url },
+          });
+          const app = new AbortController();
+          // A provider sends its response head with the first piece of the body.
+          yield* generating.send(chatChunk({ content: "Olá" }));
+
+          const response = yield* post(
+            room.url("/responses"),
+            { model: "arthur-1", input: "Oi", stream: true },
+            app.signal
+          );
+          const reader = response.body?.getReader();
+          if (reader === undefined) {
+            return yield* Effect.die(new Error("The response has no body."));
+          }
+          const read = yield* readUntil(reader, "response.output_text.delta");
+          const refused = yield* provider.nextCall;
+          const answering = yield* provider.nextCall;
+
+          expect(response.status).toBe(200);
+          expect(eventsOf(read).at(-1)?.data.delta).toBe("Olá");
+          expect(refused.path).toBe("/v1/responses");
+          expect(answering.path).toBe("/v1/chat/completions");
+          expect(yield* room.statusOf("arthur-1")).toBe("busy");
+
+          app.abort();
+
+          // The provider sees its request go away: the handler on the
+          // participant was interrupted and took the request with it.
+          yield* answering.aborted;
+          yield* room
+            .statusOf("arthur-1")
+            .pipe(Effect.repeat({ until: (status) => status === "online" }));
+        })
+    );
+
+    it.effect(
+      "a participant that dies in the middle of a translated stream ends it with a named error, in its place in the stream",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* makeRoom("Baião");
+          const generating = yield* openStream();
+          const provider = yield* fakeProvider({
+            answer: () => generating.response,
+          });
+          const participant = yield* joinParticipant({
+            roomCode: room.code,
+            participantId: "arthur-1",
+            profile: { capabilities: chatOnly },
+            provider: { endpoint: provider.url },
+          });
+          yield* generating.send(chatChunk({ content: "Olá" }));
+          const response = yield* post(room.url("/responses"), {
+            model: "arthur-1",
+            input: "Oi",
+            stream: true,
+          });
+          const reader = response.body?.getReader();
+          if (reader === undefined) {
+            return yield* Effect.die(new Error("The response has no body."));
+          }
+          const start = yield* readUntil(reader, "response.output_text.delta");
+
+          yield* participant.kill;
+          const rest = yield* readUntil(reader, "never, so to the end");
+
+          const events = eventsOf(start + rest);
+          expect(events.map((event) => event.event)).toEqual([
+            "response.created",
+            "response.output_item.added",
+            "response.output_text.delta",
+            "error",
+          ]);
+          expect(events.at(-1)?.data).toMatchObject({
+            type: "error",
+            sequence_number: 3,
+            code: "participant_disconnected",
+            error: { code: "participant_disconnected", type: "api_error" },
+          });
         })
     );
   }

@@ -287,11 +287,21 @@ export const OPENAI_INTERNAL_ERROR: OpenAiErrorBody = {
  * reads it: the top-level fields are the `error` event of the Responses API,
  * and `error` is the error object of Chat Completions (the OpenAI SDKs throw
  * on an event whose data has an `error`). No `[DONE]` follows it.
+ *
+ * `sequenceNumber` is the place of the event in a stream whose events the
+ * hub numbers itself (a Response it translates). A stream the hub passes on
+ * as the provider wrote it has no number for it.
  */
-export const toOpenAiStreamError = (error: InferenceError): string => {
+export const toOpenAiStreamError = (
+  error: InferenceError,
+  sequenceNumber?: number
+): string => {
   const { body } = toOpenAiError(error);
   const data = {
     type: "error",
+    ...(sequenceNumber === undefined
+      ? {}
+      : { sequence_number: sequenceNumber }),
     code: body.error.code,
     message: body.error.message,
     param: body.error.param,
