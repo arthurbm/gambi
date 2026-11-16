@@ -16,7 +16,10 @@
  * `Rooms` reads `count` for its summaries.
  */
 import {
+  NoParticipantAvailable,
   type ParticipantCapabilities,
+  ParticipantIsBusy,
+  ParticipantIsOffline,
   type ParticipantStatus,
   type ParticipantSummary,
   type RegisterParticipant,
@@ -27,7 +30,7 @@ import {
   toRuntimeConfigPublic,
   transitionStatus,
 } from "@gambi/protocol";
-import { Clock, Context, Effect, FiberMap, Layer } from "effect";
+import { Clock, Context, Effect, FiberMap, Layer, Random } from "effect";
 import { RoomEvents } from "./room-events.ts";
 import { HubSettings } from "./settings.ts";
 
@@ -49,6 +52,24 @@ interface ParticipantState {
   readonly status: ParticipantStatus;
   readonly updatedAt: number;
 }
+
+/**
+ * The participant a request was dispatched to, with what the inference plane
+ * needs to build the request. `config` carries the instructions text: it
+ * stays inside the hub.
+ */
+export interface DispatchedParticipant {
+  readonly config: RuntimeConfig;
+  readonly id: string;
+  readonly model: string;
+  readonly nickname: string;
+}
+
+/** Why a model selector found no participant to take a request. */
+export type DispatchError =
+  | NoParticipantAvailable
+  | ParticipantIsBusy
+  | ParticipantIsOffline;
 
 /** A change of status that happened. */
 export interface StatusChange {
@@ -112,6 +133,30 @@ export class Participants extends Context.Service<
   {
     /** How many participants the room has, whatever their status. */
     readonly count: (roomCode: string) => Effect.Effect<number>;
+    /**
+     * Routes a request: picks the participant the model selector asks for
+     * and marks it `busy`. Only an `online` participant is picked, so a
+     * participant never takes two requests at once.
+     *
+     * The model selector has four forms:
+     *
+     * - `*` or `any`: any `online` participant, at random;
+     * - `model:<name>`: the first `online` participant that shares that model;
+     * - `<participantId>`: that participant;
+     * - `<name>`, when no `online` participant has that id: the same as
+     *   `model:<name>`. It is what an OpenAI client sends.
+     *
+     * A selector that names a participant that cannot take the request says
+     * why (`ParticipantIsBusy`, `ParticipantIsOffline`); every other miss is
+     * `NoParticipantAvailable`.
+     *
+     * The caller owes a `transition(..., "requestEnded")` when the request
+     * ends, however it ends.
+     */
+    readonly dispatch: (
+      roomCode: string,
+      modelSelector: string
+    ) => Effect.Effect<DispatchedParticipant, DispatchError>;
     readonly list: (
       roomCode: string
     ) => Effect.Effect<readonly ParticipantSummary[]>;
@@ -267,12 +312,89 @@ export class Participants extends Context.Service<
         return summary;
       });
 
+      const MODEL_PREFIX = "model:";
+
+      /**
+       * The participant the selector asks for, or why there is none. `chance`
+       * is a number in `[0, 1)` that picks among equals.
+       */
+      const pick = (
+        roomCode: string,
+        modelSelector: string,
+        chance: number
+      ): ParticipantState | DispatchError => {
+        const room = byRoom.get(roomCode);
+        const online = [...(room?.values() ?? [])].filter(
+          (participant) => participant.status === "online"
+        );
+        const sharing = (model: string) =>
+          online.find((participant) => participant.model === model);
+        const none = new NoParticipantAvailable({
+          roomCode,
+          model: modelSelector,
+        });
+
+        if (modelSelector === "*" || modelSelector === "any") {
+          return online[Math.floor(chance * online.length)] ?? none;
+        }
+        if (modelSelector.startsWith(MODEL_PREFIX)) {
+          return sharing(modelSelector.slice(MODEL_PREFIX.length)) ?? none;
+        }
+        const named = room?.get(modelSelector);
+        if (named?.status === "online") {
+          return named;
+        }
+        const byModel = sharing(modelSelector);
+        if (byModel !== undefined) {
+          return byModel;
+        }
+        if (named?.status === "busy") {
+          return new ParticipantIsBusy({ roomCode, participantId: named.id });
+        }
+        if (named?.status === "offline") {
+          return new ParticipantIsOffline({
+            roomCode,
+            participantId: named.id,
+          });
+        }
+        return none;
+      };
+
+      const dispatch = Effect.fn("Participants.dispatch")(function* (
+        roomCode: string,
+        modelSelector: string
+      ) {
+        // Picking and marking busy are two steps, and another request may take
+        // the participant in between: then the table has no row for
+        // `requestDispatched`, and this one picks again.
+        while (true) {
+          const picked = pick(roomCode, modelSelector, yield* Random.next);
+          if (!("status" in picked)) {
+            return yield* picked;
+          }
+          const change = yield* transition(
+            roomCode,
+            picked.id,
+            "requestDispatched"
+          );
+          if (change !== undefined) {
+            return {
+              id: picked.id,
+              nickname: picked.nickname,
+              model: picked.model,
+              config: picked.config,
+            } satisfies DispatchedParticipant;
+          }
+        }
+      });
+
       return Participants.of({
         count: (roomCode) => Effect.sync(() => byRoom.get(roomCode)?.size ?? 0),
         list: (roomCode) =>
           Effect.sync(() =>
             [...(byRoom.get(roomCode)?.values() ?? [])].map(toSummary)
           ),
+        dispatch,
         register,
         status: (roomCode, participantId) =>
           Effect.sync(() => byRoom.get(roomCode)?.get(participantId)?.status),

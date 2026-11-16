@@ -9,6 +9,7 @@ import { Effect, Layer } from "effect";
 import { HttpClient, HttpClientRequest } from "effect/http";
 import { Socket } from "effect/socket";
 import { TunnelDiagnostics } from "../participant/diagnostics.ts";
+import { InferenceNotServed } from "../participant/inference.ts";
 import {
   openTunnel,
   type ParticipantRuntimeOptions,
@@ -152,6 +153,7 @@ layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
         Effect.provide(
           Layer.mergeAll(
             TunnelDiagnostics,
+            InferenceNotServed,
             Socket.layerWebSocketConstructorGlobal
           )
         )

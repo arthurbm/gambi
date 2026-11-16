@@ -101,9 +101,35 @@ Rules:
 - `Tunnels.client` needs a `Scope` and the client is good until that scope closes. If the tunnel drops meanwhile, the calls fail with `RpcClientError`; `error.reason` says why (`SocketCloseError` with the close code, `SocketReadError` on a ping timeout). Never keep a client past the scope it was taken in: a call on a client that was let go of is interrupted instead of failed.
 - A participant's status changes only in `Participants.transition`, which runs the event through `transitionStatus` and publishes the room event of the change. Do not write a status anywhere else, and do not publish a status event yourself. What else must follow a change goes there.
 - The hub's wiring of a tunnel (`Tunnels.serve`) has three load-bearing details, listed at the top of `tunnels.ts`. Read them before changing it.
-- The hub pings every 5 s (`HubOptions.tunnelPingInterval`) and drops a tunnel that stays silent for one more interval. The participant has no ping of its own.
+- The hub pings every 5 s (`HubOptions.tunnelPingInterval`) and drops a tunnel that stays silent for one more interval. The participant has no ping of its own: it watches the hub's frames instead, and drops a tunnel that stays silent for three ping intervals (`HUB_SILENCE_PING_INTERVALS`). The hub says its interval in `Welcome`.
+- `ParticipantRuntime.layer` joins once and fails when the join fails. After that it comes back by itself when the tunnel drops: it registers again (a bootstrap token opens one tunnel) and dials again with the same `participantId`, waiting 1 s and then twice as long after each attempt that fails, up to 30 s. A refusal of the hub (`VersionMismatch`, `RoomNotFound`, `InvalidPassword`, `InvalidRequest`) ends the runtime instead of being retried; `ParticipantRuntime.ended` fails with it.
+- A host follows the runtime through `onLifecycle`, which receives `connected`, `reconnecting` and `left` (`ParticipantLifecycleEvent`), in order. Add a step of the runtime's life there, not as a second callback.
 - A knob of the hub is a field of `HubSettings` (`packages/core/src/hub/settings.ts`), with its default resolved in `Hub.layer`. Services read it from there, not from parameters.
 - A participant that is `offline` is removed after `HubSettings.reconnectDeadline` (60 s). Going online cancels the deadline; registering again restarts it.
+- Whoever consumes a stream call on the hub takes each chunk as soon as it arrives and never waits for someone else before taking the next. A tunnel has one reader: while it waits on a stream nobody is draining, it reads nothing else on that tunnel, pongs included, and the hub drops the tunnel on a ping timeout. Put a bounded buffer with a policy (drop, or fail the consumer) between the stream and anything slow. `infer` in `packages/core/src/hub/inference.ts` is the example.
+- Every call has a default handler for a participant that does not serve it, which fails with `CallNotSupported`: `InferenceNotServed` (`packages/core/src/participant/inference.ts`) for `Infer`. A host of a runtime provides, for each call, either the real handler or that one.
+
+## The inference plane
+
+The OpenAI-compatible routes under `/rooms/:code/v1/*` are plain `HttpRouter` routes in `packages/core/src/hub/inference.ts`, outside the management contract: they pass a provider's answer through.
+
+| What | Where |
+|---|---|
+| The routes, and how a request lives and ends (`infer`) | `packages/core/src/hub/inference.ts` |
+| What the hub reads of a body and what it fills in (`readRequest`, `providerBody`) | `packages/core/src/hub/inference-request.ts` |
+| Routing by model selector (`Participants.dispatch`) | `packages/core/src/hub/participants.ts` |
+| The tunnel call (`Infer`, `InferenceOperation`, `InferenceChunk`) | `packages/protocol/src/tunnel/rpcs.ts` |
+| The handler that calls the local provider (`providerInference`) | `packages/core/src/participant/inference.ts` |
+| The errors and their OpenAI form (`InferenceError`, `INFERENCE_FAILURES`, `toOpenAiError`) | `packages/protocol/src/inference/errors.ts` |
+| The events of a request (`llm.request`, `llm.complete`, `llm.error`) | `packages/protocol/src/room-event.ts`, published by `packages/core/src/hub/request-events.ts` |
+
+Rules:
+
+- The hub reads `model` and `stream` of a body and nothing else. Do not validate, rename or drop any other field; the provider is the one that knows them.
+- `ParticipantAuthHeaders` are an option of `providerInference`, on the participant's machine. Nothing in the hub or in `@gambi/protocol` has a field for them.
+- An inference failure is an `InferenceError` with a row in `INFERENCE_FAILURES` (its `code` and HTTP status). The route answers it in the OpenAI error format, never in the management envelope: as the response when nothing was sent yet, as a last `error` event when a `text/event-stream` body was already on its way.
+- The participant is `busy` while the call in its tunnel is open (the `call` scope in `infer`), and `Participants.dispatch` plus that scope are the only things that make it so. Everything a request holds goes in that scope, so that a cancelled request, a timeout and a dead participant all release it the same way.
+- A new route that calls a provider is a new literal of `InferenceOperation`, a row in `PROVIDER_ROUTES` (participant), in `DEFAULT_FIELDS` (`inference-request.ts`) and in `PROTOCOLS` (`request-events.ts`), and one `HttpRouter.add` in `InferenceRoutes`. The compiler asks for each row.
 
 ## Room events and event streams
 
@@ -222,7 +248,6 @@ layer(layerHub(), { excludeTestServices: true })("rooms", (it) => {
 ```ts
 import { TunnelRpcs } from "@gambi/protocol";
 import { Tunnels } from "@gambi/core/hub/tunnels";
-import { TunnelDiagnostics } from "@gambi/core/participant/diagnostics";
 import { joinParticipant } from "@gambi/core/testing/participant";
 
 it.effect("answers through the tunnel", () =>
@@ -232,10 +257,8 @@ it.effect("answers through the tunnel", () =>
     const participant = yield* joinParticipant({
       roomCode: room.code,
       participantId: "arthur-1",
-      // Optional: replace a handler. The last layer merged wins.
-      handlers: TunnelDiagnostics.pipe(
-        Layer.merge(TunnelRpcs.toLayerHandler("Echo", ({ text }) => Effect.succeed(text.toUpperCase())))
-      ),
+      // Optional: replace the handler of a call. The other calls keep their default.
+      handlers: TunnelRpcs.toLayerHandler("Echo", ({ text }) => Effect.succeed(text.toUpperCase())),
     });
     const tunnel = yield* (yield* Tunnels).client(room.code, "arthur-1");
     expect(yield* tunnel.Echo({ text: "frevo" })).toBe("FREVO");
@@ -244,10 +267,68 @@ it.effect("answers through the tunnel", () =>
 ```
 
 - The participant stops when the test ends. `participant.stop` stops it earlier, with a closing handshake; `participant.kill` cuts its socket the way a dead process does.
+- A test participant does not reconnect, unlike the runtime's own default: a participant that a test kills stays dead. Pass `reconnect: true` to test coming back.
+- `participant.nextLifecycleEvent` waits for the next lifecycle event; `participant.lifecycleEvents` lists the ones so far.
 - The hub notices a drop a moment later. Wait for it with `Tunnels.awaitDrop(roomCode, participantId)`, never with a sleep, and only then assert on the status.
 - To see a cancellation arrive, give the handler an `Effect.onInterrupt` that completes a `Deferred` and wait on it (`observedHandler` in `packages/core/src/hub/tunnel.test.ts`).
 - `participant.sentToHub` is everything the runtime sent to the hub (HTTP requests and tunnel frames), for asserting what must never leave the participant's machine.
 - `register` and `openTunnel` are exported for a test that needs the two steps apart (`packages/core/src/hub/bootstrap-token.test.ts`).
+- By default the participant answers the diagnostics and refuses inference (`InferenceNotServed`). Give it a `provider` to make it serve inference.
+
+### A provider in a test
+
+`fakeProvider` from `@gambi/core/testing/provider` is a real HTTP server on a free loopback port that stands where Ollama would. It answers like an OpenAI-compatible backend and records what it gets. With it a test runs the whole path: app, hub, tunnel, participant runtime, provider.
+
+```ts
+const provider = yield* fakeProvider();
+yield* joinParticipant({
+  roomCode: room.code,
+  participantId: "arthur-1",
+  provider: { endpoint: provider.url, authHeaders: { Authorization: "Bearer segredo" } },
+});
+const response = yield* Effect.promise(() =>
+  fetch(`${hub.url}/rooms/${room.code}/v1/chat/completions`, {
+    method: "POST",
+    body: JSON.stringify({ model: "arthur-1", messages: [{ role: "user", content: "Oi" }] }),
+  })
+);
+const call = yield* provider.nextCall;
+expect(call.headers.authorization).toBe("Bearer segredo");
+```
+
+- `provider.nextCall` waits for a request and hands each one out once; `provider.calls` is all of them so far. A call has `method`, `path`, `headers`, `body` and `aborted`.
+- `call.aborted` completes when the caller gave the request up. Waiting on it is how a test sees a cancellation, a timeout or a dead participant reach the provider.
+- `fakeProvider({ answer })` decides the answer: `jsonAnswer`, `sseAnswer`, or `openStream()` for a body the test writes piece by piece (`send`, `end`, `fail`). A provider that never answers is `answer: () => new Promise(() => undefined)`.
+- A provider sends its response head with the first piece of the body. With `openStream`, `send` one piece before the request, or the app's `fetch` never returns.
+- Call the inference plane with a plain `fetch`, as an app does. A status changes a moment after the response ends only when the app cancelled; when the response ended by itself the participant is already `online`.
+- A test of the inactivity timeout builds its hub inside `it.effect` and moves the test clock (`packages/core/src/hub/inference-timeout.test.ts`).
+
+### A hub that goes away or freezes
+
+`@gambi/core/testing/hub-link` puts a TCP relay between a participant and the hub of the test. The hub keeps running, with its rooms; the test decides what the participant sees of it.
+
+```ts
+import { linkToHub } from "@gambi/core/testing/hub-link";
+
+it.effect("comes back when the hub returns", () =>
+  Effect.gen(function* () {
+    const link = yield* linkToHub;
+    const participant = yield* joinParticipant({ roomCode, hubUrl: link.url, reconnect: true });
+    yield* participant.nextLifecycleEvent; // connected
+
+    yield* link.cut; // the tunnel is severed and the hub refuses connections
+    yield* participant.nextLifecycleEvent; // reconnecting, attempt 1, in 1 s
+    yield* link.restore;
+    yield* TestClock.adjust("1 second");
+    yield* participant.nextLifecycleEvent; // connected, attempt 1
+  }).pipe(Effect.provide(layerHub({ tunnelPingInterval: "1 hour" })))
+);
+```
+
+- `link.cut` and `link.restore` are a hub that went away and returned. `link.freeze` and `link.unfreeze` are a hub whose process froze: connections stay open, new ones are accepted, and nothing moves.
+- The waits of a reconnection run on the test clock, so build the hub inside the test (`Effect.provide(layerHub(...))`) and move the clock after each event. Wait for the event first, then adjust: the runtime starts its wait right after it reports `reconnecting`.
+- The hub removes a participant that stays `offline` for 60 s, and those 60 s also pass on the test clock. A runtime that comes back later registers as a new participant with the same id, so nothing changes for the test unless it watches the room.
+- A hub that really restarts comes back without its rooms, and a room code cannot be asked for again, so a runtime that reconnects to it ends with `RoomNotFound`. `startHub` in `packages/core/src/participant/reconnection.test.ts` restarts a hub on its port.
 
 ### Room events in a test
 
@@ -271,6 +352,8 @@ Known traps:
 - A failed Effect test prints its error twice: the helper logs the full cause, then `bun test` reports the rejection.
 - Moving the test clock while a tunnel is open can drop the tunnel: a jump leaves no time for a pong, and the hub's ping timeout fires (`adjust("4 seconds")` then `adjust("6 seconds")` does it with the default interval). A test that needs the clock and an open tunnel starts its hub with `layerHub({ tunnelPingInterval: "1 hour" })`.
 - A hub built inside `it.effect` (`Effect.provide(layerHub())`) reads the test clock; one shared with `layer(layerHub(), { excludeTestServices: true })` reads the real one.
+- A participant on the test clock drops its tunnel when the clock moves three ping intervals of the hub with no frame in between (15 s with the default interval): that is its watchdog. `tunnelPingInterval: "1 hour"` puts it three hours away.
+- While a registration or a dial is in flight on the test clock, a jump of 10 s fails it (`registrationTimeout`, `tunnelOpenTimeout`). Wait for the lifecycle event before moving the clock.
 - Under the test clock a participant that is `offline` is removed once the clock moves 60 s. A test that moves the clock for another reason and needs the participant to stay starts its hub with `layerHub({ reconnectDeadline: "1 hour" })`.
 
 ## The SDK
