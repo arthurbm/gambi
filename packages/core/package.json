@@ -35,10 +35,12 @@
     "./harness/adapters": "./src/harness/adapters.ts",
     "./harness/tunnel-handlers": "./src/harness/tunnel-handlers.ts",
     "./harness/detection": "./src/harness/detection.ts",
+    "./participant/inference": "./src/participant/inference.ts",
     "./testing/hub": "./src/testing/hub.ts",
     "./testing/harness-fixtures": "./src/testing/harness-fixtures.ts",
     "./testing/hub-link": "./src/testing/hub-link.ts",
-    "./testing/participant": "./src/testing/participant.ts"
+    "./testing/participant": "./src/testing/participant.ts",
+    "./testing/provider": "./src/testing/provider.ts"
   },
   "scripts": {
     "check-types": "tsc --noEmit"

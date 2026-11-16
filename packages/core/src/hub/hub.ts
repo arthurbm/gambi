@@ -31,6 +31,7 @@ import {
   HttpServer,
 } from "effect/http";
 import { HarnessClients } from "./harness-clients.ts";
+import { InferenceRoutes } from "./inference.ts";
 import { ManagementRoutes } from "./management.ts";
 import { Mdns, type MdnsAnnounceFailed } from "./mdns.ts";
 import { OpenStreams } from "./open-streams.ts";
@@ -46,6 +47,7 @@ export const DEFAULT_HUB_PORT = 3000;
 export const DEFAULT_HUB_HOSTNAME = "0.0.0.0";
 export const DEFAULT_TUNNEL_PING_INTERVAL: Duration.Input = "5 seconds";
 export const DEFAULT_HARNESS_CLIENT_BUFFER = 1024;
+export const DEFAULT_INFERENCE_IDLE_TIMEOUT: Duration.Input = "5 minutes";
 export const DEFAULT_RECONNECT_DEADLINE: Duration.Input = "60 seconds";
 
 /** The platform services an HTTP server brings: `BunHttpServer.layer` provides all of them. */
@@ -65,6 +67,13 @@ export interface HubOptions {
   readonly harnessClientBuffer?: number | undefined;
   /** The interface to listen on. Default `0.0.0.0`. */
   readonly hostname?: string | undefined;
+  /**
+   * How long an inference request may go without one piece of the response
+   * arriving from the participant, before the first one and between any two.
+   * Past it the hub cancels the request and answers with an error. Default 5
+   * minutes.
+   */
+  readonly inferenceIdleTimeout?: Duration.Input | undefined;
   /**
    * Opens the port. The core has no platform dependency, so the entrypoint
    * passes the server of its platform: `listen: BunHttpServer.layer`.
@@ -182,6 +191,9 @@ export class Hub extends Context.Service<
       HubSettings.of({
         harnessClientBuffer:
           options.harnessClientBuffer ?? DEFAULT_HARNESS_CLIENT_BUFFER,
+        inferenceIdleTimeout: Duration.fromInputUnsafe(
+          options.inferenceIdleTimeout ?? DEFAULT_INFERENCE_IDLE_TIMEOUT
+        ),
         reconnectDeadline: Duration.fromInputUnsafe(
           options.reconnectDeadline ?? DEFAULT_RECONNECT_DEADLINE
         ),
@@ -207,7 +219,7 @@ export class Hub extends Context.Service<
     );
 
     const Served = HttpRouter.serve(
-      Layer.mergeAll(ManagementRoutes, TunnelRoute),
+      Layer.mergeAll(ManagementRoutes, TunnelRoute, InferenceRoutes),
       { disableListenLog: true }
     ).pipe(Layer.provide(SecureRandom.layerWebCrypto));
 

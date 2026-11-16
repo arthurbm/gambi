@@ -19,6 +19,7 @@
 import { TunnelRpcs } from "@gambi/protocol";
 import { Effect, Layer, Stream } from "effect";
 import { TunnelDiagnostics } from "../participant/diagnostics.ts";
+import { InferenceNotServed } from "../participant/inference.ts";
 import type { TunnelHandlers } from "../participant/runtime.ts";
 import { Harness } from "./harness.ts";
 
@@ -49,4 +50,8 @@ export const HarnessParticipantHandlers: Layer.Layer<
   TunnelHandlers,
   never,
   Harness
-> = Layer.mergeAll(TunnelDiagnostics, HarnessTunnelHandlers);
+> = Layer.mergeAll(
+  TunnelDiagnostics,
+  InferenceNotServed,
+  HarnessTunnelHandlers
+);

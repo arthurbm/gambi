@@ -56,6 +56,14 @@ export class Rooms extends Context.Service<
       password: string | undefined
     ) => Effect.Effect<boolean, RoomNotFound>;
     readonly create: (input: CreateRoom) => Effect.Effect<RoomCreated>;
+    /**
+     * The defaults the room applies to inference requests, with the
+     * instructions text. It never leaves the hub: `get` shows the public
+     * version.
+     */
+    readonly defaults: (
+      code: string
+    ) => Effect.Effect<RuntimeConfig, RoomNotFound>;
     /** Looks a room up by code, in any letter case. */
     readonly get: (code: string) => Effect.Effect<RoomSummary, RoomNotFound>;
     readonly list: Effect.Effect<readonly RoomSummary[]>;
@@ -142,6 +150,8 @@ export class Rooms extends Context.Service<
       return Rooms.of({
         checkPassword,
         create,
+        defaults: (code) =>
+          Effect.map(find(code), (room) => room.defaults ?? {}),
         get,
         list: Effect.suspend(() =>
           Effect.forEach([...byCode.values()], summarize)

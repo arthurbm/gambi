@@ -17,6 +17,12 @@ export class HubSettings extends Context.Service<
      */
     readonly harnessClientBuffer: number;
     /**
+     * How long an inference request may go without one piece of the response
+     * arriving from the participant. Past it, the hub cancels the request on
+     * the participant and answers the app with an error.
+     */
+    readonly inferenceIdleTimeout: Duration.Duration;
+    /**
      * How long a participant may stay `offline` before the hub removes it
      * from the room. It counts from the moment the participant went offline
      * or last registered, whichever came last.

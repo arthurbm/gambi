@@ -10,6 +10,11 @@ import { Hub } from "../hub/hub.ts";
 import { TunnelDiagnostics } from "../participant/diagnostics.ts";
 import { HarnessCallsNotSupported } from "../participant/harness-not-supported.ts";
 import {
+  InferenceNotServed,
+  type ProviderOptions,
+  providerInference,
+} from "../participant/inference.ts";
+import {
   type ParticipantLifecycleEvent,
   type ParticipantProfile,
   ParticipantRuntime,
@@ -23,14 +28,24 @@ export interface TestParticipantOptions<
   Handlers extends TunnelHandlers = TunnelHandlers,
 > extends Partial<Omit<ParticipantRuntimeOptions, "profile" | "roomCode">> {
   /**
-   * The handlers this test gives the participant. They go on top of
-   * `defaultHandlers`, so a test passes only the calls it cares about and
-   * keeps compiling when the tunnel gains a call.
+   * Handlers of tunnel calls on this participant, to replace the default of
+   * a call. The calls it leaves out keep their default: the diagnostics
+   * every participant has (`TunnelDiagnostics`), "not supported" for the
+   * harness calls (`HarnessCallsNotSupported`), and inference answered by
+   * `provider` when there is one, refused otherwise (`InferenceNotServed`).
+   * So a test passes only the calls it cares about and keeps compiling when
+   * the tunnel gains a call.
    */
   readonly handlers?: Layer.Layer<Handlers> | undefined;
   /** Where the runtime's log lines go. Default: nowhere. */
   readonly loggers?: readonly Logger.Logger<unknown, unknown>[] | undefined;
   readonly profile?: Partial<ParticipantProfile> | undefined;
+  /**
+   * The local provider this participant shares, usually a `fakeProvider`
+   * (`./provider.ts`): inference calls go to it. Its `authHeaders` are known
+   * to the handler alone, as in a real host of the runtime.
+   */
+  readonly provider?: ProviderOptions | undefined;
   /**
    * Whether the runtime comes back by itself when its tunnel drops. Default
    * `false` here, unlike the runtime's own default: a test that kills a
@@ -41,13 +56,14 @@ export interface TestParticipantOptions<
 }
 
 /**
- * The handlers of a participant that shares a model endpoint and does nothing
- * else: the diagnostics every participant has, and "not supported" for the
- * calls of the other kinds of participant. A ticket that adds calls to the
- * tunnel adds their default handlers here.
+ * The handlers of a participant that serves nothing of its own: the
+ * diagnostics every participant has, and "not supported" for inference and
+ * for the harness calls. For a test that builds a runtime by hand
+ * (`openTunnel`); `joinParticipant` has the same defaults.
  */
 export const defaultHandlers: Layer.Layer<TunnelHandlers> = Layer.mergeAll(
   TunnelDiagnostics,
+  InferenceNotServed,
   HarnessCallsNotSupported
 );
 
@@ -96,7 +112,7 @@ export interface TestParticipant {
  * const participant = yield* joinParticipant({ roomCode: room.code });
  * const tunnel = yield* (yield* Tunnels).client(room.code, participant.runtime.participant.id);
  */
-export const joinParticipant = <Handlers extends TunnelHandlers>(
+export const joinParticipant = <Handlers extends TunnelHandlers = never>(
   options: TestParticipantOptions<Handlers>
 ): Effect.Effect<
   TestParticipant,
@@ -110,15 +126,25 @@ export const joinParticipant = <Handlers extends TunnelHandlers>(
       loggers = [],
       onLifecycle,
       profile,
+      provider,
       reconnect = false,
       ...runtimeOptions
     } = options;
-    // The last layer merged wins: what the test passed replaces the default
-    // of the same call.
-    const allHandlers: Layer.Layer<TunnelHandlers> =
-      handlers === undefined
-        ? defaultHandlers
-        : Layer.merge(defaultHandlers, handlers);
+    // The handler calls the provider with the client of the environment, not
+    // with the recorded one: only what goes to the hub is `sentToHub`.
+    const providerClient = yield* HttpClient.HttpClient;
+    // One default per call, so a runtime started without a capability still
+    // answers every call. A ticket that adds calls to `TunnelRpcs` adds their
+    // "not served" handlers to this list and to `defaultHandlers`.
+    const defaults: Layer.Layer<TunnelHandlers> = Layer.mergeAll(
+      TunnelDiagnostics,
+      HarnessCallsNotSupported,
+      provider === undefined
+        ? InferenceNotServed
+        : providerInference(provider).pipe(
+            Layer.provide(Layer.succeed(HttpClient.HttpClient, providerClient))
+          )
+    );
     const lifecycle = yield* Queue.unbounded<ParticipantLifecycleEvent>();
     const lifecycleEvents: ParticipantLifecycleEvent[] = [];
     const scope = yield* Scope.fork(yield* Effect.scope);
@@ -182,11 +208,14 @@ export const joinParticipant = <Handlers extends TunnelHandlers>(
         profile: {
           nickname: "Test participant",
           model: "test-model",
-          endpoint: "http://127.0.0.1:11434",
+          endpoint: provider?.endpoint ?? "http://127.0.0.1:11434",
           ...profile,
         },
       }).pipe(
-        Layer.provide(allHandlers),
+        // The last layer merged wins.
+        Layer.provide(
+          handlers === undefined ? defaults : Layer.merge(defaults, handlers)
+        ),
         Layer.provide(Dialer),
         Layer.provide(RecordedHttp),
         Layer.provide(Logger.layer(loggers))

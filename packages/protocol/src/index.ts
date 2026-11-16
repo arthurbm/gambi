@@ -6,6 +6,7 @@
  * Bun, in Node and in a browser.
  */
 export * from "./harness.ts";
+export * from "./inference/errors.ts";
 export * from "./management/api.ts";
 export * from "./management/client.ts";
 export * from "./management/envelope.ts";
