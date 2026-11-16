@@ -9,6 +9,11 @@ import { Socket } from "effect/socket";
 import { Hub } from "../hub/hub.ts";
 import { TunnelDiagnostics } from "../participant/diagnostics.ts";
 import {
+  InferenceNotServed,
+  type ProviderOptions,
+  providerInference,
+} from "../participant/inference.ts";
+import {
   type ParticipantProfile,
   ParticipantRuntime,
   type ParticipantRuntimeOptions,
@@ -17,16 +22,25 @@ import {
   type TunnelOpenFailed,
 } from "../participant/runtime.ts";
 
-export interface TestParticipantOptions
-  extends Partial<Omit<ParticipantRuntimeOptions, "profile" | "roomCode">> {
+export interface TestParticipantOptions<
+  Handlers extends TunnelHandlers = TunnelHandlers,
+> extends Partial<Omit<ParticipantRuntimeOptions, "profile" | "roomCode">> {
   /**
-   * The handlers of the tunnel calls on this participant. Default: the
-   * diagnostics every participant has (`TunnelDiagnostics`).
+   * Handlers of tunnel calls on this participant, to replace the default of
+   * a call. The calls it leaves out keep their default: the diagnostics
+   * every participant has (`TunnelDiagnostics`), and inference answered by
+   * `provider` when there is one, refused otherwise (`InferenceNotServed`).
    */
-  readonly handlers?: Layer.Layer<TunnelHandlers> | undefined;
+  readonly handlers?: Layer.Layer<Handlers> | undefined;
   /** Where the runtime's log lines go. Default: nowhere. */
   readonly loggers?: readonly Logger.Logger<unknown, unknown>[] | undefined;
   readonly profile?: Partial<ParticipantProfile> | undefined;
+  /**
+   * The local provider this participant shares, usually a `fakeProvider`
+   * (`./provider.ts`): inference calls go to it. Its `authHeaders` are known
+   * to the handler alone, as in a real host of the runtime.
+   */
+  readonly provider?: ProviderOptions | undefined;
   readonly roomCode: string;
 }
 
@@ -60,8 +74,8 @@ export interface TestParticipant {
  * const participant = yield* joinParticipant({ roomCode: room.code });
  * const tunnel = yield* (yield* Tunnels).client(room.code, participant.runtime.participant.id);
  */
-export const joinParticipant = (
-  options: TestParticipantOptions
+export const joinParticipant = <Handlers extends TunnelHandlers = never>(
+  options: TestParticipantOptions<Handlers>
 ): Effect.Effect<
   TestParticipant,
   RegistrationError | TunnelOpenFailed,
@@ -70,11 +84,26 @@ export const joinParticipant = (
   Effect.gen(function* () {
     const hub = yield* Hub;
     const {
-      handlers = TunnelDiagnostics,
+      handlers,
       loggers = [],
       profile,
+      provider,
       ...runtimeOptions
     } = options;
+    // The handler calls the provider with the client of the environment, not
+    // with the recorded one: only what goes to the hub is `sentToHub`.
+    const providerClient = yield* HttpClient.HttpClient;
+    // One default per call, so a runtime started without a capability still
+    // answers every call. A ticket that adds calls to `TunnelRpcs` adds their
+    // "not served" handlers to this list.
+    const defaults: Layer.Layer<TunnelHandlers> = Layer.mergeAll(
+      TunnelDiagnostics,
+      provider === undefined
+        ? InferenceNotServed
+        : providerInference(provider).pipe(
+            Layer.provide(Layer.succeed(HttpClient.HttpClient, providerClient))
+          )
+    );
     const scope = yield* Scope.fork(yield* Effect.scope);
     const dialed: WebSocket[] = [];
     const sent: string[] = [];
@@ -122,11 +151,14 @@ export const joinParticipant = (
         profile: {
           nickname: "Test participant",
           model: "test-model",
-          endpoint: "http://127.0.0.1:11434",
+          endpoint: provider?.endpoint ?? "http://127.0.0.1:11434",
           ...profile,
         },
       }).pipe(
-        Layer.provide(handlers),
+        // The last layer merged wins.
+        Layer.provide(
+          handlers === undefined ? defaults : Layer.merge(defaults, handlers)
+        ),
         Layer.provide(Dialer),
         Layer.provide(RecordedHttp),
         Layer.provide(Logger.layer(loggers))

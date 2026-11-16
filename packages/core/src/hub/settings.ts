@@ -11,6 +11,12 @@ export class HubSettings extends Context.Service<
   HubSettings,
   {
     /**
+     * How long an inference request may go without one piece of the response
+     * arriving from the participant. Past it, the hub cancels the request on
+     * the participant and answers the app with an error.
+     */
+    readonly inferenceIdleTimeout: Duration.Duration;
+    /**
      * How often the hub pings a tunnel. A tunnel that stays silent for one
      * more interval after a ping is dropped.
      */

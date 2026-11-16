@@ -6,6 +6,7 @@ import { HttpClient, HttpClientRequest } from "effect/http";
 import { Socket } from "effect/socket";
 import { TestClock } from "effect/testing";
 import { TunnelDiagnostics } from "../participant/diagnostics.ts";
+import { InferenceNotServed } from "../participant/inference.ts";
 import {
   openTunnel,
   type ParticipantRuntimeOptions,
@@ -45,6 +46,7 @@ const participantIn = (roomName: string, participantId = "arthur-1") =>
 /** What a participant runtime needs to dial and serve. */
 const Platform = Layer.mergeAll(
   TunnelDiagnostics,
+  InferenceNotServed,
   Socket.layerWebSocketConstructorGlobal
 );
 
