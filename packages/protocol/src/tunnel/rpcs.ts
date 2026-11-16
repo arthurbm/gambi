@@ -179,6 +179,17 @@ export class TunnelRpcs extends RpcGroup.make(
   HarnessCloseSession
 ) {}
 
+/**
+ * The WebSocket close code of a tunnel the hub closed because the same
+ * participant opened another one. A participant runtime that sees its tunnel
+ * close with it was replaced by another runtime with its `participantId`, and
+ * must not dial again: the two would take the tunnel from each other forever.
+ *
+ * It is in the range the WebSocket protocol leaves to applications
+ * (4000 to 4999).
+ */
+export const TUNNEL_REPLACED_CLOSE_CODE = 4001;
+
 /** The path of the tunnel's WebSocket upgrade on the hub. */
 export const tunnelPath = (roomCode: string, participantId: string): string =>
   `/v1/rooms/${encodeURIComponent(roomCode)}/participants/${encodeURIComponent(participantId)}/tunnel`;

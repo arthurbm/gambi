@@ -28,6 +28,7 @@ import {
   type BootstrapToken,
   type CallNotSupported,
   type HarnessDisconnected,
+  TUNNEL_REPLACED_CLOSE_CODE,
   TunnelRpcs,
   TunnelTokenInvalid,
 } from "@gambi/protocol";
@@ -91,8 +92,12 @@ interface IssuedToken {
 }
 
 interface OpenTunnel {
-  /** Ends the tunnel from the hub's side and waits until it is gone. */
-  readonly close: (reason: string) => Effect.Effect<void>;
+  /**
+   * Ends the tunnel from the hub's side and waits until it is gone. With a
+   * `closeCode`, its WebSocket closes with that code and `reason`, for a
+   * participant runtime that has to tell this end from a drop.
+   */
+  readonly close: (reason: string, closeCode?: number) => Effect.Effect<void>;
   /** Completes when the tunnel is gone and the participant is `offline`. */
   readonly gone: Effect.Effect<void>;
   /** The client, kept usable until the caller's scope closes. */
@@ -273,6 +278,7 @@ export class Tunnels extends Context.Service<
           const unheld = Latch.makeUnsafe(true);
           let holders = 0;
           let ended: RpcClientError.RpcClientError | undefined;
+          let closeFrame: Socket.CloseEvent | undefined;
           let toClient:
             | ((message: RpcMessage.FromServerEncoded) => Effect.Effect<void>)
             | undefined;
@@ -313,6 +319,16 @@ export class Tunnels extends Context.Service<
                 Effect.timeoutOption(HARNESS_STREAM_END_TIMEOUT)
               );
               yield* harnessDisconnected(disconnectedBy(ended));
+            }
+            // Closing the scope closes the socket as any tunnel that ends.
+            // A tunnel closed with a code of its own says so first.
+            if (closeFrame !== undefined) {
+              const frame = closeFrame;
+              yield* socket.writer.pipe(
+                Effect.flatMap((writer) => writer.write(frame)),
+                Effect.scoped,
+                Effect.ignore
+              );
             }
             yield* Scope.close(socketScope, Exit.void);
             if (tunnel !== undefined && open.get(key) === tunnel) {
@@ -368,20 +384,29 @@ export class Tunnels extends Context.Service<
             );
 
             // The new tunnel wins: a participant that comes back before the
-            // hub noticed its old tunnel die must not be kept out by it.
+            // hub noticed its old tunnel die must not be kept out by it. If
+            // the old tunnel is alive instead, it belongs to another runtime
+            // with the same id, and the close code tells that one it was
+            // replaced, so it does not dial again and take the tunnel back.
             for (
               let previous = open.get(key);
               previous !== undefined;
               previous = open.get(key)
             ) {
               yield* Effect.logInfo("tunnel superseded");
-              yield* previous.close("superseded by a new tunnel");
+              yield* previous.close(
+                "superseded by a new tunnel",
+                TUNNEL_REPLACED_CLOSE_CODE
+              );
             }
             tunnel = {
-              close: (reason) =>
-                end(closedByHub(reason)).pipe(
-                  Effect.andThen(Deferred.await(gone))
-                ),
+              close: (reason, closeCode) =>
+                Effect.suspend(() => {
+                  if (closeCode !== undefined) {
+                    closeFrame ??= new Socket.CloseEvent(closeCode, reason);
+                  }
+                  return end(closedByHub(reason));
+                }).pipe(Effect.andThen(Deferred.await(gone))),
               gone: Deferred.await(gone),
               hold: Effect.acquireRelease(
                 Effect.sync(() => {
