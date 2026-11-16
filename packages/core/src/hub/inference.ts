@@ -97,8 +97,8 @@ export const MAX_PENDING_STREAM_CHARACTERS = 8 * 1024 * 1024;
 export const MAX_HELD_RESPONSE_CHARACTERS = 32 * 1024 * 1024;
 
 /**
- * How much of an unfinished server-sent event the hub holds while it waits
- * for the end of the event, in characters. Past it the text goes out as it is.
+ * How long an unfinished server-sent event may get while the hub holds it,
+ * waiting for its end, in characters. Past it the text goes out as it is.
  */
 const MAX_HELD_EVENT_CHARACTERS = 1024 * 1024;
 
@@ -135,24 +135,33 @@ const endOfLastEvent = (text: string): number => {
  * the middle of an event, the half event is dropped and the `error` event
  * that follows is one a client can parse. A stream that ends well sends
  * everything it got, byte for byte.
+ *
+ * An unfinished event longer than `MAX_HELD_EVENT_CHARACTERS` is not held:
+ * it goes out as it is. If the stream fails before that event ends, the
+ * `error` event starts after a blank line of its own.
  */
 const eventStreamBody = (
   pieces: Stream.Stream<string, InferenceError>
 ): Stream.Stream<string> =>
   Stream.suspend(() => {
     let held = "";
+    let insideEvent = false;
     return pieces.pipe(
       Stream.map((piece) => {
         const text = held + piece;
-        const end =
-          text.length > MAX_HELD_EVENT_CHARACTERS
-            ? text.length
-            : endOfLastEvent(text);
+        const whole = endOfLastEvent(text);
+        const tooLong = text.length - whole > MAX_HELD_EVENT_CHARACTERS;
+        const end = tooLong ? text.length : whole;
+        if (end > 0) {
+          insideEvent = tooLong;
+        }
         held = text.slice(end);
         return text.slice(0, end);
       }),
       Stream.concat(Stream.suspend(() => Stream.make(held))),
-      Stream.catch((error) => Stream.make(toOpenAiStreamError(error))),
+      Stream.catch((error) =>
+        Stream.make(`${insideEvent ? "\n\n" : ""}${toOpenAiStreamError(error)}`)
+      ),
       Stream.filter((text) => text !== "")
     );
   });

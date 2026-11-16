@@ -1072,14 +1072,27 @@ layer(layerHub(), { excludeTestServices: true })("inference plane", (it) => {
           Stream.empty
         );
 
+        // A piece as big as a slow reader gets them: whole events and a half.
+        const bigEvent = `data: {"delta":"${"x".repeat(2 * 1024 * 1024)}"}`;
+        yield* answering(
+          "big-1",
+          [`${bigEvent}\n\n${bigEvent}\n\ndata: {"delta":"Rec`],
+          Stream.fail(new ProviderResponseInterrupted())
+        );
+
         const broken = yield* bodyOf("broken-1");
         const whole = yield* bodyOf("whole-1");
+        const big = yield* bodyOf("big-1");
 
         expect(broken.split("\n\n").slice(0, -2)).toEqual([
           'data: {"delta":"Olá"}',
         ]);
         expect(lastEvent(broken).event).toBe("error");
         expect(lastEvent(broken).data.error.code).toBe(
+          "provider_response_interrupted"
+        );
+        expect(big.split("\n\n").slice(0, -2)).toEqual([bigEvent, bigEvent]);
+        expect(lastEvent(big).data.error.code).toBe(
           "provider_response_interrupted"
         );
         // A stream that ends well is passed on to the last byte, even when
