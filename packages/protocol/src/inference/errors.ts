@@ -146,6 +146,20 @@ export class ResponseNotFound extends Schema.TaggedError<ResponseNotFound>()(
 }
 
 /**
+ * The Response was built by the hub from a Chat Completions answer, for a
+ * provider that has no Responses API. No provider stores it, so there is
+ * nothing to read back, delete or cancel.
+ */
+export class ResponseNotStored extends Schema.TaggedError<ResponseNotStored>()(
+  "ResponseNotStored",
+  { roomCode: Schema.String, responseId: Schema.String }
+) {
+  override get message(): string {
+    return `Response '${this.responseId}' was answered through Chat Completions and is stored nowhere: it cannot be read back, deleted or cancelled.`;
+  }
+}
+
+/**
  * The participant's provider speaks neither API a Response can be created
  * through: not the Responses API, and not Chat Completions, which the hub
  * would translate.
@@ -171,6 +185,7 @@ export type InferenceError =
   | ProviderResponseTooLarge
   | ConsumerTooSlow
   | ResponseNotFound
+  | ResponseNotStored
   | ResponsesNotSupported
   | CallNotSupported
   | ProviderUnreachable
@@ -201,6 +216,7 @@ export const INFERENCE_FAILURES: {
   // Only ever sent inside a stream, where the status is already 200.
   ConsumerTooSlow: { code: "consumer_too_slow", status: 408 },
   ResponseNotFound: { code: "response_not_found", status: 404 },
+  ResponseNotStored: { code: "response_not_stored", status: 501 },
   ResponsesNotSupported: { code: "responses_not_supported", status: 501 },
   CallNotSupported: { code: "inference_not_supported", status: 400 },
   ProviderUnreachable: { code: "provider_unreachable", status: 502 },

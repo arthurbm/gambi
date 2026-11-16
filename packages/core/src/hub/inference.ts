@@ -57,6 +57,7 @@ import {
   ProviderResponseTooLarge,
   type ProviderUnreachable,
   ResponseNotFound,
+  ResponseNotStored,
   ResponsesNotSupported,
   type StoredResponseOperation,
   toOpenAiError,
@@ -614,13 +615,20 @@ const createResponse = Effect.fnUntraced(function* (
     model: participant.model,
     request: body,
   };
+  // The app may ask for this Response later. The hub remembers that it has
+  // no provider behind it, to say so instead of "not found".
+  const remember = stored.remember(roomCode, translation.responseId, {
+    participantId,
+    translated: true,
+  });
   return yield* respond(call, answer, {
     ...untouched,
     report,
     document: (text) =>
-      Effect.succeed(
-        Option.getOrElse(toResponse(translation, text), () => text)
-      ),
+      Option.match(toResponse(translation, text), {
+        onNone: () => Effect.succeed(text),
+        onSome: (response) => Effect.as(remember, response),
+      }),
   });
 });
 
@@ -719,6 +727,9 @@ const storedResponse = (operation: StoredResponseOperation) =>
     const known = yield* stored.find(roomCode, responseId);
     if (known === undefined) {
       return yield* new ResponseNotFound({ roomCode, responseId });
+    }
+    if (known.translated) {
+      return yield* new ResponseNotStored({ roomCode, responseId });
     }
     const { participantId } = known;
     // Without its participant in the room nobody can reach the Response. The

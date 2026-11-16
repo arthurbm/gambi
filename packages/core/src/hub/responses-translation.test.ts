@@ -16,6 +16,9 @@ const chatOnly = {
   chatCompletions: "supported",
 } as const;
 
+/** The id the hub gives a Response it builds. */
+const HUB_RESPONSE_ID = /^resp_[0-9a-f]{32}$/;
+
 /** A new room, the URL of its inference plane and the status of its participants. */
 const makeRoom = (name: string) =>
   Effect.gen(function* () {
@@ -106,7 +109,7 @@ layer(layerHub(), { excludeTestServices: true })(
             ],
             usage: { input_tokens: 3, output_tokens: 4, total_tokens: 7 },
           });
-          expect(created.id).toMatch(/^resp_[0-9a-f]{32}$/);
+          expect(created.id).toMatch(HUB_RESPONSE_ID);
           // The provider was asked once, in the only API it speaks.
           const calls = yield* provider.calls;
           expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
@@ -122,6 +125,72 @@ layer(layerHub(), { excludeTestServices: true })(
             max_tokens: 64,
           });
           expect(yield* room.statusOf("arthur-1")).toBe("online");
+        })
+    );
+
+    it.effect(
+      "a provider that answers that it has no Responses route is asked again through Chat Completions",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* makeRoom("Frevo");
+          const provider = yield* fakeProvider({ answer: chatCompletionsOnly });
+          // Nobody probed this provider: the hub does not know what it speaks.
+          yield* joinParticipant({
+            roomCode: room.code,
+            participantId: "arthur-1",
+            provider: { endpoint: provider.url },
+          });
+
+          const response = yield* post(room.url("/responses"), {
+            model: "arthur-1",
+            input: "Oi",
+          });
+          const created = yield* json(response);
+
+          expect(response.status).toBe(200);
+          expect(created.object).toBe("response");
+          expect(created.output_text).toBe(FAKE_COMPLETION_TEXT);
+          expect(
+            (yield* provider.calls).map((call) => `${call.method} ${call.path}`)
+          ).toEqual(["POST /v1/responses", "POST /v1/chat/completions"]);
+          expect(yield* room.statusOf("arthur-1")).toBe("online");
+        })
+    );
+
+    it.effect(
+      "a Response the hub built from a chat completion cannot be read back, and the hub says why",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* makeRoom("Coco");
+          const provider = yield* fakeProvider({ answer: chatCompletionsOnly });
+          yield* joinParticipant({
+            roomCode: room.code,
+            participantId: "arthur-1",
+            profile: { capabilities: chatOnly },
+            provider: { endpoint: provider.url },
+          });
+          const created = yield* json(
+            yield* post(room.url("/responses"), {
+              model: "arthur-1",
+              input: "Oi",
+            })
+          );
+
+          const response = yield* Effect.promise(() =>
+            fetch(room.url(`/responses/${created.id}`))
+          );
+
+          expect(response.status).toBe(501);
+          expect(yield* json(response)).toEqual({
+            error: {
+              message: `Response '${created.id}' was answered through Chat Completions and is stored nowhere: it cannot be read back, deleted or cancelled.`,
+              type: "api_error",
+              param: null,
+              code: "response_not_stored",
+            },
+          });
+          // The provider has no route for it, and was not asked.
+          expect(yield* provider.calls).toHaveLength(1);
         })
     );
   }
