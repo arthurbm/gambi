@@ -1,10 +1,12 @@
 /**
- * Registering a participant: the one operation that touches the room, the
- * participants and the tunnels. It answers with the bootstrap token the
- * participant runtime dials its tunnel with.
+ * Registering a participant and taking one out of a room: the operations that
+ * touch the room, the participants and the tunnels. Registering answers with
+ * the bootstrap token the participant runtime dials its tunnel with.
  */
 import {
   InvalidPassword,
+  type ParticipantLeft,
+  ParticipantNotFound,
   type ParticipantRegistered,
   type RegisterParticipant,
   sameMinor,
@@ -49,3 +51,33 @@ export const registerParticipant = Effect.fn("Hub.registerParticipant")(
     return { participant, tunnel } satisfies ParticipantRegistered;
   }
 );
+
+/**
+ * Takes a participant out of a room at once, whatever its status, and closes
+ * its tunnel. The room hears one event, `participant.removed`.
+ */
+export const leaveRoom = Effect.fn("Hub.leaveRoom")(function* (
+  roomCode: string,
+  participantId: string
+) {
+  const rooms = yield* Rooms;
+  const participants = yield* Participants;
+  const tunnels = yield* Tunnels;
+
+  const room = yield* rooms.get(roomCode);
+  // Out of the room first: the tunnel then drops for a participant that is
+  // no longer there, which is no change of status and no event.
+  const left = yield* participants.transition(room.code, participantId, "left");
+  if (left === undefined) {
+    return yield* new ParticipantNotFound({
+      roomCode: room.code,
+      participantId,
+    });
+  }
+  yield* tunnels.close(
+    room.code,
+    participantId,
+    "the participant left the room"
+  );
+  return { participantId } satisfies ParticipantLeft;
+});

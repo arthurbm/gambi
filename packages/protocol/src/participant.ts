@@ -94,3 +94,7 @@ export const ParticipantRegistered = Schema.Struct({
   tunnel: BootstrapToken,
 });
 export type ParticipantRegistered = typeof ParticipantRegistered.Type;
+
+/** What leaving a room answers: who is no longer in it. */
+export const ParticipantLeft = Schema.Struct({ participantId: ParticipantId });
+export type ParticipantLeft = typeof ParticipantLeft.Type;

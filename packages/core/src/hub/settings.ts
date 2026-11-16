@@ -11,6 +11,12 @@ export class HubSettings extends Context.Service<
   HubSettings,
   {
     /**
+     * How long a participant may stay `offline` before the hub removes it
+     * from the room. It counts from the moment the participant went offline
+     * or last registered, whichever came last.
+     */
+    readonly reconnectDeadline: Duration.Duration;
+    /**
      * How often the hub pings a tunnel. A tunnel that stays silent for one
      * more interval after a ping is dropped.
      */
