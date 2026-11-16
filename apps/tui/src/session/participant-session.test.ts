@@ -2,6 +2,7 @@ import { afterEach, expect } from "bun:test";
 import { Hub } from "@gambi/core/hub/hub";
 import { layerHub, managementClient, watchRoom } from "@gambi/core/testing/hub";
 import { linkToHub } from "@gambi/core/testing/hub-link";
+import { joinParticipant } from "@gambi/core/testing/participant";
 import { fakeProvider } from "@gambi/core/testing/provider";
 import { layer } from "@gambi/testing/effect";
 import { Effect } from "effect";
@@ -263,6 +264,39 @@ layer(layerHub(), { excludeTestServices: true })(
               )
             )
           ).toBe(true);
+        })
+    );
+
+    it.effect(
+      "a session replaced by another runtime with its id ends saying so",
+      () =>
+        Effect.gen(function* () {
+          const hub = yield* Hub;
+          const management = yield* managementClient;
+          const { room } = yield* management.rooms.create({
+            payload: { name: "Frevo" },
+          });
+          yield* Effect.promise(() =>
+            joinAsParticipant(hub.url, room.code, arthur("http://127.0.0.1:1"))
+          );
+
+          // The same participant joins from somewhere else: the hub keeps the
+          // newer tunnel and tells this runtime it was replaced.
+          yield* joinParticipant({
+            roomCode: room.code,
+            participantId: "arthur-1",
+          });
+          const ended = yield* shown((it) => it.status === "error");
+
+          expect(ended.error).toBe(
+            "Another participant runtime joined the room with this participant's id."
+          );
+          // The other runtime is the participant now: it stays in the room.
+          expect(
+            (yield* management.participants.list({
+              params: { code: room.code },
+            })).map((it) => [it.id, it.status])
+          ).toEqual([["arthur-1", "online"]]);
         })
     );
   }

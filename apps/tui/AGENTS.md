@@ -7,42 +7,47 @@ Interactive terminal interface for Gambi using OpenTUI (React reconciler for ter
 | Layer | Technology | Purpose |
 |-------|------------|---------|
 | UI Framework | OpenTUI (`@opentui/react`) | React-based terminal rendering |
-| Server State | TanStack Query | API calls, caching, background refetch |
+| Hub access | `createClient` from `gambi-sdk` | Rooms, participants and room events, derived from the management contract |
+| Server State | TanStack Query | Calls of the client, caching, background refetch |
 | Client State | Zustand | Navigation, session, hub URL |
-| Real-time | SSE (Server-Sent Events) | Live room updates |
-| Validation | Zod | API responses, SSE events |
+| Real-time | `client.events.watch` | Live room updates |
+| Hosting | `@gambi/core` behind a `Promise` boundary | The hub and the participant runtime the TUI runs in its own process |
+| Validation | Zod | Local form validation only |
 
 ## Directory Structure
 
 ```
 src/
-├── index.tsx           # Entry point, QueryClient setup
+├── index.tsx           # Entry point, QueryClient setup, quit
 ├── app.tsx             # Screen router, global keyboard handlers
-├── types.ts            # Zod schemas, design tokens (colors, icons)
+├── types.ts            # Hub types re-exported from gambi-sdk, design tokens
+├── hub-client.ts       # hubClient(hubUrl): the one way to reach a hub
+├── rooms/
+│   ├── room-state.ts   # applyRoomEvent: what each room event changes
+│   └── watch-rooms.ts  # watchRooms: watched rooms, with reconnection
+├── session/
+│   └── participant-session.ts  # join, follow the runtime, leave
+├── hosting/            # The only files that import Effect and @gambi/core
+│   ├── hub.ts          # hostHub: a hub in this process
+│   └── participant.ts  # hostParticipant, probeProvider
 ├── screens/            # Full-page views
-│   ├── main-menu.tsx
-│   ├── create-room.tsx
-│   ├── join-room.tsx
-│   ├── list-rooms.tsx
-│   ├── monitor.tsx
-│   └── serve-hub.tsx
 ├── components/         # Reusable UI pieces
-│   ├── footer.tsx
-│   ├── form.tsx        # useFormFocus hook
-│   ├── input-field.tsx
-│   ├── table.tsx
-│   └── ...
-├── hooks/
-│   ├── use-navigation.ts
-│   ├── use-hub-api.ts
-│   ├── use-sse.ts
-│   ├── use-rooms.ts
-│   ├── use-participant-session.ts
+├── hooks/              # Thin React wrappers over the modules above
 │   └── queries/        # TanStack Query hooks
 └── store/
     ├── app-store.ts
+    ├── hub-store.ts
     └── session-store.ts
 ```
+
+## Talking to a hub
+
+Read the section "The TUI" of [`docs/reference/effect-conventions.md`](../../docs/reference/effect-conventions.md) first.
+
+- Every call to a hub goes through `hubClient(hubUrl)` (`src/hub-client.ts`), the management client of `gambi-sdk`. Never call `fetch` on a hub, never read an event stream by hand, never declare the shape of a hub answer: the types come from `gambi-sdk` (re-exported in `types.ts`).
+- The client refuses a field that is present with the value `undefined`. A form that leaves an optional field empty passes its data through `definedFields`.
+- A participant has one status, `online`, `busy` or `offline`, and the hub is its only source. Do not derive it from anything else (there is no heartbeat and no `connection` field).
+- React stays out of the logic. `watchRooms`, `joinAsParticipant` and the hub store are plain modules; the hooks only subscribe to them. That is what lets the tests run them against a real hub.
 
 ---
 
@@ -77,7 +82,7 @@ src/
 | Layout não funcionando | `/opentui` |
 | Keyboard events | `/opentui` |
 | Animações | `/opentui` |
-| SSE/API logic | Não precisa |
+| Hub client, room events | Não precisa |
 | State management | Não precisa |
 | Navigation | Não precisa (ver seção abaixo) |
 
@@ -108,7 +113,7 @@ Data que vive no servidor. Query hooks cuidam de caching, background refetch e l
 const { data, isLoading, error, refetch } = useListRoomsQuery();
 ```
 
-**Quando usar:** API data (rooms, participants, health checks, machine specs).
+**Quando usar:** API data (rooms, the health of the hosted hub, machine specs).
 
 ### Client State (Zustand)
 
@@ -223,44 +228,24 @@ useKeyboard((key) => {
 
 ---
 
-## SSE Event Handling
+## Room events
 
-Updates real-time via pure event handler functions em `use-rooms.ts`.
+`watchRooms` (`src/rooms/watch-rooms.ts`) keeps each watched room up to date from `client.events.watch(roomCode)`. When the stream of a room ends, whether it failed or just ended (the hub closed), the room shows as not connected and is watched again after 3 seconds. The `room.snapshot` that opens every stream replaces what was known, so nothing has to be fetched first.
 
-```typescript
-// Pure function pattern - fácil de testar
-export function handleParticipantJoinedEvent(
-  room: RoomState,
-  data: unknown
-): EventResult {
-  const parsed = SSEParticipantJoinedEvent.safeParse(data);
-  if (!parsed.success) return { room };
+`applyRoomEvent` (`src/rooms/room-state.ts`) is a pure function and the only place that reads a room event. Its `switch` is exhaustive over `RoomEvent`: a new event of the contract stops it from compiling.
 
-  const newParticipants = new Map(room.participants);
-  newParticipants.set(parsed.data.id, parsed.data);
-
-  return {
-    room: { ...room, participants: newParticipants },
-    log: { type: "join", participantId: parsed.data.id, ... },
-  };
-}
-```
-
-### SSE Events
-
-| Event | Handler | Description |
-|-------|---------|-------------|
-| `connected` | `handleConnectedEvent` | SSE connection established |
-| `room.created` | `handleRoomCreatedEvent` | Room name updated |
-| `participant.joined` | `handleParticipantJoinedEvent` | New participant |
-| `participant.updated` | `handleParticipantUpdatedEvent` | Participant metadata or connection changed |
-| `participant.left` | `handleParticipantLeftEvent` | Participant removed |
-| `participant.offline` | `handleParticipantOfflineEvent` | Heartbeat timeout |
-| `llm.request` | `handleLlmRequestEvent` | LLM request started |
-| `llm.complete` | `handleLlmCompleteEvent` | LLM request finished (inclui `metrics`) |
-| `llm.error` | `handleLlmErrorEvent` | LLM request failed |
-
-Os nomes de evento usam ponto (`.`), não dois-pontos — são os `type` exatos emitidos pelo `@gambi/core` no stream SSE.
+| Event | What it changes |
+|-------|-----------------|
+| `room.snapshot` | Replaces the room's name and participants; marks it connected |
+| `participant.joined` | Adds the participant (`offline`); logs "joined" |
+| `participant.updated` | Replaces the participant |
+| `participant.online` | Replaces the participant; logs "online" when it was `offline` |
+| `participant.busy` | Replaces the participant |
+| `participant.offline` | Replaces the participant; logs "offline" |
+| `participant.removed` | Removes the participant; logs "left" or "removed (did not reconnect)" |
+| `llm.request` | Marks the participant as answering; logs the request |
+| `llm.complete` | Unmarks it; logs the metrics |
+| `llm.error` | Unmarks it; logs the error |
 
 ---
 
@@ -301,20 +286,24 @@ import { colors, statusIndicators } from "../types";
 
 ## Testing
 
-Testes focam em pure functions extraídas dos hooks. Sem testes de renderização de componentes.
-
 ```bash
-bun test                    # Rodar todos os testes
-bun test use-rooms          # Rodar arquivo específico
+bun run --cwd apps/tui test   # from the repo root, as CI runs it
 ```
 
-### Test Files
+The tests run the plain modules against a real hub on a free port (`layerHub` from `@gambi/core/testing/hub`), with a real participant runtime and a fake provider. They never replace `fetch`. See "A hub in a test" in `docs/reference/effect-conventions.md`.
 
-- `use-sse.test.ts` - SSE buffer parsing
-- `use-rooms.test.ts` - Event handler logic
-- `use-hub-api.test.ts` - API validation (fetchJson)
-- `types.test.ts` - Zod schema validation
-- `session-store.test.ts` - State transitions
+| File | Covers |
+|------|--------|
+| `rooms/watch-rooms.test.ts` | Watched rooms against a real hub: statuses, requests, reconnection |
+| `rooms/room-state.test.ts` | `applyRoomEvent`, one event at a time |
+| `store/hub-store.test.ts` | The hub the TUI hosts: start, stop, a port in use |
+| `session/participant-session.test.ts` | Join, leave, a hub that goes away, a replaced session |
+| `hosting/participant.test.ts` | Probing the local provider |
+| `hub-client.test.ts` | The client per hub; a form with empty optional fields |
+| `components/participant-card.test.tsx` | What a participant card shows, rendered with `testRender` |
+| `store/session-store.test.ts`, `types.test.ts` | State transitions, local schemas |
+
+A test waits for what it expects to show (`shown(...)` subscribes to the store or the watcher), never for a duration.
 
 ### Test Factories
 
@@ -368,6 +357,18 @@ const getRowKey = (item: T, index: number): string => {
   return columns.slice(0, 3).map(col => getCellValue(item, col)).join("-");
 };
 ```
+
+### Quitting
+
+`index.tsx` unmounts the React tree before it destroys the renderer. A state update that is still pending when the renderer is destroyed is rendered into it and aborts the process ("Nodes with measure functions cannot have children", exit code 1). Unmounting is also what stops the watched rooms, which would keep the process alive. Do not call `renderer.destroy()` from a component.
+
+### `tsc` and `dist/`
+
+`tsconfig.json` excludes `dist/`: the built bundle is JavaScript and embeds Effect, and the compiler overflows its stack on it.
+
+### Input `onChange`
+
+An OpenTUI `<input>` does not call `onChange` on each key. Seen in the running TUI: what was typed reaches the form's state once the field loses focus (Tab), and Enter pressed straight after typing submits the value from before.
 
 ### Keyboard Handler Cleanup
 

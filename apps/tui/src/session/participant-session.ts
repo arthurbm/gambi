@@ -95,6 +95,18 @@ export const joinAsParticipant = async (
   }
 };
 
+/** Why a runtime that ended by itself did, in words for the screen. */
+const whyItEnded = (
+  event: Extract<ParticipantLifecycleEvent, { type: "left" }>
+): string => {
+  if (event.error !== undefined) {
+    return event.error.message;
+  }
+  return event.reason === "replaced"
+    ? "Another participant runtime joined the room with this participant's id."
+    : "Participant tunnel closed.";
+};
+
 /**
  * What a step of the runtime's life means for the session shown on screen.
  * The runtime comes back by itself after a drop, so only its end is an error.
@@ -115,9 +127,11 @@ export const followLifecycle = (event: ParticipantLifecycleEvent): void => {
       }
       const ended = activeSession;
       activeSession = null;
-      store.setError(event.error?.message ?? "Participant tunnel closed.");
-      // The runtime is over: release what it still holds.
-      ended?.leave();
+      store.setError(whyItEnded(event));
+      // The runtime is over: release what it still holds. The hub is not
+      // told that the participant left: after `replaced`, the participant
+      // with this id is another runtime, and it stays in the room.
+      ended?.stop();
       return;
     }
     default: {

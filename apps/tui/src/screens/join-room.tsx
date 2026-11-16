@@ -174,7 +174,7 @@ function EndpointStatusIndicator({
 }
 
 // Model suggestions
-function ModelSuggestions({ models }: { models: string[] }) {
+function ModelSuggestions({ models }: { models: readonly string[] }) {
   return (
     <box flexDirection="column" paddingLeft={1}>
       <text fg={colors.muted}>Press 1-5 to select:</text>

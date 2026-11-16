@@ -1,30 +1,23 @@
-import { probeEndpoint } from "@gambi/core/endpoint";
 import { useQuery } from "@tanstack/react-query";
-import type { ParticipantAuthHeaders } from "../../hosting/participant";
+import {
+  type ParticipantAuthHeaders,
+  probeProvider,
+} from "../../hosting/participant";
 import type { ParticipantCapabilities } from "../../types";
 
 interface EndpointTestResult {
   capabilities: ParticipantCapabilities;
   success: boolean;
-  models: string[];
+  models: readonly string[];
 }
 
-async function testEndpoint(endpoint: string): Promise<EndpointTestResult> {
-  const probe = await probeEndpoint(endpoint);
-  return {
-    success: probe.success,
-    models: probe.models,
-    capabilities: probe.capabilities,
-  };
-}
-
-async function testAuthenticatedEndpoint(
+async function testEndpoint(
   endpoint: string,
-  authHeaders: ParticipantAuthHeaders
+  authHeaders?: ParticipantAuthHeaders
 ): Promise<EndpointTestResult> {
-  const probe = await probeEndpoint(endpoint, { authHeaders });
+  const probe = await probeProvider(endpoint, authHeaders);
   return {
-    success: probe.success,
+    success: probe.reachable,
     models: probe.models,
     capabilities: probe.capabilities,
   };
@@ -66,9 +59,7 @@ export function useEndpointTestQuery(
   return useQuery({
     queryKey: endpointKeys.test(endpoint, authHeadersHash),
     queryFn: () =>
-      hasAuthHeaders
-        ? testAuthenticatedEndpoint(endpoint, authHeaders)
-        : testEndpoint(endpoint),
+      testEndpoint(endpoint, hasAuthHeaders ? authHeaders : undefined),
     enabled: isValidUrl && enabled,
     staleTime: 30_000, // Cache for 30 seconds
     retry: false,

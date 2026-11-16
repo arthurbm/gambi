@@ -10,6 +10,7 @@
  */
 import { BunSocket } from "@effect/platform-bun";
 import { TunnelDiagnostics } from "@gambi/core/participant/diagnostics";
+import { probeEndpoint } from "@gambi/core/participant/endpoint-capabilities";
 import { HarnessCallsNotSupported } from "@gambi/core/participant/harness-not-supported";
 import { providerInference } from "@gambi/core/participant/inference";
 import {
@@ -33,6 +34,31 @@ export type { ParticipantLifecycleEvent } from "@gambi/core/participant/runtime"
  * `Authorization` for a hosted backend. They never leave this machine.
  */
 export type ParticipantAuthHeaders = Readonly<Record<string, string>>;
+
+/** What a probe found at a provider endpoint. */
+export interface ProviderProbe {
+  /** Which inference APIs the provider answers. Goes up with the registration. */
+  readonly capabilities: ParticipantCapabilities;
+  /** The models the provider lists; empty when it lists none or did not answer. */
+  readonly models: readonly string[];
+  /** Whether a provider answered there as one. */
+  readonly reachable: boolean;
+}
+
+/**
+ * Probes the provider at `endpoint`, from this machine: which models it
+ * lists and which inference APIs it answers. It never rejects: a provider
+ * that is not there is a probe that found nothing.
+ */
+export const probeProvider = (
+  endpoint: string,
+  authHeaders?: ParticipantAuthHeaders
+): Promise<ProviderProbe> =>
+  Effect.runPromise(
+    probeEndpoint({ endpoint, authHeaders }).pipe(
+      Effect.provide(FetchHttpClient.layer)
+    )
+  );
 
 export interface HostParticipantOptions {
   /**
@@ -70,6 +96,12 @@ export interface HostedParticipant {
   readonly leave: () => Promise<void>;
   /** The participant as the hub registered it when it joined. */
   readonly participant: ParticipantSummary;
+  /**
+   * Releases a runtime that ended by itself (`onLifecycle` said `left`),
+   * without telling the hub anything: the participant with this id in the
+   * room, if there is one, is no longer this runtime.
+   */
+  readonly stop: () => Promise<void>;
 }
 
 /** How long leaving waits for the hub to answer before it gives up on telling it. */
@@ -158,6 +190,11 @@ export const hostParticipant = async (
     participant: joined.value,
     leave: () => {
       left ??= leave();
+      return left;
+    },
+    stop: () => {
+      leaving = true;
+      left ??= runtime.dispose();
       return left;
     },
   };
