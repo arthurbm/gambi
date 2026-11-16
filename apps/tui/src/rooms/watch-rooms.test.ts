@@ -35,6 +35,7 @@ const hubWhoseStreamsEnd = Effect.gen(function* () {
   const hub = yield* Hub;
   const open = new Set<() => void>();
   let streamsOpened = 0;
+  const cancelled = Promise.withResolvers<void>();
   const server = yield* Effect.acquireRelease(
     Effect.sync(() =>
       Bun.serve({
@@ -77,7 +78,10 @@ const hubWhoseStreamsEnd = Effect.gen(function* () {
                 };
                 pump().catch(() => undefined);
               },
-              cancel: () => upstream.abort(),
+              cancel: () => {
+                upstream.abort();
+                cancelled.resolve();
+              },
             }),
             { headers: { "content-type": "text/event-stream" } }
           );
@@ -92,6 +96,8 @@ const hubWhoseStreamsEnd = Effect.gen(function* () {
         end();
       }
     }),
+    /** Completes when a client gives up a stream it had open. */
+    streamCancelled: Effect.promise(() => cancelled.promise),
     streamsOpened: Effect.sync(() => streamsOpened),
     url: `http://127.0.0.1:${server.port}`,
   };
@@ -334,6 +340,25 @@ layer(layerHub(), { excludeTestServices: true })("watched rooms", (it) => {
 
       expect(statuses(stillWatched)).toEqual([["Bia", "online"]]);
       expect([...watcher.rooms().keys()]).toEqual([other.room.code]);
+    })
+  );
+
+  it.effect("closing gives up the streams it has open and opens no other", () =>
+    Effect.gen(function* () {
+      const management = yield* managementClient;
+      const { room } = yield* management.rooms.create({
+        payload: { name: "Frevo" },
+      });
+      const hub = yield* hubWhoseStreamsEnd;
+      const watcher = yield* watchingAt(hub.url);
+      watcher.add(room.code);
+      yield* shown(watcher, room.code, (it) => it.connected);
+
+      watcher.close();
+      yield* hub.streamCancelled;
+
+      // Nothing is left that would keep the process of the TUI alive.
+      expect(yield* hub.streamsOpened).toBe(1);
     })
   );
 });

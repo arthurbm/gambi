@@ -1,4 +1,4 @@
-import { useKeyboard, useRenderer } from "@opentui/react";
+import { useKeyboard } from "@opentui/react";
 import { useCallback, useState } from "react";
 import { AddRoomModal } from "./components/add-room-modal";
 import { ConfirmModal } from "./components/confirm-modal";
@@ -35,8 +35,12 @@ function WithSidebar({ children }: { children: React.ReactNode }) {
 
 type ConfirmAction = "quit" | "leave" | null;
 
-export function App() {
-  const renderer = useRenderer();
+interface AppProps {
+  /** Takes the TUI off the terminal, once the app has cleaned up after itself. */
+  onQuit: () => void;
+}
+
+export function App({ onQuit }: AppProps) {
   const hubStatus = useHubStore((s) => s.status);
   const session = useParticipantSession();
 
@@ -82,9 +86,9 @@ export function App() {
       await shutdownHub();
     } finally {
       // Whatever the cleanup did, the terminal goes back to the person.
-      renderer.destroy();
+      onQuit();
     }
-  }, [renderer, session, isQuitting]);
+  }, [onQuit, session, isQuitting]);
 
   const handleQuit = useCallback(() => {
     if (isQuitting) {

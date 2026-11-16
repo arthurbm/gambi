@@ -109,8 +109,6 @@ export function isHubRunning(): boolean {
 }
 
 // Cleanup function for app shutdown
-export async function shutdownHub(): Promise<void> {
-  const hub = hubInstance;
-  hubInstance = null;
-  await hub?.stop();
+export function shutdownHub(): Promise<void> {
+  return useHubStore.getState().stop();
 }

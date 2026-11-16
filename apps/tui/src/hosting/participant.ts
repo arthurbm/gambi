@@ -141,12 +141,16 @@ export const hostParticipant = async (
     leaving = true;
     // The hub first, so the room hears one thing: the participant left.
     // Stopping the runtime first would show it `offline` in between.
+    const gaveUp = Promise.withResolvers<void>();
+    const timer = setTimeout(gaveUp.resolve, LEAVE_TIMEOUT_MS);
     await Promise.race([
       hubClient(options.hubUrl)
         .participants.remove(options.roomCode, options.participantId)
         .catch(() => undefined),
-      new Promise((resolve) => setTimeout(resolve, LEAVE_TIMEOUT_MS)),
+      gaveUp.promise,
     ]);
+    // A pending timer would keep the process alive after the TUI quits.
+    clearTimeout(timer);
     await runtime.dispose();
   };
 

@@ -27,6 +27,8 @@ interface UseRoomsReturn {
 export function useRooms(): UseRoomsReturn {
   const client = useHubClient();
   const watcher = useMemo(() => watchRooms(client), [client]);
+  // A watched room keeps the process alive, by its open stream or by the
+  // next attempt to watch it again: quitting the TUI unmounts this.
   useEffect(() => () => watcher.close(), [watcher]);
 
   const rooms = useSyncExternalStore(watcher.subscribe, watcher.rooms);
