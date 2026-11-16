@@ -8,6 +8,7 @@ import { HttpClient } from "effect/http";
 import { Socket } from "effect/socket";
 import { Hub } from "../hub/hub.ts";
 import { TunnelDiagnostics } from "../participant/diagnostics.ts";
+import { HarnessCallsNotSupported } from "../participant/harness-not-supported.ts";
 import {
   InferenceNotServed,
   type ProviderOptions,
@@ -29,8 +30,11 @@ export interface TestParticipantOptions<
   /**
    * Handlers of tunnel calls on this participant, to replace the default of
    * a call. The calls it leaves out keep their default: the diagnostics
-   * every participant has (`TunnelDiagnostics`), and inference answered by
+   * every participant has (`TunnelDiagnostics`), "not supported" for the
+   * harness calls (`HarnessCallsNotSupported`), and inference answered by
    * `provider` when there is one, refused otherwise (`InferenceNotServed`).
+   * So a test passes only the calls it cares about and keeps compiling when
+   * the tunnel gains a call.
    */
   readonly handlers?: Layer.Layer<Handlers> | undefined;
   /** Where the runtime's log lines go. Default: nowhere. */
@@ -51,7 +55,27 @@ export interface TestParticipantOptions<
   readonly roomCode: string;
 }
 
+/**
+ * The handlers of a participant that serves nothing of its own: the
+ * diagnostics every participant has, and "not supported" for inference and
+ * for the harness calls. For a test that builds a runtime by hand
+ * (`openTunnel`); `joinParticipant` has the same defaults.
+ */
+export const defaultHandlers: Layer.Layer<TunnelHandlers> = Layer.mergeAll(
+  TunnelDiagnostics,
+  InferenceNotServed,
+  HarnessCallsNotSupported
+);
+
 export interface TestParticipant {
+  /**
+   * Waits until what the participant sent to the hub satisfies `seen`. It is
+   * checked again on every request and frame, so a test waits for a frame
+   * instead of sleeping.
+   */
+  readonly awaitSent: (
+    seen: (sent: readonly string[]) => boolean
+  ) => Effect.Effect<void>;
   /**
    * Kills the participant's side of the tunnel without a closing handshake,
    * which is what the hub sees when the participant's process dies.
@@ -111,9 +135,10 @@ export const joinParticipant = <Handlers extends TunnelHandlers = never>(
     const providerClient = yield* HttpClient.HttpClient;
     // One default per call, so a runtime started without a capability still
     // answers every call. A ticket that adds calls to `TunnelRpcs` adds their
-    // "not served" handlers to this list.
+    // "not served" handlers to this list and to `defaultHandlers`.
     const defaults: Layer.Layer<TunnelHandlers> = Layer.mergeAll(
       TunnelDiagnostics,
+      HarnessCallsNotSupported,
       provider === undefined
         ? InferenceNotServed
         : providerInference(provider).pipe(
@@ -125,6 +150,13 @@ export const joinParticipant = <Handlers extends TunnelHandlers = never>(
     const scope = yield* Scope.fork(yield* Effect.scope);
     const dialed: WebSocket[] = [];
     const sent: string[] = [];
+    const watchers = new Set<() => void>();
+    const record = (entry: string) => {
+      sent.push(entry);
+      for (const watcher of [...watchers]) {
+        watcher();
+      }
+    };
     const decoder = new TextDecoder();
     const asText = (data: unknown) =>
       typeof data === "string"
@@ -137,10 +169,10 @@ export const joinParticipant = <Handlers extends TunnelHandlers = never>(
           url,
           options as ConstructorParameters<typeof WebSocket>[1]
         );
-        sent.push(`DIAL ${url} ${JSON.stringify(options ?? null)}`);
+        record(`DIAL ${url} ${JSON.stringify(options ?? null)}`);
         const send = socket.send.bind(socket);
         socket.send = (data) => {
-          sent.push(asText(data));
+          record(asText(data));
           return send(data);
         };
         dialed.push(socket);
@@ -154,7 +186,7 @@ export const joinParticipant = <Handlers extends TunnelHandlers = never>(
         HttpClient.mapRequest((request) => {
           const body =
             request.body._tag === "Uint8Array" ? asText(request.body.body) : "";
-          sent.push(
+          record(
             `${request.method} ${request.url} ${JSON.stringify(request.headers)} ${body}`
           );
           return request;
@@ -191,6 +223,18 @@ export const joinParticipant = <Handlers extends TunnelHandlers = never>(
       scope
     ).pipe(Effect.onError(() => Scope.close(scope, Exit.void)));
     return {
+      awaitSent: (seen) =>
+        Effect.callback<void>((resume) => {
+          const check = () => {
+            if (seen(sent)) {
+              watchers.delete(check);
+              resume(Effect.void);
+            }
+          };
+          watchers.add(check);
+          check();
+          return Effect.sync(() => watchers.delete(check));
+        }),
       kill: Effect.sync(() => {
         for (const socket of dialed) {
           socket.terminate();

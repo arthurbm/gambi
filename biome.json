@@ -83,7 +83,9 @@
         "packages/core/src/hub/**/*.ts",
         "!packages/core/src/hub/**/*.test.ts",
         "packages/core/src/participant/**/*.ts",
-        "!packages/core/src/participant/**/*.test.ts"
+        "!packages/core/src/participant/**/*.test.ts",
+        "packages/core/src/harness/**/*.ts",
+        "!packages/core/src/harness/**/*.test.ts"
       ],
       "linter": {
         "rules": {

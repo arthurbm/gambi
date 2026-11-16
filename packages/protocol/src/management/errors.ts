@@ -43,6 +43,54 @@ export class ParticipantNotFound extends Schema.TaggedError<ParticipantNotFound>
   }
 }
 
+/**
+ * The participant is in the room and contributes a model endpoint, not a
+ * harness: there is nothing to attach to and no harness session to open.
+ */
+export class NotAHarnessParticipant extends Schema.TaggedError<NotAHarnessParticipant>()(
+  "NotAHarnessParticipant",
+  {
+    roomCode: Schema.String,
+    participantId: Schema.String,
+    ...requestIdField,
+  }
+) {
+  static readonly code = "NOT_A_HARNESS_PARTICIPANT";
+  static readonly status = 409;
+
+  override get message(): string {
+    return `Participant '${this.participantId}' of room '${this.roomCode}' does not contribute a harness.`;
+  }
+
+  get hint(): string {
+    return "List the participants of the room: a harness participant has a `harness` field.";
+  }
+}
+
+/**
+ * The participant is in the room and its tunnel is not open, so the hub has
+ * no way to reach it now. It may come back: its runtime reconnects by itself.
+ */
+export class ParticipantUnreachable extends Schema.TaggedError<ParticipantUnreachable>()(
+  "ParticipantUnreachable",
+  {
+    roomCode: Schema.String,
+    participantId: Schema.String,
+    ...requestIdField,
+  }
+) {
+  static readonly code = "PARTICIPANT_UNREACHABLE";
+  static readonly status = 409;
+
+  override get message(): string {
+    return `Participant '${this.participantId}' of room '${this.roomCode}' is offline.`;
+  }
+
+  get hint(): string {
+    return "Wait for the participant to come back online and retry.";
+  }
+}
+
 /** The room has a password and the request did not bring the right one. */
 export class InvalidPassword extends Schema.TaggedError<InvalidPassword>()(
   "InvalidPassword",

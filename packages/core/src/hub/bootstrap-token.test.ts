@@ -5,8 +5,6 @@ import { Clock, Effect, Layer } from "effect";
 import { HttpClient, HttpClientRequest } from "effect/http";
 import { Socket } from "effect/socket";
 import { TestClock } from "effect/testing";
-import { TunnelDiagnostics } from "../participant/diagnostics.ts";
-import { InferenceNotServed } from "../participant/inference.ts";
 import {
   openTunnel,
   type ParticipantRuntimeOptions,
@@ -14,6 +12,7 @@ import {
   TunnelOpenFailed,
 } from "../participant/runtime.ts";
 import { layerHub, managementClient } from "../testing/hub.ts";
+import { defaultHandlers } from "../testing/participant.ts";
 import { Hub } from "./hub.ts";
 
 /** The options of a participant runtime for a new room of the hub in the environment. */
@@ -45,8 +44,7 @@ const participantIn = (roomName: string, participantId = "arthur-1") =>
 
 /** What a participant runtime needs to dial and serve. */
 const Platform = Layer.mergeAll(
-  TunnelDiagnostics,
-  InferenceNotServed,
+  defaultHandlers,
   Socket.layerWebSocketConstructorGlobal
 );
 
