@@ -31,6 +31,11 @@ export const Welcome = Rpc.make("Welcome", {
     participantId: Schema.String,
     /** The Gambi version of the hub. */
     hubVersion: Schema.String,
+    /**
+     * How often the hub pings this tunnel, in milliseconds. A runtime that
+     * hears nothing from the hub for several of these takes it for frozen.
+     */
+    pingIntervalMillis: Schema.Number,
   },
 });
 
