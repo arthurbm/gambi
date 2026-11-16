@@ -28,6 +28,7 @@ import {
   type ParticipantSummary,
   type RegisterParticipant,
   type RoomNotFound,
+  TUNNEL_REPLACED_CLOSE_CODE,
   TunnelRpcs,
   tunnelUrl,
   type VersionMismatch,
@@ -88,8 +89,9 @@ export type ReconnectReason =
  *   `delayMillis`. One event per attempt, counted from `1` after each drop.
  * - `left`: the runtime ended and tries no more. `stopped`: its host stopped
  *   it. `refused`: the hub refused it when it tried to come back, and
- *   `error` says why. `tunnelDropped`: the tunnel dropped and the runtime was
- *   started with `reconnect: false`.
+ *   `error` says why. `replaced`: another runtime joined the room with the
+ *   same `participantId` and the hub kept that one. `tunnelDropped`: the
+ *   tunnel dropped and the runtime was started with `reconnect: false`.
  *
  * A runtime that never joined reports nothing: the join itself fails.
  */
@@ -114,7 +116,7 @@ export type ParticipantLifecycleEvent =
       readonly type: "left";
       readonly roomCode: string;
       readonly participantId: string;
-      readonly reason: "stopped" | "refused" | "tunnelDropped";
+      readonly reason: "stopped" | "refused" | "replaced" | "tunnelDropped";
       /** The typed error behind `refused`: its name and its message. */
       readonly error?: { readonly name: string; readonly message: string };
     };
@@ -256,14 +258,18 @@ export const register = Effect.fn("ParticipantRuntime.register")(function* (
     );
 });
 
+/**
+ * Why an open tunnel is no more: `tunnelDropped` when it was closed or lost,
+ * `hubSilent` when the runtime dropped it because the hub went silent, and
+ * `replaced` when the hub closed it because another runtime opened a tunnel
+ * as the same participant.
+ */
+export type TunnelDrop = "tunnelDropped" | "hubSilent" | "replaced";
+
 /** An open tunnel, as the participant runtime sees it. */
 export interface OpenTunnel {
-  /**
-   * Completes when the tunnel drops, and says why: `tunnelDropped` when it
-   * was closed or lost, `hubSilent` when the runtime dropped it because the
-   * hub went silent.
-   */
-  readonly dropped: Effect.Effect<"tunnelDropped" | "hubSilent">;
+  /** Completes when the tunnel drops, and says why. */
+  readonly dropped: Effect.Effect<TunnelDrop>;
   /** The Gambi version of the hub, as it said in its `Welcome`. */
   readonly hubVersion: string;
 }
@@ -294,7 +300,7 @@ export const openTunnel = Effect.fn("ParticipantRuntime.openTunnel")(function* (
     readonly pingIntervalMillis: number;
   }>();
   const closed = yield* Deferred.make<Exit.Exit<unknown, unknown>>();
-  const dropped = yield* Deferred.make<"tunnelDropped" | "hubSilent">();
+  const dropped = yield* Deferred.make<TunnelDrop>();
   const clock = yield* Clock.Clock;
   // The socket and the server on it live here, so that the watchdog can
   // close them before the caller's scope ends.
@@ -303,15 +309,26 @@ export const openTunnel = Effect.fn("ParticipantRuntime.openTunnel")(function* (
     tunnelUrl(options.hubUrl, options.roomCode, options.participantId, token)
   );
   // Every frame of the hub passes here, its pings included: this is where
-  // the runtime learns when it last heard from the hub.
+  // the runtime learns when it last heard from the hub, and, from the code
+  // the socket closed with, that the hub gave its place to another runtime.
   let lastFrameAt = clock.currentTimeMillisUnsafe();
+  let replaced = false;
   const watched = Socket.make({
     reader: Effect.map(dialed.reader, (reader) => ({
       ...reader,
-      pull: Effect.tap(reader.pull, () =>
-        Effect.sync(() => {
-          lastFrameAt = clock.currentTimeMillisUnsafe();
-        })
+      pull: reader.pull.pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            lastFrameAt = clock.currentTimeMillisUnsafe();
+          })
+        ),
+        Effect.tapError((error) =>
+          Effect.sync(() => {
+            replaced ||=
+              error.reason._tag === "SocketCloseError" &&
+              error.reason.code === TUNNEL_REPLACED_CLOSE_CODE;
+          })
+        )
       ),
     })),
     writer: dialed.writer,
@@ -328,7 +345,12 @@ export const openTunnel = Effect.fn("ParticipantRuntime.openTunnel")(function* (
           Effect.exit,
           Effect.flatMap((exit) =>
             Deferred.succeed(closed, exit).pipe(
-              Effect.andThen(Deferred.succeed(dropped, "tunnelDropped"))
+              Effect.andThen(
+                Deferred.succeed(
+                  dropped,
+                  replaced ? "replaced" : "tunnelDropped"
+                )
+              )
             )
           ),
           Effect.andThen(Effect.never)
@@ -421,7 +443,10 @@ const reasonToRetry = (
 
 /** How an exit of the runtime reads as a `left` event. A defect is not one. */
 const howItLeft = (
-  exit: Exit.Exit<void, RegistrationError | TunnelOpenFailed>
+  exit: Exit.Exit<
+    "replaced" | "tunnelDropped",
+    RegistrationError | TunnelOpenFailed
+  >
 ):
   | Pick<
       Extract<ParticipantLifecycleEvent, { type: "left" }>,
@@ -429,7 +454,7 @@ const howItLeft = (
     >
   | undefined => {
   if (Exit.isSuccess(exit)) {
-    return { reason: "tunnelDropped" };
+    return { reason: exit.value };
   }
   if (Cause.hasInterruptsOnly(exit.cause)) {
     return { reason: "stopped" };
@@ -455,8 +480,8 @@ export class ParticipantRuntime extends Context.Service<
     /**
      * Completes when the runtime has ended and tries no more: with the hub's
      * refusal as its error when the hub refused it on its way back, and
-     * without one when it was stopped or, with `reconnect: false`, when its
-     * tunnel dropped.
+     * without one when it was stopped, when another runtime replaced it or,
+     * with `reconnect: false`, when its tunnel dropped.
      */
     readonly ended: Effect.Effect<void, RegistrationError | TunnelOpenFailed>;
     /** The participant as the hub registered it when it joined. */
@@ -480,7 +505,9 @@ export class ParticipantRuntime extends Context.Service<
    * `RECONNECT_MAX_DELAY`). Each attempt registers again, because a bootstrap
    * token opens one tunnel, and keeps the `participantId`. A refusal of the
    * hub (another version, a room that is gone, a wrong password) ends the
-   * runtime instead: see `ended`.
+   * runtime instead: see `ended`. So does a tunnel the hub closed because
+   * another runtime joined with the same `participantId`: coming back would
+   * take the tunnel from that one, which would take it back, forever.
    *
    * The environment provides the platform (`HttpClient`, a
    * `Socket.WebSocketConstructor`) and the handlers (`TunnelHandlers`).
@@ -562,17 +589,21 @@ export class ParticipantRuntime extends Context.Service<
           }
         });
 
-        // A join that fails is not retried: the host hears it at once.
+        // A join that fails is not retried: the host hears it at once. A
+        // runtime that was replaced does not come back.
         const run = Effect.gen(function* () {
           let dropped = yield* connection(0);
-          while (options.reconnect !== false) {
+          while (dropped !== "replaced" && options.reconnect !== false) {
             dropped = yield* comeBack(dropped);
           }
+          return dropped === "replaced" ? dropped : "tunnelDropped";
         });
 
         // How the runtime ended, told to whoever waits for it: the build of
         // the layer when it never joined, the host afterwards.
-        const conclude = (exit: Exit.Exit<void, Failure>) =>
+        const conclude = (
+          exit: Exit.Exit<"replaced" | "tunnelDropped", Failure>
+        ) =>
           Effect.gen(function* () {
             if (Exit.isFailure(exit)) {
               // Does nothing when the join already succeeded.
@@ -585,7 +616,7 @@ export class ParticipantRuntime extends Context.Service<
             // Being stopped is not a failure of the runtime.
             yield* Deferred.done(
               ended,
-              left?.reason === "stopped" ? Exit.void : exit
+              left?.reason === "stopped" ? Exit.void : Exit.asVoid(exit)
             );
           });
 

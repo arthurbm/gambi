@@ -16,6 +16,7 @@
  * `Rooms` reads `count` for its summaries.
  */
 import {
+  type HarnessProfile,
   NoParticipantAvailable,
   type ParticipantCapabilities,
   ParticipantIsBusy,
@@ -31,6 +32,7 @@ import {
   transitionStatus,
 } from "@gambi/protocol";
 import { Clock, Context, Effect, FiberMap, Layer, Random } from "effect";
+import { HarnessClients } from "./harness-clients.ts";
 import { RoomEvents } from "./room-events.ts";
 import { HubSettings } from "./settings.ts";
 
@@ -44,6 +46,7 @@ interface ParticipantState {
   readonly capabilities: ParticipantCapabilities;
   readonly config: RuntimeConfig;
   readonly endpoint: string | undefined;
+  readonly harness: HarnessProfile | undefined;
   readonly id: string;
   readonly joinedAt: number;
   readonly model: string;
@@ -95,6 +98,9 @@ const toSummary = (participant: ParticipantState): ParticipantSummary => ({
   ...(participant.endpoint === undefined
     ? {}
     : { endpoint: participant.endpoint }),
+  ...(participant.harness === undefined
+    ? {}
+    : { harness: participant.harness }),
   config: toRuntimeConfigPublic(participant.config),
   specs: participant.specs,
   capabilities: participant.capabilities,
@@ -135,12 +141,20 @@ export class Participants extends Context.Service<
   {
     /** How many participants the room has, whatever their status. */
     readonly count: (roomCode: string) => Effect.Effect<number>;
+    /** One participant of the room; `undefined` when it is not there. */
+    readonly get: (
+      roomCode: string,
+      participantId: string
+    ) => Effect.Effect<ParticipantSummary | undefined>;
     /**
      * Routes a request: picks the participant the model selector asks for
      * and marks it `busy`. Only an `online` participant is picked, so a
      * participant never takes two requests at once.
      *
      * The model selector has four forms:
+     *
+     * Only a participant that shares a model endpoint is picked by `*`, `any`
+     * or a model name; a harness participant is reached only by its id.
      *
      * - `*` or `any`: any `online` participant, at random;
      * - `model:<name>`: the first `online` participant that shares that model;
@@ -191,6 +205,7 @@ export class Participants extends Context.Service<
     Participants,
     Effect.gen(function* () {
       const events = yield* RoomEvents;
+      const harnessClients = yield* HarnessClients;
       const settings = yield* HubSettings;
       // One fiber per offline participant, sleeping until its deadline.
       const deadlines = yield* FiberMap.make<string>();
@@ -256,6 +271,16 @@ export class Participants extends Context.Service<
           Effect.annotateLogs({ ...change })
         );
         yield* events.publish(roomCode, eventOf(change, participant, after));
+        if (after === undefined) {
+          // Nobody stays attached to a harness that is out of the room.
+          yield* harnessClients.detach(
+            roomCode,
+            participantId,
+            event === "reconnectDeadlinePassed"
+              ? "reconnectDeadlinePassed"
+              : "left"
+          );
+        }
         if (to === "offline") {
           yield* startDeadline(roomCode, participantId);
         } else if (event !== "reconnectDeadlinePassed") {
@@ -287,6 +312,7 @@ export class Participants extends Context.Service<
           nickname: profile.nickname,
           model: profile.model,
           endpoint: profile.endpoint,
+          harness: profile.harness,
           config: profile.config ?? {},
           specs: profile.specs ?? {},
           capabilities: profile.capabilities ?? UNKNOWN_CAPABILITIES,
@@ -326,8 +352,11 @@ export class Participants extends Context.Service<
         chance: number
       ): ParticipantState | DispatchError => {
         const room = byRoom.get(roomCode);
+        // A harness participant serves no inference: a request reaches it
+        // only by its id, and then hears that from the participant itself.
         const online = [...(room?.values() ?? [])].filter(
-          (participant) => participant.status === "online"
+          (participant) =>
+            participant.status === "online" && participant.harness === undefined
         );
         const sharing = (model: string) =>
           online.find((participant) => participant.model === model);
@@ -393,6 +422,13 @@ export class Participants extends Context.Service<
 
       return Participants.of({
         count: (roomCode) => Effect.sync(() => byRoom.get(roomCode)?.size ?? 0),
+        get: (roomCode, participantId) =>
+          Effect.sync(() => {
+            const participant = byRoom.get(roomCode)?.get(participantId);
+            return participant === undefined
+              ? undefined
+              : toSummary(participant);
+          }),
         list: (roomCode) =>
           Effect.sync(() =>
             [...(byRoom.get(roomCode)?.values() ?? [])].map(toSummary)

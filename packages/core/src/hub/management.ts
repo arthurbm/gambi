@@ -34,6 +34,7 @@ import {
   HttpServerResponse,
 } from "effect/http";
 import { HttpApiBuilder, HttpApiError } from "effect/http-api";
+import { HarnessHandlers } from "./harness-attach.ts";
 import { OpenStreams } from "./open-streams.ts";
 import { Participants } from "./participants.ts";
 import { leaveRoom, registerParticipant } from "./registration.ts";
@@ -214,6 +215,7 @@ export const ManagementRoutes = Layer.mergeAll(
       RoomsHandlers,
       ParticipantsHandlers,
       EventsHandlers,
+      HarnessHandlers,
     ]),
     Layer.provide(ManagementFailuresLive)
   ),

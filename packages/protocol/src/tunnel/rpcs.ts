@@ -14,8 +14,12 @@
  */
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
+import { AcpMessage, HarnessEvent, HarnessSessionId } from "../harness.ts";
 import {
   CallNotSupported,
+  HarnessFailed,
+  HarnessSessionNotOpen,
+  HarnessSessionOutsideWorkspace,
   ProviderResponseInterrupted,
   ProviderUnreachable,
 } from "./errors.ts";
@@ -56,6 +60,55 @@ export const Ticks = Rpc.make("Ticks", {
   payload: { count: Schema.Int },
   success: Schema.Int,
   stream: true,
+});
+
+/**
+ * The long-lived stream of a harness participant: everything that is born on
+ * the participant (ACP messages of the harness, the status of its sessions)
+ * goes up as a chunk of this one call. The hub opens it on every tunnel, right
+ * after `Welcome`, and reads it for as long as the tunnel lives; it ends with
+ * the tunnel.
+ *
+ * A participant that shares a model endpoint answers it with
+ * `CallNotSupported`.
+ */
+export const HarnessEvents = Rpc.make("HarnessEvents", {
+  success: HarnessEvent,
+  error: CallNotSupported,
+  stream: true,
+});
+
+/**
+ * Hands one ACP message to the harness, for one of its sessions. It answers
+ * when the message is written to the harness, not when the harness answers:
+ * whatever the harness says comes up through `HarnessEvents`.
+ */
+export const HarnessSend = Rpc.make("HarnessSend", {
+  payload: { sessionId: HarnessSessionId, message: AcpMessage },
+  error: Schema.Union([CallNotSupported, HarnessSessionNotOpen, HarnessFailed]),
+});
+
+/**
+ * Opens a harness session under the id the caller picked. It answers when the
+ * harness has opened it; a session that is already open stays as it is.
+ * `cwd` must be inside the participant's Workspace, which is also the default.
+ */
+export const HarnessOpenSession = Rpc.make("HarnessOpenSession", {
+  payload: {
+    sessionId: HarnessSessionId,
+    cwd: Schema.optionalKey(Schema.NonEmptyString),
+  },
+  error: Schema.Union([
+    CallNotSupported,
+    HarnessSessionOutsideWorkspace,
+    HarnessFailed,
+  ]),
+});
+
+/** Closes a harness session. A session that is not open is already closed. */
+export const HarnessCloseSession = Rpc.make("HarnessCloseSession", {
+  payload: { sessionId: HarnessSessionId },
+  error: Schema.Union([CallNotSupported, HarnessFailed]),
 });
 
 /**
@@ -152,7 +205,27 @@ export const Infer = Rpc.make("Infer", {
 });
 
 /** Every call of the tunnel. The hub's client and the participant's server derive from it. */
-export class TunnelRpcs extends RpcGroup.make(Welcome, Echo, Ticks, Infer) {}
+export class TunnelRpcs extends RpcGroup.make(
+  Welcome,
+  Echo,
+  Ticks,
+  Infer,
+  HarnessEvents,
+  HarnessSend,
+  HarnessOpenSession,
+  HarnessCloseSession
+) {}
+
+/**
+ * The WebSocket close code of a tunnel the hub closed because the same
+ * participant opened another one. A participant runtime that sees its tunnel
+ * close with it was replaced by another runtime with its `participantId`, and
+ * must not dial again: the two would take the tunnel from each other forever.
+ *
+ * It is in the range the WebSocket protocol leaves to applications
+ * (4000 to 4999).
+ */
+export const TUNNEL_REPLACED_CLOSE_CODE = 4001;
 
 /** The path of the tunnel's WebSocket upgrade on the hub. */
 export const tunnelPath = (roomCode: string, participantId: string): string =>

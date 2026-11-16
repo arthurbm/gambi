@@ -1,549 +1,177 @@
+/**
+ * The management client: rooms, participants and room events of one hub, in
+ * `Promise`. It is the client derived from the management contract behind a
+ * `Promise` boundary. It calls the hub with `fetch`, so it runs in Node and
+ * in Bun alike.
+ */
+import { GAMBI_VERSION } from "@gambi/protocol";
+import { Effect, Stream } from "effect";
 import {
-  type TunnelHarnessAttachedMessage,
-  TunnelHarnessAttachedMessage as TunnelHarnessAttachedMessageSchema,
-  type TunnelHarnessClientMessage,
-} from "@gambi/core/tunnel-protocol";
+  type ManagementFailure,
+  ManagementPlane,
+  translated,
+  translatedMidStream,
+} from "./contract.ts";
+import { makePromiseBoundary } from "./promise.ts";
 import type {
-  ApiErrorResponse,
-  ApiMeta,
-  HeartbeatResult,
-  ParticipantCapabilities,
-  ParticipantConnection,
+  CreateRoomInput,
+  HubHealth,
+  ParticipantLeft,
+  ParticipantRegistered,
   ParticipantSummary,
+  RegisterParticipantInput,
+  RoomCreated,
   RoomEvent,
   RoomSummary,
-  RuntimeConfig,
-  TunnelBootstrap,
 } from "./types.ts";
 
+export const DEFAULT_HUB_URL = "http://localhost:3000";
+
 export interface ClientOptions {
-  hubUrl?: string;
+  /** The URL of the hub, without `/v1`. Default `http://localhost:3000`. */
+  readonly hubUrl?: string;
 }
 
-export interface CreateRoomInput {
-  defaults?: RuntimeConfig;
-  name: string;
-  password?: string;
+export interface WatchOptions {
+  /** Stops watching when it aborts. The iteration ends without an error. */
+  readonly signal?: AbortSignal;
 }
 
-export interface UpsertParticipantInput {
-  nickname: string;
-  model: string;
-  endpoint?: string;
-  harness?: ParticipantSummary["harness"];
-  password?: string;
-  specs?: ParticipantSummary["specs"];
-  config?: RuntimeConfig;
-  capabilities?: ParticipantCapabilities;
-}
-
-export interface UpsertParticipantResult {
-  participant: ParticipantSummary & { connection: ParticipantConnection };
-  roomId: string;
-  tunnel: TunnelBootstrap;
-}
-
-export interface ApiResult<T> {
-  data: T;
-  meta: ApiMeta;
-}
-
-export interface WatchRoomOptions {
-  roomCode: string;
-  signal?: AbortSignal;
-}
-
-export interface AttachHarnessOptions {
-  participantId: string;
-  roomCode: string;
-  signal?: AbortSignal;
-}
-
-export interface HarnessChannel {
-  close: () => void;
-  messages: AsyncIterable<TunnelHarnessAttachedMessage>;
-  send: (message: TunnelHarnessClientMessage) => void;
-}
-
+/**
+ * Every method rejects with a `ClientError`; `error.code` says why.
+ */
 export interface GambiClient {
-  rooms: {
-    create: (
-      input: CreateRoomInput
-    ) => Promise<ApiResult<{ room: RoomSummary; hostId: string }>>;
-    get: (roomCode: string) => Promise<ApiResult<RoomSummary>>;
-    list: () => Promise<ApiResult<RoomSummary[]>>;
+  /**
+   * Ends every open `events.watch` and refuses later calls. A client that is
+   * never closed holds nothing open once its watches end.
+   */
+  readonly close: () => Promise<void>;
+  readonly events: {
+    /**
+     * Watches a room. The first event is always `room.snapshot`: the room and
+     * its participants when the watch started. Every change after it follows,
+     * in order.
+     *
+     * Nothing is requested until the loop starts. The loop ends, without an
+     * error, when the hub closes or `signal` aborts; leaving it early
+     * (`break`) stops watching. To keep watching across a hub restart, watch
+     * again when the loop ends.
+     *
+     * @example
+     * for await (const event of client.events.watch("ABC123")) {
+     *   if (event.type === "participant.online") {
+     *     console.log(event.participant.nickname);
+     *   }
+     * }
+     */
+    readonly watch: (
+      roomCode: string,
+      options?: WatchOptions
+    ) => AsyncIterable<RoomEvent>;
   };
-  participants: {
-    upsert: (
+  readonly hub: {
+    readonly health: () => Promise<HubHealth>;
+  };
+  readonly participants: {
+    readonly list: (roomCode: string) => Promise<readonly ParticipantSummary[]>;
+    /**
+     * Registers a participant in a room, or updates one that is already in
+     * it, and answers the bootstrap token of its tunnel. The participant stays
+     * `offline` until a participant runtime opens that tunnel, and is removed
+     * after 60 seconds without one.
+     */
+    readonly register: (
       roomCode: string,
       participantId: string,
-      input: UpsertParticipantInput
-    ) => Promise<ApiResult<UpsertParticipantResult>>;
-    list: (roomCode: string) => Promise<ApiResult<ParticipantSummary[]>>;
-    remove: (
+      input: RegisterParticipantInput
+    ) => Promise<ParticipantRegistered>;
+    /** Takes a participant out of a room at once, closing its tunnel. */
+    readonly remove: (
       roomCode: string,
       participantId: string
-    ) => Promise<ApiResult<{ success: true }>>;
-    heartbeat: (
-      roomCode: string,
-      participantId: string
-    ) => Promise<ApiResult<HeartbeatResult>>;
+    ) => Promise<ParticipantLeft>;
   };
-  events: {
-    watchRoom: (options: WatchRoomOptions) => AsyncIterable<RoomEvent>;
+  readonly rooms: {
+    readonly create: (input: CreateRoomInput) => Promise<RoomCreated>;
+    readonly get: (roomCode: string) => Promise<RoomSummary>;
+    readonly list: () => Promise<readonly RoomSummary[]>;
   };
-  harness: {
-    attach: (options: AttachHarnessOptions) => Promise<HarnessChannel>;
-  };
+  readonly [Symbol.asyncDispose]: () => Promise<void>;
 }
 
-export class ClientError extends Error {
-  readonly status: number;
-  readonly code?: string;
-  readonly hint?: string;
-  readonly details?: unknown;
-  readonly requestId?: string;
-
-  constructor(params: {
-    message: string;
-    status: number;
-    code?: string;
-    hint?: string;
-    details?: unknown;
-    requestId?: string;
-  }) {
-    super(params.message);
-    this.name = "ClientError";
-    this.status = params.status;
-    this.code = params.code;
-    this.hint = params.hint;
-    this.details = params.details;
-    this.requestId = params.requestId;
-  }
-}
-
-export function parseErrorEnvelope(
-  status: number,
-  body: Partial<ApiErrorResponse> | undefined,
-  fallbackMessage: string
-): ClientError {
-  return new ClientError({
-    message: body?.error?.message ?? fallbackMessage,
-    status,
-    code: body?.error?.code,
-    hint: body?.error?.hint,
-    details: body?.error?.details,
-    requestId: body?.meta?.requestId,
-  });
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException
-    ? error.name === "AbortError"
-    : error instanceof Error && error.name === "AbortError";
-}
-
-function isApiResult<T>(value: unknown): value is ApiResult<T> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "data" in value &&
-    "meta" in value
+/**
+ * Creates the management client of the hub at `options.hubUrl`.
+ *
+ * @example
+ * const client = createClient({ hubUrl: "http://192.168.1.10:3000" });
+ * const { room } = await client.rooms.create({ name: "Frevo" });
+ * const participants = await client.participants.list(room.code);
+ */
+export const createClient = (options: ClientOptions = {}): GambiClient => {
+  const hubUrl = options.hubUrl ?? DEFAULT_HUB_URL;
+  const boundary = makePromiseBoundary(
+    ManagementPlane.layer(hubUrl),
+    "The client"
   );
-}
+  const asClientError = translated(hubUrl);
 
-function createConnectivityError(
-  message = "Failed to reach hub.",
-  hint = "Check hub URL and connectivity."
-): ClientError {
-  return new ClientError({
-    message,
-    status: 503,
-    code: "INTERNAL_ERROR",
-    hint,
-  });
-}
-
-function createProtocolError(
-  message = "Invalid JSON response from hub.",
-  hint = "Check hub compatibility or proxy behavior."
-): ClientError {
-  return new ClientError({
-    message,
-    status: 502,
-    code: "INTERNAL_ERROR",
-    hint,
-  });
-}
-
-async function readJsonBody(response: Response): Promise<unknown> {
-  const text = await response.text();
-  if (!text) {
-    return undefined;
-  }
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-}
-
-async function fetchResponse(
-  input: string,
-  init?: RequestInit
-): Promise<Response> {
-  try {
-    return await fetch(input, init);
-  } catch (error) {
-    if (isAbortError(error)) {
-      throw error;
-    }
-    throw createConnectivityError();
-  }
-}
-
-function parseEventStreamChunk(chunk: string): RoomEvent[] {
-  const events: RoomEvent[] = [];
-  const blocks = chunk.split("\n\n");
-
-  for (const block of blocks) {
-    if (!block.trim()) {
-      continue;
-    }
-
-    const eventLine = block
-      .split("\n")
-      .find((line) => line.startsWith("data: "));
-    if (!eventLine) {
-      continue;
-    }
-
-    try {
-      const data = JSON.parse(eventLine.slice(6)) as RoomEvent;
-      events.push(data);
-    } catch {
-      // Ignore malformed SSE payloads and keep the stream parser resilient.
-    }
-  }
-
-  return events;
-}
-
-async function* streamRoomEvents(response: Response): AsyncIterable<RoomEvent> {
-  if (!response.body) {
-    throw new ClientError({
-      message: "Event stream body is missing.",
-      status: 500,
-      code: "INTERNAL_ERROR",
-    });
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  type ReaderChunk = Awaited<ReturnType<typeof reader.read>>;
-  let buffer = "";
-
-  while (true) {
-    let chunk: ReaderChunk;
-    try {
-      chunk = await reader.read();
-    } catch (error) {
-      if (isAbortError(error)) {
-        return;
-      }
-      throw createConnectivityError("Event stream interrupted.");
-    }
-
-    const { done, value } = chunk;
-    if (done) {
-      break;
-    }
-
-    buffer += decoder.decode(value, { stream: true });
-    const split = buffer.split("\n\n");
-    buffer = split.pop() ?? "";
-    for (const block of split) {
-      for (const event of parseEventStreamChunk(`${block}\n\n`)) {
-        yield event;
-      }
-    }
-  }
-
-  buffer += decoder.decode();
-  if (buffer.trim()) {
-    for (const event of parseEventStreamChunk(buffer)) {
-      yield event;
-    }
-  }
-}
-
-function toWebSocketUrl(hubUrl: string, path: string): string {
-  const url = new URL(path, hubUrl);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  return url.toString();
-}
-
-function decodeWebSocketData(data: unknown): Promise<string> | string {
-  if (typeof data === "string") {
-    return data;
-  }
-  if (data instanceof ArrayBuffer) {
-    return new TextDecoder().decode(data);
-  }
-  if (ArrayBuffer.isView(data)) {
-    const bytes = new Uint8Array(data.byteLength);
-    bytes.set(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
-    return new TextDecoder().decode(bytes);
-  }
-  if (typeof Blob !== "undefined" && data instanceof Blob) {
-    return data.text();
-  }
-  throw new Error("Unsupported WebSocket message payload.");
-}
-
-function createHarnessMessageStream(
-  socket: WebSocket
-): AsyncIterable<TunnelHarnessAttachedMessage> {
-  const values: TunnelHarnessAttachedMessage[] = [];
-  const waiters: Array<
-    (result: IteratorResult<TunnelHarnessAttachedMessage>) => void
-  > = [];
-  let closed = false;
-
-  const end = () => {
-    closed = true;
-    for (const resolve of waiters.splice(0)) {
-      resolve({ done: true, value: undefined });
-    }
-  };
-  socket.addEventListener("close", end, { once: true });
-  socket.addEventListener("message", async (event) => {
-    try {
-      const text = await decodeWebSocketData(event.data);
-      const parsed = TunnelHarnessAttachedMessageSchema.safeParse(
-        JSON.parse(text)
-      );
-      if (!parsed.success) {
-        return;
-      }
-      const resolve = waiters.shift();
-      if (resolve) {
-        resolve({ done: false, value: parsed.data });
-      } else {
-        values.push(parsed.data);
-      }
-    } catch {
-      // Invalid frames are ignored so one peer cannot terminate the channel.
-    }
-  });
+  /**
+   * One call of the derived client, as a `Promise`. To cover a new group of
+   * the contract, add its methods to `GambiClient` and write each one as a
+   * `call` (or a `watch`, for an endpoint that streams events).
+   */
+  const call = <A>(
+    use: (
+      management: ManagementPlane["Service"]
+    ) => Effect.Effect<A, ManagementFailure>
+  ): Promise<A> => boundary.run(asClientError(ManagementPlane.use(use)));
 
   return {
-    [Symbol.asyncIterator]() {
-      return {
-        next(): Promise<IteratorResult<TunnelHarnessAttachedMessage>> {
-          const value = values.shift();
-          if (value) {
-            return Promise.resolve({ done: false, value });
-          }
-          if (closed) {
-            return Promise.resolve({ done: true, value: undefined });
-          }
-          return new Promise((resolve) => waiters.push(resolve));
-        },
-        return(): Promise<IteratorResult<TunnelHarnessAttachedMessage>> {
-          socket.close();
-          end();
-          return Promise.resolve({ done: true, value: undefined });
-        },
-      };
+    hub: {
+      health: () => call((management) => management.hub.health()),
     },
-  };
-}
-
-async function openHarnessSocket(
-  url: string,
-  signal?: AbortSignal
-): Promise<WebSocket> {
-  if (signal?.aborted) {
-    throw new DOMException("Aborted", "AbortError");
-  }
-  return await new Promise<WebSocket>((resolve, reject) => {
-    const socket = new WebSocket(url);
-    const cleanup = () => {
-      signal?.removeEventListener("abort", onAbort);
-      socket.removeEventListener("open", onOpen);
-      socket.removeEventListener("error", onError);
-    };
-    const onAbort = () => {
-      cleanup();
-      socket.close();
-      reject(new DOMException("Aborted", "AbortError"));
-    };
-    const onOpen = () => {
-      cleanup();
-      resolve(socket);
-    };
-    const onError = () => {
-      cleanup();
-      reject(
-        createConnectivityError(
-          "Failed to attach to harness participant.",
-          "Check the room, participant, and hub connectivity."
-        )
-      );
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-    socket.addEventListener("open", onOpen, { once: true });
-    socket.addEventListener("error", onError, { once: true });
-  });
-}
-
-export function createClient(options: ClientOptions = {}): GambiClient {
-  const hubUrl = options.hubUrl ?? "http://localhost:3000";
-
-  async function request<T>(
-    path: string,
-    init?: RequestInit
-  ): Promise<ApiResult<T>> {
-    const response = await fetchResponse(`${hubUrl}${path}`, {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...init?.headers,
-      },
-    });
-
-    const body = (await readJsonBody(response)) as
-      | ApiResult<T>
-      | ApiErrorResponse
-      | undefined;
-
-    if (!response.ok) {
-      throw parseErrorEnvelope(
-        response.status,
-        body as Partial<ApiErrorResponse> | undefined,
-        `Request failed: ${response.statusText}`
-      );
-    }
-
-    if (!isApiResult<T>(body)) {
-      throw createProtocolError();
-    }
-
-    return body;
-  }
-
-  return {
     rooms: {
-      create(input) {
-        return request<{ room: RoomSummary; hostId: string }>("/v1/rooms", {
-          method: "POST",
-          body: JSON.stringify(input),
-        });
-      },
-      get(roomCode) {
-        return request<RoomSummary>(`/v1/rooms/${roomCode}`);
-      },
-      list() {
-        return request<RoomSummary[]>("/v1/rooms");
-      },
+      create: (input) =>
+        call((management) => management.rooms.create({ payload: input })),
+      get: (roomCode) =>
+        call((management) =>
+          management.rooms.get({ params: { code: roomCode } })
+        ),
+      list: () => call((management) => management.rooms.list()),
     },
     participants: {
-      upsert(roomCode, participantId, input) {
-        return request<UpsertParticipantResult>(
-          `/v1/rooms/${roomCode}/participants/${participantId}`,
-          {
-            method: "PUT",
-            body: JSON.stringify(input),
-          }
-        );
-      },
-      list(roomCode) {
-        return request<ParticipantSummary[]>(
-          `/v1/rooms/${roomCode}/participants`
-        );
-      },
-      remove(roomCode, participantId) {
-        return request<{ success: true }>(
-          `/v1/rooms/${roomCode}/participants/${participantId}`,
-          {
-            method: "DELETE",
-          }
-        );
-      },
-      heartbeat(roomCode, participantId) {
-        return request<HeartbeatResult>(
-          `/v1/rooms/${roomCode}/participants/${participantId}/heartbeat`,
-          {
-            method: "POST",
-          }
-        );
-      },
+      list: (roomCode) =>
+        call((management) =>
+          management.participants.list({ params: { code: roomCode } })
+        ),
+      register: (roomCode, participantId, input) =>
+        call((management) =>
+          management.participants.register({
+            params: { code: roomCode, id: participantId },
+            payload: { ...input, version: input.version ?? GAMBI_VERSION },
+          })
+        ),
+      remove: (roomCode, participantId) =>
+        call((management) =>
+          management.participants.remove({
+            params: { code: roomCode, id: participantId },
+          })
+        ),
     },
     events: {
-      async *watchRoom(options: WatchRoomOptions): AsyncIterable<RoomEvent> {
-        let response: Response;
-        try {
-          response = await fetchResponse(
-            `${hubUrl}/v1/rooms/${options.roomCode}/events`,
-            {
-              headers: { Accept: "text/event-stream" },
-              signal: options.signal,
-            }
-          );
-        } catch (error) {
-          if (isAbortError(error)) {
-            return;
-          }
-          throw error;
-        }
-
-        if (!response.ok) {
-          const body = (await readJsonBody(response)) as
-            | ApiErrorResponse
-            | undefined;
-          throw parseErrorEnvelope(
-            response.status,
-            body,
-            `Failed to watch room events: ${response.statusText}`
-          );
-        }
-
-        for await (const event of streamRoomEvents(response)) {
-          yield event;
-        }
-      },
+      watch: (roomCode, watchOptions) =>
+        boundary.iterate(
+          ManagementPlane.use((management) =>
+            management.events.watch({ params: { code: roomCode } })
+          ).pipe(
+            asClientError,
+            Effect.map(Stream.mapError(translatedMidStream(hubUrl))),
+            Stream.unwrap
+          ),
+          watchOptions
+        ),
     },
-    harness: {
-      async attach(options): Promise<HarnessChannel> {
-        const path = `/v1/rooms/${encodeURIComponent(options.roomCode)}/participants/${encodeURIComponent(options.participantId)}/harness`;
-        const socket = await openHarnessSocket(
-          toWebSocketUrl(hubUrl, path),
-          options.signal
-        );
-        const onAbort = () => socket.close();
-        options.signal?.addEventListener("abort", onAbort, { once: true });
-        socket.addEventListener(
-          "close",
-          () => options.signal?.removeEventListener("abort", onAbort),
-          { once: true }
-        );
-        return {
-          close: () => socket.close(),
-          messages: createHarnessMessageStream(socket),
-          send(message) {
-            if (socket.readyState !== WebSocket.OPEN) {
-              throw new ClientError({
-                message: "Harness channel is not open.",
-                status: 409,
-                code: "PARTICIPANT_TUNNEL_NOT_CONNECTED",
-              });
-            }
-            socket.send(JSON.stringify(message));
-          },
-        };
-      },
-    },
+    close: boundary.close,
+    [Symbol.asyncDispose]: boundary.close,
   };
-}
+};

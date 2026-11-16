@@ -61,6 +61,7 @@ A name missing from this table is not thereby safe. Check it in the installed so
 | `@gambi/protocol` | Schemas, the management plane contract, the tunnel calls, the typed errors, the status transition function | No platform at all. No `Bun.*`, no `process`, no `node:*`, no `bun:*`, no `@effect/platform-*`. Lint and its `tsconfig.json` (`types: []`) both reject them. |
 | `@gambi/core` | Hub, participant runtime, harness | Depends on the abstract services from `effect` (`FileSystem`, `ChildProcessSpawner`, `Socket`, `HttpServer`). No `Bun.*` in new code. |
 | `packages/cli` entrypoint, SDK hosting entries | `BunRuntime.runMain` and the `@effect/platform-bun` layers | The only place `@effect/platform-bun` is imported. |
+| `gambi-sdk` default entry | The management client and the inference provider | Reaches a hub with `fetch` only. No built-in module of Node or Bun, checked on the packed package. |
 | `@gambi/testing` | The test helper | Test-only. Never a runtime dependency. |
 
 Because `@gambi/protocol` type-checks without DOM types, a web type such as `Headers` or `ReadableStream` is not in scope there. Take it from an `effect` module instead of the global.
@@ -102,6 +103,7 @@ Rules:
 - The hub's wiring of a tunnel (`Tunnels.serve`) has three load-bearing details, listed at the top of `tunnels.ts`. Read them before changing it.
 - The hub pings every 5 s (`HubOptions.tunnelPingInterval`) and drops a tunnel that stays silent for one more interval. The participant has no ping of its own: it watches the hub's frames instead, and drops a tunnel that stays silent for three ping intervals (`HUB_SILENCE_PING_INTERVALS`). The hub says its interval in `Welcome`.
 - `ParticipantRuntime.layer` joins once and fails when the join fails. After that it comes back by itself when the tunnel drops: it registers again (a bootstrap token opens one tunnel) and dials again with the same `participantId`, waiting 1 s and then twice as long after each attempt that fails, up to 30 s. A refusal of the hub (`VersionMismatch`, `RoomNotFound`, `InvalidPassword`, `InvalidRequest`) ends the runtime instead of being retried; `ParticipantRuntime.ended` fails with it.
+- A participant has one tunnel, and the last one to open wins. The hub closes the tunnel it replaces with the WebSocket close code `TUNNEL_REPLACED_CLOSE_CODE` (`packages/protocol/src/tunnel/rpcs.ts`). A runtime whose tunnel closes with that code was replaced by another runtime with its `participantId`: it ends with `left` and the reason `replaced`, and does not dial again, or the two would take the tunnel from each other forever. A runtime that comes back by itself never sees the code, because it had already let go of the tunnel the hub closes.
 - A host follows the runtime through `onLifecycle`, which receives `connected`, `reconnecting` and `left` (`ParticipantLifecycleEvent`), in order. Add a step of the runtime's life there, not as a second callback.
 - A knob of the hub is a field of `HubSettings` (`packages/core/src/hub/settings.ts`), with its default resolved in `Hub.layer`. Services read it from there, not from parameters.
 - A participant that is `offline` is removed after `HubSettings.reconnectDeadline` (60 s). Going online cancels the deadline; registering again restarts it.
@@ -158,6 +160,60 @@ Rules:
 - Its handler returns a `Stream` and passes it through `OpenStreams.untilHubCloses` (`packages/core/src/hub/open-streams.ts`). A stream that skips it holds the hub open for 20 s when it closes.
 - The method of the derived client answers an `Effect` of a `Stream`: `Stream.unwrap(client.events.watch({ params: { code } }))`. That is the one SSE parser of the management plane (`effect/encoding/Sse`, inside `HttpApiClient`). Do not write another, and do not read the response body by hand.
 - The stream completes, without an error, when the hub closes. A client that wants to keep watching reconnects when it does.
+
+## Harness participants
+
+A harness participant contributes a harness instead of a model endpoint ([ADR-0006](../adr/0006-harness-participants-over-acp.md)). Its registration carries `harness: { id, model?, hosted? }`, and it serves the harness calls of the tunnel.
+
+| What | Where |
+|---|---|
+| The events and the attach schemas (`HarnessEvent`, `HarnessAttachEvent`) | `packages/protocol/src/harness.ts` |
+| The harness calls of the tunnel and their errors | `packages/protocol/src/tunnel/rpcs.ts`, `tunnel/errors.ts` |
+| The subprocess, the ACP session and the relay (`Harness`) | `packages/core/src/harness/harness.ts` |
+| The three typed ACP calls | `packages/core/src/harness/acp.ts` |
+| Is it installed and logged in (`resolveHarness`, `HarnessNotReady`) | `packages/core/src/harness/detection.ts` |
+| The tunnel handlers of a harness participant | `packages/core/src/harness/tunnel-handlers.ts` |
+| The clients attached in the hub (`HarnessClients`) | `packages/core/src/hub/harness-clients.ts` |
+| The `harness` group of the management contract and its handlers | `packages/protocol/src/management/api.ts`, `packages/core/src/hub/harness-attach.ts` |
+
+The two directions of the tunnel:
+
+- **Up, from the participant:** one long-lived stream call, `HarnessEvents`. The hub opens it on every tunnel, right after `Welcome`, and reads it for the life of the tunnel. Everything that is born on the participant is a chunk of it: a member of the `HarnessEvent` union. To send a new kind of thing up, add a member to the union and publish it with `Harness.publish(event)`. Do not add a call from the participant to the hub; there is none.
+- **Down, from the hub:** ordinary calls (`HarnessSend`, `HarnessOpenSession`, `HarnessCloseSession`). Each answers what the participant did with it; what the harness says afterwards comes up the stream.
+
+To host a harness participant:
+
+```ts
+const { command } = yield* resolveHarness("opencode"); // fails with HarnessNotReady
+const Host = ParticipantRuntime.layer({
+  hubUrl, roomCode, participantId,
+  profile: { nickname, model: "opencode", harness: { id: "opencode" } },
+}).pipe(
+  Layer.provide(HarnessParticipantHandlers),
+  Layer.provideMerge(Harness.layer({ command, workspacePath }))
+);
+```
+
+Rules:
+
+- The `Harness` layer goes under the runtime, so it is built first and released last. The harness then outlives every tunnel of a runtime that reconnects: its sessions stay open, and what it says while the tunnel is down waits (the last 4096 events) and goes up on the next tunnel.
+- The harness runs in a process group of its own, and releasing its layer signals the whole group, with SIGKILL after `stopTimeout` (2 s). The reasons are at the top of `harness.ts`. Do not start a harness with a bare `spawn`.
+- The runtime types the three ACP calls it makes (`initialize`, `session/new`, `session/close`) and reads nothing else of ACP. Of a message it relays it swaps the session id and the JSON-RPC id of a client's request, so that several clients never share one. A new need to read an ACP message is a decision, not an edit: ACP stays opaque and on v1.
+- A harness session opens and closes one at a time and to the end, even when whoever asked went away: the harness opens the session all the same, and the runtime has to know it.
+- The hub's reader of a stream call must never wait for its consumer. One fiber reads the socket of a tunnel and waits while the buffer of a stream call is full; while it waits, no other call of that tunnel moves, pongs included, and two ping intervals later the hub drops the tunnel. `HarnessClients.deliver` therefore never waits: each attached client has a bounded buffer (`HubOptions.harnessClientBuffer`, 1024 events) and loses its own oldest events, with a `harness.dropped` event saying how many.
+- A management client attaches with `GET /v1/rooms/:code/participants/:id/harness/events` (the same `eventStream` as room events) and talks with `POST .../harness/messages`, `PUT .../harness/sessions/:sessionId` and `DELETE .../harness/sessions/:sessionId`. There is no WebSocket for clients.
+- A client is attached to a participant, not to a tunnel. Its stream starts with `harness.connected` or `harness.disconnected`, says so again at every change, and ends with `harness.detached` when the participant is out of the room.
+
+### A harness in a test
+
+Tests run a harness as a real subprocess and never call a model or a real harness.
+
+- `fakeHarnessCommand()` (`packages/core/src/harness/adapters.ts`) is the well-behaved one: the deterministic fake ACP agent.
+- `fixtureHarness(mode, path)` (`@gambi/core/testing/harness-fixtures`) misbehaves on purpose: it never answers, answers ACP v2, exits on a prompt, starts a child, ignores SIGTERM.
+- `nothingHoldsOpen` gives a `path` to hand to one fixture and a `released` effect that completes when the fixture and everything it started are gone. Use it instead of polling a pid: a process that is a zombie still answers `kill(pid, 0)`.
+- A test that needs the platform provides `BunServices.layer`: `layer(Layer.merge(layerHub(), BunServices.layer), { excludeTestServices: true })`.
+- What is in the harness's stream when a client attaches depends on timing: the session the runtime opened at start goes up as soon as the hub reads the stream. A test that attaches after joining waits for that event first (`joinHarness` in `packages/core/src/hub/harness-attach.test.ts`).
+- A test that needs the tunnel to carry real pings uses `layerHub({ tunnelPingInterval: "100 millis" })` and waits for pongs with `participant.awaitSent`. Not shorter: a busy test process stalls for more than 20 ms.
 
 ## Services
 
@@ -274,6 +330,8 @@ it.effect("answers through the tunnel", () =>
 );
 ```
 
+- `handlers` replaces only the calls it names. Every other call keeps the handler of `defaultHandlers` (the diagnostics, and "not supported" for the calls of the other kinds of participant), so a test keeps compiling when the tunnel gains a call. A ticket that adds calls to the tunnel adds their default handlers to `defaultHandlers`. A test that builds a runtime by hand (`openTunnel`) provides `defaultHandlers`.
+- `participant.awaitSent(seen)` waits until what the participant sent to the hub satisfies `seen`: a number of pongs, a frame. Use it instead of a sleep.
 - The participant stops when the test ends. `participant.stop` stops it earlier, with a closing handshake; `participant.kill` cuts its socket the way a dead process does.
 - A test participant does not reconnect, unlike the runtime's own default: a participant that a test kills stays dead. Pass `reconnect: true` to test coming back.
 - `participant.nextLifecycleEvent` waits for the next lifecycle event; `participant.lifecycleEvents` lists the ones so far.
@@ -364,6 +422,41 @@ Known traps:
 - A participant on the test clock drops its tunnel when the clock moves three ping intervals of the hub with no frame in between (15 s with the default interval): that is its watchdog. `tunnelPingInterval: "1 hour"` puts it three hours away.
 - While a registration or a dial is in flight on the test clock, a jump of 10 s fails it (`registrationTimeout`, `tunnelOpenTimeout`). Wait for the lifecycle event before moving the clock.
 - Under the test clock a participant that is `offline` is removed once the clock moves 60 s. A test that moves the clock for another reason and needs the participant to stay starts its hub with `layerHub({ reconnectDeadline: "1 hour" })`.
+
+## The SDK
+
+`gambi-sdk` is the published package that embeds Effect code, and none of it may show. Its API is `Promise`, `AsyncIterable` and types written by hand ([ADR-0007](../adr/0007-effect-as-runtime-foundation.md)).
+
+| What | Where |
+|---|---|
+| The entries of the package and how each is built | `packages/sdk/entries.ts` |
+| The `Promise` boundary (`makePromiseBoundary`) | `packages/sdk/src/promise.ts` |
+| The bridge to the management contract (`ManagementPlane`, `translated`, `ContractProofs`) | `packages/sdk/src/contract.ts` |
+| The management client (`createClient`, `GambiClient`) | `packages/sdk/src/client.ts` |
+| The public types of rooms, participants and events | `packages/sdk/src/types.ts` |
+| The one error of the client (`ClientError`, `ClientErrorCode`) | `packages/sdk/src/client-error.ts` |
+| The check of the packed package | `packages/sdk/scripts/check-packed-types.ts` |
+
+Rules:
+
+- A public signature names only `Promise`, `AsyncIterable`, `AbortSignal` and types declared in the SDK. Never `Effect`, `Stream`, `Layer`, a `Schema`, or `typeof X.Type`: the declarations are bundled with `effect` left as an import, so any of these would make the published `.d.ts` import a package the consumer does not have.
+- A public type that mirrors a schema is an interface written by hand in `types.ts`, with no import, plus one line in `ContractProofs` (`contract.ts`). The line stops compiling when the schema and the type drift apart.
+- The SDK exports functions, error classes and types. It never exports a schema value or a service.
+- Each thing a consumer creates (a client, a hosted hub, a hosted participant) owns one `ManagedRuntime`, through `makePromiseBoundary(layer, what)`. An Effect leaves through `run`, a `Stream` through `iterate`, and `close` releases the layer. Nothing else in the SDK calls `Effect.runPromise`.
+- Translate the failure before the boundary: `run` and `iterate` hand the failure to the consumer as it is, so the Effect must already fail with the public error.
+- A stream leaves as an `AsyncIterable`, pulled one element at a time. It takes an optional `signal`, ends without an error when the signal aborts or the object is closed, and is interrupted when the consumer leaves the loop.
+- The management client rejects only with `ClientError`. Its `code` is a closed union: the codes of the contract, plus `HUB_UNREACHABLE` and `NOT_A_HUB`, which the client finds by itself.
+
+To cover another group of the contract in the client:
+
+1. Write the public types of its payloads and answers in `types.ts`, and a line for each in `ContractProofs`.
+2. Add each new error class to `hubErrors` in `contract.ts` and its code to `ClientErrorCode`. Until then the new methods do not compile.
+3. Add the group to `GambiClient` and implement each method in `createClient` as a `call((management) => management.<group>.<endpoint>(...))`. An endpoint that streams events follows `events.watch`: `boundary.iterate` over the `Effect` of a `Stream`.
+4. Use the new methods and types in the consumer file of `check-packed-types.ts`.
+
+To add an entry (`gambi-sdk/<name>`): a line in `entries.ts`, an `exports` entry in `packages/sdk/package.json` and a line in `RUNTIME_EXPORTS` of `check-packed-types.ts`. Each entry is built on its own, as one file, so importing one never loads another. `runsOn` says what its JavaScript may import: `anywhere` (no built-in module of Node or Bun; the default entry), `node` (Node's built-ins) or `bun`. An entry that hosts something imports `@effect/platform-bun` and is `bun`.
+
+Tests of the SDK call the `Promise` API against a real hub (`layerHub`), inside `it.effect` with `Effect.promise`. Something that is not a hub is a real `Bun.serve` on port `0`. Never replace `fetch`. `packages/sdk/src/node.test.ts` builds the default entry and runs it in a Node process; `bun run --cwd packages/sdk build && bun run --cwd packages/sdk check:packed-types` checks the package as a consumer installs it.
 
 ## The CLI
 

@@ -7,10 +7,9 @@ import {
   expect,
   test,
 } from "bun:test";
-import { createHub, type Hub } from "@gambi/core/hub";
-import { Room } from "@gambi/core/room";
-import { createClient } from "./client.ts";
+import { createHub, type Hub } from "./hub.ts";
 import { createParticipantSession } from "./participant-session.ts";
+import { Room } from "./room.ts";
 
 function getRandomPort(): number {
   return 30_000 + Math.floor(Math.random() * 20_000);
@@ -107,13 +106,11 @@ class FailingWebSocket {
 
 describe("Participant session", () => {
   let hub: Hub;
-  let client: ReturnType<typeof createClient>;
   let providerServer: ReturnType<typeof Bun.serve>;
   const originalWebSocket = globalThis.WebSocket;
 
   beforeAll(() => {
     hub = createHubWithRetry();
-    client = createClient({ hubUrl: hub.url });
     providerServer = startProviderServer();
   });
 
@@ -135,7 +132,13 @@ describe("Participant session", () => {
     globalThis.WebSocket =
       FailingWebSocket as unknown as typeof globalThis.WebSocket;
 
-    const created = await client.rooms.create({ name: "Handshake Failure" });
+    const created = (await (
+      await fetch(`${hub.url}/v1/rooms`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Handshake Failure" }),
+      })
+    ).json()) as { data: { room: { code: string } } };
 
     await expect(
       createParticipantSession({
@@ -148,7 +151,9 @@ describe("Participant session", () => {
       })
     ).rejects.toThrow("Failed to open participant tunnel.");
 
-    const participants = await client.participants.list(created.data.room.code);
+    const participants = (await (
+      await fetch(`${hub.url}/v1/rooms/${created.data.room.code}/participants`)
+    ).json()) as { data: unknown[] };
     expect(participants.data).toHaveLength(0);
   });
 });
