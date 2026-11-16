@@ -1,5 +1,10 @@
 import { expect } from "bun:test";
-import { GAMBI_VERSION, RoomNotFound, VersionMismatch } from "@gambi/protocol";
+import {
+  GAMBI_VERSION,
+  RoomNotFound,
+  TunnelRpcs,
+  VersionMismatch,
+} from "@gambi/protocol";
 import { it, layer } from "@gambi/testing/effect";
 import { Context, Effect, Exit, Layer, Scope } from "effect";
 import { TestClock } from "effect/testing";
@@ -335,6 +340,52 @@ it.effect(
     })
 );
 
+// Two runtimes started with the same participant id, on two machines or by
+// mistake on one. The hub keeps the tunnel of whoever dialed last.
+it.effect(
+  "ends, and does not dial again, when another runtime joins the room with its participant id; the one that joined last stays online",
+  () =>
+    Effect.gen(function* () {
+      const tunnels = yield* Tunnels;
+      const { roomCode, statuses } = yield* newRoom("Maracatu rural");
+      const answering = (text: string) =>
+        TunnelRpcs.toLayerHandler("Echo", () => Effect.succeed(text));
+      const first = yield* joinParticipant({
+        roomCode,
+        participantId: "arthur-1",
+        reconnect: true,
+        handlers: answering("first"),
+      });
+      yield* first.nextLifecycleEvent;
+
+      const second = yield* joinParticipant({
+        roomCode,
+        participantId: "arthur-1",
+        reconnect: true,
+        handlers: answering("second"),
+      });
+
+      expect(yield* first.nextLifecycleEvent).toEqual({
+        type: "left",
+        roomCode,
+        participantId: "arthur-1",
+        reason: "replaced",
+      });
+      yield* first.runtime.ended;
+      // The longest wait of a reconnection passes: the first never asks the
+      // hub for anything again, and the second is never disturbed.
+      yield* TestClock.adjust("31 seconds");
+      expect(yield* registrations(first)).toBe(1);
+      expect(yield* registrations(second)).toBe(1);
+      expect(yield* second.lifecycleEvents).toMatchObject([
+        { type: "connected", attempt: 0 },
+      ]);
+      expect(yield* statuses).toEqual([["arthur-1", "online"]]);
+      const tunnel = yield* tunnels.client(roomCode, "arthur-1");
+      expect(yield* tunnel.Echo({ text: "who is there?" })).toBe("second");
+    }).pipe(Effect.provide(TestHub))
+);
+
 // A hub keeps its rooms in memory, so one that restarts comes back without
 // them, and a room code cannot be asked for again.
 it.effect(
@@ -432,6 +483,30 @@ layer(layerHub(), { excludeTestServices: true })(
           yield* tunnels.awaitDrop(roomCode, "arthur-1");
           expect(yield* statuses).toEqual([["arthur-1", "offline"]]);
           expect(yield* registrations(participant)).toBe(1);
+        })
+    );
+
+    it.effect(
+      "started with reconnect off, still tells its host that it was replaced and not that its tunnel dropped",
+      () =>
+        Effect.gen(function* () {
+          const { roomCode } = yield* newRoom("Pastoril");
+          const first = yield* joinParticipant({
+            roomCode,
+            participantId: "arthur-1",
+            reconnect: false,
+          });
+          yield* first.nextLifecycleEvent;
+
+          yield* joinParticipant({ roomCode, participantId: "arthur-1" });
+
+          expect(yield* first.nextLifecycleEvent).toEqual({
+            type: "left",
+            roomCode,
+            participantId: "arthur-1",
+            reason: "replaced",
+          });
+          yield* first.runtime.ended;
         })
     );
   }
