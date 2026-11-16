@@ -43,9 +43,11 @@ export interface TestParticipant {
    * which is what the hub sees when the participant's process dies.
    */
   readonly kill: Effect.Effect<void>;
+  /** Every lifecycle event of the runtime so far, from `connected` on. */
+  readonly lifecycleEvents: Effect.Effect<readonly ParticipantLifecycleEvent[]>;
   /**
-   * The next lifecycle event of the runtime that the test has not read yet,
-   * from `connected` on. Waits for one when there is none.
+   * The next lifecycle event of the runtime that the test has not read yet
+   * with this. Waits for one when there is none.
    */
   readonly nextLifecycleEvent: Effect.Effect<ParticipantLifecycleEvent>;
   readonly runtime: ParticipantRuntime["Service"];
@@ -90,6 +92,7 @@ export const joinParticipant = (
       ...runtimeOptions
     } = options;
     const lifecycle = yield* Queue.unbounded<ParticipantLifecycleEvent>();
+    const lifecycleEvents: ParticipantLifecycleEvent[] = [];
     const scope = yield* Scope.fork(yield* Effect.scope);
     const dialed: WebSocket[] = [];
     const sent: string[] = [];
@@ -134,10 +137,12 @@ export const joinParticipant = (
         hubUrl: hub.url,
         participantId: "participant-1",
         ...runtimeOptions,
-        onLifecycle: (event) =>
-          Queue.offer(lifecycle, event).pipe(
+        onLifecycle: (event) => {
+          lifecycleEvents.push(event);
+          return Queue.offer(lifecycle, event).pipe(
             Effect.andThen(onLifecycle?.(event) ?? Effect.void)
-          ),
+          );
+        },
         reconnect,
         profile: {
           nickname: "Test participant",
@@ -159,6 +164,7 @@ export const joinParticipant = (
           socket.terminate();
         }
       }),
+      lifecycleEvents: Effect.sync(() => [...lifecycleEvents]),
       nextLifecycleEvent: Queue.take(lifecycle),
       runtime: Context.get(context, ParticipantRuntime),
       sentToHub: Effect.sync(() => [...sent]),

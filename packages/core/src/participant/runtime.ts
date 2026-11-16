@@ -45,7 +45,7 @@ import {
   Result,
   Schedule,
   Schema,
-  type Scope,
+  Scope,
 } from "effect";
 import type { HttpClient } from "effect/http";
 import { NetAddress } from "effect/net";
@@ -67,6 +67,8 @@ export type ParticipantProfile = Omit<
 export type ReconnectReason =
   /** The tunnel dropped: the hub closed it, or the connection was lost. */
   | "tunnelDropped"
+  /** The tunnel was open but the hub went silent, as a frozen process does. */
+  | "hubSilent"
   /** The hub did not answer the registration. */
   | "hubUnreachable"
   /** The hub registered the participant, but the tunnel did not open. */
@@ -121,6 +123,12 @@ export type ParticipantLifecycleEvent =
 export const RECONNECT_FIRST_DELAY = Duration.seconds(1);
 /** The longest wait between two attempts to come back. */
 export const RECONNECT_MAX_DELAY = Duration.seconds(30);
+/**
+ * How many ping intervals of the hub a tunnel may stay silent before the
+ * runtime takes the hub for frozen and drops the tunnel. The hub says its
+ * interval in `Welcome`; with the default of 5 s that is 15 s.
+ */
+export const HUB_SILENCE_PING_INTERVALS = 3;
 
 export interface ParticipantRuntimeOptions {
   /** Where the hub is, for example `http://192.168.0.10:3000`. */
@@ -142,6 +150,11 @@ export interface ParticipantRuntimeOptions {
    * `true`. With `false` it ends on the first drop.
    */
   readonly reconnect?: boolean | undefined;
+  /**
+   * How long to wait for the hub to answer a registration. Default 10
+   * seconds. A hub that froze accepts the connection and never answers.
+   */
+  readonly registrationTimeout?: Duration.Input | undefined;
   readonly roomCode: string;
   /**
    * How long to wait for the hub to accept the tunnel, from the dial to its
@@ -229,14 +242,28 @@ export const register = Effect.fn("ParticipantRuntime.register")(function* (
           Effect.fail(new HubUnreachable({ hubUrl: options.hubUrl, cause })),
         SchemaError: (cause) =>
           Effect.fail(new HubUnreachable({ hubUrl: options.hubUrl, cause })),
+      }),
+      Effect.timeoutOrElse({
+        duration: options.registrationTimeout ?? Duration.seconds(10),
+        orElse: () =>
+          Effect.fail(
+            new HubUnreachable({
+              hubUrl: options.hubUrl,
+              cause: new Error("The hub did not answer the registration."),
+            })
+          ),
       })
     );
 });
 
 /** An open tunnel, as the participant runtime sees it. */
 export interface OpenTunnel {
-  /** Completes when the tunnel drops, for any reason. */
-  readonly dropped: Effect.Effect<void>;
+  /**
+   * Completes when the tunnel drops, and says why: `tunnelDropped` when it
+   * was closed or lost, `hubSilent` when the runtime dropped it because the
+   * hub went silent.
+   */
+  readonly dropped: Effect.Effect<"tunnelDropped" | "hubSilent">;
   /** The Gambi version of the hub, as it said in its `Welcome`. */
   readonly hubVersion: string;
 }
@@ -248,6 +275,11 @@ export interface OpenTunnel {
  *
  * It dials once. A token is single-use, so coming back after a drop means
  * `register` again and then `openTunnel` again.
+ *
+ * It also watches the hub. Only the hub pings, so a hub that froze would
+ * leave the tunnel looking open forever: when no frame arrives for
+ * `HUB_SILENCE_PING_INTERVALS` ping intervals, the runtime drops the tunnel
+ * itself.
  */
 export const openTunnel = Effect.fn("ParticipantRuntime.openTunnel")(function* (
   options: ParticipantRuntimeOptions,
@@ -257,23 +289,48 @@ export const openTunnel = Effect.fn("ParticipantRuntime.openTunnel")(function* (
   TunnelOpenFailed,
   Socket.WebSocketConstructor | TunnelHandlers | Scope.Scope
 > {
-  const welcomed = yield* Deferred.make<{ readonly hubVersion: string }>();
-  const ended = yield* Deferred.make<Exit.Exit<unknown, unknown>>();
+  const welcomed = yield* Deferred.make<{
+    readonly hubVersion: string;
+    readonly pingIntervalMillis: number;
+  }>();
+  const closed = yield* Deferred.make<Exit.Exit<unknown, unknown>>();
+  const dropped = yield* Deferred.make<"tunnelDropped" | "hubSilent">();
+  const clock = yield* Clock.Clock;
+  // The socket and the server on it live here, so that the watchdog can
+  // close them before the caller's scope ends.
+  const tunnelScope = yield* Scope.fork(yield* Effect.scope);
   const dialed = yield* Socket.makeWebSocket(
     tunnelUrl(options.hubUrl, options.roomCode, options.participantId, token)
   );
+  // Every frame of the hub passes here, its pings included: this is where
+  // the runtime learns when it last heard from the hub.
+  let lastFrameAt = clock.currentTimeMillisUnsafe();
+  const watched = Socket.make({
+    reader: Effect.map(dialed.reader, (reader) => ({
+      ...reader,
+      pull: Effect.tap(reader.pull, () =>
+        Effect.sync(() => {
+          lastFrameAt = clock.currentTimeMillisUnsafe();
+        })
+      ),
+    })),
+    writer: dialed.writer,
+  });
 
   // `layerProtocolSocketServer` wants a server that accepts sockets. This
-  // one "accepts" the single socket the participant dialed. Whoever needs
-  // to watch the frames of the tunnel wraps `dialed` here.
+  // one "accepts" the single socket the participant dialed.
   const DialedSocketServer = Layer.succeed(
     SocketServer.SocketServer,
     SocketServer.SocketServer.of({
       address: NetAddress.unixPathAddress("gambi-tunnel"),
       run: (handler) =>
-        handler(dialed).pipe(
+        handler(watched).pipe(
           Effect.exit,
-          Effect.flatMap((exit) => Deferred.succeed(ended, exit)),
+          Effect.flatMap((exit) =>
+            Deferred.succeed(closed, exit).pipe(
+              Effect.andThen(Deferred.succeed(dropped, "tunnelDropped"))
+            )
+          ),
           Effect.andThen(Effect.never)
         ),
     })
@@ -282,13 +339,14 @@ export const openTunnel = Effect.fn("ParticipantRuntime.openTunnel")(function* (
     Effect.asVoid(Deferred.succeed(welcomed, welcome))
   );
 
-  yield* Layer.build(
+  yield* Layer.buildWithScope(
     RpcServer.layer(TunnelRpcs).pipe(
       Layer.provide(WelcomeHandler),
       Layer.provide(RpcServer.layerProtocolSocketServer),
       Layer.provide(DialedSocketServer),
       Layer.provide(RpcSerialization.layerJson)
-    )
+    ),
+    tunnelScope
   );
 
   const failed = (cause: unknown) =>
@@ -300,7 +358,7 @@ export const openTunnel = Effect.fn("ParticipantRuntime.openTunnel")(function* (
     });
   const welcome = yield* Effect.raceFirst(
     Deferred.await(welcomed),
-    Deferred.await(ended).pipe(
+    Deferred.await(closed).pipe(
       Effect.flatMap((exit) => Effect.fail(failed(exit)))
     )
   ).pipe(
@@ -308,16 +366,39 @@ export const openTunnel = Effect.fn("ParticipantRuntime.openTunnel")(function* (
       duration: options.tunnelOpenTimeout ?? Duration.seconds(10),
       orElse: () =>
         Effect.fail(failed(new Error("The hub did not welcome the tunnel."))),
-    })
+    }),
+    Effect.onError(() => Scope.close(tunnelScope, Exit.void))
   );
-  yield* Effect.logInfo("tunnel open").pipe(
-    Effect.annotateLogs({
-      roomCode: options.roomCode,
-      participantId: options.participantId,
-    })
+  const annotations = {
+    roomCode: options.roomCode,
+    participantId: options.participantId,
+  };
+  yield* Effect.logInfo("tunnel open").pipe(Effect.annotateLogs(annotations));
+
+  // The watchdog: sleeps until the hub has been silent for too long, or
+  // until the tunnel drops by itself.
+  const silenceLimit = welcome.pingIntervalMillis * HUB_SILENCE_PING_INTERVALS;
+  const untilSilent = Effect.gen(function* () {
+    let silentFor = clock.currentTimeMillisUnsafe() - lastFrameAt;
+    while (silentFor < silenceLimit) {
+      yield* Effect.sleep(silenceLimit - silentFor);
+      silentFor = clock.currentTimeMillisUnsafe() - lastFrameAt;
+    }
+  });
+  yield* Effect.raceFirst(untilSilent, Deferred.await(dropped)).pipe(
+    Effect.andThen(Deferred.succeed(dropped, "hubSilent")),
+    Effect.flatMap((silent) =>
+      silent
+        ? Effect.logWarning("hub silent, dropping the tunnel").pipe(
+            Effect.annotateLogs({ ...annotations, silenceLimit }),
+            Effect.andThen(Scope.close(tunnelScope, Exit.void))
+          )
+        : Effect.void
+    ),
+    Effect.forkScoped
   );
   return {
-    dropped: Effect.asVoid(Deferred.await(ended)),
+    dropped: Deferred.await(dropped),
     hubVersion: welcome.hubVersion,
   };
 });
@@ -399,7 +480,7 @@ export class ParticipantRuntime extends Context.Service<
         };
         const tell = (event: ParticipantLifecycleEvent) =>
           options.onLifecycle?.(event) ?? Effect.void;
-        let tunnelDropped: Effect.Effect<void> = Effect.void;
+        let tunnelDropped: Effect.Effect<unknown> = Effect.void;
 
         // One registration and one tunnel. It fails when the tunnel does not
         // open, and returns when a tunnel that did open drops.
@@ -415,8 +496,7 @@ export class ParticipantRuntime extends Context.Service<
               attempt,
               hubVersion: tunnel.hubVersion,
             });
-            yield* tunnel.dropped;
-            return "tunnelDropped" as ReconnectReason;
+            return yield* tunnel.dropped;
           }).pipe(Effect.scoped);
 
         // After a drop: tries until a tunnel opens, waiting longer after each
@@ -499,7 +579,7 @@ export class ParticipantRuntime extends Context.Service<
         return ParticipantRuntime.of({
           ended: Deferred.await(ended),
           participant,
-          tunnelDropped: Effect.suspend(() => tunnelDropped),
+          tunnelDropped: Effect.suspend(() => Effect.asVoid(tunnelDropped)),
         });
       })
     );

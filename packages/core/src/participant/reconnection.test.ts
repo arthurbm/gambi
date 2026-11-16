@@ -2,6 +2,7 @@ import { expect } from "bun:test";
 import { it } from "@gambi/testing/effect";
 import { Effect } from "effect";
 import { TestClock } from "effect/testing";
+import { Tunnels } from "../hub/tunnels.ts";
 import { layerHub, managementClient } from "../testing/hub.ts";
 import { linkToHub } from "../testing/hub-link.ts";
 import {
@@ -91,6 +92,174 @@ it.effect(
         type: "reconnecting",
         attempt: 1,
         delayMillis: 1000,
+      });
+    }).pipe(Effect.provide(TestHub))
+);
+
+it.effect(
+  "stopping the runtime while it waits to come back ends it: no further attempt reaches the hub",
+  () =>
+    Effect.gen(function* () {
+      const tunnels = yield* Tunnels;
+      const { roomCode, statuses } = yield* newRoom("Maracatu");
+      const link = yield* linkToHub;
+      const participant = yield* joinParticipant({
+        roomCode,
+        participantId: "arthur-1",
+        hubUrl: link.url,
+        reconnect: true,
+      });
+      yield* participant.nextLifecycleEvent;
+      yield* link.cut;
+      expect(yield* participant.nextLifecycleEvent).toMatchObject({
+        type: "reconnecting",
+        attempt: 1,
+      });
+
+      yield* participant.stop;
+
+      expect(yield* participant.nextLifecycleEvent).toEqual({
+        type: "left",
+        roomCode,
+        participantId: "arthur-1",
+        reason: "stopped",
+      });
+      yield* participant.runtime.ended;
+      // The hub is reachable again and the waits are long over.
+      yield* link.restore;
+      yield* TestClock.adjust("31 seconds");
+      expect(yield* registrations(participant)).toBe(1);
+      yield* tunnels.awaitDrop(roomCode, "arthur-1");
+      expect(yield* statuses).toEqual([["arthur-1", "offline"]]);
+    }).pipe(Effect.provide(TestHub))
+);
+
+it.effect(
+  "stopping the runtime in the middle of an attempt to come back ends it without opening a tunnel",
+  () =>
+    Effect.gen(function* () {
+      const { roomCode } = yield* newRoom("Ciranda");
+      const link = yield* linkToHub;
+      const participant = yield* joinParticipant({
+        roomCode,
+        participantId: "arthur-1",
+        hubUrl: link.url,
+        reconnect: true,
+      });
+      yield* participant.nextLifecycleEvent;
+      // The hub stops answering, and the participant loses its tunnel.
+      yield* link.freeze;
+      yield* participant.kill;
+      yield* participant.nextLifecycleEvent;
+      yield* TestClock.adjust("1 second");
+      // The registration of the first attempt is on its way, unanswered.
+      expect(yield* registrations(participant)).toBe(2);
+
+      yield* participant.stop;
+
+      expect(yield* participant.nextLifecycleEvent).toMatchObject({
+        type: "left",
+        reason: "stopped",
+      });
+      yield* link.unfreeze;
+      yield* TestClock.adjust("31 seconds");
+      const dials = (yield* participant.sentToHub).filter((line) =>
+        line.startsWith("DIAL ")
+      );
+      expect(dials).toHaveLength(1);
+      expect(yield* registrations(participant)).toBe(2);
+    }).pipe(Effect.provide(TestHub))
+);
+
+// This hub pings every 5 s, the default, so a participant expects to hear
+// from it at least that often.
+it.effect(
+  "notices a hub that froze after three ping intervals of silence, and dials again",
+  () =>
+    Effect.gen(function* () {
+      const { roomCode, statuses } = yield* newRoom("Coco");
+      const link = yield* linkToHub;
+      const participant = yield* joinParticipant({
+        roomCode,
+        participantId: "arthur-1",
+        hubUrl: link.url,
+        reconnect: true,
+      });
+      yield* participant.nextLifecycleEvent;
+
+      yield* link.freeze;
+      yield* TestClock.adjust("14999 millis");
+      expect(
+        (yield* participant.lifecycleEvents).map((event) => event.type)
+      ).toEqual(["connected"]);
+      yield* TestClock.adjust("1 millis");
+
+      expect(yield* participant.nextLifecycleEvent).toEqual({
+        type: "reconnecting",
+        roomCode,
+        participantId: "arthur-1",
+        attempt: 1,
+        delayMillis: 1000,
+        reason: "hubSilent",
+      });
+      // A frozen hub does not answer the registration either: the attempt
+      // gives up after 10 s and the next one waits longer.
+      yield* TestClock.adjust("1 second");
+      expect(yield* registrations(participant)).toBe(2);
+      yield* TestClock.adjust("10 seconds");
+      expect(yield* participant.nextLifecycleEvent).toMatchObject({
+        type: "reconnecting",
+        attempt: 2,
+        delayMillis: 2000,
+        reason: "hubUnreachable",
+      });
+
+      yield* link.unfreeze;
+      yield* TestClock.adjust("2 seconds");
+
+      expect(yield* participant.nextLifecycleEvent).toMatchObject({
+        type: "connected",
+        attempt: 2,
+      });
+      expect(yield* statuses).toEqual([["arthur-1", "online"]]);
+    }).pipe(Effect.provide(layerHub()))
+);
+
+it.effect(
+  "does not take a hub that keeps talking for a frozen one: the silence counts from the last frame it sent",
+  () =>
+    Effect.gen(function* () {
+      const tunnels = yield* Tunnels;
+      const { roomCode, statuses } = yield* newRoom("Baião");
+      const link = yield* linkToHub;
+      const participant = yield* joinParticipant({
+        roomCode,
+        participantId: "arthur-1",
+        hubUrl: link.url,
+        reconnect: true,
+      });
+      const tunnel = yield* tunnels.client(roomCode, "arthur-1");
+
+      // This hub pings every hour, so three hours of silence is the limit.
+      // A call every 50 minutes keeps it talking for longer than that.
+      for (let call = 0; call < 4; call++) {
+        yield* TestClock.adjust("50 minutes");
+        yield* tunnel.Echo({ text: "frevo" });
+      }
+      expect(yield* statuses).toEqual([["arthur-1", "online"]]);
+
+      // Then it freezes, 200 minutes in.
+      yield* link.freeze;
+      yield* TestClock.adjust("179 minutes");
+      expect(
+        (yield* participant.lifecycleEvents).map((event) => event.type)
+      ).toEqual(["connected"]);
+      yield* TestClock.adjust("1 minute");
+
+      yield* participant.nextLifecycleEvent;
+      expect(yield* participant.nextLifecycleEvent).toMatchObject({
+        type: "reconnecting",
+        reason: "hubSilent",
       });
     }).pipe(Effect.provide(TestHub))
 );

@@ -5,7 +5,8 @@
  *
  * To a participant runtime that reaches the hub through it, a cut link is a
  * hub that went away: its tunnel is severed and new connections are refused.
- * The hub itself keeps running, with its rooms. How to use it:
+ * A frozen link is a hub that froze: every connection stays open and nothing
+ * moves on it. The hub itself keeps running, with its rooms. How to use it:
  * `docs/reference/effect-conventions.md`.
  *
  * Test support only: it uses `node:net`, which the core itself does not.
@@ -26,8 +27,17 @@ export interface HubLink {
    * `restore`. Returns when the link is down.
    */
   readonly cut: Effect.Effect<void>;
+  /**
+   * Stops everything that moves through the link, in both directions, without
+   * closing anything: connections stay open and new ones are accepted, but no
+   * byte and no close arrives until `unfreeze`. It is what a participant sees
+   * of a hub whose process froze.
+   */
+  readonly freeze: Effect.Effect<void>;
   /** Brings the link back, on the same URL. Returns when it accepts connections. */
   readonly restore: Effect.Effect<void>;
+  /** Lets through what `freeze` held, in order, and everything after it. */
+  readonly unfreeze: Effect.Effect<void>;
   /** Where the hub is reached through the link. Pass it as `hubUrl`. */
   readonly url: string;
 }
@@ -43,6 +53,8 @@ const HOSTNAME = "127.0.0.1";
  * const participant = yield* joinParticipant({ roomCode, hubUrl: link.url, reconnect: true });
  * yield* link.cut; // the runtime sees its tunnel drop and the hub refuse it
  * yield* link.restore;
+ * yield* link.freeze; // the runtime hears nothing more from the hub
+ * yield* link.unfreeze;
  */
 export const linkToHub: Effect.Effect<HubLink, never, Hub | Scope.Scope> =
   Effect.gen(function* () {
@@ -51,21 +63,31 @@ export const linkToHub: Effect.Effect<HubLink, never, Hub | Scope.Scope> =
     let server: Server | undefined;
     let port = 0;
 
+    // What a frozen link holds back: the bytes and the closes, in order.
+    const held: (() => void)[] = [];
+    let frozen = false;
+    const deliver = (action: () => void) => {
+      if (frozen) {
+        held.push(action);
+      } else {
+        action();
+      }
+    };
+
+    const forward = (from: Socket, to: Socket) => {
+      sockets.add(from);
+      from.on("data", (chunk) => deliver(() => to.write(chunk)));
+      // A severed socket reports an error and then closes.
+      from.on("error", () => undefined);
+      from.on("close", () => {
+        sockets.delete(from);
+        deliver(() => to.destroy());
+      });
+    };
     const relay = (downstream: Socket) => {
       const upstream = connect(hub.port, HOSTNAME);
-      for (const [socket, other] of [
-        [downstream, upstream],
-        [upstream, downstream],
-      ] as const) {
-        sockets.add(socket);
-        // A severed socket reports an error; closing the pair is all there is to do.
-        socket.on("error", () => other.destroy());
-        socket.on("close", () => {
-          sockets.delete(socket);
-          other.destroy();
-        });
-        socket.pipe(other);
-      }
+      forward(downstream, upstream);
+      forward(upstream, downstream);
     };
 
     const restore = Effect.callback<void>((resume) => {
@@ -90,11 +112,28 @@ export const linkToHub: Effect.Effect<HubLink, never, Hub | Scope.Scope> =
         return;
       }
       current.close(() => resume(Effect.void));
+      frozen = false;
+      held.length = 0;
       for (const socket of sockets) {
         socket.destroy();
       }
     });
+    const freeze = Effect.sync(() => {
+      frozen = true;
+    });
+    const unfreeze = Effect.sync(() => {
+      frozen = false;
+      for (const action of held.splice(0)) {
+        action();
+      }
+    });
 
     yield* Effect.acquireRelease(restore, () => cut);
-    return { cut, restore, url: `http://${HOSTNAME}:${port}` };
+    return {
+      cut,
+      freeze,
+      restore,
+      unfreeze,
+      url: `http://${HOSTNAME}:${port}`,
+    };
   });
