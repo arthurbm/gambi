@@ -8,18 +8,37 @@
  * | `GET /rooms/:code/v1/models` | lists the participants that can take a request |
  * | `POST /rooms/:code/v1/chat/completions` | Chat Completions |
  * | `POST /rooms/:code/v1/responses` | creates a Response |
+ * | `GET /rooms/:code/v1/responses/:id` | reads a Response back |
+ * | `DELETE /rooms/:code/v1/responses/:id` | deletes a Response |
+ * | `POST /rooms/:code/v1/responses/:id/cancel` | cancels a Response |
+ * | `GET /rooms/:code/v1/responses/:id/input_items` | lists the input items of a Response |
  *
- * A request is routed to one participant by its model selector
- * (`Participants.dispatch`), sent into that participant's tunnel as an
- * `Infer` call, and the provider's answer comes back with its own status.
+ * There are two kinds of route, and one function for each:
+ *
+ * - **A route that creates something** (`infer`). The request is routed to
+ *   one participant by its model selector (`Participants.dispatch`), which
+ *   makes the participant `busy`, and the room hears of it (`llm.*`).
+ * - **A route about a stored Response** (`storedResponse`). It goes to the
+ *   participant whose provider created the Response (`StoredResponses`),
+ *   whatever that participant is doing. It changes no status and is no
+ *   event of the room.
+ *
+ * Both send the request into the participant's tunnel as an `Infer` call
+ * (`askProvider`) and turn the provider's answer into the HTTP response,
+ * with the provider's own status (`respond`).
+ *
+ * A Response is created in the API the provider speaks (`createResponse`):
+ * the Responses API, or Chat Completions with the answer translated
+ * (`responses-translation.ts`). The translated answer goes through the same
+ * `respond`, so it is cancelled, timed out and bounded like any other.
  *
  * Two lifetimes matter, and they are two scopes:
  *
- * - **The call** (`call` in `infer`). While it is open the participant is
- *   `busy` and the `Infer` call is open in its tunnel. It closes when the
- *   provider's answer ended, when the request failed, or when the app went
- *   away. Closing it interrupts the call, which stops the provider, and puts
- *   the participant back `online`.
+ * - **The call** (`withCall`). While it is open the `Infer` call is open in
+ *   the participant's tunnel, and a participant a request was dispatched to
+ *   is `busy`. It closes when the provider's answer ended, when the request
+ *   failed, or when the app went away. Closing it interrupts the call,
+ *   which stops the provider, and puts the participant back `online`.
  * - **The HTTP request**, which stays open until the response body ends. The
  *   call never outlives it.
  *
@@ -37,9 +56,12 @@
  * OpenAI error format: as the response when nothing was sent yet, as a last
  * `error` event when a stream was already on its way.
  *
- * To add a route that calls a provider: add its operation to `Infer`, give
- * it a row in `inference-request.ts` and in the participant runtime's table
- * of provider routes, and add the route to `InferenceRoutes` with `infer`.
+ * To add a route that calls a provider: add its operation to `Infer`
+ * (`InferenceCreation` or `StoredResponseOperation`) and to the participant
+ * runtime's table of provider routes, and add the route to
+ * `InferenceRoutes` with `infer` or `storedResponse`. An operation that
+ * creates also gets a row in `inference-request.ts` and in
+ * `request-events.ts`.
  */
 import {
   type CallNotSupported,

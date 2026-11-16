@@ -114,11 +114,14 @@ The OpenAI-compatible routes under `/rooms/:code/v1/*` are plain `HttpRouter` ro
 
 | What | Where |
 |---|---|
-| The routes, and how a request lives and ends (`infer`) | `packages/core/src/hub/inference.ts` |
+| The routes, and how a request lives and ends (`infer`, `storedResponse`, `askProvider`, `respond`) | `packages/core/src/hub/inference.ts` |
 | What the hub reads of a body and what it fills in (`readRequest`, `providerBody`) | `packages/core/src/hub/inference-request.ts` |
 | Routing by model selector (`Participants.dispatch`) | `packages/core/src/hub/participants.ts` |
-| The tunnel call (`Infer`, `InferenceOperation`, `InferenceChunk`) | `packages/protocol/src/tunnel/rpcs.ts` |
+| Which participant's provider holds each Response (`StoredResponses`) | `packages/core/src/hub/stored-responses.ts` |
+| The Responses API through Chat Completions (`toChatCompletionsRequest`, `toResponse`, `toResponseEvents`) | `packages/core/src/hub/responses-translation.ts` |
+| The tunnel call (`Infer`, `InferenceRequest`, `InferenceCreation`, `StoredResponseOperation`, `InferenceChunk`) | `packages/protocol/src/tunnel/rpcs.ts` |
 | The handler that calls the local provider (`providerInference`) | `packages/core/src/participant/inference.ts` |
+| Capability detection, on the participant's machine (`probeEndpoint`) | `packages/core/src/participant/endpoint-capabilities.ts` |
 | The errors and their OpenAI form (`InferenceError`, `INFERENCE_FAILURES`, `toOpenAiError`) | `packages/protocol/src/inference/errors.ts` |
 | The events of a request (`llm.request`, `llm.complete`, `llm.error`) | `packages/protocol/src/room-event.ts`, published by `packages/core/src/hub/request-events.ts` |
 
@@ -128,7 +131,13 @@ Rules:
 - `ParticipantAuthHeaders` are an option of `providerInference`, on the participant's machine. Nothing in the hub or in `@gambi/protocol` has a field for them.
 - An inference failure is an `InferenceError` with a row in `INFERENCE_FAILURES` (its `code` and HTTP status). The route answers it in the OpenAI error format, never in the management envelope: as the response when nothing was sent yet, as a last `error` event when a `text/event-stream` body was already on its way.
 - The participant is `busy` while the call in its tunnel is open (the `call` scope in `infer`), and `Participants.dispatch` plus that scope are the only things that make it so. Everything a request holds goes in that scope, so that a cancelled request, a timeout and a dead participant all release it the same way.
-- A new route that calls a provider is a new literal of `InferenceOperation`, a row in `PROVIDER_ROUTES` (participant), in `DEFAULT_FIELDS` (`inference-request.ts`) and in `PROTOCOLS` (`request-events.ts`), and one `HttpRouter.add` in `InferenceRoutes`. The compiler asks for each row.
+- A new route that calls a provider is a new literal of `InferenceCreation` or of `StoredResponseOperation`, a row in `PROVIDER_ROUTES` (participant), and one `HttpRouter.add` in `InferenceRoutes`. An operation that creates also gets a row in `DEFAULT_FIELDS` (`inference-request.ts`) and in `PROTOCOLS` (`request-events.ts`). The compiler asks for each row.
+- A route about a stored Response (`storedResponse`) is not dispatched: it goes to the participant that created the Response even while that participant is `busy`, changes no status and publishes no event. Only a route that creates something goes through `Participants.dispatch`.
+- The hub remembers a bounded number of Responses (`HubOptions.storedResponsesLimit`) and forgets the one used the longest ago. Everything that enters `StoredResponses` goes through `remember`; do not keep a second map of Responses.
+- A Response is created in the API the participant's provider speaks. `capabilities.openResponses: "unsupported"`, or a 404, 405 or 501 on `POST /v1/responses`, sends the request through Chat Completions, and `responses-translation.ts` writes the answer as a Response. A translated Response is stored nowhere: its routes answer `response_not_stored`.
+- Whatever the hub does to an answer on its way to the app is an `AnswerForm` given to `respond`. Do not read the tunnel or build the response body anywhere else: `respond` is what makes a request cancellable, timed out and bounded.
+- A provider's `text/event-stream` is read with `Sse.makeParser` and written with `Sse.encoder`, from `effect/encoding`. Do not split a stream on blank lines by hand.
+- Capability detection (`probeEndpoint`) runs on the participant's machine, with the `ParticipantAuthHeaders`, and its result goes up as `profile.capabilities`. The hub never probes a provider.
 
 ## Room events and event streams
 
@@ -298,6 +307,7 @@ expect(call.headers.authorization).toBe("Bearer segredo");
 - `provider.nextCall` waits for a request and hands each one out once; `provider.calls` is all of them so far. A call has `method`, `path`, `headers`, `body` and `aborted`.
 - `call.aborted` completes when the caller gave the request up. Waiting on it is how a test sees a cancellation, a timeout or a dead participant reach the provider.
 - `fakeProvider({ answer })` decides the answer: `jsonAnswer`, `sseAnswer`, or `openStream()` for a body the test writes piece by piece (`send`, `end`, `fail`). A provider that never answers is `answer: () => new Promise(() => undefined)`.
+- `answer: storingResponses()` is a provider that speaks the whole Responses API: it keeps the Responses it creates (`resp_1`, `resp_2`, ...) and answers the routes under `/v1/responses/:id`. `answer: chatCompletionsOnly` is a provider with no Responses API, as most local backends are. The default (`openAiAnswer`) creates a Response and keeps nothing.
 - A provider sends its response head with the first piece of the body. With `openStream`, `send` one piece before the request, or the app's `fetch` never returns.
 - Call the inference plane with a plain `fetch`, as an app does. A status changes a moment after the response ends only when the app cancelled; when the response ended by itself the participant is already `online`.
 - A test of the inactivity timeout builds its hub inside `it.effect` and moves the test clock (`packages/core/src/hub/inference-timeout.test.ts`).
