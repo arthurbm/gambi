@@ -8,15 +8,31 @@
  * `ManagementHandlers`. The compiler rejects the hub until it is.
  */
 import {
+  failure,
   InternalError,
   InvalidRequest,
   ManagementApi,
+  type ManagementError,
+  type ManagementErrorClass,
   ManagementFailures,
   RequestId,
+  RouteNotFound,
 } from "@gambi/protocol";
-import { Cause, Clock, Effect, Layer, SchemaIssue, type Types } from "effect";
+import {
+  Cause,
+  Clock,
+  Effect,
+  Layer,
+  Schema,
+  SchemaIssue,
+  type Types,
+} from "effect";
 import { SecureRandom } from "effect/crypto";
-import { HttpRouter } from "effect/http";
+import {
+  HttpRouter,
+  type HttpServerRequest,
+  HttpServerResponse,
+} from "effect/http";
 import { HttpApiBuilder, HttpApiError } from "effect/http-api";
 import { OpenStreams } from "./open-streams.ts";
 import { Participants } from "./participants.ts";
@@ -154,6 +170,39 @@ export const RequestIdentity = HttpRouter.middleware<{ provides: RequestId }>()(
   { global: true }
 );
 
+/**
+ * Answers a refusal in the management envelope, with the status the error
+ * declares. For a route outside the contract (an upgrade, a fallback); a
+ * handler of the contract just fails with the error.
+ */
+export const refuse = <Self extends ManagementError>(
+  errorClass: ManagementErrorClass<Self>,
+  error: Self
+) =>
+  Schema.encodeEffect(failure(errorClass))(error).pipe(
+    Effect.orDie,
+    Effect.map((body) =>
+      HttpServerResponse.jsonUnsafe(body, { status: errorClass.status })
+    )
+  );
+
+/**
+ * What the management plane answers where it has no route: the error
+ * envelope, like every other refusal. The router tries it last, so it shadows
+ * no route; the inference plane, outside `/v1`, answers for itself.
+ */
+const RouteNotFoundFallback = HttpRouter.add(
+  "*",
+  "/v1/*",
+  Effect.fnUntraced(function* (request: HttpServerRequest.HttpServerRequest) {
+    const path = request.url.split("?")[0] ?? request.url;
+    return yield* refuse(
+      RouteNotFound,
+      new RouteNotFound({ method: request.method, path })
+    );
+  })
+);
+
 /** The path of the OpenAPI document the hub serves, generated from the contract. */
 export const OPENAPI_PATH = "/v1/openapi.json";
 
@@ -168,5 +217,6 @@ export const ManagementRoutes = Layer.mergeAll(
     ]),
     Layer.provide(ManagementFailuresLive)
   ),
+  RouteNotFoundFallback,
   HttpRouter.cors()
 ).pipe(Layer.provide(RequestIdentity));

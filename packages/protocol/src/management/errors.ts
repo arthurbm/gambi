@@ -112,6 +112,26 @@ export class TunnelTokenInvalid extends Schema.TaggedError<TunnelTokenInvalid>()
   }
 }
 
+/**
+ * The management plane has no route for that method and path. A client built
+ * for another version of Gambi sees this where its hub lacks an operation.
+ */
+export class RouteNotFound extends Schema.TaggedError<RouteNotFound>()(
+  "RouteNotFound",
+  { method: Schema.String, path: Schema.String, ...requestIdField }
+) {
+  static readonly code = "ROUTE_NOT_FOUND";
+  static readonly status = 404;
+
+  override get message(): string {
+    return `This hub has no route ${this.method} ${this.path}.`;
+  }
+
+  get hint(): string {
+    return "Check the path and the method against the management contract, served at /v1/openapi.json. A hub of another version may not have this route.";
+  }
+}
+
 /** One problem found in a request: where it is and what is wrong. */
 export const RequestIssue = Schema.Struct({
   path: Schema.Array(Schema.Union([Schema.String, Schema.Number])),
