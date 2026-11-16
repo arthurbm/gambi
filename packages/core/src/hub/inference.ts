@@ -44,8 +44,10 @@
 import {
   type CallNotSupported,
   ConsumerTooSlow,
+  type InferenceCreation,
   type InferenceError,
   type InferenceOperation,
+  type InferenceRequest,
   InferenceTimedOut,
   InvalidInferenceRequest,
   OPENAI_INTERNAL_ERROR,
@@ -54,6 +56,8 @@ import {
   ProviderResponseInterrupted,
   ProviderResponseTooLarge,
   type ProviderUnreachable,
+  ResponseNotFound,
+  type StoredResponseOperation,
   toOpenAiError,
   toOpenAiStreamError,
 } from "@gambi/protocol";
@@ -62,8 +66,11 @@ import {
   Duration,
   Effect,
   Exit,
+  identity,
   Layer,
+  Option,
   Queue,
+  Schema,
   Scope,
   Stream,
 } from "effect";
@@ -80,9 +87,14 @@ import {
 } from "./inference-request.ts";
 import { RequestIdentity } from "./management.ts";
 import { Participants } from "./participants.ts";
-import { reportRequest } from "./request-events.ts";
+import {
+  type RequestReport,
+  reportRequest,
+  unreported,
+} from "./request-events.ts";
 import { Rooms } from "./rooms.ts";
 import { HubSettings } from "./settings.ts";
+import { StoredResponses } from "./stored-responses.ts";
 import { Tunnels } from "./tunnels.ts";
 
 /**
@@ -143,7 +155,8 @@ const endOfLastEvent = (text: string): number => {
  * `error` event starts after a blank line of its own.
  */
 const eventStreamBody = (
-  pieces: Stream.Stream<string, InferenceError>
+  pieces: Stream.Stream<string, InferenceError>,
+  errorEvent: (error: InferenceError) => string
 ): Stream.Stream<string> =>
   Stream.suspend(() => {
     let held = "";
@@ -162,41 +175,363 @@ const eventStreamBody = (
       }),
       Stream.concat(Stream.suspend(() => Stream.make(held))),
       Stream.catch((error) =>
-        Stream.make(`${insideEvent ? "\n\n" : ""}${toOpenAiStreamError(error)}`)
+        Stream.make(`${insideEvent ? "\n\n" : ""}${errorEvent(error)}`)
       ),
       Stream.filter((text) => text !== "")
     );
   });
 
-const infer = (operation: InferenceOperation) =>
-  Effect.fn("Hub.infer")(
-    function* (request: HttpServerRequest.HttpServerRequest) {
-      const settings = yield* HubSettings;
-      const rooms = yield* Rooms;
-      const participants = yield* Participants;
-      const tunnels = yield* Tunnels;
-      const params = yield* HttpRouter.params;
-      const room = yield* rooms.get(params.code ?? "");
-      const roomCode = room.code;
-      const roomDefaults = yield* rooms.defaults(roomCode);
-      const json = yield* request.json.pipe(
-        Effect.mapError(
-          () => new InvalidInferenceRequest({ issue: "Expected JSON." })
-        )
+/** What a request was answered with, and whether its call is still feeding the response. */
+interface Answered {
+  readonly response: HttpServerResponse.HttpServerResponse;
+  /** A streamed answer keeps its call open; the pump closes it. */
+  readonly streaming: boolean;
+}
+
+/** The call a request holds in a participant's tunnel. */
+interface Call {
+  /** Closes the call: the provider stops, and what the call held is released. */
+  readonly end: Effect.Effect<void>;
+  readonly participantId: string;
+  /** The scope of the HTTP request, which lasts until the response body ends. */
+  readonly requestScope: Scope.Scope;
+  readonly roomCode: string;
+}
+
+/**
+ * Runs `use` with a scope for the call of a request, a child of the scope of
+ * the HTTP request. The call ends when `use` fails, when it answers with
+ * something that is not a stream, or, for a stream, when its pump ends it.
+ */
+const withCall = Effect.fnUntraced(function* <E, R>(
+  use: (
+    scopes: Pick<Call, "end" | "requestScope">
+  ) => Effect.Effect<Answered, E, R>
+) {
+  const requestScope = yield* Effect.scope;
+  const call = yield* Scope.fork(requestScope);
+  const end = Scope.close(call, Exit.void);
+  const answered = yield* use({ end, requestScope }).pipe(
+    Scope.provide(call),
+    Effect.onError(() => end)
+  );
+  if (!answered.streaming) {
+    yield* end;
+  }
+  return answered.response;
+});
+
+/** The answer of a provider, as it comes out of the tunnel. */
+interface ProviderAnswer {
+  /** The provider's `Content-Type`, when it sent one. */
+  readonly contentType: string | undefined;
+  /**
+   * Runs `use` on every piece of the body, in order, until the answer ends.
+   * It fails with what the call failed with.
+   */
+  readonly eachPiece: <E, R>(
+    use: (text: string) => Effect.Effect<void, E, R>
+  ) => Effect.Effect<void, E | InferenceError, R>;
+  /** Whether the body is a `text/event-stream`. */
+  readonly isEventStream: boolean;
+  /** The HTTP status the provider answered with. */
+  readonly status: number;
+}
+
+/**
+ * Sends `request` into the participant's tunnel and waits for the head of
+ * the provider's answer. The `Infer` call lives in the scope: closing it
+ * interrupts the call, which stops the provider.
+ */
+const askProvider = Effect.fnUntraced(function* (
+  roomCode: string,
+  participantId: string,
+  request: InferenceRequest
+): Effect.fn.Return<
+  ProviderAnswer,
+  InferenceError,
+  HubSettings | Tunnels | Scope.Scope
+> {
+  const settings = yield* HubSettings;
+  const tunnels = yield* Tunnels;
+  const tunnel = yield* tunnels.client(roomCode, participantId).pipe(
+    // The tunnel dropped between the routing and here.
+    Effect.mapError(() => new ParticipantIsOffline({ roomCode, participantId }))
+  );
+  const chunks = yield* tunnel.Infer(request, { asQueue: true });
+
+  const named = (error: CallError): InferenceError =>
+    error._tag === "RpcClientError"
+      ? new ParticipantDisconnected({ roomCode, participantId })
+      : error;
+  /**
+   * The next chunk of the call. It fails with `Cause.Done` when the call
+   * ended well, and with `InferenceTimedOut` when the participant sent
+   * nothing for the idle timeout.
+   */
+  const next = Queue.take(chunks).pipe(
+    Effect.timeoutOrElse({
+      duration: settings.inferenceIdleTimeout,
+      orElse: () =>
+        Effect.fail(
+          new InferenceTimedOut({
+            roomCode,
+            participantId,
+            idleSeconds: Duration.toSeconds(settings.inferenceIdleTimeout),
+          })
+        ),
+    }),
+    Effect.mapError((error) => (Cause.isDone(error) ? error : named(error)))
+  );
+
+  const head = yield* next.pipe(
+    Effect.catchIf(Cause.isDone, () =>
+      Effect.fail(new ProviderResponseInterrupted())
+    )
+  );
+  if (head._tag !== "Head") {
+    return yield* new ProviderResponseInterrupted();
+  }
+  return {
+    status: head.status,
+    contentType: head.contentType,
+    isEventStream:
+      head.contentType?.toLowerCase().startsWith(EVENT_STREAM) === true,
+    eachPiece: (use) =>
+      next.pipe(
+        Effect.flatMap((chunk) =>
+          chunk._tag === "Body" ? use(chunk.text) : Effect.void
+        ),
+        Effect.forever,
+        Effect.catchIf(Cause.isDone, () => Effect.void)
+      ),
+  };
+});
+
+/** What the hub does to a streamed answer on its way to the app. */
+interface StreamForm {
+  /** What goes to the app after the provider's last piece. */
+  readonly end: () => string;
+  /** The last event of a stream that failed: the name of what went wrong. */
+  readonly errorEvent: (error: InferenceError) => string;
+  /** What goes to the app for one piece of the provider's body. */
+  readonly piece: (text: string) => string;
+  /** What goes to the app before the provider's first piece. */
+  readonly start: string;
+}
+
+/** A streamed answer that goes to the app as the provider sent it. */
+const untouchedStream: StreamForm = {
+  start: "",
+  piece: identity,
+  end: () => "",
+  errorEvent: toOpenAiStreamError,
+};
+
+/** What the hub does to a provider's answer on its way to the app. */
+interface AnswerForm {
+  /**
+   * Called with the whole body of an answer that is not a stream. What it
+   * returns is the body the app gets.
+   */
+  readonly document: (text: string) => Effect.Effect<string>;
+  /** Told how the answer went, for the events of the request. */
+  readonly report: RequestReport;
+  /** Called when an answer starts to stream. */
+  readonly stream: Effect.Effect<StreamForm>;
+}
+
+/** An answer that goes to the app as the provider sent it, and that the room hears nothing of. */
+const untouched: AnswerForm = {
+  document: Effect.succeed,
+  report: unreported,
+  stream: Effect.succeed(untouchedStream),
+};
+
+/**
+ * Turns a provider's answer into the HTTP response, with the status the
+ * provider answered with.
+ *
+ * An answer that is not a stream is one document: the hub holds it until it
+ * is whole, so that a failure in the middle is still an error response with
+ * a name. A stream goes out piece by piece through the pump (see the top of
+ * this file), which ends the call before it ends the body.
+ */
+const respond = Effect.fnUntraced(function* (
+  call: Call,
+  answer: ProviderAnswer,
+  form: AnswerForm
+): Effect.fn.Return<Answered, InferenceError> {
+  const { roomCode, participantId } = call;
+  const { report } = form;
+  const options = {
+    status: answer.status,
+    ...(answer.contentType === undefined
+      ? {}
+      : { contentType: answer.contentType }),
+  };
+
+  if (!answer.isEventStream) {
+    const parts: string[] = [];
+    let size = 0;
+    yield* answer.eachPiece((text) => {
+      report.piece();
+      parts.push(text);
+      size += text.length;
+      return size > MAX_HELD_RESPONSE_CHARACTERS
+        ? Effect.fail(
+            new ProviderResponseTooLarge({
+              roomCode,
+              participantId,
+              limitCharacters: MAX_HELD_RESPONSE_CHARACTERS,
+            })
+          )
+        : Effect.void;
+    });
+    const document = parts.join("");
+    report.completed(answer.status, document);
+    return {
+      streaming: false,
+      response: HttpServerResponse.text(
+        yield* form.document(document),
+        options
+      ),
+    };
+  }
+
+  const stream = yield* form.stream;
+  const pending = yield* Queue.unbounded<string, InferenceError | Cause.Done>();
+  let waiting = 0;
+  const send = (text: string) => {
+    waiting += text.length;
+    if (waiting > MAX_PENDING_STREAM_CHARACTERS) {
+      return Effect.fail(
+        new ConsumerTooSlow({
+          roomCode,
+          participantId,
+          limitCharacters: MAX_PENDING_STREAM_CHARACTERS,
+        })
       );
-      const asked = yield* readRequest(json);
+    }
+    if (text !== "") {
+      Queue.offerUnsafe(pending, text);
+    }
+    return Effect.void;
+  };
+  report.streaming();
+  // The pump: it never waits for the app, so the tunnel never waits for it.
+  // It ends the call before it ends the body, so that when an app reads the
+  // end of the response the participant is already free.
+  yield* send(stream.start).pipe(
+    Effect.andThen(
+      answer.eachPiece((text) => {
+        report.piece();
+        return send(stream.piece(text));
+      })
+    ),
+    Effect.andThen(Effect.suspend(() => send(stream.end()))),
+    Effect.tap(() => Effect.sync(() => report.completed(answer.status))),
+    Effect.tapError((error) => {
+      report.failed(error);
+      return Effect.logInfo("inference stream ended early").pipe(
+        Effect.annotateLogs({ error: error._tag, reason: error.message })
+      );
+    }),
+    Effect.ensuring(call.end),
+    Effect.onExit((exit) =>
+      Exit.isSuccess(exit)
+        ? Queue.end(pending)
+        : Queue.failCause(pending, exit.cause)
+    ),
+    Effect.exit,
+    Effect.forkIn(call.requestScope)
+  );
+  const body = Stream.fromQueue(pending).pipe(
+    Stream.map((text) => {
+      waiting -= text.length;
+      return text;
+    })
+  );
+  return {
+    streaming: true,
+    response: HttpServerResponse.stream(
+      Stream.encodeText(eventStreamBody(body, stream.errorEvent)),
+      { ...options, headers: { "Cache-Control": "no-cache" } }
+    ),
+  };
+});
 
-      const requestScope = yield* Effect.scope;
-      const call = yield* Scope.fork(requestScope);
-      const endCall = Scope.close(call, Exit.void);
+/**
+ * Answers a failure of a route in the OpenAI error format, and a bug in the
+ * hub with a 500 that says nothing of it.
+ */
+const answeringFailures =
+  (operation: InferenceOperation) =>
+  <R>(
+    effect: Effect.Effect<
+      HttpServerResponse.HttpServerResponse,
+      InferenceError,
+      R
+    >,
+    request: HttpServerRequest.HttpServerRequest
+  ) =>
+    effect.pipe(
+      Effect.tapError((error) =>
+        Effect.logInfo("inference request refused").pipe(
+          Effect.annotateLogs({ error: error._tag, reason: error.message })
+        )
+      ),
+      Effect.catch((error) => Effect.succeed(errorResponse(error))),
+      Effect.catchDefect((defect) =>
+        Effect.logError("inference request failed", Cause.die(defect)).pipe(
+          Effect.as(
+            HttpServerResponse.jsonUnsafe(OPENAI_INTERNAL_ERROR, {
+              status: 500,
+            })
+          )
+        )
+      ),
+      Effect.annotateLogs({ operation, url: request.url })
+    );
 
-      const answer = Effect.gen(function* () {
+/** The id of the Response in a JSON document, when the document is a Response. */
+const ResponseDocument = Schema.fromJsonString(
+  Schema.Struct({ id: Schema.String })
+);
+const readResponseId = Schema.decodeUnknownOption(ResponseDocument);
+
+/**
+ * A route that creates something on a provider: the request is routed to a
+ * participant by its model selector, and the participant is `busy` until
+ * the call ends.
+ */
+const infer = (operation: InferenceCreation) =>
+  Effect.fn("Hub.infer")(function* (
+    request: HttpServerRequest.HttpServerRequest
+  ) {
+    const rooms = yield* Rooms;
+    const participants = yield* Participants;
+    const stored = yield* StoredResponses;
+    const params = yield* HttpRouter.params;
+    const room = yield* rooms.get(params.code ?? "");
+    const roomCode = room.code;
+    const roomDefaults = yield* rooms.defaults(roomCode);
+    const json = yield* request.json.pipe(
+      Effect.mapError(
+        () => new InvalidInferenceRequest({ issue: "Expected JSON." })
+      )
+    );
+    const asked = yield* readRequest(json);
+
+    return yield* withCall(
+      Effect.fnUntraced(function* (scopes) {
         const participant = yield* Effect.acquireRelease(
           participants.dispatch(roomCode, asked.model),
           (dispatched) =>
             participants.transition(roomCode, dispatched.id, "requestEnded")
         );
         const participantId = participant.id;
+        const call: Call = { ...scopes, roomCode, participantId };
         yield* Effect.annotateCurrentSpan({
           "gambi.room_code": roomCode,
           "gambi.participant_id": participantId,
@@ -211,200 +546,80 @@ const infer = (operation: InferenceOperation) =>
           modelSelector: asked.model,
         });
         return yield* Effect.gen(function* () {
-          const tunnel = yield* tunnels.client(roomCode, participantId).pipe(
-            // The tunnel dropped between the routing and here.
-            Effect.mapError(
-              () => new ParticipantIsOffline({ roomCode, participantId })
-            )
-          );
-          const chunks = yield* tunnel.Infer(
-            {
+          const answer = yield* askProvider(roomCode, participantId, {
+            operation,
+            body: providerBody(
               operation,
-              body: providerBody(
-                operation,
-                asked.body,
-                mergeDefaults(roomDefaults, participant.config),
-                participant.model
-              ),
-            },
-            { asQueue: true }
-          );
-
-          const named = (error: CallError): InferenceError =>
-            error._tag === "RpcClientError"
-              ? new ParticipantDisconnected({ roomCode, participantId })
-              : error;
-          /**
-           * The next chunk of the call. It fails with `Cause.Done` when the
-           * call ended well, and with `InferenceTimedOut` when the participant
-           * sent nothing for the idle timeout.
-           */
-          const next = Queue.take(chunks).pipe(
-            Effect.timeoutOrElse({
-              duration: settings.inferenceIdleTimeout,
-              orElse: () =>
-                Effect.fail(
-                  new InferenceTimedOut({
-                    roomCode,
-                    participantId,
-                    idleSeconds: Duration.toSeconds(
-                      settings.inferenceIdleTimeout
-                    ),
-                  })
-                ),
-            }),
-            Effect.mapError((error) =>
-              Cause.isDone(error) ? error : named(error)
-            )
-          );
-          /** Every piece of the body, in order, until the call ends. */
-          const eachPiece = <E, R>(
-            use: (text: string) => Effect.Effect<void, E, R>
-          ) =>
-            next.pipe(
-              Effect.flatMap((chunk) => {
-                if (chunk._tag !== "Body") {
-                  return Effect.void;
-                }
-                report.piece();
-                return use(chunk.text);
-              }),
-              Effect.forever,
-              Effect.catchIf(Cause.isDone, () => Effect.void)
-            );
-
-          const head = yield* next.pipe(
-            Effect.catchIf(Cause.isDone, () =>
-              Effect.fail(new ProviderResponseInterrupted())
-            )
-          );
-          if (head._tag !== "Head") {
-            return yield* new ProviderResponseInterrupted();
+              asked.body,
+              mergeDefaults(roomDefaults, participant.config),
+              participant.model
+            ),
+          });
+          if (operation === "chatCompletions.create") {
+            return yield* respond(call, answer, { ...untouched, report });
           }
-          const options = {
-            status: head.status,
-            ...(head.contentType === undefined
-              ? {}
-              : { contentType: head.contentType }),
-          };
-
-          if (
-            head.contentType?.toLowerCase().startsWith(EVENT_STREAM) !== true
-          ) {
-            // Anything that is not a stream is one JSON document. The hub
-            // holds it until it is whole, so that a failure in the middle is
-            // still an error response with a name, not a document cut short.
-            const parts: string[] = [];
-            let size = 0;
-            yield* eachPiece((text) => {
-              parts.push(text);
-              size += text.length;
-              return size > MAX_HELD_RESPONSE_CHARACTERS
-                ? Effect.fail(
-                    new ProviderResponseTooLarge({
-                      roomCode,
-                      participantId,
-                      limitCharacters: MAX_HELD_RESPONSE_CHARACTERS,
-                    })
-                  )
-                : Effect.void;
+          // The provider keeps the Response it created. Whoever asks for it
+          // later is sent to this participant.
+          const remember = (responseId: string) =>
+            stored.remember(roomCode, responseId, {
+              participantId,
+              translated: false,
             });
-            const document = parts.join("");
-            report.completed(head.status, document);
-            return {
-              streaming: false,
-              response: HttpServerResponse.text(document, options),
-            };
-          }
-
-          const pending = yield* Queue.unbounded<
-            string,
-            InferenceError | Cause.Done
-          >();
-          let waiting = 0;
-          report.streaming();
-          // The pump: it never waits for the app, so the tunnel never waits
-          // for it. It ends the call before it ends the body, so that when an
-          // app reads the end of the response the participant is already free.
-          yield* eachPiece((text) => {
-            waiting += text.length;
-            if (waiting > MAX_PENDING_STREAM_CHARACTERS) {
-              return Effect.fail(
-                new ConsumerTooSlow({
-                  roomCode,
-                  participantId,
-                  limitCharacters: MAX_PENDING_STREAM_CHARACTERS,
-                })
-              );
-            }
-            Queue.offerUnsafe(pending, text);
-            return Effect.void;
-          }).pipe(
-            Effect.tap(() => Effect.sync(() => report.completed(head.status))),
-            Effect.tapError((error) => {
-              report.failed(error);
-              return Effect.logInfo("inference stream ended early").pipe(
-                Effect.annotateLogs({
-                  error: error._tag,
-                  reason: error.message,
-                })
-              );
-            }),
-            Effect.ensuring(endCall),
-            Effect.onExit((exit) =>
-              Exit.isSuccess(exit)
-                ? Queue.end(pending)
-                : Queue.failCause(pending, exit.cause)
-            ),
-            Effect.exit,
-            Effect.forkIn(requestScope)
-          );
-          const body = Stream.fromQueue(pending).pipe(
-            Stream.map((text) => {
-              waiting -= text.length;
-              return text;
-            })
-          );
-          return {
-            streaming: true,
-            response: HttpServerResponse.stream(
-              Stream.encodeText(eventStreamBody(body)),
-              { ...options, headers: { "Cache-Control": "no-cache" } }
-            ),
-          };
+          return yield* respond(call, answer, {
+            ...untouched,
+            report,
+            document: (text) =>
+              Option.match(readResponseId(text), {
+                onNone: () => Effect.void,
+                onSome: ({ id }) => remember(id),
+              }).pipe(Effect.as(text)),
+          });
         }).pipe(
           Effect.tapError((error) => Effect.sync(() => report.failed(error)))
         );
-      }).pipe(Scope.provide(call));
+      })
+    );
+  }, answeringFailures(operation));
 
-      // A streamed answer keeps the call open, and its pump closes it.
-      // Everything else is done with the call by the time it answers.
-      const answered = yield* answer.pipe(Effect.onError(() => endCall));
-      if (!answered.streaming) {
-        yield* endCall;
-      }
-      return answered.response;
-    },
-    (effect, request) =>
-      effect.pipe(
-        Effect.tapError((error) =>
-          Effect.logInfo("inference request refused").pipe(
-            Effect.annotateLogs({ error: error._tag, reason: error.message })
-          )
-        ),
-        Effect.catch((error) => Effect.succeed(errorResponse(error))),
-        Effect.catchDefect((defect) =>
-          Effect.logError("inference request failed", Cause.die(defect)).pipe(
-            Effect.as(
-              HttpServerResponse.jsonUnsafe(OPENAI_INTERNAL_ERROR, {
-                status: 500,
-              })
-            )
-          )
-        ),
-        Effect.annotateLogs({ operation, url: request.url })
-      )
-  );
+/**
+ * A route about a Response a provider stored: reading it, deleting it,
+ * cancelling it, listing its input items. It goes to the participant that
+ * created the Response, whatever that participant is doing: an app cancels
+ * a Response while its participant is `busy` answering it. So the request
+ * is not dispatched, changes no status and is no event of the room.
+ */
+const storedResponse = (operation: StoredResponseOperation) =>
+  Effect.fn("Hub.storedResponse")(function* (
+    _request: HttpServerRequest.HttpServerRequest
+  ) {
+    const rooms = yield* Rooms;
+    const stored = yield* StoredResponses;
+    const params = yield* HttpRouter.params;
+    const room = yield* rooms.get(params.code ?? "");
+    const roomCode = room.code;
+    const responseId = params.id ?? "";
+    const known = yield* stored.find(roomCode, responseId);
+    if (known === undefined) {
+      return yield* new ResponseNotFound({ roomCode, responseId });
+    }
+    const { participantId } = known;
+    yield* Effect.annotateCurrentSpan({
+      "gambi.room_code": roomCode,
+      "gambi.participant_id": participantId,
+      "gambi.operation": operation,
+    });
+
+    return yield* withCall(
+      Effect.fnUntraced(function* (scopes) {
+        const call: Call = { ...scopes, roomCode, participantId };
+        const answer = yield* askProvider(roomCode, participantId, {
+          operation,
+          responseId,
+        });
+        return yield* respond(call, answer, untouched);
+      })
+    );
+  }, answeringFailures(operation));
 
 /**
  * The participants of the room as an OpenAI list of models. The `id` of each
@@ -450,5 +665,14 @@ export const InferenceRoutes = Layer.mergeAll(
     "/rooms/:code/v1/chat/completions",
     infer("chatCompletions.create")
   ),
-  HttpRouter.add("POST", "/rooms/:code/v1/responses", infer("responses.create"))
+  HttpRouter.add(
+    "POST",
+    "/rooms/:code/v1/responses",
+    infer("responses.create")
+  ),
+  HttpRouter.add(
+    "GET",
+    "/rooms/:code/v1/responses/:id",
+    storedResponse("responses.retrieve")
+  )
 ).pipe(Layer.provide(RequestIdentity));

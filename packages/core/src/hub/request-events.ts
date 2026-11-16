@@ -10,8 +10,8 @@
  */
 import {
   INFERENCE_FAILURES,
+  type InferenceCreation,
   type InferenceError,
-  type InferenceOperation,
   type InferenceProtocol,
   type LlmError,
   RequestId,
@@ -20,8 +20,11 @@ import {
 import { Clock, Effect, Option, Schema } from "effect";
 import { RoomEvents } from "./room-events.ts";
 
-/** The protocol each operation counts as. A new operation gets a row here. */
-const PROTOCOLS: Record<InferenceOperation, InferenceProtocol> = {
+/**
+ * The protocol each operation counts as. A new operation that a room hears
+ * of gets a row here.
+ */
+const PROTOCOLS: Record<InferenceCreation, InferenceProtocol> = {
   "chatCompletions.create": "chatCompletions",
   "responses.create": "openResponses",
 };
@@ -72,13 +75,24 @@ export interface RequestReport {
 }
 
 /**
+ * The report of a request the room hears nothing of: an operation on a
+ * stored Response, which is no inference.
+ */
+export const unreported: RequestReport = {
+  completed: () => undefined,
+  failed: () => undefined,
+  piece: () => undefined,
+  streaming: () => undefined,
+};
+
+/**
  * Publishes `llm.request` now, and the event that ends the request when the
  * scope closes.
  */
 export const reportRequest = Effect.fn("Hub.reportRequest")(function* (
   roomCode: string,
   request: {
-    readonly operation: InferenceOperation;
+    readonly operation: InferenceCreation;
     readonly participantId: string;
     readonly model: string;
     readonly modelSelector: string;

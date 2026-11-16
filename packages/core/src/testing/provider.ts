@@ -127,6 +127,9 @@ const modelOf = (call: ProviderCall): string =>
 /** The text every canned completion of `openAiAnswer` says. */
 export const FAKE_COMPLETION_TEXT = "Olá, Recife!";
 
+/** The one model `openAiAnswer` lists on `GET /v1/models`. */
+export const FAKE_MODEL = "test-model";
+
 const chatCompletion = (call: ProviderCall): Response => {
   const model = modelOf(call);
   if (!isStreaming(call)) {
@@ -162,29 +165,40 @@ const chatCompletion = (call: ProviderCall): Response => {
   ]);
 };
 
-const responsesCreate = (call: ProviderCall): Response => {
-  const response = (status: string, text?: string) => ({
-    id: "resp_fake",
-    object: "response",
-    created_at: 0,
-    status,
-    model: modelOf(call),
-    output:
-      text === undefined
-        ? []
-        : [
-            {
-              id: "msg_fake",
-              type: "message",
-              role: "assistant",
-              status: "completed",
-              content: [{ type: "output_text", text, annotations: [] }],
-            },
-          ],
-  });
-  if (!isStreaming(call)) {
-    return jsonAnswer(response("completed", FAKE_COMPLETION_TEXT));
-  }
+const inputOf = (call: ProviderCall): unknown =>
+  typeof call.body === "object" && call.body !== null && "input" in call.body
+    ? call.body.input
+    : undefined;
+
+/** A Response object as the fake provider writes it. */
+const responseObject = (
+  call: ProviderCall,
+  id: string,
+  status: string,
+  text?: string
+) => ({
+  id,
+  object: "response",
+  created_at: 0,
+  status,
+  model: modelOf(call),
+  output:
+    text === undefined
+      ? []
+      : [
+          {
+            id: "msg_fake",
+            type: "message",
+            role: "assistant",
+            status: "completed",
+            content: [{ type: "output_text", text, annotations: [] }],
+          },
+        ],
+});
+
+const responseEvents = (
+  response: (status: string, text?: string) => object
+) => {
   const event = (type: string, fields: object) =>
     sseEvent({ type, ...fields }, type);
   return sseAnswer([
@@ -197,11 +211,35 @@ const responsesCreate = (call: ProviderCall): Response => {
   ]);
 };
 
+const responsesCreate = (call: ProviderCall, id = "resp_fake"): Response => {
+  const response = (status: string, text?: string) =>
+    responseObject(call, id, status, text);
+  return isStreaming(call)
+    ? responseEvents(response)
+    : jsonAnswer(response("completed", FAKE_COMPLETION_TEXT));
+};
+
+const notFound = (message: string): Response =>
+  jsonAnswer(
+    {
+      error: {
+        message,
+        type: "invalid_request_error",
+        param: null,
+        code: "not_found",
+      },
+    },
+    404
+  );
+
 /**
  * Answers like an OpenAI-compatible provider: a short completion on
  * `POST /v1/chat/completions` and on `POST /v1/responses`, as JSON or as
- * `text/event-stream` when the request says `stream: true`, and the OpenAI
- * error shape with 404 on anything else.
+ * `text/event-stream` when the request says `stream: true`, its one model on
+ * `GET /v1/models`, and the OpenAI error shape with 404 on anything else.
+ *
+ * It keeps nothing: a Response it created cannot be read back. For that, see
+ * `storingResponses`.
  */
 export const openAiAnswer = (call: ProviderCall): Response => {
   if (call.method === "POST" && call.path === "/v1/chat/completions") {
@@ -210,17 +248,98 @@ export const openAiAnswer = (call: ProviderCall): Response => {
   if (call.method === "POST" && call.path === "/v1/responses") {
     return responsesCreate(call);
   }
-  return jsonAnswer(
-    {
-      error: {
-        message: `The fake provider has no route ${call.method} ${call.path}.`,
-        type: "invalid_request_error",
-        param: null,
-        code: "not_found",
-      },
-    },
-    404
+  if (call.method === "GET" && call.path === "/v1/models") {
+    return jsonAnswer({
+      object: "list",
+      data: [{ id: FAKE_MODEL, object: "model", owned_by: "fake" }],
+    });
+  }
+  return notFound(
+    `The fake provider has no route ${call.method} ${call.path}.`
   );
+};
+
+/**
+ * Answers like a provider that speaks Chat Completions and not the Responses
+ * API, as most local backends do: every route under `/v1/responses` is a 404.
+ */
+export const chatCompletionsOnly = (call: ProviderCall): Response =>
+  call.path.startsWith("/v1/responses")
+    ? notFound(`The fake provider has no route ${call.method} ${call.path}.`)
+    : openAiAnswer(call);
+
+const STORED_RESPONSE =
+  /^\/v1\/responses\/([^/?]+)(\/cancel|\/input_items)?(\?.*)?$/;
+
+/**
+ * An `answer` for a provider that speaks the whole Responses API: it keeps
+ * each Response it creates and gives it an id (`resp_1`, `resp_2`, ...), and
+ * the routes under `/v1/responses/:id` read it, delete it, cancel it and list
+ * its input items. Everything else is `openAiAnswer`.
+ *
+ * Each call of `storingResponses()` is one provider with its own Responses.
+ *
+ * @example
+ * const provider = yield* fakeProvider({ answer: storingResponses() });
+ */
+export const storingResponses = (): ((call: ProviderCall) => Response) => {
+  interface Stored {
+    readonly call: ProviderCall;
+    readonly id: string;
+    status: string;
+  }
+  const stored = new Map<string, Stored>();
+  let created = 0;
+  const object = (kept: Stored) => (status: string, text?: string) =>
+    responseObject(kept.call, kept.id, status, text);
+  /** What each route of a stored Response answers, by method and what follows the id. */
+  const routes: Record<string, (kept: Stored, query: string) => Response> = {
+    "GET ": (kept, query) =>
+      query.includes("stream=true")
+        ? responseEvents(object(kept))
+        : jsonAnswer(object(kept)(kept.status, FAKE_COMPLETION_TEXT)),
+    "DELETE ": (kept) => {
+      stored.delete(kept.id);
+      return jsonAnswer({ id: kept.id, object: "response", deleted: true });
+    },
+    "POST /cancel": (kept) => {
+      kept.status = "cancelled";
+      return jsonAnswer(object(kept)(kept.status));
+    },
+    "GET /input_items": (kept) =>
+      jsonAnswer({
+        object: "list",
+        data: [
+          {
+            id: "msg_input_1",
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: inputOf(kept.call) }],
+          },
+        ],
+        first_id: "msg_input_1",
+        last_id: "msg_input_1",
+        has_more: false,
+      }),
+  };
+  return (call) => {
+    if (call.method === "POST" && call.path === "/v1/responses") {
+      created += 1;
+      const id = `resp_${created}`;
+      stored.set(id, { call, id, status: "completed" });
+      return responsesCreate(call, id);
+    }
+    const [, id, action = "", query = ""] =
+      STORED_RESPONSE.exec(call.path) ?? [];
+    const route = routes[`${call.method} ${action}`];
+    if (id === undefined || route === undefined) {
+      return openAiAnswer(call);
+    }
+    const kept = stored.get(id);
+    return kept === undefined
+      ? notFound(`Response with id '${id}' not found.`)
+      : route(kept, query);
+  };
 };
 
 const parseBody = (text: string): unknown => {

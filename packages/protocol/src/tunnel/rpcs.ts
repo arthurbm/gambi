@@ -59,20 +59,61 @@ export const Ticks = Rpc.make("Ticks", {
 });
 
 /**
- * What the hub asks of the participant's provider, named after the OpenAI
- * operation. Each one is a request to a fixed route of the provider:
+ * The operations that create something on the participant's provider. Each
+ * one sends a body to a fixed route:
  *
  * - `chatCompletions.create`: `POST /v1/chat/completions`
  * - `responses.create`: `POST /v1/responses`
- *
- * A new operation (the rest of the Responses API) is a new literal here and a
- * new row in the participant runtime's table of provider routes.
  */
-export const InferenceOperation = Schema.Literals([
+export const InferenceCreation = Schema.Literals([
   "chatCompletions.create",
   "responses.create",
 ]);
-export type InferenceOperation = typeof InferenceOperation.Type;
+export type InferenceCreation = typeof InferenceCreation.Type;
+
+/**
+ * The operations on a Response the participant's provider stored when it
+ * created it. Each one names the Response and sends no body:
+ *
+ * - `responses.retrieve`: `GET /v1/responses/:id`
+ * - `responses.delete`: `DELETE /v1/responses/:id`
+ * - `responses.cancel`: `POST /v1/responses/:id/cancel`
+ * - `responses.inputItems.list`: `GET /v1/responses/:id/input_items`
+ */
+export const StoredResponseOperation = Schema.Literals([
+  "responses.retrieve",
+  "responses.delete",
+  "responses.cancel",
+  "responses.inputItems.list",
+]);
+export type StoredResponseOperation = typeof StoredResponseOperation.Type;
+
+/**
+ * What the hub asks of the participant's provider, named after the OpenAI
+ * operation. A new operation is a new literal in one of the two lists and a
+ * new row in the participant runtime's table of provider routes.
+ */
+export type InferenceOperation = InferenceCreation | StoredResponseOperation;
+
+/**
+ * One request for the participant's provider: the operation and what it
+ * needs, a body or the id of a stored Response, never both.
+ */
+export const InferenceRequest = Schema.Union([
+  Schema.Struct({
+    operation: InferenceCreation,
+    /** The JSON text of the request body, already final: the runtime does not read it. */
+    body: Schema.String,
+  }),
+  Schema.Struct({
+    operation: StoredResponseOperation,
+    /** The id the provider gave the Response. */
+    responseId: Schema.NonEmptyString,
+    /** The query string the app sent, without the `?`, passed on as it came. */
+    query: Schema.optionalKey(Schema.String),
+  }),
+]);
+export type InferenceRequest = typeof InferenceRequest.Type;
 
 /**
  * One piece of the provider's response, in the order it arrives: first one
@@ -93,18 +134,14 @@ export type InferenceChunk = typeof InferenceChunk.Type;
 
 /**
  * An inference request for the participant's provider. The participant
- * runtime sends `body` to its local provider as it is, with the
+ * runtime sends it to its local provider as it is, with the
  * `ParticipantAuthHeaders` that only it knows, and streams the response back.
  *
  * Interrupting the call stops the request to the provider. The stream is
  * pulled chunk by chunk: a provider faster than the hub's consumer waits.
  */
 export const Infer = Rpc.make("Infer", {
-  payload: {
-    operation: InferenceOperation,
-    /** The JSON text of the request body, already final: the runtime does not read it. */
-    body: Schema.String,
-  },
+  payload: InferenceRequest,
   success: InferenceChunk,
   error: Schema.Union([
     CallNotSupported,

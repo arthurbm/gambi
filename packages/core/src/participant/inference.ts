@@ -19,11 +19,12 @@ import {
   CallNotSupported,
   type InferenceChunk,
   type InferenceOperation,
+  type InferenceRequest,
   ProviderResponseInterrupted,
   ProviderUnreachable,
   TunnelRpcs,
 } from "@gambi/protocol";
-import { Effect, type Layer, Stream } from "effect";
+import { Effect, identity, type Layer, Stream } from "effect";
 import { HttpClient, HttpClientRequest } from "effect/http";
 import type { Rpc } from "effect/rpc";
 
@@ -40,10 +41,55 @@ export interface ProviderOptions {
   readonly endpoint: string;
 }
 
-/** The provider route of each operation. A new operation of `Infer` gets a row here. */
-const PROVIDER_ROUTES: Record<InferenceOperation, string> = {
-  "chatCompletions.create": "/v1/chat/completions",
-  "responses.create": "/v1/responses",
+/**
+ * The provider route of each operation: its method and its path, which for
+ * an operation on a stored Response carries the id of the Response. A new
+ * operation of `Infer` gets a row here.
+ */
+const PROVIDER_ROUTES: Record<
+  InferenceOperation,
+  {
+    readonly method: "GET" | "POST" | "DELETE";
+    readonly path: (responseId: string) => string;
+  }
+> = {
+  "chatCompletions.create": {
+    method: "POST",
+    path: () => "/v1/chat/completions",
+  },
+  "responses.create": { method: "POST", path: () => "/v1/responses" },
+  "responses.retrieve": {
+    method: "GET",
+    path: (responseId) => `/v1/responses/${responseId}`,
+  },
+  "responses.delete": {
+    method: "DELETE",
+    path: (responseId) => `/v1/responses/${responseId}`,
+  },
+  "responses.cancel": {
+    method: "POST",
+    path: (responseId) => `/v1/responses/${responseId}/cancel`,
+  },
+  "responses.inputItems.list": {
+    method: "GET",
+    path: (responseId) => `/v1/responses/${responseId}/input_items`,
+  },
+};
+
+/**
+ * The path and query of the provider route a request goes to. The id of a
+ * Response is one segment of the path, whatever characters it has.
+ */
+const providerPath = (request: InferenceRequest): string => {
+  const route = PROVIDER_ROUTES[request.operation];
+  if (!("responseId" in request)) {
+    return route.path("");
+  }
+  const query =
+    request.query === undefined || request.query === ""
+      ? ""
+      : `?${request.query}`;
+  return `${route.path(encodeURIComponent(request.responseId))}${query}`;
 };
 
 const TRAILING_SLASHES = /\/+$/;
@@ -66,10 +112,15 @@ export const providerInference = (
     Effect.gen(function* () {
       const client = yield* HttpClient.HttpClient;
       const endpoint = options.endpoint.replace(TRAILING_SLASHES, "");
-      return ({ operation, body }) =>
-        HttpClientRequest.post(`${endpoint}${PROVIDER_ROUTES[operation]}`).pipe(
+      return (request) => {
+        const { operation } = request;
+        return HttpClientRequest.make(PROVIDER_ROUTES[operation].method)(
+          `${endpoint}${providerPath(request)}`
+        ).pipe(
           HttpClientRequest.setHeaders(options.authHeaders ?? {}),
-          HttpClientRequest.bodyText(body, "application/json"),
+          "body" in request
+            ? HttpClientRequest.bodyText(request.body, "application/json")
+            : identity,
           client.execute,
           Effect.tapError((cause) =>
             Effect.logWarning("the provider did not answer", cause).pipe(
@@ -102,6 +153,7 @@ export const providerInference = (
           // nothing of the hub: no trace headers.
           Stream.provideService(HttpClient.TracerPropagationEnabled, false)
         );
+      };
     })
   );
 

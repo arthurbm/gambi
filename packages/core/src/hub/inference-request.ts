@@ -11,7 +11,7 @@
  *    means something to the hub only.
  */
 import {
-  type InferenceOperation,
+  type InferenceCreation,
   InvalidInferenceRequest,
   type RuntimeConfig,
 } from "@gambi/protocol";
@@ -75,7 +75,7 @@ export const mergeDefaults = (
  * `instructions` is not here: each API takes it in its own way.
  */
 const DEFAULT_FIELDS: Record<
-  InferenceOperation,
+  InferenceCreation,
   Partial<Record<Exclude<keyof RuntimeConfig, "instructions">, string>>
 > = {
   "chatCompletions.create": {
@@ -114,7 +114,7 @@ const hasSystemMessage = (messages: readonly unknown[]) =>
  * the start, unless the app sent one; in Responses they fill `instructions`.
  */
 export const providerBody = (
-  operation: InferenceOperation,
+  operation: InferenceCreation,
   body: RequestBody,
   defaults: RuntimeConfig,
   model: string

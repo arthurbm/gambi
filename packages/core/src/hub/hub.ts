@@ -39,6 +39,7 @@ import { RoomEvents } from "./room-events.ts";
 import { RoomPasswords } from "./room-passwords.ts";
 import { Rooms } from "./rooms.ts";
 import { HubSettings } from "./settings.ts";
+import { StoredResponses } from "./stored-responses.ts";
 import { TunnelRoute } from "./tunnel-route.ts";
 import { Tunnels } from "./tunnels.ts";
 
@@ -47,6 +48,7 @@ export const DEFAULT_HUB_HOSTNAME = "0.0.0.0";
 export const DEFAULT_TUNNEL_PING_INTERVAL: Duration.Input = "5 seconds";
 export const DEFAULT_INFERENCE_IDLE_TIMEOUT: Duration.Input = "5 minutes";
 export const DEFAULT_RECONNECT_DEADLINE: Duration.Input = "60 seconds";
+export const DEFAULT_STORED_RESPONSES_LIMIT = 10_000;
 
 /** The platform services an HTTP server brings: `BunHttpServer.layer` provides all of them. */
 export type HubPlatform =
@@ -83,6 +85,12 @@ export interface HubOptions {
    * the room. Reconnecting before that keeps it. Default 60 seconds.
    */
   readonly reconnectDeadline?: Duration.Input | undefined;
+  /**
+   * How many Responses of the Responses API the hub remembers the
+   * participant of. A Response past the limit can no longer be read back,
+   * deleted or cancelled through the hub. Default 10 000.
+   */
+  readonly storedResponsesLimit?: number | undefined;
   /**
    * How often the hub pings each tunnel; a tunnel that stays silent for one
    * more interval is dropped. Default 5 seconds.
@@ -187,6 +195,8 @@ export class Hub extends Context.Service<
         reconnectDeadline: Duration.fromInputUnsafe(
           options.reconnectDeadline ?? DEFAULT_RECONNECT_DEADLINE
         ),
+        storedResponsesLimit:
+          options.storedResponsesLimit ?? DEFAULT_STORED_RESPONSES_LIMIT,
         tunnelPingInterval: Duration.fromInputUnsafe(
           options.tunnelPingInterval ?? DEFAULT_TUNNEL_PING_INTERVAL
         ),
@@ -194,7 +204,11 @@ export class Hub extends Context.Service<
       })
     );
 
-    const State = Layer.mergeAll(Rooms.layer, Tunnels.layer).pipe(
+    const State = Layer.mergeAll(
+      Rooms.layer,
+      Tunnels.layer,
+      StoredResponses.layer
+    ).pipe(
       Layer.provideMerge(Participants.layer),
       Layer.provideMerge(Layer.mergeAll(RoomEvents.layer, OpenStreams.layer)),
       Layer.provide(RoomPasswords.layerWebCrypto),

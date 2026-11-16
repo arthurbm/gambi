@@ -131,6 +131,20 @@ export class ConsumerTooSlow extends Schema.TaggedError<ConsumerTooSlow>()(
   }
 }
 
+/**
+ * The hub knows no Response with this id in the room: none was created
+ * through it, the provider no longer has it, or the hub forgot it (it
+ * remembers a bounded number of them).
+ */
+export class ResponseNotFound extends Schema.TaggedError<ResponseNotFound>()(
+  "ResponseNotFound",
+  { roomCode: Schema.String, responseId: Schema.String }
+) {
+  override get message(): string {
+    return `Response '${this.responseId}' was not found in room '${this.roomCode}'.`;
+  }
+}
+
 /** Everything an inference request can fail with, before or during the response. */
 export type InferenceError =
   | InvalidInferenceRequest
@@ -142,6 +156,7 @@ export type InferenceError =
   | InferenceTimedOut
   | ProviderResponseTooLarge
   | ConsumerTooSlow
+  | ResponseNotFound
   | CallNotSupported
   | ProviderUnreachable
   | ProviderResponseInterrupted;
@@ -170,6 +185,7 @@ export const INFERENCE_FAILURES: {
   },
   // Only ever sent inside a stream, where the status is already 200.
   ConsumerTooSlow: { code: "consumer_too_slow", status: 408 },
+  ResponseNotFound: { code: "response_not_found", status: 404 },
   CallNotSupported: { code: "inference_not_supported", status: 400 },
   ProviderUnreachable: { code: "provider_unreachable", status: 502 },
   ProviderResponseInterrupted: {
