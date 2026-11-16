@@ -1,6 +1,6 @@
 import { expect } from "bun:test";
-import { RoomNotFound, VersionMismatch } from "@gambi/protocol";
-import { it } from "@gambi/testing/effect";
+import { GAMBI_VERSION, RoomNotFound, VersionMismatch } from "@gambi/protocol";
+import { it, layer } from "@gambi/testing/effect";
 import { Context, Effect, Exit, Layer, Scope } from "effect";
 import { TestClock } from "effect/testing";
 import { Hub } from "../hub/hub.ts";
@@ -366,4 +366,70 @@ it.effect(
       const error = yield* Effect.flip(participant.runtime.ended);
       expect(error).toBeInstanceOf(RoomNotFound);
     })
+);
+
+layer(layerHub(), { excludeTestServices: true })(
+  "lifecycle of a participant runtime",
+  (it) => {
+    it.effect(
+      "tells its host that it connected and, once stopped, that it left",
+      () =>
+        Effect.gen(function* () {
+          const { roomCode } = yield* newRoom("Caboclinho");
+          const participant = yield* joinParticipant({
+            roomCode,
+            participantId: "arthur-1",
+            reconnect: true,
+          });
+
+          yield* participant.stop;
+
+          expect(yield* participant.lifecycleEvents).toEqual([
+            {
+              type: "connected",
+              roomCode,
+              participantId: "arthur-1",
+              attempt: 0,
+              hubVersion: GAMBI_VERSION,
+            },
+            {
+              type: "left",
+              roomCode,
+              participantId: "arthur-1",
+              reason: "stopped",
+            },
+          ]);
+          yield* participant.runtime.ended;
+        })
+    );
+
+    it.effect(
+      "started with reconnect off, ends when its tunnel drops and does not dial again",
+      () =>
+        Effect.gen(function* () {
+          const tunnels = yield* Tunnels;
+          const { roomCode, statuses } = yield* newRoom("Cavalo-marinho");
+          const participant = yield* joinParticipant({
+            roomCode,
+            participantId: "arthur-1",
+            reconnect: false,
+          });
+          yield* participant.nextLifecycleEvent;
+
+          yield* participant.kill;
+
+          expect(yield* participant.nextLifecycleEvent).toEqual({
+            type: "left",
+            roomCode,
+            participantId: "arthur-1",
+            reason: "tunnelDropped",
+          });
+          yield* participant.runtime.ended;
+          yield* participant.runtime.tunnelDropped;
+          yield* tunnels.awaitDrop(roomCode, "arthur-1");
+          expect(yield* statuses).toEqual([["arthur-1", "offline"]]);
+          expect(yield* registrations(participant)).toBe(1);
+        })
+    );
+  }
 );

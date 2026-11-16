@@ -419,6 +419,30 @@ const reasonToRetry = (
   }
 };
 
+/** How an exit of the runtime reads as a `left` event. A defect is not one. */
+const howItLeft = (
+  exit: Exit.Exit<void, RegistrationError | TunnelOpenFailed>
+):
+  | Pick<
+      Extract<ParticipantLifecycleEvent, { type: "left" }>,
+      "reason" | "error"
+    >
+  | undefined => {
+  if (Exit.isSuccess(exit)) {
+    return { reason: "tunnelDropped" };
+  }
+  if (Cause.hasInterruptsOnly(exit.cause)) {
+    return { reason: "stopped" };
+  }
+  const error = Cause.findErrorOption(exit.cause);
+  return Option.isSome(error)
+    ? {
+        reason: "refused",
+        error: { name: error.value._tag, message: error.value.message },
+      }
+    : undefined;
+};
+
 // 1 s, 2 s, 4 s... up to 30 s.
 const reconnectBackoff = Schedule.min([
   Schedule.exponential(RECONNECT_FIRST_DELAY),
@@ -479,8 +503,12 @@ export class ParticipantRuntime extends Context.Service<
           participantId: options.participantId,
         };
         const tell = (event: ParticipantLifecycleEvent) =>
-          options.onLifecycle?.(event) ?? Effect.void;
+          Effect.logInfo(`participant ${event.type}`).pipe(
+            Effect.annotateLogs(event),
+            Effect.andThen(options.onLifecycle?.(event) ?? Effect.void)
+          );
         let tunnelDropped: Effect.Effect<unknown> = Effect.void;
+        let connectedOnce = false;
 
         // One registration and one tunnel. It fails when the tunnel does not
         // open, and returns when a tunnel that did open drops.
@@ -489,13 +517,16 @@ export class ParticipantRuntime extends Context.Service<
             const registered = yield* register(options);
             const tunnel = yield* openTunnel(options, registered.tunnel.token);
             tunnelDropped = tunnel.dropped;
-            yield* Deferred.succeed(joined, registered.participant);
+            // The host hears `connected` before the join returns, and from
+            // then on it is owed a `left`.
+            connectedOnce = true;
             yield* tell({
               type: "connected",
               ...identity,
               attempt,
               hubVersion: tunnel.hubVersion,
             });
+            yield* Deferred.succeed(joined, registered.participant);
             return yield* tunnel.dropped;
           }).pipe(Effect.scoped);
 
@@ -543,34 +574,19 @@ export class ParticipantRuntime extends Context.Service<
         // the layer when it never joined, the host afterwards.
         const conclude = (exit: Exit.Exit<void, Failure>) =>
           Effect.gen(function* () {
-            if (Exit.isFailure(exit) && !(yield* Deferred.isDone(joined))) {
+            if (Exit.isFailure(exit)) {
+              // Does nothing when the join already succeeded.
               yield* Deferred.failCause(joined, exit.cause);
-              return yield* Deferred.done(ended, exit);
             }
-            if (Exit.isSuccess(exit)) {
-              yield* tell({
-                type: "left",
-                ...identity,
-                reason: "tunnelDropped",
-              });
-            } else if (Cause.hasInterruptsOnly(exit.cause)) {
-              yield* tell({ type: "left", ...identity, reason: "stopped" });
-              return yield* Deferred.succeed(ended, undefined);
-            } else {
-              const error = Cause.findErrorOption(exit.cause);
-              if (Option.isSome(error)) {
-                yield* tell({
-                  type: "left",
-                  ...identity,
-                  reason: "refused",
-                  error: {
-                    name: error.value._tag,
-                    message: error.value.message,
-                  },
-                });
-              }
+            const left = connectedOnce ? howItLeft(exit) : undefined;
+            if (left !== undefined) {
+              yield* tell({ type: "left", ...identity, ...left });
             }
-            yield* Deferred.done(ended, exit);
+            // Being stopped is not a failure of the runtime.
+            yield* Deferred.done(
+              ended,
+              left?.reason === "stopped" ? Exit.void : exit
+            );
           });
 
         yield* run.pipe(Effect.onExit(conclude), Effect.forkScoped);
