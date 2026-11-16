@@ -1,5 +1,6 @@
 /** The schemas of a participant, as the management plane shows it. */
 import { Schema } from "effect";
+import { HarnessProfile } from "./harness.ts";
 import { ParticipantStatus } from "./participant-status.ts";
 import { RuntimeConfig, RuntimeConfigPublic } from "./room.ts";
 
@@ -40,6 +41,8 @@ export const ParticipantSummary = Schema.Struct({
   model: Schema.String,
   /** The provider endpoint on the participant's machine. The hub never calls it. */
   endpoint: Schema.optionalKey(Schema.String),
+  /** Present on a harness participant: the harness it contributes. */
+  harness: Schema.optionalKey(HarnessProfile),
   config: RuntimeConfigPublic,
   specs: MachineSpecs,
   capabilities: ParticipantCapabilities,
@@ -59,6 +62,12 @@ export const RegisterParticipant = Schema.Struct({
   nickname: Schema.NonEmptyString,
   model: Schema.NonEmptyString,
   endpoint: Schema.optionalKey(Schema.NonEmptyString),
+  /**
+   * The harness this participant contributes, which makes it a harness
+   * participant. It then serves the harness calls of the tunnel instead of
+   * the inference ones, and has no provider `endpoint` to tell.
+   */
+  harness: Schema.optionalKey(HarnessProfile),
   /** The room password, when the room has one. */
   password: Schema.optionalKey(Schema.String),
   specs: Schema.optionalKey(MachineSpecs),

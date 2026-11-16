@@ -9,6 +9,7 @@
  * `Rooms` reads `count` for its summaries.
  */
 import {
+  type HarnessProfile,
   type ParticipantCapabilities,
   type ParticipantStatus,
   type ParticipantSummary,
@@ -31,6 +32,7 @@ interface ParticipantState {
   readonly capabilities: ParticipantCapabilities;
   readonly config: RuntimeConfig;
   readonly endpoint: string | undefined;
+  readonly harness: HarnessProfile | undefined;
   readonly id: string;
   readonly joinedAt: number;
   readonly model: string;
@@ -62,6 +64,9 @@ const toSummary = (participant: ParticipantState): ParticipantSummary => ({
   ...(participant.endpoint === undefined
     ? {}
     : { endpoint: participant.endpoint }),
+  ...(participant.harness === undefined
+    ? {}
+    : { harness: participant.harness }),
   config: toRuntimeConfigPublic(participant.config),
   specs: participant.specs,
   capabilities: participant.capabilities,
@@ -75,6 +80,11 @@ export class Participants extends Context.Service<
   {
     /** How many participants the room has, whatever their status. */
     readonly count: (roomCode: string) => Effect.Effect<number>;
+    /** One participant of the room; `undefined` when it is not there. */
+    readonly get: (
+      roomCode: string,
+      participantId: string
+    ) => Effect.Effect<ParticipantSummary | undefined>;
     readonly list: (
       roomCode: string
     ) => Effect.Effect<readonly ParticipantSummary[]>;
@@ -172,6 +182,7 @@ export class Participants extends Context.Service<
         nickname: profile.nickname,
         model: profile.model,
         endpoint: profile.endpoint,
+        harness: profile.harness,
         config: profile.config ?? {},
         specs: profile.specs ?? {},
         capabilities: profile.capabilities ?? UNKNOWN_CAPABILITIES,
@@ -191,6 +202,11 @@ export class Participants extends Context.Service<
 
     return Participants.of({
       count: (roomCode) => Effect.sync(() => byRoom.get(roomCode)?.size ?? 0),
+      get: (roomCode, participantId) =>
+        Effect.sync(() => {
+          const participant = byRoom.get(roomCode)?.get(participantId);
+          return participant === undefined ? undefined : toSummary(participant);
+        }),
       list: (roomCode) =>
         Effect.sync(() =>
           [...(byRoom.get(roomCode)?.values() ?? [])].map(toSummary)
