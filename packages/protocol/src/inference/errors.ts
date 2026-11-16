@@ -112,6 +112,25 @@ export class ProviderResponseTooLarge extends Schema.TaggedError<ProviderRespons
   }
 }
 
+/**
+ * The app read a streamed response too slowly: the part it had not read yet
+ * grew past what the hub holds for one request. The hub cancelled the
+ * request on the participant; what was already waiting is still delivered,
+ * and this error follows it.
+ */
+export class ConsumerTooSlow extends Schema.TaggedError<ConsumerTooSlow>()(
+  "ConsumerTooSlow",
+  {
+    roomCode: Schema.String,
+    participantId: Schema.String,
+    limitCharacters: Schema.Int,
+  }
+) {
+  override get message(): string {
+    return `More than ${this.limitCharacters} characters of the response were waiting to be read; the request was cancelled.`;
+  }
+}
+
 /** Everything an inference request can fail with, before or during the response. */
 export type InferenceError =
   | InvalidInferenceRequest
@@ -122,6 +141,7 @@ export type InferenceError =
   | ParticipantDisconnected
   | InferenceTimedOut
   | ProviderResponseTooLarge
+  | ConsumerTooSlow
   | CallNotSupported
   | ProviderUnreachable
   | ProviderResponseInterrupted;
@@ -148,6 +168,8 @@ export const INFERENCE_FAILURES: {
     code: "provider_response_too_large",
     status: 502,
   },
+  // Only ever sent inside a stream, where the status is already 200.
+  ConsumerTooSlow: { code: "consumer_too_slow", status: 408 },
   CallNotSupported: { code: "inference_not_supported", status: 400 },
   ProviderUnreachable: { code: "provider_unreachable", status: 502 },
   ProviderResponseInterrupted: {

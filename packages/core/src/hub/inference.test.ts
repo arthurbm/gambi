@@ -11,6 +11,7 @@ import {
   sseEvent,
 } from "../testing/provider.ts";
 import { Hub } from "./hub.ts";
+import { Tunnels } from "./tunnels.ts";
 
 /** A new room, the URL of its inference plane and the status of its participants. */
 const makeRoom = (name: string) =>
@@ -63,6 +64,31 @@ const json = (response: Response): Effect.Effect<any> =>
   Effect.promise(() => response.json());
 
 const messages = [{ role: "user", content: "Oi" }];
+
+/** Reads a response body to its end, as text. */
+const readToEnd = (reader: ReadableStreamDefaultReader<Uint8Array>) =>
+  Effect.promise(async () => {
+    const streamDecoder = new TextDecoder();
+    let text = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        return text + streamDecoder.decode();
+      }
+      text += streamDecoder.decode(value, { stream: true });
+    }
+  });
+
+/** The last server-sent event of a body: its name and its data, parsed. */
+const lastEvent = (body: string) => {
+  const event = body.trimEnd().split("\n\n").at(-1) ?? "";
+  const field = (name: string) =>
+    event
+      .split("\n")
+      .find((line) => line.startsWith(`${name}: `))
+      ?.slice(name.length + 2);
+  return { event: field("event"), data: JSON.parse(field("data") ?? "null") };
+};
 
 layer(layerHub(), { excludeTestServices: true })("inference plane", (it) => {
   it.effect(
@@ -141,6 +167,57 @@ layer(layerHub(), { excludeTestServices: true })("inference plane", (it) => {
         // participant was interrupted and took the request with it.
         yield* call.aborted;
         yield* room.awaitStatus("arthur-1", "online");
+      })
+  );
+
+  it.effect(
+    "an app that stops reading a streamed body gets its request cancelled, and the participant's tunnel stays open",
+    () =>
+      Effect.gen(function* () {
+        const tunnels = yield* Tunnels;
+        const room = yield* makeRoom("Coco");
+        // A provider that produces as fast as it is read, and never ends.
+        const piece = new TextEncoder().encode(
+          sseEvent({ delta: "x".repeat(64 * 1024) })
+        );
+        const provider = yield* fakeProvider({
+          answer: () =>
+            new Response(
+              new ReadableStream<Uint8Array>({
+                pull: (controller) => controller.enqueue(piece),
+              }),
+              { headers: { "Content-Type": "text/event-stream" } }
+            ),
+        });
+        yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+          provider: { endpoint: provider.url },
+        });
+
+        const response = yield* post(room.url("/chat/completions"), {
+          model: "arthur-1",
+          stream: true,
+          messages,
+        });
+        const reader = response.body?.getReader();
+        if (reader === undefined) {
+          return yield* Effect.die(new Error("The response has no body."));
+        }
+        yield* Effect.promise(() => reader.read());
+        // The app reads nothing more. The hub does not hold without limit
+        // what the provider keeps sending: it stops the provider.
+        const call = yield* provider.nextCall;
+        yield* call.aborted;
+        yield* room.awaitStatus("arthur-1", "online");
+
+        // The tunnel never waited for the app: it is as good as before.
+        const tunnel = yield* tunnels.client(room.code, "arthur-1");
+        expect(yield* tunnel.Echo({ text: "segue" })).toBe("segue");
+        // What was waiting is still delivered, and the reason comes last.
+        const rest = yield* readToEnd(reader);
+        expect(lastEvent(rest).event).toBe("error");
+        expect(lastEvent(rest).data.code).toBe("consumer_too_slow");
       })
   );
 });
