@@ -276,7 +276,6 @@ layer(layerHub(), { excludeTestServices: true })("rooms", (it) => {
 ```ts
 import { TunnelRpcs } from "@gambi/protocol";
 import { Tunnels } from "@gambi/core/hub/tunnels";
-import { TunnelDiagnostics } from "@gambi/core/participant/diagnostics";
 import { joinParticipant } from "@gambi/core/testing/participant";
 
 it.effect("answers through the tunnel", () =>
@@ -286,10 +285,8 @@ it.effect("answers through the tunnel", () =>
     const participant = yield* joinParticipant({
       roomCode: room.code,
       participantId: "arthur-1",
-      // Optional: replace a handler. The last layer merged wins.
-      handlers: TunnelDiagnostics.pipe(
-        Layer.merge(TunnelRpcs.toLayerHandler("Echo", ({ text }) => Effect.succeed(text.toUpperCase())))
-      ),
+      // Optional: the handlers this test cares about. They go on top of the defaults.
+      handlers: TunnelRpcs.toLayerHandler("Echo", ({ text }) => Effect.succeed(text.toUpperCase())),
     });
     const tunnel = yield* (yield* Tunnels).client(room.code, "arthur-1");
     expect(yield* tunnel.Echo({ text: "frevo" })).toBe("FREVO");
@@ -297,6 +294,8 @@ it.effect("answers through the tunnel", () =>
 );
 ```
 
+- `handlers` replaces only the calls it names. Every other call keeps the handler of `defaultHandlers` (the diagnostics, and "not supported" for the calls of the other kinds of participant), so a test keeps compiling when the tunnel gains a call. A ticket that adds calls to the tunnel adds their default handlers to `defaultHandlers`. A test that builds a runtime by hand (`openTunnel`) provides `defaultHandlers`.
+- `participant.awaitSent(seen)` waits until what the participant sent to the hub satisfies `seen`: a number of pongs, a frame. Use it instead of a sleep.
 - The participant stops when the test ends. `participant.stop` stops it earlier, with a closing handshake; `participant.kill` cuts its socket the way a dead process does.
 - A test participant does not reconnect, unlike the runtime's own default: a participant that a test kills stays dead. Pass `reconnect: true` to test coming back.
 - `participant.nextLifecycleEvent` waits for the next lifecycle event; `participant.lifecycleEvents` lists the ones so far.
