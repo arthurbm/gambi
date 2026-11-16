@@ -2,6 +2,7 @@ import { expect } from "bun:test";
 import type { RoomEvent, StatusEvent } from "@gambi/protocol";
 import { it } from "@gambi/testing/effect";
 import { Duration, Effect, Layer, Queue, Stream } from "effect";
+import { HarnessClients } from "./harness-clients.ts";
 import { Participants } from "./participants.ts";
 import { RoomEvents } from "./room-events.ts";
 import { HubSettings } from "./settings.ts";
@@ -11,11 +12,13 @@ const profile = { nickname: "Arthur", model: "llama3.1:8b" };
 
 // `Participants` reads one setting of the hub, the reconnection deadline.
 const Settings = Layer.succeed(HubSettings, {
+  harnessClientBuffer: 16,
   reconnectDeadline: Duration.seconds(60),
 } as HubSettings["Service"]);
 
 const layerParticipants = Participants.layer.pipe(
   Layer.provideMerge(RoomEvents.layer),
+  Layer.provide(HarnessClients.layer),
   Layer.provide(Settings)
 );
 

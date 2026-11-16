@@ -18,6 +18,13 @@ import {
   OpenApi,
 } from "effect/http-api";
 import {
+  HarnessAttachEvent,
+  HarnessSessionId,
+  HarnessSessionRef,
+  OpenHarnessSession,
+  SendHarnessMessage,
+} from "../harness.ts";
+import {
   ParticipantId,
   ParticipantLeft,
   ParticipantRegistered,
@@ -26,12 +33,19 @@ import {
 } from "../participant.ts";
 import { CreateRoom, RoomCode, RoomCreated, RoomSummary } from "../room.ts";
 import { RoomEvent } from "../room-event.ts";
+import {
+  HarnessFailed,
+  HarnessSessionNotOpen,
+  HarnessSessionOutsideWorkspace,
+} from "../tunnel/errors.ts";
 import { failure, success } from "./envelope.ts";
 import {
   InternalError,
   InvalidPassword,
   InvalidRequest,
+  NotAHarnessParticipant,
   ParticipantNotFound,
+  ParticipantUnreachable,
   RoomNotFound,
   VersionMismatch,
 } from "./errors.ts";
@@ -133,8 +147,81 @@ export class EventsGroup extends HttpApiGroup.make("events")
     })
   ) {}
 
+/** Why a harness participant cannot be reached at all. */
+const notAHarness = [
+  failure(RoomNotFound),
+  failure(ParticipantNotFound),
+  failure(NotAHarnessParticipant),
+] as const;
+
+/** Why a call to the harness of a participant did not get through. */
+const harnessCallFailed = [
+  ...notAHarness,
+  failure(ParticipantUnreachable),
+  failure(HarnessFailed),
+] as const;
+
+const harnessParams = { code: RoomCode, id: ParticipantId };
+const harnessSessionParams = { ...harnessParams, sessionId: HarnessSessionId };
+
+/**
+ * Attaching to a harness participant (ADR-0006): a management client reads
+ * what the harness says as a stream of events, and sends it ACP messages and
+ * session control as ordinary requests. Any number of clients attach to the
+ * same participant, and each stays attached while the participant's tunnel
+ * is down.
+ */
+export class HarnessGroup extends HttpApiGroup.make("harness")
+  .add(
+    HttpApiEndpoint.get(
+      "events",
+      "/rooms/:code/participants/:id/harness/events",
+      {
+        params: harnessParams,
+        success: eventStream(HarnessAttachEvent),
+        error: notAHarness,
+      }
+    ),
+    HttpApiEndpoint.post(
+      "send",
+      "/rooms/:code/participants/:id/harness/messages",
+      {
+        params: harnessParams,
+        payload: SendHarnessMessage,
+        success: success(HarnessSessionRef).pipe(HttpApiSchema.status(202)),
+        error: [...harnessCallFailed, failure(HarnessSessionNotOpen)],
+      }
+    ),
+    HttpApiEndpoint.put(
+      "openSession",
+      "/rooms/:code/participants/:id/harness/sessions/:sessionId",
+      {
+        params: harnessSessionParams,
+        payload: OpenHarnessSession,
+        success: success(HarnessSessionRef),
+        error: [...harnessCallFailed, failure(HarnessSessionOutsideWorkspace)],
+      }
+    ),
+    HttpApiEndpoint.delete(
+      "closeSession",
+      "/rooms/:code/participants/:id/harness/sessions/:sessionId",
+      {
+        params: harnessSessionParams,
+        success: success(HarnessSessionRef),
+        error: harnessCallFailed,
+      }
+    )
+  )
+  .annotateMerge(
+    OpenApi.annotations({
+      title: "Harness",
+      description:
+        "Attach to a harness participant: a Server-Sent Events stream of what its harness says (ACP v1 messages, the status of its sessions), and requests that send it an ACP message or open and close a harness session. The stream starts by saying whether the hub is receiving the harness; a client that reads too slowly is told how many events it lost.",
+    })
+  ) {}
+
 export class ManagementApi extends HttpApi.make("gambi-management")
-  .add(HubGroup, RoomsGroup, ParticipantsGroup, EventsGroup)
+  .add(HubGroup, RoomsGroup, ParticipantsGroup, EventsGroup, HarnessGroup)
   .prefix("/v1")
   .middleware(ManagementFailures)
   .annotateMerge(

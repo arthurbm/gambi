@@ -20,9 +20,10 @@
  * while the tunnel is down and reads `harness.disconnected` and, when the
  * participant is back, `harness.connected`.
  */
-import type { HarnessAttachEvent } from "@gambi/protocol";
+import type { HarnessAttachEvent, HarnessDetached } from "@gambi/protocol";
 import {
   type Array as Arr,
+  Cause,
   Context,
   Effect,
   Layer,
@@ -33,13 +34,20 @@ import { HubSettings } from "./settings.ts";
 
 /** The events held for one attached client, until it reads them. */
 interface Mailbox {
+  /** Nothing more will come: the client reads what is held and its stream ends. */
+  readonly end: () => void;
   readonly offer: (event: HarnessAttachEvent) => void;
-  readonly take: Effect.Effect<Arr.NonEmptyReadonlyArray<HarnessAttachEvent>>;
+  /** What is held, at least one event. Fails with `Cause.Done` after `end`. */
+  readonly take: Effect.Effect<
+    Arr.NonEmptyReadonlyArray<HarnessAttachEvent>,
+    Cause.Done
+  >;
 }
 
 const makeMailbox = (capacity: number): Mailbox => {
   let held: HarnessAttachEvent[] = [];
   let dropped = 0;
+  let ended = false;
   let wake: (() => void) | undefined;
 
   const drain = ():
@@ -60,7 +68,14 @@ const makeMailbox = (capacity: number): Mailbox => {
   };
 
   return {
+    end: () => {
+      ended = true;
+      wake?.();
+    },
     offer: (event) => {
+      if (ended) {
+        return;
+      }
       if (held.length >= capacity) {
         held.shift();
         dropped++;
@@ -69,17 +84,26 @@ const makeMailbox = (capacity: number): Mailbox => {
       wake?.();
     },
     take: Effect.callback((resume) => {
-      const ready = drain();
-      if (ready !== undefined) {
-        resume(Effect.succeed(ready));
-        return;
-      }
-      wake = () => {
-        wake = undefined;
+      const settle = () => {
         const batch = drain();
         if (batch !== undefined) {
           resume(Effect.succeed(batch));
+          return true;
         }
+        if (ended) {
+          resume(Cause.done());
+          return true;
+        }
+        return false;
+      };
+      if (settle()) {
+        return;
+      }
+      // Cleared before resuming: the reader may ask again at once, and that
+      // sets a new one. It is only called with something to settle.
+      wake = () => {
+        wake = undefined;
+        settle();
       };
       return Effect.sync(() => {
         wake = undefined;
@@ -122,6 +146,15 @@ export class HarnessClients extends Context.Service<
       roomCode: string,
       participantId: string
     ) => Effect.Effect<Stream.Stream<HarnessAttachEvent>, never, Scope.Scope>;
+    /**
+     * Detaches every client of a participant that is out of the room: each
+     * reads a last `harness.detached` and its stream ends.
+     */
+    readonly detach: (
+      roomCode: string,
+      participantId: string,
+      reason: HarnessDetached["reason"]
+    ) => Effect.Effect<void>;
     /** How many clients are attached to the participant. */
     readonly count: (
       roomCode: string,
@@ -203,8 +236,27 @@ export class HarnessClients extends Context.Service<
           forget(key, entry);
         });
 
+      const detach = (
+        roomCode: string,
+        participantId: string,
+        reason: HarnessDetached["reason"]
+      ) =>
+        Effect.sync(() => {
+          const key = keyOf(roomCode, participantId);
+          const entry = attached.get(key);
+          if (entry === undefined) {
+            return;
+          }
+          attached.delete(key);
+          for (const client of entry.clients) {
+            client.offer({ type: "harness.detached", reason });
+            client.end();
+          }
+        });
+
       return HarnessClients.of({
         attach,
+        detach,
         count: (roomCode, participantId) =>
           Effect.sync(
             () =>

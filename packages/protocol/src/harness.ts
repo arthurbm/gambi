@@ -109,6 +109,17 @@ export const HarnessEventsDropped = Schema.Struct({
 export type HarnessEventsDropped = typeof HarnessEventsDropped.Type;
 
 /**
+ * The participant is out of the room, so the client is detached: this is the
+ * last event of its stream. `reason` is the one of the room's
+ * `participant.removed` event.
+ */
+export const HarnessDetached = Schema.Struct({
+  type: Schema.tag("harness.detached"),
+  reason: Schema.Literals(["left", "reconnectDeadlinePassed"]),
+});
+export type HarnessDetached = typeof HarnessDetached.Type;
+
+/**
  * What a management client attached to a harness participant reads: the
  * participant's events, plus what the hub itself has to say about the stream.
  */
@@ -118,5 +129,26 @@ export const HarnessAttachEvent = Schema.Union([
   HarnessConnected,
   HarnessDisconnected,
   HarnessEventsDropped,
+  HarnessDetached,
 ]);
+
+/** One ACP message for one session of a harness, as a management client sends it. */
+export const SendHarnessMessage = Schema.Struct({
+  sessionId: HarnessSessionId,
+  message: AcpMessage,
+});
+export type SendHarnessMessage = typeof SendHarnessMessage.Type;
+
+/** Where a harness session a client opens runs. */
+export const OpenHarnessSession = Schema.Struct({
+  /** A folder inside the participant's Workspace. Default: the Workspace itself. */
+  cwd: Schema.optionalKey(Schema.NonEmptyString),
+});
+export type OpenHarnessSession = typeof OpenHarnessSession.Type;
+
+/** The harness session a call was about. */
+export const HarnessSessionRef = Schema.Struct({
+  sessionId: HarnessSessionId,
+});
+export type HarnessSessionRef = typeof HarnessSessionRef.Type;
 export type HarnessAttachEvent = typeof HarnessAttachEvent.Type;

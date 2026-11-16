@@ -428,8 +428,13 @@ export class Tunnels extends Context.Service<
               type: "harness.connected",
             });
             harnessStream = yield* client.HarnessEvents().pipe(
+              // One event, then a turn for the clients: a burst from the
+              // participant (everything it kept while the tunnel was down)
+              // must not overflow the buffer of a client that is reading.
               Stream.runForEach((event) =>
-                harnessClients.deliver(roomCode, participantId, event)
+                harnessClients
+                  .deliver(roomCode, participantId, event)
+                  .pipe(Effect.andThen(Effect.yieldNow))
               ),
               Effect.exit,
               Effect.flatMap((exit) => {

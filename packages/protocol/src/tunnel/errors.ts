@@ -2,8 +2,14 @@
  * The typed errors of the tunnel calls: what a participant runtime answers
  * when it cannot serve a call. They travel inside the tunnel; the hub turns
  * them into the error of the plane the request came from.
+ *
+ * The harness errors are also errors of the management plane, as they are: a
+ * management client that sends a message to a harness reads the same error
+ * the participant answered. So they declare a `code` and a `status` like the
+ * classes of `../management/errors.ts`.
  */
 import { Schema } from "effect";
+import { requestIdField } from "../management/envelope.ts";
 
 /**
  * The participant does not serve this call: an inference call sent to a
@@ -26,8 +32,15 @@ export class CallNotSupported extends Schema.TaggedError<CallNotSupported>()(
  */
 export class HarnessSessionNotOpen extends Schema.TaggedError<HarnessSessionNotOpen>()(
   "HarnessSessionNotOpen",
-  { sessionId: Schema.String }
+  { sessionId: Schema.String, ...requestIdField }
 ) {
+  static readonly code = "HARNESS_SESSION_NOT_OPEN";
+  static readonly status = 409;
+
+  get hint(): string {
+    return "Open the session first, or use the id of a session that is open.";
+  }
+
   override get message(): string {
     return `Harness session '${this.sessionId}' is not open.`;
   }
@@ -40,8 +53,15 @@ export class HarnessSessionNotOpen extends Schema.TaggedError<HarnessSessionNotO
  */
 export class HarnessSessionOutsideWorkspace extends Schema.TaggedError<HarnessSessionOutsideWorkspace>()(
   "HarnessSessionOutsideWorkspace",
-  { sessionId: Schema.String }
+  { sessionId: Schema.String, ...requestIdField }
 ) {
+  static readonly code = "HARNESS_SESSION_OUTSIDE_WORKSPACE";
+  static readonly status = 403;
+
+  get hint(): string {
+    return "Leave `cwd` out to use the workspace itself, or give a folder inside it.";
+  }
+
   override get message(): string {
     return "Harness sessions must stay inside the participant workspace.";
   }
@@ -72,8 +92,12 @@ export class HarnessFailed extends Schema.TaggedError<HarnessFailed>()(
     method: Schema.optionalKey(Schema.String),
     detail: Schema.optionalKey(Schema.String),
     exitCode: Schema.optionalKey(Schema.Int),
+    ...requestIdField,
   }
 ) {
+  static readonly code = "HARNESS_FAILED";
+  static readonly status = 502;
+
   override get message(): string {
     const detail = this.detail === undefined ? "" : ` ${this.detail}`;
     switch (this.reason) {

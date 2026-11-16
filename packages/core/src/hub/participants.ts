@@ -29,6 +29,7 @@ import {
   transitionStatus,
 } from "@gambi/protocol";
 import { Clock, Context, Effect, FiberMap, Layer } from "effect";
+import { HarnessClients } from "./harness-clients.ts";
 import { RoomEvents } from "./room-events.ts";
 import { HubSettings } from "./settings.ts";
 
@@ -154,6 +155,7 @@ export class Participants extends Context.Service<
     Participants,
     Effect.gen(function* () {
       const events = yield* RoomEvents;
+      const harnessClients = yield* HarnessClients;
       const settings = yield* HubSettings;
       // One fiber per offline participant, sleeping until its deadline.
       const deadlines = yield* FiberMap.make<string>();
@@ -219,6 +221,16 @@ export class Participants extends Context.Service<
           Effect.annotateLogs({ ...change })
         );
         yield* events.publish(roomCode, eventOf(change, participant, after));
+        if (after === undefined) {
+          // Nobody stays attached to a harness that is out of the room.
+          yield* harnessClients.detach(
+            roomCode,
+            participantId,
+            event === "reconnectDeadlinePassed"
+              ? "reconnectDeadlinePassed"
+              : "left"
+          );
+        }
         if (to === "offline") {
           yield* startDeadline(roomCode, participantId);
         } else if (event !== "reconnectDeadlinePassed") {
