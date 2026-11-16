@@ -151,6 +151,9 @@ export class Participants extends Context.Service<
      *
      * The model selector has four forms:
      *
+     * Only a participant that shares a model endpoint is picked by `*`, `any`
+     * or a model name; a harness participant is reached only by its id.
+     *
      * - `*` or `any`: any `online` participant, at random;
      * - `model:<name>`: the first `online` participant that shares that model;
      * - `<participantId>`: that participant;
@@ -347,8 +350,11 @@ export class Participants extends Context.Service<
         chance: number
       ): ParticipantState | DispatchError => {
         const room = byRoom.get(roomCode);
+        // A harness participant serves no inference: a request reaches it
+        // only by its id, and then hears that from the participant itself.
         const online = [...(room?.values() ?? [])].filter(
-          (participant) => participant.status === "online"
+          (participant) =>
+            participant.status === "online" && participant.harness === undefined
         );
         const sharing = (model: string) =>
           online.find((participant) => participant.model === model);

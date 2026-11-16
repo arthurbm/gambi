@@ -19,6 +19,7 @@ import {
   Stream,
 } from "effect";
 import { HarnessClients } from "../hub/harness-clients.ts";
+import { Hub } from "../hub/hub.ts";
 import { Tunnels } from "../hub/tunnels.ts";
 import { layerHub, managementClient } from "../testing/hub.ts";
 import { joinParticipant } from "../testing/participant.ts";
@@ -239,6 +240,41 @@ layer(Layer.merge(layerHub(), BunServices.layer), {
             "CallNotSupported",
             "This participant does not serve the 'HarnessCloseSession' tunnel call.",
           ],
+        ]);
+      })
+  );
+
+  it.effect(
+    "an inference request is never routed to a harness participant, and one that names it is told it serves no inference",
+    () =>
+      Effect.gen(function* () {
+        const hub = yield* Hub;
+        const roomCode = yield* makeRoom("Baião");
+        const { context } = yield* startHarness;
+        yield* joinWith(roomCode, "harness-1", context);
+        const ask = (model: string) =>
+          Effect.promise(async () => {
+            const response = await fetch(
+              `${hub.url}/rooms/${roomCode}/v1/chat/completions`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ model, messages: [] }),
+              }
+            );
+            const body = (await response.json()) as {
+              error: { code: string };
+            };
+            return [response.status, body.error.code];
+          });
+
+        // The only participant online is the harness one: nobody to route to.
+        expect(yield* ask("*")).toEqual([404, "model_not_found"]);
+        expect(yield* ask("model:fake")).toEqual([404, "model_not_found"]);
+        expect(yield* ask("fake")).toEqual([404, "model_not_found"]);
+        expect(yield* ask("harness-1")).toEqual([
+          400,
+          "inference_not_supported",
         ]);
       })
   );
