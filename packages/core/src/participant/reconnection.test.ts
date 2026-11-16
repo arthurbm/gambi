@@ -1,9 +1,15 @@
 import { expect } from "bun:test";
+import { RoomNotFound, VersionMismatch } from "@gambi/protocol";
 import { it } from "@gambi/testing/effect";
-import { Effect } from "effect";
+import { Context, Effect, Exit, Layer, Scope } from "effect";
 import { TestClock } from "effect/testing";
+import { Hub } from "../hub/hub.ts";
 import { Tunnels } from "../hub/tunnels.ts";
-import { layerHub, managementClient } from "../testing/hub.ts";
+import {
+  layerHub,
+  managementClient,
+  type TestHubOptions,
+} from "../testing/hub.ts";
 import { linkToHub } from "../testing/hub-link.ts";
 import {
   joinParticipant,
@@ -33,6 +39,21 @@ const registrations = (participant: TestParticipant) =>
   participant.sentToHub.pipe(
     Effect.map((sent) => sent.filter((line) => line.startsWith("PUT ")).length)
   );
+
+/**
+ * Starts a hub in a scope of its own, so the test decides when it stops. A
+ * hub that restarts is one that stops and another that starts on its port.
+ */
+const startHub = (options?: TestHubOptions) =>
+  Effect.gen(function* () {
+    const scope = yield* Scope.fork(yield* Effect.scope);
+    const context = yield* Layer.buildWithScope(layerHub(options), scope);
+    return {
+      context,
+      port: Context.get(context, Hub).port,
+      stop: Scope.close(scope, Exit.void),
+    };
+  });
 
 // The hub of these tests is built inside each test, so it reads the test
 // clock, and it pings every hour: moving the clock by the waits of a
@@ -262,4 +283,87 @@ it.effect(
         reason: "hubSilent",
       });
     }).pipe(Effect.provide(TestHub))
+);
+
+it.effect(
+  "ends with the hub's refusal, and tries no more, when the hub comes back on another minor",
+  () =>
+    Effect.gen(function* () {
+      const first = yield* startHub({ version: "0.8.3" });
+      const { participant, roomCode } = yield* Effect.gen(function* () {
+        const room = yield* newRoom("Xote");
+        const joined = yield* joinParticipant({
+          roomCode: room.roomCode,
+          participantId: "arthur-1",
+          version: "0.8.3",
+          reconnect: true,
+        });
+        return { participant: joined, roomCode: room.roomCode };
+      }).pipe(Effect.provide(first.context));
+      yield* participant.nextLifecycleEvent;
+
+      yield* first.stop;
+      expect(yield* participant.nextLifecycleEvent).toMatchObject({
+        type: "reconnecting",
+        attempt: 1,
+      });
+      yield* startHub({ port: first.port, version: "0.9.0" });
+      yield* TestClock.adjust("1 second");
+
+      expect(yield* participant.nextLifecycleEvent).toEqual({
+        type: "left",
+        roomCode,
+        participantId: "arthur-1",
+        reason: "refused",
+        error: {
+          name: "VersionMismatch",
+          message:
+            "This hub runs Gambi 0.9.0 and expects participants on 0.9.x; this participant runs 0.8.3.",
+        },
+      });
+      const error = yield* Effect.flip(participant.runtime.ended);
+      expect(error).toBeInstanceOf(VersionMismatch);
+      // No loop: the longest wait passes and nothing more reaches the hub.
+      yield* TestClock.adjust("31 seconds");
+      expect(yield* registrations(participant)).toBe(2);
+      expect(
+        (yield* participant.lifecycleEvents).map((event) => event.type)
+      ).toEqual(["connected", "reconnecting", "left"]);
+    })
+);
+
+// A hub keeps its rooms in memory, so one that restarts comes back without
+// them, and a room code cannot be asked for again.
+it.effect(
+  "ends with RoomNotFound when the hub that comes back no longer has the room",
+  () =>
+    Effect.gen(function* () {
+      const first = yield* startHub();
+      const { participant, roomCode } = yield* Effect.gen(function* () {
+        const room = yield* newRoom("Forró");
+        const joined = yield* joinParticipant({
+          roomCode: room.roomCode,
+          participantId: "arthur-1",
+          reconnect: true,
+        });
+        return { participant: joined, roomCode: room.roomCode };
+      }).pipe(Effect.provide(first.context));
+      yield* participant.nextLifecycleEvent;
+
+      yield* first.stop;
+      yield* participant.nextLifecycleEvent;
+      yield* startHub({ port: first.port });
+      yield* TestClock.adjust("1 second");
+
+      expect(yield* participant.nextLifecycleEvent).toMatchObject({
+        type: "left",
+        reason: "refused",
+        error: {
+          name: "RoomNotFound",
+          message: `Room '${roomCode}' was not found.`,
+        },
+      });
+      const error = yield* Effect.flip(participant.runtime.ended);
+      expect(error).toBeInstanceOf(RoomNotFound);
+    })
 );
