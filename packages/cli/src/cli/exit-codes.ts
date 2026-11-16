@@ -53,6 +53,14 @@ export const failureKinds = {
   HubUnreachable: "connectivity",
   NotAHub: "connectivity",
 
+  // Updating this installation (`commands/self.ts`).
+  BinaryReplaceFailed: "internal",
+  PackageManagerFailed: "internal",
+  PackageManagerUnavailable: "internal",
+  UnknownInstallSource: "connectivity",
+  UpdateDownloadFailed: "connectivity",
+  UpdateNotScheduled: "internal",
+
   // The management contract (`@gambi/protocol`).
   InternalError: "internal",
   InvalidRequest: "usage",

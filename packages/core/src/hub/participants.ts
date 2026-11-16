@@ -2,8 +2,15 @@
  * The participants of the rooms of one hub, and their status.
  *
  * `transition` is the only place a status changes: it runs the event through
- * `transitionStatus` (the table of the spec) and stores the result. Whatever
- * must follow a change of status, such as a room event, belongs there.
+ * `transitionStatus` (the table of the spec), stores the result and publishes
+ * the room event of the change. Whatever else must follow a change of status
+ * belongs there.
+ *
+ * A participant that is `offline` has a deadline to reconnect
+ * (`HubSettings.reconnectDeadline`); past it, the participant is removed.
+ * Going online cancels the deadline, and registering again restarts it: that
+ * is the first step of coming back, and it issues a bootstrap token that
+ * needs the participant to still be in the room.
  *
  * The service does not know rooms: the caller answers for the room existing.
  * `Rooms` reads `count` for its summaries.
@@ -13,13 +20,16 @@ import {
   type ParticipantStatus,
   type ParticipantSummary,
   type RegisterParticipant,
+  type RoomEventBody,
   type RuntimeConfig,
   type StatusAfter,
   type StatusEvent,
   toRuntimeConfigPublic,
   transitionStatus,
 } from "@gambi/protocol";
-import { Clock, Context, Effect, Layer } from "effect";
+import { Clock, Context, Effect, FiberMap, Layer } from "effect";
+import { RoomEvents } from "./room-events.ts";
+import { HubSettings } from "./settings.ts";
 
 /** What a registration says about the participant: everything but the password and the version. */
 export type ParticipantProfile = Omit<
@@ -40,7 +50,7 @@ interface ParticipantState {
   readonly updatedAt: number;
 }
 
-/** A change of status that happened: what #115 turns into a room event. */
+/** A change of status that happened. */
 export interface StatusChange {
   readonly event: StatusEvent;
   readonly from: ParticipantStatus | undefined;
@@ -69,6 +79,33 @@ const toSummary = (participant: ParticipantState): ParticipantSummary => ({
   joinedAt: participant.joinedAt,
   updatedAt: participant.updatedAt,
 });
+
+// A room code never contains a space, so the pair is unambiguous.
+const keyOf = (roomCode: string, participantId: string) =>
+  `${roomCode} ${participantId}`;
+
+/** The room event of a change of status: one per row of the status table. */
+const eventOf = (
+  change: StatusChange,
+  before: ParticipantState,
+  after: ParticipantState | undefined
+): RoomEventBody => {
+  if (after === undefined) {
+    return {
+      type: "participant.removed",
+      participantId: change.participantId,
+      reason:
+        change.event === "reconnectDeadlinePassed"
+          ? "reconnectDeadlinePassed"
+          : "left",
+    };
+  }
+  return {
+    type: `participant.${after.status}`,
+    participant: toSummary(after),
+    previousStatus: before.status,
+  };
+};
 
 export class Participants extends Context.Service<
   Participants,
@@ -103,102 +140,144 @@ export class Participants extends Context.Service<
     ) => Effect.Effect<StatusChange | undefined>;
   }
 >()("gambi/core/Participants") {
-  static readonly layer = Layer.sync(Participants, () => {
-    const byRoom = new Map<string, Map<string, ParticipantState>>();
+  static readonly layer = Layer.effect(
+    Participants,
+    Effect.gen(function* () {
+      const events = yield* RoomEvents;
+      const settings = yield* HubSettings;
+      // One fiber per offline participant, sleeping until its deadline.
+      const deadlines = yield* FiberMap.make<string>();
+      const byRoom = new Map<string, Map<string, ParticipantState>>();
 
-    const roomOf = (roomCode: string) => {
-      let room = byRoom.get(roomCode);
-      if (room === undefined) {
-        room = new Map();
-        byRoom.set(roomCode, room);
-      }
-      return room;
-    };
-
-    const transition = Effect.fn("Participants.transition")(function* (
-      roomCode: string,
-      participantId: string,
-      event: StatusEvent
-    ) {
-      const room = roomOf(roomCode);
-      const participant = room.get(participantId);
-      const to = transitionStatus(participant?.status, event);
-      // Only registration brings a participant in, with its profile.
-      if (to === undefined || participant === undefined) {
-        return undefined;
-      }
-      if (to === "removed") {
-        room.delete(participantId);
-      } else {
-        room.set(participantId, {
-          ...participant,
-          status: to,
-          updatedAt: yield* Clock.currentTimeMillis,
-        });
-      }
-      const change: StatusChange = {
-        roomCode,
-        participantId,
-        event,
-        from: participant.status,
-        to,
+      const roomOf = (roomCode: string) => {
+        let room = byRoom.get(roomCode);
+        if (room === undefined) {
+          room = new Map();
+          byRoom.set(roomCode, room);
+        }
+        return room;
       };
-      yield* Effect.logInfo("participant status changed").pipe(
-        Effect.annotateLogs({ ...change })
-      );
-      // #115: emit the room event of `change` here.
-      return change;
-    });
 
-    const register = Effect.fn("Participants.register")(function* (
-      roomCode: string,
-      participantId: string,
-      profile: ParticipantProfile
-    ) {
-      const room = roomOf(roomCode);
-      const existing = room.get(participantId);
-      const now = yield* Clock.currentTimeMillis;
-      // The table has one row for registration: a new participant starts
-      // offline. For one already in the room it changes no status.
-      const status =
-        existing?.status ?? transitionStatus(undefined, "registered");
-      if (status === undefined || status === "removed") {
-        return yield* Effect.die(
-          new Error("The status table must register a participant offline.")
+      // (Re)starts the time an offline participant has to reconnect.
+      const startDeadline = (
+        roomCode: string,
+        participantId: string
+      ): Effect.Effect<void> =>
+        Effect.sleep(settings.reconnectDeadline).pipe(
+          Effect.andThen(
+            transition(roomCode, participantId, "reconnectDeadlinePassed")
+          ),
+          FiberMap.run(deadlines, keyOf(roomCode, participantId)),
+          Effect.asVoid
         );
-      }
-      const participant: ParticipantState = {
-        id: participantId,
-        nickname: profile.nickname,
-        model: profile.model,
-        endpoint: profile.endpoint,
-        config: profile.config ?? {},
-        specs: profile.specs ?? {},
-        capabilities: profile.capabilities ?? UNKNOWN_CAPABILITIES,
-        status,
-        joinedAt: existing?.joinedAt ?? now,
-        updatedAt: now,
-      };
-      room.set(participantId, participant);
-      yield* Effect.logInfo(
-        existing === undefined
-          ? "participant registered"
-          : "participant updated"
-      ).pipe(Effect.annotateLogs({ roomCode, participantId }));
-      // #115: emit the room event of a registration here.
-      return toSummary(participant);
-    });
 
-    return Participants.of({
-      count: (roomCode) => Effect.sync(() => byRoom.get(roomCode)?.size ?? 0),
-      list: (roomCode) =>
-        Effect.sync(() =>
-          [...(byRoom.get(roomCode)?.values() ?? [])].map(toSummary)
-        ),
-      register,
-      status: (roomCode, participantId) =>
-        Effect.sync(() => byRoom.get(roomCode)?.get(participantId)?.status),
-      transition,
-    });
-  });
+      const transition: Participants["Service"]["transition"] = Effect.fn(
+        "Participants.transition"
+      )(function* (
+        roomCode: string,
+        participantId: string,
+        event: StatusEvent
+      ) {
+        const room = roomOf(roomCode);
+        const participant = room.get(participantId);
+        const to = transitionStatus(participant?.status, event);
+        // Only registration brings a participant in, with its profile.
+        if (to === undefined || participant === undefined) {
+          return undefined;
+        }
+        const after: ParticipantState | undefined =
+          to === "removed"
+            ? undefined
+            : {
+                ...participant,
+                status: to,
+                updatedAt: yield* Clock.currentTimeMillis,
+              };
+        if (after === undefined) {
+          room.delete(participantId);
+        } else {
+          room.set(participantId, after);
+        }
+        const change: StatusChange = {
+          roomCode,
+          participantId,
+          event,
+          from: participant.status,
+          to,
+        };
+        yield* Effect.logInfo("participant status changed").pipe(
+          Effect.annotateLogs({ ...change })
+        );
+        yield* events.publish(roomCode, eventOf(change, participant, after));
+        if (to === "offline") {
+          yield* startDeadline(roomCode, participantId);
+        } else if (event !== "reconnectDeadlinePassed") {
+          // The deadline that passed is the fiber running this.
+          yield* FiberMap.remove(deadlines, keyOf(roomCode, participantId));
+        }
+        return change;
+      });
+
+      const register = Effect.fn("Participants.register")(function* (
+        roomCode: string,
+        participantId: string,
+        profile: ParticipantProfile
+      ) {
+        const room = roomOf(roomCode);
+        const existing = room.get(participantId);
+        const now = yield* Clock.currentTimeMillis;
+        // The table has one row for registration: a new participant starts
+        // offline. For one already in the room it changes no status.
+        const status =
+          existing?.status ?? transitionStatus(undefined, "registered");
+        if (status === undefined || status === "removed") {
+          return yield* Effect.die(
+            new Error("The status table must register a participant offline.")
+          );
+        }
+        const participant: ParticipantState = {
+          id: participantId,
+          nickname: profile.nickname,
+          model: profile.model,
+          endpoint: profile.endpoint,
+          config: profile.config ?? {},
+          specs: profile.specs ?? {},
+          capabilities: profile.capabilities ?? UNKNOWN_CAPABILITIES,
+          status,
+          joinedAt: existing?.joinedAt ?? now,
+          updatedAt: now,
+        };
+        room.set(participantId, participant);
+        yield* Effect.logInfo(
+          existing === undefined
+            ? "participant registered"
+            : "participant updated"
+        ).pipe(Effect.annotateLogs({ roomCode, participantId }));
+        if (status === "offline") {
+          yield* startDeadline(roomCode, participantId);
+        }
+        const summary = toSummary(participant);
+        yield* events.publish(roomCode, {
+          type:
+            existing === undefined
+              ? "participant.joined"
+              : "participant.updated",
+          participant: summary,
+        });
+        return summary;
+      });
+
+      return Participants.of({
+        count: (roomCode) => Effect.sync(() => byRoom.get(roomCode)?.size ?? 0),
+        list: (roomCode) =>
+          Effect.sync(() =>
+            [...(byRoom.get(roomCode)?.values() ?? [])].map(toSummary)
+          ),
+        register,
+        status: (roomCode, participantId) =>
+          Effect.sync(() => byRoom.get(roomCode)?.get(participantId)?.status),
+        transition,
+      });
+    })
+  );
 }

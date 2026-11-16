@@ -153,7 +153,8 @@ export class Tunnels extends Context.Service<
     ) => Effect.Effect<BootstrapToken>;
     /**
      * Spends a bootstrap token. It fails when the token was not issued for
-     * that participant of that room, has expired or was already spent.
+     * that participant of that room, has expired or was already spent, and
+     * when the participant is no longer in the room.
      */
     readonly redeemToken: (
       roomCode: string,
@@ -212,7 +213,9 @@ export class Tunnels extends Context.Service<
           issued === undefined ||
           issued.roomCode !== roomCode ||
           issued.participantId !== participantId ||
-          issued.expiresAt <= now
+          issued.expiresAt <= now ||
+          // It left, or was removed, after the token was issued.
+          (yield* participants.status(roomCode, participantId)) === undefined
         ) {
           return yield* new TunnelTokenInvalid({ roomCode, participantId });
         }

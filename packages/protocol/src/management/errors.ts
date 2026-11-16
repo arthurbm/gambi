@@ -22,6 +22,27 @@ export class RoomNotFound extends Schema.TaggedError<RoomNotFound>()(
   }
 }
 
+/** The room exists and has no participant with that id. */
+export class ParticipantNotFound extends Schema.TaggedError<ParticipantNotFound>()(
+  "ParticipantNotFound",
+  {
+    roomCode: Schema.String,
+    participantId: Schema.String,
+    ...requestIdField,
+  }
+) {
+  static readonly code = "PARTICIPANT_NOT_FOUND";
+  static readonly status = 404;
+
+  override get message(): string {
+    return `Participant '${this.participantId}' is not in room '${this.roomCode}'.`;
+  }
+
+  get hint(): string {
+    return "List the participants of the room to see the ids that are in it.";
+  }
+}
+
 /** The room has a password and the request did not bring the right one. */
 export class InvalidPassword extends Schema.TaggedError<InvalidPassword>()(
   "InvalidPassword",
@@ -88,6 +109,26 @@ export class TunnelTokenInvalid extends Schema.TaggedError<TunnelTokenInvalid>()
 
   get hint(): string {
     return "Register the participant again to get a new token; it is valid for 60 seconds and for one tunnel.";
+  }
+}
+
+/**
+ * The management plane has no route for that method and path. A client built
+ * for another version of Gambi sees this where its hub lacks an operation.
+ */
+export class RouteNotFound extends Schema.TaggedError<RouteNotFound>()(
+  "RouteNotFound",
+  { method: Schema.String, path: Schema.String, ...requestIdField }
+) {
+  static readonly code = "ROUTE_NOT_FOUND";
+  static readonly status = 404;
+
+  override get message(): string {
+    return `This hub has no route ${this.method} ${this.path}.`;
+  }
+
+  get hint(): string {
+    return "Check the path and the method against the management contract, served at /v1/openapi.json. A hub of another version may not have this route.";
   }
 }
 

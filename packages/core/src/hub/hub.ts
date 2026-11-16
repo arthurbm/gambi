@@ -32,7 +32,9 @@ import {
 } from "effect/http";
 import { ManagementRoutes } from "./management.ts";
 import { Mdns, type MdnsAnnounceFailed } from "./mdns.ts";
+import { OpenStreams } from "./open-streams.ts";
 import { Participants } from "./participants.ts";
+import { RoomEvents } from "./room-events.ts";
 import { RoomPasswords } from "./room-passwords.ts";
 import { Rooms } from "./rooms.ts";
 import { HubSettings } from "./settings.ts";
@@ -42,6 +44,7 @@ import { Tunnels } from "./tunnels.ts";
 export const DEFAULT_HUB_PORT = 3000;
 export const DEFAULT_HUB_HOSTNAME = "0.0.0.0";
 export const DEFAULT_TUNNEL_PING_INTERVAL: Duration.Input = "5 seconds";
+export const DEFAULT_RECONNECT_DEADLINE: Duration.Input = "60 seconds";
 
 /** The platform services an HTTP server brings: `BunHttpServer.layer` provides all of them. */
 export type HubPlatform =
@@ -66,6 +69,11 @@ export interface HubOptions {
   readonly mdns?: boolean | undefined;
   /** The port to listen on; `0` takes any free port. Default `3000`. */
   readonly port?: number | undefined;
+  /**
+   * How long a participant may stay `offline` before the hub removes it from
+   * the room. Reconnecting before that keeps it. Default 60 seconds.
+   */
+  readonly reconnectDeadline?: Duration.Input | undefined;
   /**
    * How often the hub pings each tunnel; a tunnel that stays silent for one
    * more interval is dropped. Default 5 seconds.
@@ -164,6 +172,9 @@ export class Hub extends Context.Service<
     const Settings = Layer.succeed(
       HubSettings,
       HubSettings.of({
+        reconnectDeadline: Duration.fromInputUnsafe(
+          options.reconnectDeadline ?? DEFAULT_RECONNECT_DEADLINE
+        ),
         tunnelPingInterval: Duration.fromInputUnsafe(
           options.tunnelPingInterval ?? DEFAULT_TUNNEL_PING_INTERVAL
         ),
@@ -173,6 +184,7 @@ export class Hub extends Context.Service<
 
     const State = Layer.mergeAll(Rooms.layer, Tunnels.layer).pipe(
       Layer.provideMerge(Participants.layer),
+      Layer.provideMerge(Layer.mergeAll(RoomEvents.layer, OpenStreams.layer)),
       Layer.provide(RoomPasswords.layerWebCrypto),
       Layer.provide(SecureRandom.layerWebCrypto),
       Layer.provideMerge(Settings)
@@ -214,13 +226,18 @@ export class Hub extends Context.Service<
       })
     );
 
-    // Built last, so released first: the tunnels close before the routes
-    // and the server start to stop. Each tunnel is a request still being
-    // answered, and the server would wait 20 s for it.
+    // Built last, so released first: the tunnels and the open streams close
+    // before the routes and the server start to stop. Each of them is a
+    // request still being answered, and the server would wait 20 s for it.
     const TunnelsClosedFirst = Layer.effectDiscard(
       Effect.gen(function* () {
         const tunnels = yield* Tunnels;
-        yield* Effect.addFinalizer(() => tunnels.closeAll);
+        const streams = yield* OpenStreams;
+        // The streams first, so that their watchers see the hub go away
+        // instead of every participant going offline.
+        yield* Effect.addFinalizer(() =>
+          Effect.andThen(streams.closeAll, tunnels.closeAll)
+        );
       })
     );
 

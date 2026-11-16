@@ -23,6 +23,8 @@
     "./hub/mdns": "./src/hub/mdns.ts",
     "./hub/rooms": "./src/hub/rooms.ts",
     "./hub/participants": "./src/hub/participants.ts",
+    "./hub/room-events": "./src/hub/room-events.ts",
+    "./hub/open-streams": "./src/hub/open-streams.ts",
     "./hub/tunnels": "./src/hub/tunnels.ts",
     "./participant/runtime": "./src/participant/runtime.ts",
     "./participant/diagnostics": "./src/participant/diagnostics.ts",
