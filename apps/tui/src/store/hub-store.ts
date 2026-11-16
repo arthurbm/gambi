@@ -1,12 +1,5 @@
-import { createHub } from "@gambi/core/hub";
 import { create } from "zustand";
-
-interface HubServer {
-  server: { stop: () => void };
-  url: string;
-  mdnsName?: string;
-  close: () => void;
-}
+import { type HostedHub, hostHub } from "../hosting/hub";
 
 export type HubStatus =
   | "stopped"
@@ -29,13 +22,18 @@ interface HubState {
   mdns: boolean;
   mdnsName: string | null;
   error: string | null;
-  start: (options?: HubOptions) => void;
-  stop: () => void;
+  /** Resolves when the hub is running, or when starting it failed. */
+  start: (options?: HubOptions) => Promise<void>;
+  /** Resolves when the hub has stopped. */
+  stop: () => Promise<void>;
   setConfig: (options: HubOptions) => void;
 }
 
-// Global hub reference - persists across React re-renders and navigation
-let hubInstance: HubServer | null = null;
+// The hub this process hosts - persists across React re-renders and navigation
+let hubInstance: HostedHub | null = null;
+
+const messageOf = (error: unknown, fallback: string) =>
+  error instanceof Error ? error.message : fallback;
 
 export const useHubStore = create<HubState>((set, get) => ({
   status: "stopped",
@@ -53,8 +51,9 @@ export const useHubStore = create<HubState>((set, get) => ({
       mdns: options.mdns ?? get().mdns,
     }),
 
-  start: (options) => {
-    if (hubInstance) {
+  start: async (options) => {
+    const { status } = get();
+    if (hubInstance || status === "starting" || status === "stopping") {
       set({ error: "Hub already running" });
       return;
     }
@@ -68,7 +67,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     set({ status: "starting", error: null, ...config });
 
     try {
-      const hub = createHub(config);
+      const hub = await hostHub(config);
       hubInstance = hub;
       set({
         status: "running",
@@ -77,22 +76,21 @@ export const useHubStore = create<HubState>((set, get) => ({
         error: null,
       });
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to start hub";
-      set({ status: "error", error: message });
+      set({ status: "error", error: messageOf(err, "Failed to start hub") });
     }
   },
 
-  stop: () => {
-    if (!hubInstance) {
+  stop: async () => {
+    const hub = hubInstance;
+    if (!hub) {
       return;
     }
+    hubInstance = null;
 
     set({ status: "stopping" });
 
     try {
-      hubInstance.close();
-      hubInstance = null;
+      await hub.stop();
       set({
         status: "stopped",
         url: null,
@@ -100,8 +98,7 @@ export const useHubStore = create<HubState>((set, get) => ({
         error: null,
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to stop hub";
-      set({ status: "error", error: message });
+      set({ status: "error", error: messageOf(err, "Failed to stop hub") });
     }
   },
 }));
@@ -112,9 +109,8 @@ export function isHubRunning(): boolean {
 }
 
 // Cleanup function for app shutdown
-export function shutdownHub(): void {
-  if (hubInstance) {
-    hubInstance.close();
-    hubInstance = null;
-  }
+export async function shutdownHub(): Promise<void> {
+  const hub = hubInstance;
+  hubInstance = null;
+  await hub?.stop();
 }

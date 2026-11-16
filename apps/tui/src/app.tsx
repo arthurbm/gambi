@@ -75,11 +75,15 @@ export function App() {
     const { status } = useSessionStore.getState();
     const currentlyActive =
       status === "joining" || status === "joined" || status === "leaving";
-    if (currentlyActive) {
-      await session.leave();
+    try {
+      if (currentlyActive) {
+        await session.leave();
+      }
+      await shutdownHub();
+    } finally {
+      // Whatever the cleanup did, the terminal goes back to the person.
+      renderer.destroy();
     }
-    shutdownHub();
-    renderer.destroy();
   }, [renderer, session, isQuitting]);
 
   const handleQuit = useCallback(() => {
@@ -89,7 +93,7 @@ export function App() {
     if (needsQuitConfirmation) {
       setPendingConfirm("quit");
     } else {
-      void doQuit();
+      doQuit();
     }
   }, [needsQuitConfirmation, doQuit, isQuitting]);
 
@@ -98,9 +102,9 @@ export function App() {
       return;
     }
     if (pendingConfirm === "quit") {
-      void doQuit();
+      doQuit();
     } else if (pendingConfirm === "leave") {
-      void session.leave();
+      session.leave();
     }
     setPendingConfirm(null);
   }, [pendingConfirm, doQuit, session, isQuitting]);
