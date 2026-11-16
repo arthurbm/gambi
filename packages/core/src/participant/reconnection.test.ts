@@ -95,6 +95,9 @@ it.effect(
         yield* TestClock.adjust(delayMillis - 1);
         expect(yield* registrations(participant)).toBe(before);
         if (index === waits.length - 1) {
+          // By now the hub has removed the participant: it stayed offline
+          // past the 60 s deadline. Coming back registers it again.
+          expect(yield* statuses).toEqual([]);
           yield* link.restore;
         }
         yield* TestClock.adjust(1);
