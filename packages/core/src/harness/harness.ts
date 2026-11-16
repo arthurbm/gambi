@@ -159,6 +159,13 @@ export class Harness extends Context.Service<
     /** The process id of the harness. */
     readonly pid: number;
     /**
+     * Puts an event in `events`, after everything already there. It is how
+     * something that is born on the participant and is not an ACP message of
+     * the harness goes up to the hub: a new member of `HarnessEvent`, such as
+     * an artifact of the Workspace, is published here. It never waits.
+     */
+    readonly publish: (event: HarnessEvent) => Effect.Effect<void>;
+    /**
      * Writes one ACP message to the harness, for one of its open sessions.
      * The answer, if the harness gives one, comes in `events`.
      */
@@ -471,6 +478,7 @@ export class Harness extends Context.Service<
           exited: Deferred.await(exited),
           openSession,
           pid: Number(handle.pid),
+          publish: emit,
           send,
           sessionId: initialId,
           workspacePath: workspaceRoot,

@@ -190,6 +190,35 @@ layer(BunServices.layer, { excludeTestServices: true })(
         })
     );
 
+    it.effect(
+      "what the participant itself has to say goes up in the same stream, in order with what the harness says",
+      () =>
+        Effect.gen(function* () {
+          const { harness, next } = yield* start();
+          yield* next;
+
+          yield* harness.send(
+            harness.sessionId,
+            prompt(1, harness.sessionId, "a")
+          );
+          expect((yield* next).type).toBe("harness.message");
+          expect((yield* next).type).toBe("harness.message");
+          yield* harness.publish({
+            type: "harness.session",
+            sessionId: harness.sessionId,
+            status: "error",
+            message: "Workspace watcher: too many open files",
+          });
+
+          expect(yield* next).toEqual({
+            type: "harness.session",
+            sessionId: harness.sessionId,
+            status: "error",
+            message: "Workspace watcher: too many open files",
+          });
+        })
+    );
+
     it.effect("a session cannot leave the Workspace", () =>
       Effect.gen(function* () {
         const { harness, next, workspacePath } = yield* start();
