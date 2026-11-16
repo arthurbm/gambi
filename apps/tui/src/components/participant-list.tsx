@@ -1,11 +1,11 @@
 import type { HealthStatus } from "../store/session-store";
-import type { LogMetrics, ParticipantInfo } from "../types";
+import type { LogMetrics, ParticipantSummary } from "../types";
 import { colors } from "../types";
 import { ParticipantCard } from "./participant-card";
 
 interface ParticipantListProps {
-  participants: Map<string, ParticipantInfo>;
-  processingRequests: Set<string>;
+  participants: ReadonlyMap<string, ParticipantSummary>;
+  processingRequests: ReadonlySet<string>;
   metrics?: Map<string, LogMetrics>;
   selectedId?: string;
   expanded?: boolean;

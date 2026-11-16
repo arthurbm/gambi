@@ -15,7 +15,7 @@ import { useSessionStore } from "../store/session-store";
 import { colors } from "../types";
 
 interface MonitorProps {
-  rooms: Map<string, RoomState>;
+  rooms: ReadonlyMap<string, RoomState>;
   activeRoom: string | null;
   allConnected: boolean;
   onSetActiveRoom: (code: string | null) => void;

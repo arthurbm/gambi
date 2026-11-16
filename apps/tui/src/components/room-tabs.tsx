@@ -2,7 +2,7 @@ import type { RoomState } from "../types";
 import { colors, statusIndicators } from "../types";
 
 interface RoomTabsProps {
-  rooms: Map<string, RoomState>;
+  rooms: ReadonlyMap<string, RoomState>;
   activeRoom: string | null;
 }
 
