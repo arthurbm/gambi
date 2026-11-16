@@ -11,6 +11,9 @@ import type { HarnessCommand } from "../harness/adapters.ts";
  * How a fixture harness misbehaves:
  *
  * - `recording`: appends every line it receives to the file at `path`.
+ * - `slow-open`: like `recording`, and after its first session it answers a
+ *   `session/new` only when it receives `fixture/release`; it says
+ *   `fixture/opening` when the request arrives.
  * - `acp-v2`: answers `initialize` with ACP version 2.
  * - `silent`: reads and never answers.
  * - `crashes-on-prompt`: exits with code 7 on the first `session/prompt`.
@@ -20,6 +23,7 @@ import type { HarnessCommand } from "../harness/adapters.ts";
  */
 export type FixtureMode =
   | "recording"
+  | "slow-open"
   | "acp-v2"
   | "silent"
   | "crashes-on-prompt"

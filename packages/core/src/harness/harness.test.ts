@@ -11,6 +11,7 @@ import {
   Context,
   Effect,
   Exit,
+  Fiber,
   FileSystem,
   Layer,
   Logger,
@@ -249,6 +250,78 @@ layer(BunServices.layer, { excludeTestServices: true })(
             "session/new",
             "session/close",
           ]);
+        })
+    );
+
+    it.effect(
+      "two sessions whose clients number their requests alike each get their own answer",
+      () =>
+        Effect.gen(function* () {
+          const { harness, next } = yield* start();
+          yield* next;
+          yield* harness.openSession("squad-a");
+          yield* harness.openSession("squad-b");
+          yield* next;
+          yield* next;
+
+          // Each client counts its requests from 1, as a JSON-RPC client does.
+          yield* harness.send("squad-a", prompt(1, "squad-a", "para a"));
+          yield* harness.send("squad-b", prompt(1, "squad-b", "para b"));
+
+          const heard = [yield* next, yield* next, yield* next, yield* next];
+          expect(
+            heard.map((event) =>
+              event.type === "harness.message"
+                ? [event.sessionId, event.message.id ?? "update"]
+                : []
+            )
+          ).toEqual([
+            ["squad-a", "update"],
+            ["squad-a", 1],
+            ["squad-b", "update"],
+            ["squad-b", 1],
+          ]);
+        })
+    );
+
+    it.effect(
+      "a session whose opening was given up on halfway is still opened once, and is there for whoever asks again",
+      () =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const seen = yield* fs.makeTempFileScoped();
+          const { harness, next } = yield* start({
+            command: fixtureHarness("slow-open", seen),
+          });
+          yield* next;
+
+          const opening = yield* Effect.forkChild(
+            harness.openSession("squad-a")
+          );
+          // The harness has the request and has not answered it.
+          expect(yield* next).toMatchObject({
+            message: { method: "fixture/opening" },
+          });
+          // Whoever asked goes away: its tunnel dropped.
+          yield* Fiber.interrupt(opening);
+          yield* harness.send(harness.sessionId, {
+            jsonrpc: "2.0",
+            method: "fixture/release",
+          });
+
+          // The harness opened it, and the runtime knows.
+          expect(yield* next).toEqual({
+            type: "harness.session",
+            sessionId: "squad-a",
+            status: "opened",
+          });
+          yield* harness.openSession("squad-a");
+          const opens = (yield* fs.readFileString(seen))
+            .trim()
+            .split("\n")
+            .filter((line) => JSON.parse(line).method === "session/new");
+          // The session of the start, and one for `squad-a`.
+          expect(opens).toHaveLength(2);
         })
     );
 

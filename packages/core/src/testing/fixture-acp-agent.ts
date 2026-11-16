@@ -24,8 +24,10 @@ const send = (message: Record<string, unknown>) => {
   process.stdout.write(`${JSON.stringify(message)}\n`);
 };
 
-const held =
-  path === undefined || mode === "recording" ? undefined : openSync(path, "w");
+/** The modes that write what they receive to `path` instead of holding it open. */
+const records = mode === "recording" || mode === "slow-open";
+
+const held = path === undefined || records ? undefined : openSync(path, "w");
 
 if (mode === "with-child" && held !== undefined) {
   spawn("sleep", ["1000"], { stdio: ["ignore", held, "ignore"] });
@@ -40,6 +42,17 @@ if (mode === "stubborn" && held !== undefined) {
 }
 
 let sessions = 0;
+/** The `session/new` a `slow-open` harness has not answered yet. */
+let opening: Request | undefined;
+
+const openSession = (request: Request) => {
+  sessions += 1;
+  send({
+    jsonrpc: "2.0",
+    id: request.id,
+    result: { sessionId: `fixture-session-${sessions}` },
+  });
+};
 
 const answer = (request: Request) => {
   if (mode === "silent") {
@@ -54,12 +67,21 @@ const answer = (request: Request) => {
     return;
   }
   if (request.method === "session/new") {
-    sessions += 1;
-    send({
-      jsonrpc: "2.0",
-      id: request.id,
-      result: { sessionId: `fixture-session-${sessions}` },
-    });
+    // After the first session, a `slow-open` harness says it got the request
+    // and answers only when told to.
+    if (mode === "slow-open" && sessions > 0) {
+      opening = request;
+      send({ jsonrpc: "2.0", method: "fixture/opening" });
+      return;
+    }
+    openSession(request);
+    return;
+  }
+  if (request.method === "fixture/release") {
+    if (opening !== undefined) {
+      openSession(opening);
+      opening = undefined;
+    }
     return;
   }
   if (request.method === "session/prompt") {
@@ -81,7 +103,7 @@ for await (const line of createInterface({ input: process.stdin })) {
   if (line.trim() === "") {
     continue;
   }
-  if (mode === "recording" && path !== undefined) {
+  if (records && path !== undefined) {
     appendFileSync(path, `${line}\n`);
   }
   answer(JSON.parse(line) as Request);

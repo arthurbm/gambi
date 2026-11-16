@@ -106,9 +106,18 @@ export class HarnessStartFailed extends Schema.TaggedError<HarnessStartFailed>()
   }
 }
 
-const keyOf = (id: unknown): string | undefined =>
-  Predicate.isString(id) || Predicate.isNumber(id)
-    ? `${typeof id}:${id}`
+/**
+ * Every request the runtime writes to the harness carries an id the runtime
+ * made, under this prefix: its own three calls and the requests of the
+ * clients alike. The harness then sees one client with ids that never repeat,
+ * whatever each attached client numbers its own requests.
+ */
+const REQUEST_ID_PREFIX = "gambi:";
+
+/** The id of a JSON-RPC message, when it has one. */
+const idOf = (message: AcpMessage): string | number | undefined =>
+  Predicate.isString(message.id) || Predicate.isNumber(message.id)
+    ? message.id
     : undefined;
 
 /** The session id an ACP message names in its params, when it names one. */
@@ -218,8 +227,15 @@ export class Harness extends Context.Service<
         /** Session ids: the one the hub knows to the harness's, and back. */
         const innerOf = new Map<string, string>();
         const outerOf = new Map<string, string>();
-        /** Which session each request of a client came from, by request id. */
-        const sessionOfRequest = new Map<string, string>();
+        /**
+         * The requests of clients the harness has not answered yet, by the id
+         * the runtime gave them: the session each came from, and the id its
+         * client gave it, to put back on the answer.
+         */
+        const clientRequests = new Map<
+          string,
+          { readonly id: string | number; readonly sessionId: string }
+        >();
         let stderrTail = "";
         let gone: HarnessFailed | undefined;
         let requests = 0;
@@ -258,21 +274,6 @@ export class Harness extends Context.Service<
           Effect.annotateLogs({ harness: command.harness, pid: handle.pid })
         );
 
-        /**
-         * Whose message this is: the session it names, else the session whose
-         * request it answers, else the one the runtime opened.
-         */
-        const sessionOf = (message: AcpMessage, key: string | undefined) => {
-          const inner = sessionIdIn(message);
-          const named = inner === undefined ? undefined : outerOf.get(inner);
-          const asked =
-            key === undefined ? undefined : sessionOfRequest.get(key);
-          if (key !== undefined && message.method === undefined) {
-            sessionOfRequest.delete(key);
-          }
-          return named ?? asked ?? initialId;
-        };
-
         const decodeLine = Schema.decodeUnknownOption(JsonLine);
         const onLine = Effect.fnUntraced(function* (line: string) {
           const parsed = decodeLine(line);
@@ -280,14 +281,40 @@ export class Harness extends Context.Service<
             return;
           }
           const message = parsed.value;
-          const key = keyOf(message.id);
-          const answered = key === undefined ? undefined : pending.get(key);
-          if (key !== undefined && answered !== undefined) {
-            pending.delete(key);
-            yield* Deferred.succeed(answered, message);
+          const id = idOf(message);
+          // An answer to a request the runtime wrote, by the id it gave.
+          if (
+            Predicate.isString(id) &&
+            id.startsWith(REQUEST_ID_PREFIX) &&
+            message.method === undefined
+          ) {
+            const answered = pending.get(id);
+            if (answered !== undefined) {
+              pending.delete(id);
+              yield* Deferred.succeed(answered, message);
+              return;
+            }
+            const asked = clientRequests.get(id);
+            if (asked !== undefined) {
+              clientRequests.delete(id);
+              yield* emit({
+                type: "harness.message",
+                sessionId: asked.sessionId,
+                message: withSessionId(
+                  { ...message, id: asked.id },
+                  asked.sessionId
+                ),
+              });
+            }
+            // Otherwise nobody waits for it any more (it came after its
+            // timeout, or its session closed): it is not a client's to read.
             return;
           }
-          const sessionId = sessionOf(message, key);
+          // Anything else the harness says is for the session it names, or
+          // for the one the runtime opened.
+          const inner = sessionIdIn(message);
+          const sessionId =
+            (inner === undefined ? undefined : outerOf.get(inner)) ?? initialId;
           yield* emit({
             type: "harness.message",
             sessionId,
@@ -355,7 +382,7 @@ export class Harness extends Context.Service<
               }
               innerOf.clear();
               outerOf.clear();
-              sessionOfRequest.clear();
+              clientRequests.clear();
               yield* Deferred.succeed(exited, failure);
             })
           ),
@@ -371,10 +398,9 @@ export class Harness extends Context.Service<
             return yield* gone;
           }
           const { method } = call;
-          const id = `gambi:${method}:${++requests}`;
-          const key = `string:${id}`;
+          const id = `${REQUEST_ID_PREFIX}${method}:${++requests}`;
           const answer = yield* Deferred.make<AcpMessage, HarnessFailed>();
-          pending.set(key, answer);
+          pending.set(id, answer);
           yield* write({ jsonrpc: "2.0", id, method, params });
           const message = yield* Deferred.await(answer).pipe(
             Effect.timeoutOrElse({
@@ -382,7 +408,7 @@ export class Harness extends Context.Service<
               orElse: () =>
                 Effect.fail(new HarnessFailed({ reason: "timedOut", method })),
             }),
-            Effect.ensuring(Effect.sync(() => pending.delete(key)))
+            Effect.ensuring(Effect.sync(() => pending.delete(id)))
           );
           const invalid = () =>
             new HarnessFailed({ reason: "invalidAnswer", method });
@@ -401,10 +427,24 @@ export class Harness extends Context.Service<
           ) as Effect.Effect<Result["Type"], HarnessFailed>;
         });
 
-        // One session opens or closes at a time. Two clients that open the
-        // same id together would otherwise both find it closed and open two
-        // sessions in the harness, one of which nobody could close.
-        const oneAtATime = Semaphore.withPermit(yield* Semaphore.make(1));
+        // How a session opens and closes:
+        //
+        // - One at a time. Two clients that open the same id together would
+        //   otherwise both find it closed and open two sessions in the
+        //   harness, one of which nobody could close.
+        // - To the end, whoever asked. The caller may go away halfway (its
+        //   tunnel dropped) after the harness got the request; the harness
+        //   opens the session all the same, and the runtime has to know it.
+        //   So the work runs in a fiber of the harness, and the caller only
+        //   waits for it.
+        const lifetime = yield* Effect.scope;
+        const permit = Semaphore.withPermit(yield* Semaphore.make(1));
+        const toTheEnd = <A, E>(work: Effect.Effect<A, E>) =>
+          work.pipe(
+            permit,
+            Effect.forkIn(lifetime),
+            Effect.flatMap(Fiber.join)
+          );
 
         const openSession = Effect.fn("Harness.openSession")(function* (
           sessionId: string,
@@ -430,7 +470,7 @@ export class Harness extends Context.Service<
           yield* Effect.logInfo("harness session opened").pipe(
             Effect.annotateLogs({ sessionId })
           );
-        }, oneAtATime);
+        }, toTheEnd);
 
         const closeSession = Effect.fn("Harness.closeSession")(function* (
           sessionId: string
@@ -442,8 +482,14 @@ export class Harness extends Context.Service<
           yield* request(CloseSession, { sessionId: inner });
           innerOf.delete(sessionId);
           outerOf.delete(inner);
+          // What the session still waited for has nobody to go to.
+          for (const [id, asked] of clientRequests) {
+            if (asked.sessionId === sessionId) {
+              clientRequests.delete(id);
+            }
+          }
           yield* emit({ type: "harness.session", sessionId, status: "closed" });
-        }, oneAtATime);
+        }, toTheEnd);
 
         const send = Effect.fn("Harness.send")(function* (
           sessionId: string,
@@ -456,11 +502,16 @@ export class Harness extends Context.Service<
           if (inner === undefined) {
             return yield* new HarnessSessionNotOpen({ sessionId });
           }
-          const key = keyOf(message.id);
-          if (key !== undefined && Predicate.isString(message.method)) {
-            sessionOfRequest.set(key, sessionId);
+          // A request gets an id of the runtime's: two clients may well use
+          // the same one, each for its own session.
+          const id = idOf(message);
+          if (id === undefined || !Predicate.isString(message.method)) {
+            yield* write(withSessionId(message, inner));
+            return;
           }
-          yield* write(withSessionId(message, inner));
+          const own = `${REQUEST_ID_PREFIX}request:${++requests}`;
+          clientRequests.set(own, { id, sessionId });
+          yield* write(withSessionId({ ...message, id: own }, inner));
         });
 
         const negotiated = yield* request(Initialize, {
