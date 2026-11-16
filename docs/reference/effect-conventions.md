@@ -61,6 +61,7 @@ A name missing from this table is not thereby safe. Check it in the installed so
 | `@gambi/protocol` | Schemas, the management plane contract, the tunnel calls, the typed errors, the status transition function | No platform at all. No `Bun.*`, no `process`, no `node:*`, no `bun:*`, no `@effect/platform-*`. Lint and its `tsconfig.json` (`types: []`) both reject them. |
 | `@gambi/core` | Hub, participant runtime, harness | Depends on the abstract services from `effect` (`FileSystem`, `ChildProcessSpawner`, `Socket`, `HttpServer`). No `Bun.*` in new code. |
 | `packages/cli` entrypoint, SDK hosting entries | `BunRuntime.runMain` and the `@effect/platform-bun` layers | The only place `@effect/platform-bun` is imported. |
+| `gambi-sdk` default entry | The management client and the inference provider | Reaches a hub with `fetch` only. No built-in module of Node or Bun, checked on the packed package. |
 | `@gambi/testing` | The test helper | Test-only. Never a runtime dependency. |
 
 Because `@gambi/protocol` type-checks without DOM types, a web type such as `Headers` or `ReadableStream` is not in scope there. Take it from an `effect` module instead of the global.
@@ -410,6 +411,41 @@ Known traps:
 - A participant on the test clock drops its tunnel when the clock moves three ping intervals of the hub with no frame in between (15 s with the default interval): that is its watchdog. `tunnelPingInterval: "1 hour"` puts it three hours away.
 - While a registration or a dial is in flight on the test clock, a jump of 10 s fails it (`registrationTimeout`, `tunnelOpenTimeout`). Wait for the lifecycle event before moving the clock.
 - Under the test clock a participant that is `offline` is removed once the clock moves 60 s. A test that moves the clock for another reason and needs the participant to stay starts its hub with `layerHub({ reconnectDeadline: "1 hour" })`.
+
+## The SDK
+
+`gambi-sdk` is the published package that embeds Effect code, and none of it may show. Its API is `Promise`, `AsyncIterable` and types written by hand ([ADR-0007](../adr/0007-effect-as-runtime-foundation.md)).
+
+| What | Where |
+|---|---|
+| The entries of the package and how each is built | `packages/sdk/entries.ts` |
+| The `Promise` boundary (`makePromiseBoundary`) | `packages/sdk/src/promise.ts` |
+| The bridge to the management contract (`ManagementPlane`, `translated`, `ContractProofs`) | `packages/sdk/src/contract.ts` |
+| The management client (`createClient`, `GambiClient`) | `packages/sdk/src/client.ts` |
+| The public types of rooms, participants and events | `packages/sdk/src/types.ts` |
+| The one error of the client (`ClientError`, `ClientErrorCode`) | `packages/sdk/src/client-error.ts` |
+| The check of the packed package | `packages/sdk/scripts/check-packed-types.ts` |
+
+Rules:
+
+- A public signature names only `Promise`, `AsyncIterable`, `AbortSignal` and types declared in the SDK. Never `Effect`, `Stream`, `Layer`, a `Schema`, or `typeof X.Type`: the declarations are bundled with `effect` left as an import, so any of these would make the published `.d.ts` import a package the consumer does not have.
+- A public type that mirrors a schema is an interface written by hand in `types.ts`, with no import, plus one line in `ContractProofs` (`contract.ts`). The line stops compiling when the schema and the type drift apart.
+- The SDK exports functions, error classes and types. It never exports a schema value or a service.
+- Each thing a consumer creates (a client, a hosted hub, a hosted participant) owns one `ManagedRuntime`, through `makePromiseBoundary(layer, what)`. An Effect leaves through `run`, a `Stream` through `iterate`, and `close` releases the layer. Nothing else in the SDK calls `Effect.runPromise`.
+- Translate the failure before the boundary: `run` and `iterate` hand the failure to the consumer as it is, so the Effect must already fail with the public error.
+- A stream leaves as an `AsyncIterable`, pulled one element at a time. It takes an optional `signal`, ends without an error when the signal aborts or the object is closed, and is interrupted when the consumer leaves the loop.
+- The management client rejects only with `ClientError`. Its `code` is a closed union: the codes of the contract, plus `HUB_UNREACHABLE` and `NOT_A_HUB`, which the client finds by itself.
+
+To cover another group of the contract in the client:
+
+1. Write the public types of its payloads and answers in `types.ts`, and a line for each in `ContractProofs`.
+2. Add each new error class to `hubErrors` in `contract.ts` and its code to `ClientErrorCode`. Until then the new methods do not compile.
+3. Add the group to `GambiClient` and implement each method in `createClient` as a `call((management) => management.<group>.<endpoint>(...))`. An endpoint that streams events follows `events.watch`: `boundary.iterate` over the `Effect` of a `Stream`.
+4. Use the new methods and types in the consumer file of `check-packed-types.ts`.
+
+To add an entry (`gambi-sdk/<name>`): a line in `entries.ts`, an `exports` entry in `packages/sdk/package.json` and a line in `RUNTIME_EXPORTS` of `check-packed-types.ts`. Each entry is built on its own, as one file, so importing one never loads another. `runsOn` says what its JavaScript may import: `anywhere` (no built-in module of Node or Bun; the default entry), `node` (Node's built-ins) or `bun`. An entry that hosts something imports `@effect/platform-bun` and is `bun`.
+
+Tests of the SDK call the `Promise` API against a real hub (`layerHub`), inside `it.effect` with `Effect.promise`. Something that is not a hub is a real `Bun.serve` on port `0`. Never replace `fetch`. `packages/sdk/src/node.test.ts` builds the default entry and runs it in a Node process; `bun run --cwd packages/sdk build && bun run --cwd packages/sdk check:packed-types` checks the package as a consumer installs it.
 
 ## The CLI
 
