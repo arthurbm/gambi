@@ -11,6 +11,12 @@ export class HubSettings extends Context.Service<
   HubSettings,
   {
     /**
+     * How many events the hub holds for one management client attached to a
+     * harness participant. A client that falls further behind loses its
+     * oldest events.
+     */
+    readonly harnessClientBuffer: number;
+    /**
      * How long an inference request may go without one piece of the response
      * arriving from the participant. Past it, the hub cancels the request on
      * the participant and answers the app with an error.

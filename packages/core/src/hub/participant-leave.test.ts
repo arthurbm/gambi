@@ -8,8 +8,6 @@ import { layer } from "@gambi/testing/effect";
 import { Effect, Layer } from "effect";
 import { HttpClient, HttpClientRequest } from "effect/http";
 import { Socket } from "effect/socket";
-import { TunnelDiagnostics } from "../participant/diagnostics.ts";
-import { InferenceNotServed } from "../participant/inference.ts";
 import {
   openTunnel,
   type ParticipantRuntimeOptions,
@@ -17,7 +15,7 @@ import {
   TunnelOpenFailed,
 } from "../participant/runtime.ts";
 import { layerHub, managementClient, watchRoom } from "../testing/hub.ts";
-import { joinParticipant } from "../testing/participant.ts";
+import { defaultHandlers, joinParticipant } from "../testing/participant.ts";
 import { Hub } from "./hub.ts";
 
 layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
@@ -152,8 +150,7 @@ layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
       }).pipe(
         Effect.provide(
           Layer.mergeAll(
-            TunnelDiagnostics,
-            InferenceNotServed,
+            defaultHandlers,
             Socket.layerWebSocketConstructorGlobal
           )
         )
