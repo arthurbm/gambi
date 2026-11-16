@@ -3,13 +3,10 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createHub, type Hub } from "@gambi/core/hub";
-import { createClient } from "./client.ts";
-import {
-  createFakeHarnessAdapter,
-  createHarnessParticipantSession,
-  createLocalDirectoryWorkspace,
-} from "./harness-participant-session.ts";
+import { createFakeHarnessAdapter } from "./harness-adapters.ts";
+import { createHarnessParticipantSession } from "./harness-participant-session.ts";
+import { createLocalDirectoryWorkspace } from "./harness-workspace.ts";
+import { createHub, type Hub } from "./hub.ts";
 
 const hubs: Hub[] = [];
 const temporaryDirectories: string[] = [];
@@ -44,20 +41,24 @@ function createTestHub(): Hub {
 
 test("a consumer hosts a harness with its own fake agent script and seeded workspace", async () => {
   const hub = createTestHub();
-  const client = createClient({ hubUrl: hub.url });
+  const created = await fetch(`${hub.url}/v1/rooms`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Hosted harness" }),
+  });
   const {
     data: { room },
-  } = await client.rooms.create({ name: "SDK harness" });
+  } = (await created.json()) as { data: { room: { code: string } } };
 
   const scratch = await mkdtemp(join(tmpdir(), "gambi-sdk-harness-"));
   temporaryDirectories.push(scratch);
-  const sdkEntry = fileURLToPath(
-    new URL("./harness-participant-session.ts", import.meta.url)
+  const fakeAgentModule = fileURLToPath(
+    new URL("./fake-acp-agent.ts", import.meta.url)
   );
   const fakeScript = join(scratch, "fake-acp-agent.ts");
   await Bun.write(
     fakeScript,
-    `import { runFakeAcpAgent } from ${JSON.stringify(sdkEntry)};\nawait runFakeAcpAgent();\n`
+    `import { runFakeAcpAgent } from ${JSON.stringify(fakeAgentModule)};\nawait runFakeAcpAgent();\n`
   );
 
   const local = createLocalDirectoryWorkspace({

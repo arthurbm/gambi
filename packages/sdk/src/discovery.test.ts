@@ -1,12 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import type { DiscoveredService } from "@gambi/core/mdns";
+import { Hub } from "@gambi/core/hub/hub";
+import { layerHub } from "@gambi/core/testing/hub";
+import { layer } from "@gambi/testing/effect";
+import { Effect } from "effect";
+import { createClient } from "./client.ts";
 import {
-  createGambi,
+  type DiscoveredService,
   type DiscoveryError,
   type DiscoveryOptions,
   discoverHubs,
+  discoverRooms,
   resolveGambiTarget,
-} from "./index.ts";
+} from "./discovery.ts";
+import { createGambi } from "./provider.ts";
 
 type FetchLike = NonNullable<DiscoveryOptions["fetchFn"]>;
 
@@ -307,3 +313,34 @@ describe("SDK discovery", () => {
     });
   });
 });
+
+layer(layerHub(), { excludeTestServices: true })(
+  "SDK discovery against a hub",
+  (it) => {
+    it.effect("finds the rooms of the configured hub", () =>
+      Effect.gen(function* () {
+        const hub = yield* Hub;
+        const client = createClient({ hubUrl: hub.url });
+        const { room } = yield* Effect.promise(() =>
+          client.rooms.create({ name: "Frevo" })
+        );
+
+        const rooms = yield* Effect.promise(() =>
+          discoverRooms({
+            hubUrl: hub.url,
+            browseServices: () => {
+              throw new Error("no mDNS in this test");
+            },
+          })
+        );
+
+        expect(rooms).toContainEqual({
+          ...room,
+          hubName: "Configured hub",
+          hubSource: "configured",
+          hubUrl: hub.url,
+        });
+      })
+    );
+  }
+);

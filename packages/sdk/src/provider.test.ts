@@ -1,18 +1,19 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import type { ClientError } from "./client.ts";
+import { describe, expect, test } from "bun:test";
+import { Hub } from "@gambi/core/hub/hub";
+import { layerHub } from "@gambi/core/testing/hub";
+import { joinParticipant } from "@gambi/core/testing/participant";
+import { layer } from "@gambi/testing/effect";
+import { Effect } from "effect";
+import { createClient } from "./client.ts";
+import { ClientError } from "./client-error.ts";
 import { createGambi } from "./provider.ts";
 
-const originalFetch = globalThis.fetch;
-
-describe("SDK provider", () => {
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
-  });
-
+describe("inference provider", () => {
   test("defaults to OpenResponses", () => {
     const provider = createGambi({ roomCode: "ABC123" });
 
     expect(provider.defaultProtocol).toBe("openResponses");
+    expect(provider.baseURL).toBe("http://localhost:3000/rooms/ABC123/v1");
     expect(provider.openResponses.any()).toBeDefined();
     expect(provider.chatCompletions.any()).toBeDefined();
     expect(provider.any()).toBeDefined();
@@ -28,50 +29,50 @@ describe("SDK provider", () => {
     expect(provider.participant("participant-1")).toBeDefined();
     expect(provider.model("llama3")).toBeDefined();
   });
-
-  test("surfaces typed management errors from listParticipants", async () => {
-    globalThis.fetch = (async () =>
-      new Response(
-        JSON.stringify({
-          error: {
-            code: "ROOM_NOT_FOUND",
-            message: "Room not found.",
-            hint: "Run 'gambi room list' to inspect available rooms.",
-          },
-          meta: { requestId: "req_123" },
-        }),
-        {
-          status: 404,
-          headers: { "Content-Type": "application/json" },
-        }
-      )) as typeof fetch;
-
-    const provider = createGambi({ roomCode: "ABC123" });
-
-    await expect(provider.listParticipants()).rejects.toMatchObject({
-      name: "ClientError",
-      status: 404,
-      code: "ROOM_NOT_FOUND",
-      hint: "Run 'gambi room list' to inspect available rooms.",
-      requestId: "req_123",
-    } satisfies Partial<ClientError>);
-  });
-
-  test("treats invalid success JSON as a protocol ClientError", async () => {
-    globalThis.fetch = (async () =>
-      new Response("not-json", {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      })) as unknown as typeof fetch;
-
-    const provider = createGambi({ roomCode: "ABC123" });
-
-    await expect(provider.listParticipants()).rejects.toMatchObject({
-      name: "ClientError",
-      status: 502,
-      code: "INTERNAL_ERROR",
-      message: "Invalid JSON response from hub.",
-      hint: "Check hub compatibility or proxy behavior.",
-    } satisfies Partial<ClientError>);
-  });
 });
+
+layer(layerHub(), { excludeTestServices: true })(
+  "inference provider against a hub",
+  (it) => {
+    it.effect("lists the participants of its room", () =>
+      Effect.gen(function* () {
+        const hub = yield* Hub;
+        const client = createClient({ hubUrl: hub.url });
+        const { room } = yield* Effect.promise(() =>
+          client.rooms.create({ name: "Frevo" })
+        );
+        yield* joinParticipant({ roomCode: room.code, participantId: "ze-1" });
+        const provider = createGambi({ hubUrl: hub.url, roomCode: room.code });
+
+        const participants = yield* Effect.promise(() =>
+          provider.listParticipants()
+        );
+
+        expect(participants.map(({ id, status }) => ({ id, status }))).toEqual([
+          { id: "ze-1", status: "online" },
+        ]);
+      })
+    );
+
+    it.effect("a room that does not exist rejects with the hub's error", () =>
+      Effect.gen(function* () {
+        const hub = yield* Hub;
+        const provider = createGambi({ hubUrl: hub.url, roomCode: "NOPE00" });
+
+        const error = yield* Effect.promise(() =>
+          provider.listParticipants().then(
+            () => undefined,
+            (rejected: unknown) => rejected
+          )
+        );
+
+        expect(error).toBeInstanceOf(ClientError);
+        expect(error).toMatchObject({
+          code: "ROOM_NOT_FOUND",
+          status: 404,
+          details: { roomCode: "NOPE00" },
+        });
+      })
+    );
+  }
+);
