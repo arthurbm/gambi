@@ -19,3 +19,27 @@ export class CallNotSupported extends Schema.TaggedError<CallNotSupported>()(
     return `This participant does not serve the '${this.call}' tunnel call.`;
   }
 }
+
+/**
+ * The participant runtime got no response from its provider: nothing listens
+ * at the endpoint, or the request failed before the response started. The
+ * cause stays in the participant runtime's log; it never crosses the tunnel.
+ */
+export class ProviderUnreachable extends Schema.TaggedError<ProviderUnreachable>()(
+  "ProviderUnreachable",
+  {}
+) {
+  override get message(): string {
+    return "The participant's provider did not answer the request.";
+  }
+}
+
+/** The provider started to answer and its response broke before the end. */
+export class ProviderResponseInterrupted extends Schema.TaggedError<ProviderResponseInterrupted>()(
+  "ProviderResponseInterrupted",
+  {}
+) {
+  override get message(): string {
+    return "The participant's provider stopped answering in the middle of the response.";
+  }
+}

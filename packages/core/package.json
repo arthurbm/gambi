@@ -28,9 +28,11 @@
     "./hub/tunnels": "./src/hub/tunnels.ts",
     "./participant/runtime": "./src/participant/runtime.ts",
     "./participant/diagnostics": "./src/participant/diagnostics.ts",
+    "./participant/inference": "./src/participant/inference.ts",
     "./testing/hub": "./src/testing/hub.ts",
     "./testing/hub-link": "./src/testing/hub-link.ts",
-    "./testing/participant": "./src/testing/participant.ts"
+    "./testing/participant": "./src/testing/participant.ts",
+    "./testing/provider": "./src/testing/provider.ts"
   },
   "scripts": {
     "check-types": "tsc --noEmit"
