@@ -1,70 +1,55 @@
 # gambi-sdk
 
-SDK pública do Gambi. Publicada como `gambi-sdk` no npm. Roda tanto em Node.js quanto em Bun.
+SDK pública do Gambi, publicada como `gambi-sdk` no npm. Por dentro é Effect v4 (ADR-0007); por fora é `Promise`, `AsyncIterable` e tipos escritos à mão. Leia a seção "The SDK" de [`docs/reference/effect-conventions.md`](../../docs/reference/effect-conventions.md) antes de mexer aqui.
 
-## Cinco superfícies
+## Entradas
 
-A SDK expõe exatamente cinco superfícies públicas. Cada uma tem um papel distinto — não mesclar:
+A lista das entradas e o que cada uma pode importar do runtime fica em `entries.ts`.
 
-| Superfície | Finalidade | Transporte |
+| Entrada | O que tem | Roda em |
 | --- | --- | --- |
-| `createGambi()` | inferência via AI SDK | `/rooms/:code/v1/*` (OpenAI-compatible) |
-| `createClient()` | operação do management plane | `/v1/*` |
-| `createParticipantSession()` | runtime de participante com túnel | management API + WebSocket |
-| `createHarnessParticipantSession()` | runtime de harness participant (ACP local) com `Workspace` plugável | management API + WebSocket |
-| discovery helpers | descoberta de hub/sala em rede local | mDNS + management API |
+| `gambi-sdk` | `createClient()` (management plane), `createGambi()` (inferência via AI SDK), `ClientError`, tipos | Node e Bun. Só usa `fetch` e não importa nenhum módulo embutido (browser não é testado) |
+| `gambi-sdk/discovery` | `discoverHubs()`, `discoverRooms()`, `resolveGambiTarget()`, `DiscoveryError` | Node e Bun (mDNS abre sockets UDP) |
 
-Arquivos correspondentes:
+A entrada padrão não exporta hub, estado de salas, sessão de participante nem valores de schema. As entradas para hospedar um hub e um participante no próprio processo (só Bun) entram no #125.
 
-- `src/provider.ts` — `createGambi()` (AI SDK v5 provider), `gambi.any()/model()/participant()`, `gambi.openResponses.*`, `gambi.chatCompletions.*`, `gambi.listModels()`, `gambi.listParticipants()`, `gambi.baseURL`.
-- `src/client.ts` — `createClient()`, namespaces (`rooms`, `participants`, `events`), `ClientError`.
-- `src/rooms.ts`, `src/participants.ts`, `src/hub.ts` — implementações dos namespaces e chamadas ao management plane.
-- `src/participant-session.ts` — reexport de `createParticipantSession()` e `ParticipantSession` implementados em `@gambi/core/participant-session` (close reasons: `"closed"`, `"heartbeat_failed"`, `"tunnel_closed"`).
-- `src/harness-participant-session.ts` — reexport de `createHarnessParticipantSession()`, da costura `Workspace` (`createLocalDirectoryWorkspace()`), de `runFakeAcpAgent()` e `createFakeHarnessAdapter()`, implementados em `@gambi/core` (close reason extra: `"harness_exited"`).
-- `src/discovery.ts` — `discoverHubs()`, `discoverRooms()`, `resolveGambiTarget()`, `DiscoveryError`.
-- `src/protocol.ts`, `src/protocol-adapters.ts` — seleção Responses vs Chat Completions.
-- `src/types.ts` — tipos públicos reexportados (inclui `HEALTH_CHECK_INTERVAL` para runtimes custom).
+## Arquivos
+
+- `src/client.ts` — `createClient()` e a interface `GambiClient`: `hub`, `rooms`, `participants`, `events`, `close`.
+- `src/client-error.ts` — `ClientError` e `ClientErrorCode`.
+- `src/types.ts` — tipos públicos de salas, participantes e eventos, escritos à mão, sem imports.
+- `src/contract.ts` — interno. A ponte com o contrato do management plane (`@gambi/protocol`): o cliente derivado, a tradução de erros e `ContractProofs`, que falha o check de tipos quando um tipo público diverge do schema.
+- `src/promise.ts` — interno. A fronteira em `Promise` sobre um `ManagedRuntime`.
+- `src/provider.ts` — `createGambi()`: `gambi.any()/model()/participant()`, `gambi.openResponses.*`, `gambi.chatCompletions.*`, `gambi.listModels()`, `gambi.listParticipants()`, `gambi.baseURL`.
+- `src/discovery.ts` — a entrada `gambi-sdk/discovery`.
+- `entries.ts`, `build.ts` — o build: um arquivo por entrada, mais as declarações.
+- `scripts/check-packed-types.ts` — checa o pacote como um consumidor o instala.
 
 ## Contratos que a SDK mantém
 
-Qualquer mudança aqui atualiza `apps/docs/src/content/docs/reference/sdk.md` no mesmo PR:
+Mudança aqui é mudança pública. A documentação pública (`apps/docs/src/content/docs/reference/sdk.md`) acompanha.
 
-- Shape de `ClientError` (`status`, `code`, `hint`, `details`, `requestId`).
-- `ParticipantSessionCloseEvent` (`reason`, `error?`).
+- Os métodos de `GambiClient` devolvem o valor do contrato, sem o envelope `{ data, meta }`.
+- Toda falha do cliente é um `ClientError` (`code`, `status`, `hint`, `details`, `requestId`). `code` é uma união fechada: os códigos do contrato mais `HUB_UNREACHABLE` e `NOT_A_HUB`.
+- `events.watch()` devolve um `AsyncIterable<RoomEvent>` cujo primeiro evento é sempre `room.snapshot`. O laço termina sem erro quando o hub fecha, quando o `signal` aborta ou quando o cliente é fechado.
 - `DiscoveryError.code` (`NO_HUBS_FOUND`, `NO_ROOMS_FOUND`, `ROOM_NOT_FOUND`, `AMBIGUOUS_ROOM_MATCH`).
-- Assinatura e return shape de `createParticipantSession()`.
 - Helpers de routing do provider (`any`, `model`, `participant`) e namespaces por protocolo (`openResponses`, `chatCompletions`).
 
 ## Regras de design
 
-- **Explicitness sobre mágica**: `createGambi()` e `createClient()` são factories **explícitas**. Não adicionar discovery implícito nelas — quem quiser descoberta usa `resolveGambiTarget()` primeiro e passa o resultado.
-- **`createParticipantSession()` é o runtime canônico**: a implementação vive em `@gambi/core/participant-session`, e a SDK reexporta essa função para usuários externos. Novos runtimes custom devem usar essa mesma função em vez de reimplementar tunelamento.
-- **Auth headers só saem no leg participante→provider**: `ParticipantAuthHeaders` passados a `createParticipantSession()` são aplicados apenas ao chamar o endpoint local do provider. Não enviar em nenhum outro lugar; o hub jamais os recebe.
-- **Heartbeat/ping em `HEALTH_CHECK_INTERVAL` (10 s)**: constante re-exportada de `types.ts`. Se construir um runtime custom sem `createParticipantSession()`, usar essa mesma cadência — a janela de offline do hub é `PARTICIPANT_TIMEOUT` (30 s).
-- **Management plane do core é fonte única**: a SDK não inventa rotas. Se precisar de algo novo, adicionar no `@gambi/core` primeiro.
-- **Envelopes `{ data, meta }` do management são expostos**: os namespaces do `createClient()` retornam o envelope completo; agentes podem ler `meta.requestId` para correlacionar com SSE/logs.
+- **Nenhum tipo do Effect em assinatura pública.** Nem `typeof Schema.Type`. O `check:packed-types` reprova.
+- **A SDK exporta tipos, não valores de schema**, e não depende de zod.
+- **O contrato é a fonte única.** A SDK não inventa rotas, e o cliente e o provider não escrevem chamada HTTP à mão para o management plane: passam pelo cliente derivado. Rota nova entra em `@gambi/protocol` primeiro. A exceção são os helpers de descoberta, que sondam `/v1/health` e `/v1/rooms` de vários hubs com `fetch` (aceitam `fetchFn`).
+- **A entrada padrão só usa `fetch`.** Nada de `node:*`, `bun:*`, `Bun.*`, sockets ou servidor. O que precisar disso vai para outra entrada.
+- **Explicitness sobre mágica.** `createGambi()` e `createClient()` não fazem descoberta implícita; quem quiser usa `resolveGambiTarget()` antes e passa o resultado.
+- **`ParticipantAuthHeaders` nunca vão ao hub.** `participants.register` não os aceita.
 
 ## Validação
 
 ```bash
 bun test packages/sdk/src
 bun run --cwd packages/sdk check-types
-bun run --cwd packages/sdk build
+bun run --cwd packages/sdk build && bun run --cwd packages/sdk check:packed-types
 ```
 
-Os testes da SDK sobem um hub real em porta fixa (ex.: 3999). Diagnosticar antes de acusar regressão se a porta estiver em uso.
-
-Ao mudar superfícies públicas, rodar o build do docs site para garantir que links/anchors não quebraram:
-
-```bash
-bun run --cwd apps/docs build
-```
-
-## Regras do Bun
-
-A SDK é publicada e também usada em projetos Node.js — preferir APIs portáveis (fetch, WebSocket, URL), mas dentro do monorepo seguimos Bun:
-
-- `bun test` para testes.
-- `WebSocket` nativo (Bun e Node 22+).
-- Bun carrega `.env` automaticamente — não usar `dotenv`.
-- Não introduzir dependências específicas de Bun em código publicado (o consumidor pode estar rodando em Node).
+Os testes sobem um hub real em porta livre (`layerHub` de `@gambi/core/testing/hub`) e chamam a API em `Promise`. Não substituem `fetch`. `src/node.test.ts` roda a entrada padrão num processo Node e precisa de `node` no `PATH`.
