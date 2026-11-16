@@ -341,7 +341,15 @@ const infer = (operation: InferenceOperation) =>
             return Effect.void;
           }).pipe(
             Effect.tap(() => Effect.sync(() => report.completed(head.status))),
-            Effect.tapError((error) => Effect.sync(() => report.failed(error))),
+            Effect.tapError((error) => {
+              report.failed(error);
+              return Effect.logInfo("inference stream ended early").pipe(
+                Effect.annotateLogs({
+                  error: error._tag,
+                  reason: error.message,
+                })
+              );
+            }),
             Effect.ensuring(endCall),
             Effect.onExit((exit) =>
               Exit.isSuccess(exit)

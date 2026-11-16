@@ -103,6 +103,30 @@ Rules:
 - The hub pings every 5 s (`HubOptions.tunnelPingInterval`) and drops a tunnel that stays silent for one more interval. The participant has no ping of its own.
 - A knob of the hub is a field of `HubSettings` (`packages/core/src/hub/settings.ts`), with its default resolved in `Hub.layer`. Services read it from there, not from parameters.
 - A participant that is `offline` is removed after `HubSettings.reconnectDeadline` (60 s). Going online cancels the deadline; registering again restarts it.
+- Whoever consumes a stream call on the hub takes each chunk as soon as it arrives and never waits for someone else before taking the next. A tunnel has one reader: while it waits on a stream nobody is draining, it reads nothing else on that tunnel, pongs included, and the hub drops the tunnel on a ping timeout. Put a bounded buffer with a policy (drop, or fail the consumer) between the stream and anything slow. `infer` in `packages/core/src/hub/inference.ts` is the example.
+- Every call has a default handler for a participant that does not serve it, which fails with `CallNotSupported`: `InferenceNotServed` (`packages/core/src/participant/inference.ts`) for `Infer`. A host of a runtime provides, for each call, either the real handler or that one.
+
+## The inference plane
+
+The OpenAI-compatible routes under `/rooms/:code/v1/*` are plain `HttpRouter` routes in `packages/core/src/hub/inference.ts`, outside the management contract: they pass a provider's answer through.
+
+| What | Where |
+|---|---|
+| The routes, and how a request lives and ends (`infer`) | `packages/core/src/hub/inference.ts` |
+| What the hub reads of a body and what it fills in (`readRequest`, `providerBody`) | `packages/core/src/hub/inference-request.ts` |
+| Routing by model selector (`Participants.dispatch`) | `packages/core/src/hub/participants.ts` |
+| The tunnel call (`Infer`, `InferenceOperation`, `InferenceChunk`) | `packages/protocol/src/tunnel/rpcs.ts` |
+| The handler that calls the local provider (`providerInference`) | `packages/core/src/participant/inference.ts` |
+| The errors and their OpenAI form (`InferenceError`, `INFERENCE_FAILURES`, `toOpenAiError`) | `packages/protocol/src/inference/errors.ts` |
+| The events of a request (`llm.request`, `llm.complete`, `llm.error`) | `packages/protocol/src/room-event.ts`, published by `packages/core/src/hub/request-events.ts` |
+
+Rules:
+
+- The hub reads `model` and `stream` of a body and nothing else. Do not validate, rename or drop any other field; the provider is the one that knows them.
+- `ParticipantAuthHeaders` are an option of `providerInference`, on the participant's machine. Nothing in the hub or in `@gambi/protocol` has a field for them.
+- An inference failure is an `InferenceError` with a row in `INFERENCE_FAILURES` (its `code` and HTTP status). The route answers it in the OpenAI error format, never in the management envelope: as the response when nothing was sent yet, as a last `error` event when a `text/event-stream` body was already on its way.
+- The participant is `busy` while the call in its tunnel is open (the `call` scope in `infer`), and `Participants.dispatch` plus that scope are the only things that make it so. Everything a request holds goes in that scope, so that a cancelled request, a timeout and a dead participant all release it the same way.
+- A new route that calls a provider is a new literal of `InferenceOperation`, a row in `PROVIDER_ROUTES` (participant), in `DEFAULT_FIELDS` (`inference-request.ts`) and in `PROTOCOLS` (`request-events.ts`), and one `HttpRouter.add` in `InferenceRoutes`. The compiler asks for each row.
 
 ## Room events and event streams
 
@@ -221,7 +245,6 @@ layer(layerHub(), { excludeTestServices: true })("rooms", (it) => {
 ```ts
 import { TunnelRpcs } from "@gambi/protocol";
 import { Tunnels } from "@gambi/core/hub/tunnels";
-import { TunnelDiagnostics } from "@gambi/core/participant/diagnostics";
 import { joinParticipant } from "@gambi/core/testing/participant";
 
 it.effect("answers through the tunnel", () =>
@@ -231,10 +254,8 @@ it.effect("answers through the tunnel", () =>
     const participant = yield* joinParticipant({
       roomCode: room.code,
       participantId: "arthur-1",
-      // Optional: replace a handler. The last layer merged wins.
-      handlers: TunnelDiagnostics.pipe(
-        Layer.merge(TunnelRpcs.toLayerHandler("Echo", ({ text }) => Effect.succeed(text.toUpperCase())))
-      ),
+      // Optional: replace the handler of a call. The other calls keep their default.
+      handlers: TunnelRpcs.toLayerHandler("Echo", ({ text }) => Effect.succeed(text.toUpperCase())),
     });
     const tunnel = yield* (yield* Tunnels).client(room.code, "arthur-1");
     expect(yield* tunnel.Echo({ text: "frevo" })).toBe("FREVO");
@@ -247,6 +268,35 @@ it.effect("answers through the tunnel", () =>
 - To see a cancellation arrive, give the handler an `Effect.onInterrupt` that completes a `Deferred` and wait on it (`observedHandler` in `packages/core/src/hub/tunnel.test.ts`).
 - `participant.sentToHub` is everything the runtime sent to the hub (HTTP requests and tunnel frames), for asserting what must never leave the participant's machine.
 - `register` and `openTunnel` are exported for a test that needs the two steps apart (`packages/core/src/hub/bootstrap-token.test.ts`).
+- By default the participant answers the diagnostics and refuses inference (`InferenceNotServed`). Give it a `provider` to make it serve inference.
+
+### A provider in a test
+
+`fakeProvider` from `@gambi/core/testing/provider` is a real HTTP server on a free loopback port that stands where Ollama would. It answers like an OpenAI-compatible backend and records what it gets. With it a test runs the whole path: app, hub, tunnel, participant runtime, provider.
+
+```ts
+const provider = yield* fakeProvider();
+yield* joinParticipant({
+  roomCode: room.code,
+  participantId: "arthur-1",
+  provider: { endpoint: provider.url, authHeaders: { Authorization: "Bearer segredo" } },
+});
+const response = yield* Effect.promise(() =>
+  fetch(`${hub.url}/rooms/${room.code}/v1/chat/completions`, {
+    method: "POST",
+    body: JSON.stringify({ model: "arthur-1", messages: [{ role: "user", content: "Oi" }] }),
+  })
+);
+const call = yield* provider.nextCall;
+expect(call.headers.authorization).toBe("Bearer segredo");
+```
+
+- `provider.nextCall` waits for a request and hands each one out once; `provider.calls` is all of them so far. A call has `method`, `path`, `headers`, `body` and `aborted`.
+- `call.aborted` completes when the caller gave the request up. Waiting on it is how a test sees a cancellation, a timeout or a dead participant reach the provider.
+- `fakeProvider({ answer })` decides the answer: `jsonAnswer`, `sseAnswer`, or `openStream()` for a body the test writes piece by piece (`send`, `end`, `fail`). A provider that never answers is `answer: () => new Promise(() => undefined)`.
+- A provider sends its response head with the first piece of the body. With `openStream`, `send` one piece before the request, or the app's `fetch` never returns.
+- Call the inference plane with a plain `fetch`, as an app does. A status changes a moment after the response ends only when the app cancelled; when the response ended by itself the participant is already `online`.
+- A test of the inactivity timeout builds its hub inside `it.effect` and moves the test clock (`packages/core/src/hub/inference-timeout.test.ts`).
 
 ### Room events in a test
 
