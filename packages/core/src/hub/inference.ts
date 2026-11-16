@@ -5,7 +5,9 @@
  *
  * | Route | What it does |
  * |---|---|
+ * | `GET /rooms/:code/v1/models` | lists the participants that can take a request |
  * | `POST /rooms/:code/v1/chat/completions` | Chat Completions |
+ * | `POST /rooms/:code/v1/responses` | creates a Response |
  *
  * A request is routed to one participant by its model selector
  * (`Participants.dispatch`), sent into that participant's tunnel as an
@@ -363,11 +365,49 @@ const infer = (operation: InferenceOperation) =>
       )
   );
 
+/**
+ * The participants of the room as an OpenAI list of models. The `id` of each
+ * is its participant id, which is a model selector; `gambi` says what stands
+ * behind it. A participant that is `offline`, or that shares no model
+ * endpoint, is not a model.
+ */
+const listModels = Effect.fn("Hub.listModels")(
+  function* () {
+    const rooms = yield* Rooms;
+    const participants = yield* Participants;
+    const params = yield* HttpRouter.params;
+    const room = yield* rooms.get(params.code ?? "");
+    const data = (yield* participants.list(room.code)).flatMap((participant) =>
+      participant.status === "offline" || participant.endpoint === undefined
+        ? []
+        : [
+            {
+              id: participant.id,
+              object: "model" as const,
+              created: Math.floor(participant.joinedAt / 1000),
+              owned_by: participant.nickname,
+              gambi: {
+                nickname: participant.nickname,
+                model: participant.model,
+                endpoint: participant.endpoint,
+                capabilities: participant.capabilities,
+                status: participant.status,
+              },
+            },
+          ]
+    );
+    return HttpServerResponse.jsonUnsafe({ object: "list" as const, data });
+  },
+  Effect.catch((error) => Effect.succeed(errorResponse(error)))
+);
+
 /** The inference plane routes, ready for `HttpRouter.serve`. */
 export const InferenceRoutes = Layer.mergeAll(
+  HttpRouter.add("GET", "/rooms/:code/v1/models", listModels),
   HttpRouter.add(
     "POST",
     "/rooms/:code/v1/chat/completions",
     infer("chatCompletions.create")
-  )
+  ),
+  HttpRouter.add("POST", "/rooms/:code/v1/responses", infer("responses.create"))
 );

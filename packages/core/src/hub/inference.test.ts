@@ -7,6 +7,7 @@ import { joinParticipant } from "../testing/participant.ts";
 import {
   FAKE_COMPLETION_TEXT,
   fakeProvider,
+  openAiAnswer,
   openStream,
   sseEvent,
 } from "../testing/provider.ts";
@@ -65,15 +66,20 @@ const json = (response: Response): Effect.Effect<any> =>
 
 const messages = [{ role: "user", content: "Oi" }];
 
+/** The reader of a response body, as far as these tests use it. */
+interface BodyReader {
+  read(): Promise<{ done: boolean; value?: Uint8Array | undefined }>;
+}
+
 /** Reads a response body to its end, as text. */
-const readToEnd = (reader: ReadableStreamDefaultReader<Uint8Array>) =>
+const readToEnd = (reader: BodyReader) =>
   Effect.promise(async () => {
     const streamDecoder = new TextDecoder();
     let text = "";
     for (;;) {
       const { done, value } = await reader.read();
       if (done) {
-        return text + streamDecoder.decode();
+        return text + streamDecoder.decode(new Uint8Array());
       }
       text += streamDecoder.decode(value, { stream: true });
     }
@@ -219,5 +225,325 @@ layer(layerHub(), { excludeTestServices: true })("inference plane", (it) => {
         expect(lastEvent(rest).event).toBe("error");
         expect(lastEvent(rest).data.code).toBe("consumer_too_slow");
       })
+  );
+
+  it.effect(
+    "a streamed chat completion arrives as the provider sent it, and the participant is free when it ends",
+    () =>
+      Effect.gen(function* () {
+        const room = yield* makeRoom("Ciranda");
+        const provider = yield* fakeProvider();
+        yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+          provider: { endpoint: provider.url },
+        });
+
+        const response = yield* post(room.url("/chat/completions"), {
+          model: "arthur-1",
+          stream: true,
+          messages,
+        });
+        const body = yield* Effect.promise(() => response.text());
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toBe("text/event-stream");
+        const sent = yield* Effect.promise(() =>
+          openAiAnswer({
+            method: "POST",
+            path: "/v1/chat/completions",
+            headers: {},
+            body: { model: "test-model", stream: true },
+            aborted: Effect.never,
+          }).text()
+        );
+        expect(body).toBe(sent);
+        expect(body.endsWith("data: [DONE]\n\n")).toBe(true);
+        expect(yield* room.statusOf("arthur-1")).toBe("online");
+      })
+  );
+
+  it.effect("a Response is created by the participant's provider", () =>
+    Effect.gen(function* () {
+      const room = yield* makeRoom("Caboclinho");
+      const provider = yield* fakeProvider();
+      yield* joinParticipant({
+        roomCode: room.code,
+        participantId: "arthur-1",
+        profile: { model: "gpt-4.1" },
+        provider: { endpoint: provider.url },
+      });
+
+      const response = yield* post(room.url("/responses"), {
+        model: "arthur-1",
+        input: "Oi",
+      });
+      const created = yield* json(response);
+
+      expect(response.status).toBe(200);
+      expect(created.object).toBe("response");
+      expect(created.output[0].content[0].text).toBe(FAKE_COMPLETION_TEXT);
+      const call = yield* provider.nextCall;
+      expect(call.path).toBe("/v1/responses");
+      expect(call.body).toEqual({ model: "gpt-4.1", input: "Oi" });
+      expect(yield* room.statusOf("arthur-1")).toBe("online");
+    })
+  );
+
+  it.effect("a streamed Response arrives event by event", () =>
+    Effect.gen(function* () {
+      const room = yield* makeRoom("Xote");
+      const provider = yield* fakeProvider();
+      yield* joinParticipant({
+        roomCode: room.code,
+        participantId: "arthur-1",
+        provider: { endpoint: provider.url },
+      });
+
+      const response = yield* post(room.url("/responses"), {
+        model: "arthur-1",
+        input: "Oi",
+        stream: true,
+      });
+      const body = yield* Effect.promise(() => response.text());
+
+      expect(response.headers.get("content-type")).toBe("text/event-stream");
+      expect(
+        body
+          .split("\n")
+          .filter((line) => line.startsWith("event: "))
+          .map((line) => line.slice("event: ".length))
+      ).toEqual([
+        "response.created",
+        "response.output_text.delta",
+        "response.output_text.delta",
+        "response.completed",
+      ]);
+      expect(lastEvent(body).data.response.status).toBe("completed");
+    })
+  );
+
+  it.effect(
+    "the models of a room are its participants that can take a request",
+    () =>
+      Effect.gen(function* () {
+        const tunnels = yield* Tunnels;
+        const client = yield* managementClient;
+        const room = yield* makeRoom("Baião");
+        yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+          profile: {
+            nickname: "Arthur",
+            model: "llama3.1:8b",
+            endpoint: "http://127.0.0.1:11434",
+            capabilities: {
+              openResponses: "unsupported",
+              chatCompletions: "supported",
+            },
+          },
+        });
+        const gone = yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "gone-1",
+        });
+        yield* gone.stop;
+        yield* tunnels.awaitDrop(room.code, "gone-1");
+        const [arthur] = yield* client.participants.list({
+          params: { code: room.code },
+        });
+
+        const response = yield* Effect.promise(() =>
+          fetch(room.url("/models"))
+        );
+
+        expect(response.status).toBe(200);
+        expect(yield* json(response)).toEqual({
+          object: "list",
+          data: [
+            {
+              id: "arthur-1",
+              object: "model",
+              created: Math.floor((arthur?.joinedAt ?? 0) / 1000),
+              owned_by: "Arthur",
+              gambi: {
+                nickname: "Arthur",
+                model: "llama3.1:8b",
+                endpoint: "http://127.0.0.1:11434",
+                capabilities: {
+                  openResponses: "unsupported",
+                  chatCompletions: "supported",
+                },
+                status: "online",
+              },
+            },
+          ],
+        });
+      })
+  );
+
+  it.effect("a model selector picks the participant that answers", () =>
+    Effect.gen(function* () {
+      const room = yield* makeRoom("Forró");
+      const llama = yield* fakeProvider();
+      const qwen = yield* fakeProvider();
+      yield* joinParticipant({
+        roomCode: room.code,
+        participantId: "arthur-1",
+        profile: { model: "llama3.1:8b" },
+        provider: { endpoint: llama.url },
+      });
+      yield* joinParticipant({
+        roomCode: room.code,
+        participantId: "bia-1",
+        profile: { model: "qwen2.5-coder" },
+        provider: { endpoint: qwen.url },
+      });
+      /** Sends a request with the selector and says which provider got it. */
+      const answeredBy = (model: string) =>
+        Effect.gen(function* () {
+          const response = yield* post(room.url("/chat/completions"), {
+            model,
+            messages,
+          });
+          yield* Effect.promise(() => response.text());
+          const [toLlama, toQwen] = [yield* llama.calls, yield* qwen.calls];
+          return {
+            status: response.status,
+            llama: toLlama.length,
+            qwen: toQwen.length,
+          };
+        });
+
+      // By participant id.
+      expect(yield* answeredBy("bia-1")).toEqual({
+        status: 200,
+        llama: 0,
+        qwen: 1,
+      });
+      // By model, with the prefix.
+      expect(yield* answeredBy("model:llama3.1:8b")).toEqual({
+        status: 200,
+        llama: 1,
+        qwen: 1,
+      });
+      // By the bare name of the model, as an OpenAI client sends it.
+      expect(yield* answeredBy("qwen2.5-coder")).toEqual({
+        status: 200,
+        llama: 1,
+        qwen: 2,
+      });
+      // Any participant: one of the two.
+      const afterStar = yield* answeredBy("*");
+      expect(afterStar.status).toBe(200);
+      expect(afterStar.llama + afterStar.qwen).toBe(4);
+      const afterAny = yield* answeredBy("any");
+      expect(afterAny.status).toBe(200);
+      expect(afterAny.llama + afterAny.qwen).toBe(5);
+    })
+  );
+
+  it.effect(
+    "only an online participant gets a request: a busy one and an offline one are named, and no wildcard reaches them",
+    () =>
+      Effect.gen(function* () {
+        const tunnels = yield* Tunnels;
+        const room = yield* makeRoom("Afoxé");
+        const generating = yield* openStream();
+        const provider = yield* fakeProvider({
+          answer: () => generating.response,
+        });
+        yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "busy-1",
+          profile: { model: "llama3.1:8b" },
+          provider: { endpoint: provider.url },
+        });
+        const offline = yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "offline-1",
+          profile: { model: "llama3.1:8b" },
+        });
+        yield* offline.stop;
+        yield* tunnels.awaitDrop(room.code, "offline-1");
+        yield* generating.send(sseEvent({ delta: "Olá" }));
+        const inFlight = yield* post(room.url("/chat/completions"), {
+          model: "busy-1",
+          stream: true,
+          messages,
+        });
+        expect(yield* room.statusOf("busy-1")).toBe("busy");
+        /** The status and the error code a request with the selector gets. */
+        const refusal = (model: string) =>
+          Effect.gen(function* () {
+            const response = yield* post(room.url("/chat/completions"), {
+              model,
+              messages,
+            });
+            const body = yield* json(response);
+            return [response.status, body.error.code];
+          });
+
+        expect(yield* refusal("busy-1")).toEqual([409, "participant_busy"]);
+        expect(yield* refusal("offline-1")).toEqual([
+          503,
+          "participant_offline",
+        ]);
+        expect(yield* refusal("*")).toEqual([404, "model_not_found"]);
+        expect(yield* refusal("model:llama3.1:8b")).toEqual([
+          404,
+          "model_not_found",
+        ]);
+        expect(yield* refusal("llama3.1:8b")).toEqual([404, "model_not_found"]);
+        expect(yield* refusal("nobody")).toEqual([404, "model_not_found"]);
+        // One request reached the provider: the one in flight.
+        expect((yield* provider.calls).length).toBe(1);
+
+        // When that request ends, the participant takes requests again.
+        yield* generating.end;
+        yield* Effect.promise(() => inFlight.text());
+        expect(yield* room.statusOf("busy-1")).toBe("online");
+      })
+  );
+
+  it.effect("an error has the shape of an OpenAI error", () =>
+    Effect.gen(function* () {
+      const room = yield* makeRoom("Maxixe");
+
+      const response = yield* post(room.url("/chat/completions"), {
+        model: "nobody",
+        messages,
+      });
+
+      expect(response.status).toBe(404);
+      expect(response.headers.get("content-type")).toBe("application/json");
+      expect(yield* json(response)).toEqual({
+        error: {
+          message: `No participant of room '${room.code}' is available for model 'nobody'.`,
+          type: "invalid_request_error",
+          param: null,
+          code: "model_not_found",
+        },
+      });
+    })
+  );
+
+  it.effect("a room that does not exist is a named 404", () =>
+    Effect.gen(function* () {
+      const hub = yield* Hub;
+
+      const completion = yield* post(
+        `${hub.url}/rooms/NOPE00/v1/chat/completions`,
+        { model: "*", messages }
+      );
+      const models = yield* Effect.promise(() =>
+        fetch(`${hub.url}/rooms/NOPE00/v1/models`)
+      );
+
+      expect(completion.status).toBe(404);
+      expect((yield* json(completion)).error.code).toBe("room_not_found");
+      expect(models.status).toBe(404);
+      expect((yield* json(models)).error.code).toBe("room_not_found");
+    })
   );
 });
