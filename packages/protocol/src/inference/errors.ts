@@ -131,6 +131,67 @@ export class ConsumerTooSlow extends Schema.TaggedError<ConsumerTooSlow>()(
   }
 }
 
+/**
+ * The hub knows no Response with this id in the room: none was created
+ * through it, the provider no longer has it, or the hub forgot it (it
+ * remembers a bounded number of them).
+ */
+export class ResponseNotFound extends Schema.TaggedError<ResponseNotFound>()(
+  "ResponseNotFound",
+  { roomCode: Schema.String, responseId: Schema.String }
+) {
+  override get message(): string {
+    return `Response '${this.responseId}' was not found in room '${this.roomCode}'.`;
+  }
+}
+
+/**
+ * The participant's provider has no Responses API, so the hub would ask it
+ * through Chat Completions, and the request uses something Chat Completions
+ * cannot carry: a stored conversation, a tool that is not a function, an
+ * input item with no equivalent.
+ */
+export class RequestNotTranslatable extends Schema.TaggedError<RequestNotTranslatable>()(
+  "RequestNotTranslatable",
+  {
+    /** The field of the request that cannot be carried. */
+    param: Schema.String,
+    issue: Schema.String,
+  }
+) {
+  override get message(): string {
+    return `The participant's provider is reached through Chat Completions, which cannot carry this request: ${this.param}: ${this.issue}`;
+  }
+}
+
+/**
+ * The Response was built by the hub from a Chat Completions answer, for a
+ * provider that has no Responses API. No provider stores it, so there is
+ * nothing to read back, delete or cancel.
+ */
+export class ResponseNotStored extends Schema.TaggedError<ResponseNotStored>()(
+  "ResponseNotStored",
+  { roomCode: Schema.String, responseId: Schema.String }
+) {
+  override get message(): string {
+    return `Response '${this.responseId}' was answered through Chat Completions and is stored nowhere: it cannot be read back, deleted or cancelled.`;
+  }
+}
+
+/**
+ * The participant's provider speaks neither API a Response can be created
+ * through: not the Responses API, and not Chat Completions, which the hub
+ * would translate.
+ */
+export class ResponsesNotSupported extends Schema.TaggedError<ResponsesNotSupported>()(
+  "ResponsesNotSupported",
+  { roomCode: Schema.String, participantId: Schema.String }
+) {
+  override get message(): string {
+    return `The provider of participant '${this.participantId}' speaks neither the Responses API nor Chat Completions.`;
+  }
+}
+
 /** Everything an inference request can fail with, before or during the response. */
 export type InferenceError =
   | InvalidInferenceRequest
@@ -142,6 +203,10 @@ export type InferenceError =
   | InferenceTimedOut
   | ProviderResponseTooLarge
   | ConsumerTooSlow
+  | RequestNotTranslatable
+  | ResponseNotFound
+  | ResponseNotStored
+  | ResponsesNotSupported
   | CallNotSupported
   | ProviderUnreachable
   | ProviderResponseInterrupted;
@@ -170,6 +235,10 @@ export const INFERENCE_FAILURES: {
   },
   // Only ever sent inside a stream, where the status is already 200.
   ConsumerTooSlow: { code: "consumer_too_slow", status: 408 },
+  RequestNotTranslatable: { code: "request_not_translatable", status: 400 },
+  ResponseNotFound: { code: "response_not_found", status: 404 },
+  ResponseNotStored: { code: "response_not_stored", status: 501 },
+  ResponsesNotSupported: { code: "responses_not_supported", status: 501 },
   CallNotSupported: { code: "inference_not_supported", status: 400 },
   ProviderUnreachable: { code: "provider_unreachable", status: 502 },
   ProviderResponseInterrupted: {
@@ -206,7 +275,8 @@ export const toOpenAiError = (
         message: error.message,
         type: errorType(status),
         param:
-          error._tag === "InvalidInferenceRequest"
+          error._tag === "InvalidInferenceRequest" ||
+          error._tag === "RequestNotTranslatable"
             ? (error.param ?? null)
             : null,
         code,
@@ -239,11 +309,21 @@ export const OPENAI_INTERNAL_ERROR: OpenAiErrorBody = {
  * reads it: the top-level fields are the `error` event of the Responses API,
  * and `error` is the error object of Chat Completions (the OpenAI SDKs throw
  * on an event whose data has an `error`). No `[DONE]` follows it.
+ *
+ * `sequenceNumber` is the place of the event in a stream whose events the
+ * hub numbers itself (a Response it translates). A stream the hub passes on
+ * as the provider wrote it has no number for it.
  */
-export const toOpenAiStreamError = (error: InferenceError): string => {
+export const toOpenAiStreamError = (
+  error: InferenceError,
+  sequenceNumber?: number
+): string => {
   const { body } = toOpenAiError(error);
   const data = {
     type: "error",
+    ...(sequenceNumber === undefined
+      ? {}
+      : { sequence_number: sequenceNumber }),
     code: body.error.code,
     message: body.error.message,
     param: body.error.param,

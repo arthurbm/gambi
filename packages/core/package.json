@@ -35,6 +35,7 @@
     "./harness/tunnel-handlers": "./src/harness/tunnel-handlers.ts",
     "./harness/detection": "./src/harness/detection.ts",
     "./participant/inference": "./src/participant/inference.ts",
+    "./participant/endpoint-capabilities": "./src/participant/endpoint-capabilities.ts",
     "./testing/hub": "./src/testing/hub.ts",
     "./testing/harness-fixtures": "./src/testing/harness-fixtures.ts",
     "./testing/hub-link": "./src/testing/hub-link.ts",

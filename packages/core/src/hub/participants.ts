@@ -62,6 +62,8 @@ interface ParticipantState {
  * stays inside the hub.
  */
 export interface DispatchedParticipant {
+  /** Which inference APIs its provider answers, as the participant registered them. */
+  readonly capabilities: ParticipantCapabilities;
   readonly config: RuntimeConfig;
   readonly id: string;
   readonly model: string;
@@ -412,6 +414,7 @@ export class Participants extends Context.Service<
               nickname: picked.nickname,
               model: picked.model,
               config: picked.config,
+              capabilities: picked.capabilities,
             } satisfies DispatchedParticipant;
           }
         }
