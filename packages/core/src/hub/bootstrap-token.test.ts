@@ -182,5 +182,10 @@ it.effect("a bootstrap token expires 60 s after it was issued", () =>
     expect(expired).toBeInstanceOf(TunnelOpenFailed);
     expect(onTheWire.status).toBe(401);
     expect(yield* statuses).toEqual([["arthur-1", "offline"]]);
-  }).pipe(Effect.provide(Platform), Effect.provide(layerHub()))
+  }).pipe(
+    Effect.provide(Platform),
+    // By default the same 60 s also remove a participant that never opened
+    // its tunnel. This hub keeps it longer, to show the refused token alone.
+    Effect.provide(layerHub({ reconnectDeadline: "5 minutes" }))
+  )
 );

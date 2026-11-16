@@ -19,19 +19,23 @@ import {
 } from "effect/http-api";
 import {
   ParticipantId,
+  ParticipantLeft,
   ParticipantRegistered,
   ParticipantSummary,
   RegisterParticipant,
 } from "../participant.ts";
 import { CreateRoom, RoomCode, RoomCreated, RoomSummary } from "../room.ts";
+import { RoomEvent } from "../room-event.ts";
 import { failure, success } from "./envelope.ts";
 import {
   InternalError,
   InvalidPassword,
   InvalidRequest,
+  ParticipantNotFound,
   RoomNotFound,
   VersionMismatch,
 } from "./errors.ts";
+import { eventStream } from "./event-stream.ts";
 
 export const Health = Schema.Struct({
   status: Schema.Literal("ok"),
@@ -98,18 +102,39 @@ export class ParticipantsGroup extends HttpApiGroup.make("participants")
       params: { code: RoomCode },
       success: success(Schema.Array(ParticipantSummary)),
       error: failure(RoomNotFound),
+    }),
+    HttpApiEndpoint.delete("remove", "/rooms/:code/participants/:id", {
+      params: { code: RoomCode, id: ParticipantId },
+      success: success(ParticipantLeft),
+      error: [failure(RoomNotFound), failure(ParticipantNotFound)],
     })
   )
   .annotateMerge(
     OpenApi.annotations({
       title: "Participants",
       description:
-        "Register a participant and list the participants of a room. Registration answers with the bootstrap token of the tunnel.",
+        "Register a participant, list the participants of a room, and take one out of it. Registration answers with the bootstrap token of the tunnel. A participant that leaves is removed at once and its tunnel closes; one that only loses its tunnel stays, offline, until it reconnects or the reconnection deadline passes.",
+    })
+  ) {}
+
+export class EventsGroup extends HttpApiGroup.make("events")
+  .add(
+    HttpApiEndpoint.get("watch", "/rooms/:code/events", {
+      params: { code: RoomCode },
+      success: eventStream(RoomEvent),
+      error: failure(RoomNotFound),
+    })
+  )
+  .annotateMerge(
+    OpenApi.annotations({
+      title: "Events",
+      description:
+        "Watch a room: a Server-Sent Events stream that starts with a snapshot of the room and then carries every change, one event per change of a participant's status.",
     })
   ) {}
 
 export class ManagementApi extends HttpApi.make("gambi-management")
-  .add(HubGroup, RoomsGroup, ParticipantsGroup)
+  .add(HubGroup, RoomsGroup, ParticipantsGroup, EventsGroup)
   .prefix("/v1")
   .middleware(ManagementFailures)
   .annotateMerge(

@@ -9,8 +9,13 @@
  * `@effect/platform-bun` to that workspace's devDependencies.
  */
 import { BunHttpServer } from "@effect/platform-bun";
-import { type ManagementClient, makeManagementClient } from "@gambi/protocol";
-import { Effect, Layer, Logger } from "effect";
+import {
+  type ManagementClient,
+  makeManagementClient,
+  type RoomEvent,
+  type RoomSnapshot,
+} from "@gambi/protocol";
+import { Effect, Layer, Logger, Queue, type Scope, Stream } from "effect";
 import { FetchHttpClient, type HttpClient } from "effect/http";
 import type { HarnessClients } from "../hub/harness-clients.ts";
 import { Hub, type HubOptions, type HubStartError } from "../hub/hub.ts";
@@ -68,3 +73,46 @@ export const managementClient: Effect.Effect<
   const hub = yield* Hub;
   return yield* makeManagementClient(hub.url);
 });
+
+export interface RoomWatch {
+  /**
+   * The next event of the room, in order, waiting for it if it has not
+   * arrived. Each event is handed out once.
+   */
+  readonly next: Effect.Effect<RoomEvent>;
+  /** How the room was when the watch started. */
+  readonly snapshot: RoomSnapshot;
+}
+
+/**
+ * Watches the events of a room through the derived client, until the test
+ * ends. It returns once the stream is open and its snapshot arrived, so
+ * whatever the test does next shows up in `next`.
+ *
+ * @example
+ * const watch = yield* watchRoom(room.code);
+ * yield* joinParticipant({ roomCode: room.code });
+ * expect((yield* watch.next).type).toBe("participant.joined");
+ */
+export const watchRoom = (
+  roomCode: string
+): Effect.Effect<RoomWatch, never, Hub | HttpClient.HttpClient | Scope.Scope> =>
+  Effect.gen(function* () {
+    const client = yield* managementClient;
+    const received = yield* Queue.unbounded<RoomEvent>();
+    yield* client.events.watch({ params: { code: roomCode } }).pipe(
+      Stream.unwrap,
+      Stream.runForEach((event) => Queue.offer(received, event)),
+      Effect.orDie,
+      Effect.forkScoped
+    );
+    const snapshot = yield* Queue.take(received);
+    if (snapshot.type !== "room.snapshot") {
+      return yield* Effect.die(
+        new Error(
+          `The stream of a room starts with its snapshot, not with '${snapshot.type}'.`
+        )
+      );
+    }
+    return { next: Queue.take(received), snapshot };
+  });

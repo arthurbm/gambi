@@ -1,5 +1,5 @@
 import { expect } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { it } from "@gambi/testing/effect";
@@ -7,15 +7,20 @@ import { Effect } from "effect";
 
 /**
  * The new CLI (`cli/main.ts`) survives `bun build --compile`: `effect`,
- * `effect/cli`, `@effect/platform-bun` and the hub all run from one binary.
+ * `effect/cli`, `@effect/platform-bun` and the hub all run from one binary,
+ * and that binary can replace itself with `self update`.
  */
 
 const ENTRYPOINT = join(import.meta.dir, "cli", "main.ts");
 const COMPILE_TIMEOUT_MS = 120_000;
 
-const run = (cmd: string[]) =>
+const run = (cmd: string[], env: Record<string, string> = {}) =>
   Effect.promise(async () => {
-    const child = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
+    const child = Bun.spawn(cmd, {
+      env: { ...process.env, ...env },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     const [stdout, stderr, exitCode] = await Promise.all([
       new Response(child.stdout).text(),
       new Response(child.stderr).text(),
@@ -65,9 +70,22 @@ const firstEvent = (stdout: ReadableStream<Uint8Array>) =>
     return JSON.parse(text.split("\n")[0] ?? "");
   });
 
+/** A release on a loopback port that serves `body` as every binary. */
+const releaseServing = (body: string) =>
+  Effect.acquireRelease(
+    Effect.sync(() =>
+      Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch: () => new Response(body),
+      })
+    ),
+    (server) => Effect.promise(() => server.stop(true))
+  ).pipe(Effect.map((server) => `http://127.0.0.1:${server.port}`));
+
 // Live: it compiles and spawns a real binary.
 it.live(
-  "the compiled CLI serves a hub, creates a room and reports errors",
+  "the compiled CLI serves a hub, creates a room, reports errors and updates itself",
   () =>
     Effect.gen(function* () {
       const directory = yield* temporaryDirectory;
@@ -131,6 +149,24 @@ it.live(
       expect(unreachable.exitCode).toBe(3);
       expect(unreachable.stdout).toBe("");
       expect(JSON.parse(unreachable.stderr).error.name).toBe("HubUnreachable");
+
+      // Last, because it replaces the binary: named `gambi` and outside any
+      // package, it is a standalone install, and updates itself in place
+      // from the release it is pointed at.
+      const releaseUrl = yield* releaseServing("the next gambi");
+      const installedAt = yield* Effect.promise(() => realpath(binary));
+      const updated = yield* run([binary, "self", "update"], {
+        GAMBI_UPDATE_BASE_URL: releaseUrl,
+      });
+      expect(updated.stderr).toBe("");
+      expect(updated.exitCode).toBe(0);
+      expect(JSON.parse(updated.stdout).data).toMatchObject({
+        plan: { kind: "standalone", binaryPath: installedAt },
+        result: { kind: "updated" },
+      });
+      expect(yield* Effect.promise(() => readFile(binary, "utf8"))).toBe(
+        "the next gambi"
+      );
     }),
   COMPILE_TIMEOUT_MS
 );

@@ -3,13 +3,14 @@
  * (`layerHub` from `./hub.ts`). How to use it:
  * `docs/reference/effect-conventions.md`.
  */
-import { Context, Effect, Exit, Layer, Logger, Scope } from "effect";
+import { Context, Effect, Exit, Layer, Logger, Queue, Scope } from "effect";
 import { HttpClient } from "effect/http";
 import { Socket } from "effect/socket";
 import { Hub } from "../hub/hub.ts";
 import { TunnelDiagnostics } from "../participant/diagnostics.ts";
 import { HarnessCallsNotSupported } from "../participant/harness-not-supported.ts";
 import {
+  type ParticipantLifecycleEvent,
   type ParticipantProfile,
   ParticipantRuntime,
   type ParticipantRuntimeOptions,
@@ -30,6 +31,12 @@ export interface TestParticipantOptions<
   /** Where the runtime's log lines go. Default: nowhere. */
   readonly loggers?: readonly Logger.Logger<unknown, unknown>[] | undefined;
   readonly profile?: Partial<ParticipantProfile> | undefined;
+  /**
+   * Whether the runtime comes back by itself when its tunnel drops. Default
+   * `false` here, unlike the runtime's own default: a test that kills a
+   * participant expects it to stay dead.
+   */
+  readonly reconnect?: boolean | undefined;
   readonly roomCode: string;
 }
 
@@ -58,6 +65,13 @@ export interface TestParticipant {
    * which is what the hub sees when the participant's process dies.
    */
   readonly kill: Effect.Effect<void>;
+  /** Every lifecycle event of the runtime so far, from `connected` on. */
+  readonly lifecycleEvents: Effect.Effect<readonly ParticipantLifecycleEvent[]>;
+  /**
+   * The next lifecycle event of the runtime that the test has not read yet
+   * with this. Waits for one when there is none.
+   */
+  readonly nextLifecycleEvent: Effect.Effect<ParticipantLifecycleEvent>;
   readonly runtime: ParticipantRuntime["Service"];
   /**
    * Everything this participant sent to the hub so far, as text: each HTTP
@@ -91,13 +105,22 @@ export const joinParticipant = <Handlers extends TunnelHandlers>(
 > =>
   Effect.gen(function* () {
     const hub = yield* Hub;
-    const { handlers, loggers = [], profile, ...runtimeOptions } = options;
+    const {
+      handlers,
+      loggers = [],
+      onLifecycle,
+      profile,
+      reconnect = false,
+      ...runtimeOptions
+    } = options;
     // The last layer merged wins: what the test passed replaces the default
     // of the same call.
     const allHandlers: Layer.Layer<TunnelHandlers> =
       handlers === undefined
         ? defaultHandlers
         : Layer.merge(defaultHandlers, handlers);
+    const lifecycle = yield* Queue.unbounded<ParticipantLifecycleEvent>();
+    const lifecycleEvents: ParticipantLifecycleEvent[] = [];
     const scope = yield* Scope.fork(yield* Effect.scope);
     const dialed: WebSocket[] = [];
     const sent: string[] = [];
@@ -149,6 +172,13 @@ export const joinParticipant = <Handlers extends TunnelHandlers>(
         hubUrl: hub.url,
         participantId: "participant-1",
         ...runtimeOptions,
+        onLifecycle: (event) => {
+          lifecycleEvents.push(event);
+          return Queue.offer(lifecycle, event).pipe(
+            Effect.andThen(onLifecycle?.(event) ?? Effect.void)
+          );
+        },
+        reconnect,
         profile: {
           nickname: "Test participant",
           model: "test-model",
@@ -181,6 +211,8 @@ export const joinParticipant = <Handlers extends TunnelHandlers>(
           socket.terminate();
         }
       }),
+      lifecycleEvents: Effect.sync(() => [...lifecycleEvents]),
+      nextLifecycleEvent: Queue.take(lifecycle),
       runtime: Context.get(context, ParticipantRuntime),
       sentToHub: Effect.sync(() => [...sent]),
       stop: Scope.close(scope, Exit.void),
