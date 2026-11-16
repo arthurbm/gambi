@@ -145,6 +145,20 @@ export class ResponseNotFound extends Schema.TaggedError<ResponseNotFound>()(
   }
 }
 
+/**
+ * The participant's provider speaks neither API a Response can be created
+ * through: not the Responses API, and not Chat Completions, which the hub
+ * would translate.
+ */
+export class ResponsesNotSupported extends Schema.TaggedError<ResponsesNotSupported>()(
+  "ResponsesNotSupported",
+  { roomCode: Schema.String, participantId: Schema.String }
+) {
+  override get message(): string {
+    return `The provider of participant '${this.participantId}' speaks neither the Responses API nor Chat Completions.`;
+  }
+}
+
 /** Everything an inference request can fail with, before or during the response. */
 export type InferenceError =
   | InvalidInferenceRequest
@@ -157,6 +171,7 @@ export type InferenceError =
   | ProviderResponseTooLarge
   | ConsumerTooSlow
   | ResponseNotFound
+  | ResponsesNotSupported
   | CallNotSupported
   | ProviderUnreachable
   | ProviderResponseInterrupted;
@@ -186,6 +201,7 @@ export const INFERENCE_FAILURES: {
   // Only ever sent inside a stream, where the status is already 200.
   ConsumerTooSlow: { code: "consumer_too_slow", status: 408 },
   ResponseNotFound: { code: "response_not_found", status: 404 },
+  ResponsesNotSupported: { code: "responses_not_supported", status: 501 },
   CallNotSupported: { code: "inference_not_supported", status: 400 },
   ProviderUnreachable: { code: "provider_unreachable", status: 502 },
   ProviderResponseInterrupted: {

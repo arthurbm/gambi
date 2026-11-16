@@ -57,12 +57,14 @@ import {
   ProviderResponseTooLarge,
   type ProviderUnreachable,
   ResponseNotFound,
+  ResponsesNotSupported,
   type StoredResponseOperation,
   toOpenAiError,
   toOpenAiStreamError,
 } from "@gambi/protocol";
 import {
   Cause,
+  Clock,
   Duration,
   Effect,
   Exit,
@@ -73,6 +75,7 @@ import {
   Scope,
   Stream,
 } from "effect";
+import { SecureRandom } from "effect/crypto";
 import { Sse } from "effect/encoding";
 import {
   HttpRouter,
@@ -83,15 +86,21 @@ import type { RpcClientError } from "effect/rpc";
 import {
   mergeDefaults,
   providerBody,
+  type RequestBody,
   readRequest,
 } from "./inference-request.ts";
 import { RequestIdentity } from "./management.ts";
-import { Participants } from "./participants.ts";
+import { type DispatchedParticipant, Participants } from "./participants.ts";
 import {
   type RequestReport,
   reportRequest,
   unreported,
 } from "./request-events.ts";
+import {
+  type Translation,
+  toChatCompletionsRequest,
+  toResponse,
+} from "./responses-translation.ts";
 import { Rooms } from "./rooms.ts";
 import { HubSettings } from "./settings.ts";
 import { StoredResponses } from "./stored-responses.ts";
@@ -539,6 +548,82 @@ const ResponseDocument = Schema.fromJsonString(
 );
 const readResponseId = Schema.decodeUnknownOption(ResponseDocument);
 
+/** A status of `POST /v1/responses` that says the provider has no such route. */
+const saysNoResponsesApi = (status: number) =>
+  status === 404 || status === 405 || status === 501;
+
+/**
+ * Creates a Response on the provider of `participant`, in the API the
+ * provider speaks.
+ *
+ * A provider that may speak the Responses API is asked in it, and keeps the
+ * Response it creates. One that does not (its capabilities say so, or it
+ * answers that it has no such route) is asked through Chat Completions, and
+ * the hub writes the answer as a Response (`responses-translation.ts`). That
+ * second request goes through the same call, so it is cancelled, timed out
+ * and bounded like any other.
+ */
+const createResponse = Effect.fnUntraced(function* (
+  call: Call,
+  participant: DispatchedParticipant,
+  body: RequestBody,
+  report: RequestReport
+) {
+  const stored = yield* StoredResponses;
+  const random = yield* SecureRandom.SecureRandom;
+  const { roomCode, participantId } = call;
+  const { capabilities } = participant;
+
+  if (capabilities.openResponses !== "unsupported") {
+    const attempt = yield* Scope.fork(yield* Effect.scope);
+    const answer = yield* askProvider(roomCode, participantId, {
+      operation: "responses.create",
+      body: JSON.stringify(body),
+    }).pipe(Scope.provide(attempt));
+    if (!saysNoResponsesApi(answer.status)) {
+      // The provider keeps the Response it created. Whoever asks for it
+      // later is sent to this participant.
+      const remember = (responseId: string) =>
+        stored.remember(roomCode, responseId, {
+          participantId,
+          translated: false,
+        });
+      return yield* respond(call, answer, {
+        report,
+        document: (text) =>
+          Option.match(readResponseId(text), {
+            onNone: () => Effect.void,
+            onSome: ({ id }) => remember(id),
+          }).pipe(Effect.as(text)),
+        stream: streamOfStoredResponse(remember),
+      });
+    }
+    yield* Scope.close(attempt, Exit.void);
+  }
+  if (capabilities.chatCompletions === "unsupported") {
+    return yield* new ResponsesNotSupported({ roomCode, participantId });
+  }
+
+  const answer = yield* askProvider(roomCode, participantId, {
+    operation: "chatCompletions.create",
+    body: JSON.stringify(toChatCompletionsRequest(body)),
+  });
+  const translation: Translation = {
+    responseId: `resp_${(yield* random.uuidV4()).replaceAll("-", "")}`,
+    createdAt: Math.floor((yield* Clock.currentTimeMillis) / 1000),
+    model: participant.model,
+    request: body,
+  };
+  return yield* respond(call, answer, {
+    ...untouched,
+    report,
+    document: (text) =>
+      Effect.succeed(
+        Option.getOrElse(toResponse(translation, text), () => text)
+      ),
+  });
+});
+
 /**
  * A route that creates something on a provider: the request is routed to a
  * participant by its model selector, and the participant is `busy` until
@@ -550,7 +635,6 @@ const infer = (operation: InferenceCreation) =>
   ) {
     const rooms = yield* Rooms;
     const participants = yield* Participants;
-    const stored = yield* StoredResponses;
     const params = yield* HttpRouter.params;
     const room = yield* rooms.get(params.code ?? "");
     const roomCode = room.code;
@@ -584,37 +668,24 @@ const infer = (operation: InferenceCreation) =>
           model: participant.model,
           modelSelector: asked.model,
         });
-        return yield* Effect.gen(function* () {
-          const answer = yield* askProvider(roomCode, participantId, {
-            operation,
-            body: providerBody(
-              operation,
-              asked.body,
-              mergeDefaults(roomDefaults, participant.config),
-              participant.model
-            ),
-          });
-          if (operation === "chatCompletions.create") {
-            return yield* respond(call, answer, { ...untouched, report });
-          }
-          // The provider keeps the Response it created. Whoever asks for it
-          // later is sent to this participant.
-          const remember = (responseId: string) =>
-            stored.remember(roomCode, responseId, {
-              participantId,
-              translated: false,
-            });
-          return yield* respond(call, answer, {
-            ...untouched,
-            report,
-            document: (text) =>
-              Option.match(readResponseId(text), {
-                onNone: () => Effect.void,
-                onSome: ({ id }) => remember(id),
-              }).pipe(Effect.as(text)),
-            stream: streamOfStoredResponse(remember),
-          });
-        }).pipe(
+        const body = providerBody(
+          operation,
+          asked.body,
+          mergeDefaults(roomDefaults, participant.config),
+          participant.model
+        );
+        const answering =
+          operation === "responses.create"
+            ? createResponse(call, participant, body, report)
+            : askProvider(roomCode, participantId, {
+                operation,
+                body: JSON.stringify(body),
+              }).pipe(
+                Effect.flatMap((answer) =>
+                  respond(call, answer, { ...untouched, report })
+                )
+              );
+        return yield* answering.pipe(
           Effect.tapError((error) => Effect.sync(() => report.failed(error)))
         );
       })
