@@ -22,8 +22,10 @@
  * still ends then, when its stdin closes.
  *
  * The runtime types the three ACP calls it makes itself (`./acp.ts`). It
- * reads nothing else: it only swaps the session id, between the one the hub
- * and its clients know and the one the harness gave.
+ * reads nothing else of ACP. Of each message it relays it touches the
+ * envelope only: the session id (the one the hub and its clients know, for
+ * the one the harness gave) and the JSON-RPC id of a client's request (one of
+ * its own, so the requests of several clients never share an id).
  */
 import {
   type AcpMessage,
