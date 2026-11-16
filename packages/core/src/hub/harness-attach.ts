@@ -14,7 +14,7 @@ import {
   ParticipantNotFound,
   ParticipantUnreachable,
 } from "@gambi/protocol";
-import { Effect, Stream } from "effect";
+import { Effect } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import type { RpcClientError } from "effect/rpc";
 import { HarnessClients } from "./harness-clients.ts";
@@ -99,9 +99,14 @@ export const HarnessHandlers = HttpApiBuilder.group(
       events: Effect.fn("Harness.attach")(function* ({ params }) {
         // What cannot be attached to is refused before the stream starts.
         const { roomCode, participantId } = yield* harnessParticipant(params);
-        return streams.untilHubCloses(
-          Stream.unwrap(clients.attach(roomCode, participantId))
-        );
+        // Attached before the hub answers, for as long as the request lives:
+        // its scope closes when the response ends or the client goes away.
+        const events = yield* clients.attach(roomCode, participantId);
+        // Asked again now that the client is attached. A participant that
+        // left in between detached nobody, and this client would wait for
+        // ever; one that leaves from here on detaches it.
+        yield* harnessParticipant(params);
+        return streams.untilHubCloses(events);
       }),
       send: Effect.fn("Harness.send")(function* ({ params, payload }) {
         yield* call(params, (tunnel) => tunnel.HarnessSend(payload));

@@ -324,6 +324,51 @@ layer(Layer.merge(layerHub(), BunServices.layer), {
   );
 
   it.effect(
+    "a client is attached from the moment the hub answers, so a participant that leaves before the client reads still detaches it",
+    () =>
+      Effect.gen(function* () {
+        const client = yield* managementClient;
+        const roomCode = yield* makeRoom("Samba");
+        yield* joinHarness(roomCode);
+
+        // The hub answered; the client has not read one event yet.
+        const events = yield* client.harness.events({
+          params: params(roomCode),
+        });
+        yield* client.participants.remove({ params: params(roomCode) });
+
+        expect(yield* Stream.runCollect(events)).toEqual([
+          { type: "harness.connected" },
+          { type: "harness.detached", reason: "left" },
+        ]);
+      })
+  );
+
+  it.effect(
+    "a client that goes away is detached: the hub keeps nothing for it",
+    () =>
+      Effect.gen(function* () {
+        const client = yield* managementClient;
+        const clients = yield* HarnessClients;
+        const roomCode = yield* makeRoom("Choro");
+        yield* joinHarness(roomCode);
+        // `joinHarness` keeps one client of its own attached.
+        const before = yield* clients.count(roomCode, "harness-1");
+
+        // Reads one event and closes the connection.
+        const first = yield* client.harness
+          .events({ params: params(roomCode) })
+          .pipe(Stream.unwrap, Stream.take(1), Stream.runCollect);
+
+        expect(first).toEqual([{ type: "harness.connected" }]);
+        // The hub notices the closed connection a moment later.
+        yield* clients
+          .count(roomCode, "harness-1")
+          .pipe(Effect.repeat({ until: (count) => count === before }));
+      })
+  );
+
+  it.effect(
     "when the participant leaves the room, its clients read why and their stream ends",
     () =>
       Effect.gen(function* () {
