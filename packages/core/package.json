@@ -28,7 +28,10 @@
     "./participant/runtime": "./src/participant/runtime.ts",
     "./participant/diagnostics": "./src/participant/diagnostics.ts",
     "./participant/harness-not-supported": "./src/participant/harness-not-supported.ts",
+    "./harness/harness": "./src/harness/harness.ts",
+    "./harness/adapters": "./src/harness/adapters.ts",
     "./testing/hub": "./src/testing/hub.ts",
+    "./testing/harness-fixtures": "./src/testing/harness-fixtures.ts",
     "./testing/participant": "./src/testing/participant.ts"
   },
   "scripts": {

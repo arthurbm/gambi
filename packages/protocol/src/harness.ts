@@ -7,6 +7,30 @@
  */
 import { Schema } from "effect";
 
+/**
+ * The harnesses a participant can contribute. `fake` is the deterministic
+ * test harness, which calls no model. `pi` is accepted by the schema and has
+ * no adapter yet (ADR-0006).
+ */
+export const HarnessId = Schema.Literals([
+  "opencode",
+  "claude-code",
+  "codex",
+  "pi",
+  "fake",
+]);
+export type HarnessId = typeof HarnessId.Type;
+
+/** What a harness participant says about its harness when it registers. */
+export const HarnessProfile = Schema.Struct({
+  id: HarnessId,
+  /** The model the harness runs on, when the participant chose to say. */
+  model: Schema.optionalKey(Schema.NonEmptyString),
+  /** `true` when the room host runs this harness for someone who brought none. */
+  hosted: Schema.optionalKey(Schema.Boolean),
+});
+export type HarnessProfile = typeof HarnessProfile.Type;
+
 /** One ACP v1 message: a JSON-RPC 2.0 object. Relayed as it is. */
 export const AcpMessage = Schema.Record(Schema.String, Schema.Unknown);
 export type AcpMessage = typeof AcpMessage.Type;

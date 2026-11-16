@@ -14,8 +14,13 @@
  */
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
-import { HarnessEvent } from "../harness.ts";
-import { CallNotSupported } from "./errors.ts";
+import { AcpMessage, HarnessEvent, HarnessSessionId } from "../harness.ts";
+import {
+  CallNotSupported,
+  HarnessFailed,
+  HarnessSessionNotOpen,
+  HarnessSessionOutsideWorkspace,
+} from "./errors.ts";
 
 /**
  * The hub's first call on a new tunnel. It tells the participant runtime
@@ -66,12 +71,48 @@ export const HarnessEvents = Rpc.make("HarnessEvents", {
   stream: true,
 });
 
+/**
+ * Hands one ACP message to the harness, for one of its sessions. It answers
+ * when the message is written to the harness, not when the harness answers:
+ * whatever the harness says comes up through `HarnessEvents`.
+ */
+export const HarnessSend = Rpc.make("HarnessSend", {
+  payload: { sessionId: HarnessSessionId, message: AcpMessage },
+  error: Schema.Union([CallNotSupported, HarnessSessionNotOpen, HarnessFailed]),
+});
+
+/**
+ * Opens a harness session under the id the caller picked. It answers when the
+ * harness has opened it; a session that is already open stays as it is.
+ * `cwd` must be inside the participant's Workspace, which is also the default.
+ */
+export const HarnessOpenSession = Rpc.make("HarnessOpenSession", {
+  payload: {
+    sessionId: HarnessSessionId,
+    cwd: Schema.optionalKey(Schema.NonEmptyString),
+  },
+  error: Schema.Union([
+    CallNotSupported,
+    HarnessSessionOutsideWorkspace,
+    HarnessFailed,
+  ]),
+});
+
+/** Closes a harness session. A session that is not open is already closed. */
+export const HarnessCloseSession = Rpc.make("HarnessCloseSession", {
+  payload: { sessionId: HarnessSessionId },
+  error: Schema.Union([CallNotSupported, HarnessFailed]),
+});
+
 /** Every call of the tunnel. The hub's client and the participant's server derive from it. */
 export class TunnelRpcs extends RpcGroup.make(
   Welcome,
   Echo,
   Ticks,
-  HarnessEvents
+  HarnessEvents,
+  HarnessSend,
+  HarnessOpenSession,
+  HarnessCloseSession
 ) {}
 
 /** The path of the tunnel's WebSocket upgrade on the hub. */

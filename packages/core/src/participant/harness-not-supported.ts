@@ -6,10 +6,19 @@
  * the real ones instead (`../harness/tunnel-handlers.ts`).
  */
 import { CallNotSupported, TunnelRpcs } from "@gambi/protocol";
-import { Layer, Stream } from "effect";
+import { Effect, Layer, Stream } from "effect";
 
 export const HarnessCallsNotSupported = Layer.mergeAll(
   TunnelRpcs.toLayerHandler("HarnessEvents", () =>
     Stream.fail(new CallNotSupported({ call: "HarnessEvents" }))
+  ),
+  TunnelRpcs.toLayerHandler("HarnessSend", () =>
+    Effect.fail(new CallNotSupported({ call: "HarnessSend" }))
+  ),
+  TunnelRpcs.toLayerHandler("HarnessOpenSession", () =>
+    Effect.fail(new CallNotSupported({ call: "HarnessOpenSession" }))
+  ),
+  TunnelRpcs.toLayerHandler("HarnessCloseSession", () =>
+    Effect.fail(new CallNotSupported({ call: "HarnessCloseSession" }))
   )
 );
