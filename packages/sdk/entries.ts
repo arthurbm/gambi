@@ -5,7 +5,7 @@
  * To add an entry: a line in `entries`, an `exports` entry in `package.json`,
  * and its expectations in `scripts/check-packed-types.ts`.
  */
-import { isAbsolute } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { build } from "bun";
 import { rollup } from "rollup";
 import { dts } from "rollup-plugin-dts";
@@ -24,21 +24,25 @@ export interface Entry {
    * - `bun`: also `bun` and `bun:*`, so it only runs in Bun.
    */
   readonly runsOn: "anywhere" | "node" | "bun";
+  /** The source file, relative to the package. */
   readonly source: string;
 }
+
+/** The package directory: builds work from any working directory. */
+const packageDir = import.meta.dir;
 
 export const entries: readonly Entry[] = [
   {
     exportPath: ".",
     name: "index",
     runsOn: "anywhere",
-    source: "./src/index.ts",
+    source: "src/index.ts",
   },
   {
     exportPath: "./discovery",
     name: "discovery",
     runsOn: "node",
-    source: "./src/discovery.ts",
+    source: "src/discovery.ts",
   },
 ];
 
@@ -61,7 +65,7 @@ export const buildEntry = async (
   outdir: string
 ): Promise<void> => {
   const result = await build({
-    entrypoints: [entry.source],
+    entrypoints: [join(packageDir, entry.source)],
     outdir,
     naming: `${entry.name}.js`,
     target: entry.runsOn === "bun" ? "bun" : "node",
@@ -92,9 +96,14 @@ export const buildDeclarations = async (outdir: string): Promise<void> => {
     id.startsWith(".") || isAbsolute(id) || id.startsWith("@gambi/");
   const declarations = await rollup({
     input: Object.fromEntries(
-      entries.map((entry) => [entry.name, entry.source])
+      entries.map((entry) => [entry.name, join(packageDir, entry.source)])
     ),
-    plugins: [dts({ respectExternal: true, tsconfig: "./tsconfig.json" })],
+    plugins: [
+      dts({
+        respectExternal: true,
+        tsconfig: join(packageDir, "tsconfig.json"),
+      }),
+    ],
     external: (id) => !isEmbedded(id),
   });
   await declarations.write({ dir: outdir, format: "es" });
