@@ -77,6 +77,18 @@ export const ArtifactFile = Schema.Struct({
 export type ArtifactFile = typeof ArtifactFile.Type;
 
 /**
+ * The largest artifact a participant runtime sends, in bytes of the JSON text
+ * of its event. A Workspace that does not fit sends no artifact at all.
+ *
+ * An artifact is one event, and two things on its way have a limit, both
+ * measured: the hub drops a tunnel that receives a WebSocket message of 16 MiB
+ * (the default of Bun's server), and the client derived from the contract
+ * fails a stream on a Server-Sent Event above 10 MiB (the default of
+ * `effect/encoding/Sse`). This stays under both.
+ */
+export const MAX_ARTIFACT_BYTES = 8 * 1024 * 1024;
+
+/**
  * An artifact: the files of the participant's Workspace at one moment. It is
  * a whole snapshot, never a difference, so each one replaces the one before:
  * a file that is not in `files` is not in the Workspace any more. `version`

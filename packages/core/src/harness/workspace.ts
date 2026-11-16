@@ -19,7 +19,11 @@
  * tunnel has no call that writes a file here.
  */
 import { homedir } from "node:os";
-import type { ArtifactFile, HarnessId } from "@gambi/protocol";
+import {
+  type ArtifactFile,
+  type HarnessId,
+  MAX_ARTIFACT_BYTES,
+} from "@gambi/protocol";
 import {
   type Cause,
   Context,
@@ -49,6 +53,11 @@ export interface WorkspaceContext {
 }
 
 export interface LocalDirectoryOptions extends WorkspaceContext {
+  /**
+   * How many bytes of files are collected at most, before `collect` fails
+   * with `WorkspaceTooLarge`. Default `MAX_ARTIFACT_BYTES`.
+   */
+  readonly maxArtifactBytes?: number | undefined;
   /** The base of the default location. Default: `~/.gambi`. */
   readonly gambiHome?: string | undefined;
   /**
@@ -104,28 +113,43 @@ const encodeFile = (path: string, bytes: Uint8Array): ArtifactFile => {
  * Every regular file under `root`, in the order of its path. A symbolic link
  * is neither followed nor collected: what an artifact carries is inside the
  * Workspace, and a link may point anywhere on the machine.
+ *
+ * It fails before reading a file that would take the total past `maxBytes`:
+ * no file travels in fewer bytes than it has, so the artifact could not be
+ * sent, and a folder of gigabytes must not be read for nothing at every
+ * change.
  */
-const collectFiles = Effect.fnUntraced(function* (root: string) {
+const collectFiles = Effect.fnUntraced(function* (
+  root: string,
+  maxBytes: number
+) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const files: ArtifactFile[] = [];
+  let total = 0;
+  const collect = Effect.fnUntraced(function* (
+    relative: string,
+    absolute: string
+  ) {
+    total += Number((yield* fs.stat(absolute)).size);
+    if (total > maxBytes) {
+      return yield* new WorkspaceTooLarge({ path: root, maxBytes });
+    }
+    files.push(encodeFile(relative, yield* fs.readFile(absolute)));
+  });
   const visit = (
     folder: string,
     prefix: string
-  ): Effect.Effect<void, PlatformError.PlatformError> =>
+  ): Effect.Effect<void, PlatformError.PlatformError | WorkspaceTooLarge> =>
     Effect.gen(function* () {
       for (const entry of yield* fs.readDirectoryEntries(folder)) {
         const relative = `${prefix}${entry.name}`;
         const absolute = path.join(folder, entry.name);
-        if (entry.type === "Directory") {
-          if (!EXCLUDED_FOLDERS.has(entry.name)) {
-            yield* visit(absolute, `${relative}/`);
-          }
-        } else if (
-          entry.type === "File" &&
-          relative !== WORKSPACE_METADATA_FILE
-        ) {
-          files.push(encodeFile(relative, yield* fs.readFile(absolute)));
+        if (entry.type === "File" && relative !== WORKSPACE_METADATA_FILE) {
+          yield* collect(relative, absolute);
+        }
+        if (entry.type === "Directory" && !EXCLUDED_FOLDERS.has(entry.name)) {
+          yield* visit(absolute, `${relative}/`);
         }
       }
     });
@@ -137,6 +161,19 @@ const collectFiles = Effect.fnUntraced(function* (root: string) {
     return left.path < right.path ? -1 : 1;
   });
 });
+
+/**
+ * The files of the Workspace are more than an artifact can carry. Nothing was
+ * collected: a part of the files would read as "the others are gone".
+ */
+export class WorkspaceTooLarge extends Schema.TaggedError<WorkspaceTooLarge>()(
+  "WorkspaceTooLarge",
+  { path: Schema.String, maxBytes: Schema.Int }
+) {
+  override get message(): string {
+    return `The Workspace at '${this.path}' holds more than the ${this.maxBytes} bytes one artifact can carry.`;
+  }
+}
 
 /** A room code or a participant id as one path segment that cannot leave its parent. */
 const asSegment = (value: string): string => {
@@ -156,7 +193,10 @@ export class Workspace extends Context.Service<
      */
     readonly changes: Stream.Stream<void, WorkspaceFailed>;
     /** The files of the Workspace as they are now, for an artifact. */
-    readonly collect: Effect.Effect<readonly ArtifactFile[], WorkspaceFailed>;
+    readonly collect: Effect.Effect<
+      readonly ArtifactFile[],
+      WorkspaceFailed | WorkspaceTooLarge
+    >;
     /** The absolute path of the folder the harness runs in. */
     readonly path: string;
   }
@@ -238,10 +278,14 @@ export class Workspace extends Context.Service<
 
         return Workspace.of({
           changes: Stream.fromQueue(noticed),
-          collect: collectFiles(folder).pipe(
+          collect: collectFiles(
+            folder,
+            options.maxArtifactBytes ?? MAX_ARTIFACT_BYTES
+          ).pipe(
             Effect.provideService(FileSystem.FileSystem, fs),
             Effect.provideService(Path.Path, path),
-            Effect.mapError(
+            Effect.catchTag(
+              "PlatformError",
               (cause) =>
                 new WorkspaceFailed({
                   path: folder,

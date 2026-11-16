@@ -23,7 +23,11 @@ import {
 } from "effect";
 import { TestClock } from "effect/testing";
 import { fakeHarnessCommand } from "./adapters.ts";
-import { type ArtifactsOptions, workspaceArtifacts } from "./artifacts.ts";
+import {
+  type ArtifactLifecycleEvent,
+  type ArtifactsOptions,
+  workspaceArtifacts,
+} from "./artifacts.ts";
 import { Harness } from "./harness.ts";
 import { Workspace } from "./workspace.ts";
 
@@ -76,9 +80,13 @@ const start = (
       }).pipe(Layer.provide(Logger.layer([])))
     );
     const harness = Context.get(running, Harness);
+    const told: ArtifactLifecycleEvent[] = [];
     const scope = yield* Scope.fork(yield* Effect.scope);
     yield* Layer.buildWithScope(
-      workspaceArtifacts(options).pipe(
+      workspaceArtifacts({
+        ...options,
+        onArtifact: (event) => Effect.sync(() => told.push(event)),
+      }).pipe(
         Layer.provide(Layer.succeedContext(running)),
         Layer.provide(DrivenWorkspace),
         Layer.provide(Logger.layer([]))
@@ -115,7 +123,10 @@ const start = (
           yield* Queue.offer(changes, noticed);
           yield* Deferred.await(noticed);
         }),
+      harness,
       next: Queue.take(produced),
+      /** What the host of the participant was told about its artifacts. */
+      told: Effect.sync(() => [...told]),
       /** Reads what is waiting to go up, as the next tunnel would. */
       read,
       /** How many events went up that the test has not read. */
@@ -242,5 +253,82 @@ it.effect(
       yield* TestClock.adjust("1 millis");
 
       yield* Fiber.join(closing);
+    })
+);
+
+it.effect(
+  "a Workspace too large for one event sends no artifact and takes no version, and the host is told of both",
+  () =>
+    Effect.gen(function* () {
+      const { change, next, told } = yield* start({ maxBytes: 400 });
+
+      yield* change([text("big.txt", "é".repeat(200))]);
+      yield* TestClock.adjust("1 second");
+      yield* change([text("small.txt", "é".repeat(20))]);
+      yield* TestClock.adjust("1 second");
+
+      expect(yield* next).toMatchObject({
+        type: "harness.artifact",
+        version: 1,
+        files: [text("small.txt", "é".repeat(20))],
+      });
+      expect(yield* told).toEqual([
+        {
+          type: "artifactSkipped",
+          sessionId: "main",
+          reason: "watch",
+          cause: "tooLarge",
+          maxBytes: 400,
+        },
+        {
+          type: "artifactSent",
+          sessionId: "main",
+          version: 1,
+          reason: "watch",
+          fileCount: 1,
+          bytes: 177,
+        },
+      ]);
+    })
+);
+
+it.effect(
+  "an artifact goes up in a tunnel message of its own, whatever else was waiting to go with it",
+  () =>
+    Effect.gen(function* () {
+      const { change, close, harness } = yield* start({ reader: "nobody" });
+      const said = (text: string) =>
+        harness.publish({
+          type: "harness.message",
+          sessionId: "main",
+          message: { text },
+        });
+      // All of this waits in the participant, as it does while a tunnel is down.
+      yield* said("antes");
+      yield* change([text("a.txt", "a")]);
+      yield* TestClock.adjust("1 second");
+      yield* said("depois");
+      yield* close;
+
+      // What the tunnel reads at once is what it writes as one message.
+      const batches = yield* Queue.unbounded<readonly string[]>();
+      yield* Stream.runForEachArray(harness.events, (batch) =>
+        Queue.offer(
+          batches,
+          batch.map((event) => event.type)
+        )
+      ).pipe(Effect.forkScoped);
+
+      expect([
+        yield* Queue.take(batches),
+        yield* Queue.take(batches),
+        yield* Queue.take(batches),
+        yield* Queue.take(batches),
+      ]).toEqual([
+        ["harness.session", "harness.message"],
+        ["harness.artifact"],
+        ["harness.message"],
+        ["harness.artifact"],
+      ]);
     })
 );

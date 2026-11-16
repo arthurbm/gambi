@@ -109,6 +109,12 @@ export class HarnessStartFailed extends Schema.TaggedError<HarnessStartFailed>()
   }
 }
 
+/** An event on its way to the hub, numbered in the order it was produced. */
+interface Outgoing {
+  readonly event: HarnessEvent;
+  readonly number: number;
+}
+
 /**
  * Every request the runtime writes to the harness carries an id the runtime
  * made, under this prefix: its own three calls and the requests of the
@@ -227,10 +233,9 @@ export class Harness extends Context.Service<
           `session-${Math.abs(yield* Random.nextInt).toString(36)}${Math.abs(yield* Random.nextInt).toString(36)}`;
 
         // What waits for the hub, numbered in the order it was produced.
-        const outbox = yield* Queue.sliding<{
-          readonly event: HarnessEvent;
-          readonly number: number;
-        }>(options.outbox ?? DEFAULT_HARNESS_OUTBOX);
+        const outbox = yield* Queue.sliding<Outgoing>(
+          options.outbox ?? DEFAULT_HARNESS_OUTBOX
+        );
         /** The number of the last event produced. */
         let produced = 0;
         /** Every event up to this number is with the hub, or lost. */
@@ -281,19 +286,48 @@ export class Harness extends Context.Service<
         // pulls the next only after the hub acknowledged the one before
         // (`effect/rpc` waits for the `Ack` of each chunk). So a reader that
         // asks for more has delivered everything it took.
+        //
+        // A batch is what the tunnel writes as one message, and a message
+        // has a size the hub accepts. An artifact is the one large event,
+        // and is kept under that size by whoever publishes it
+        // (`MAX_ARTIFACT_BYTES`), so it always goes in a batch of its own.
+        /**
+         * Taken from the outbox for a batch that has not gone yet. It stays
+         * here for the next reader when this one goes away.
+         */
+        let held: Outgoing[] = [];
         const events: Stream.Stream<HarnessEvent> = Stream.suspend(() => {
           let taken = 0;
           readers++;
+          const nextBatch = (
+            first: Outgoing
+          ): Arr.NonEmptyArray<HarnessEvent> => {
+            let size = 1;
+            if (first.event.type !== "harness.artifact") {
+              while (
+                size < held.length &&
+                held[size]?.event.type !== "harness.artifact"
+              ) {
+                size++;
+              }
+            }
+            const batch = held.splice(0, size);
+            taken = (batch.at(-1) ?? first).number;
+            return [first.event, ...batch.slice(1).map((entry) => entry.event)];
+          };
           return Stream.fromEffectRepeat(
             Effect.suspend(() => {
               pass(taken);
-              return Queue.takeAll(outbox);
+              const [first] = held;
+              if (first !== undefined) {
+                return Effect.succeed(nextBatch(first));
+              }
+              return Effect.map(Queue.takeAll(outbox), (all) => {
+                held = all;
+                return nextBatch(Arr.headNonEmpty(all));
+              });
             })
           ).pipe(
-            Stream.map((batch) => {
-              taken = Arr.lastNonEmpty(batch).number;
-              return Arr.map(batch, (entry) => entry.event);
-            }),
             Stream.flattenArray,
             // A reader that goes away took what it took with it: whether or
             // not the hub got its last batch, nothing of it is on its way.

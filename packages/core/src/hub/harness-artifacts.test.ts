@@ -9,6 +9,7 @@ import { BunServices } from "@effect/platform-bun";
 import type { HarnessAttachEvent } from "@gambi/protocol";
 import { layer } from "@gambi/testing/effect";
 import {
+  Context,
   Effect,
   Exit,
   Fiber,
@@ -22,11 +23,15 @@ import {
 } from "effect";
 import { Socket } from "effect/socket";
 import { fakeHarnessCommand } from "../harness/adapters.ts";
+import { Harness } from "../harness/harness.ts";
 import { harnessParticipant } from "../harness/harness-participant.ts";
+import { HarnessParticipantHandlers } from "../harness/tunnel-handlers.ts";
 import { Workspace } from "../harness/workspace.ts";
 import { layerHub, managementClient } from "../testing/hub.ts";
+import { joinParticipant } from "../testing/participant.ts";
 import { HarnessClients } from "./harness-clients.ts";
 import { Hub } from "./hub.ts";
+import { Tunnels } from "./tunnels.ts";
 
 const makeRoom = (name: string) =>
   Effect.gen(function* () {
@@ -182,5 +187,73 @@ layer(Layer.merge(layerHub(), BunServices.layer), {
         });
         expect((yield* attached.next).type).toBe("harness.disconnected");
       })
+  );
+
+  it.effect(
+    "artifacts that waited while the tunnel was down go up one message each: together they are more than the hub accepts in one, and the tunnel stays open",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const tunnels = yield* Tunnels;
+        const clients = yield* HarnessClients;
+        const roomCode = yield* makeRoom("Caboclinho");
+        const workspacePath = yield* fs.makeTempDirectoryScoped({
+          prefix: "gambi-artifacts-",
+        });
+        const running = yield* Layer.build(
+          Harness.layer({
+            command: fakeHarnessCommand(),
+            workspacePath,
+            sessionId: "main",
+          }).pipe(Layer.provide(Logger.layer([])))
+        );
+        const harness = Context.get(running, Harness);
+        // Three artifacts of 6 MiB: 18 MiB waiting, and the hub drops a
+        // tunnel on a message of 16 MiB.
+        const content = "A".repeat(6 * 1024 * 1024);
+        for (const version of [1, 2, 3]) {
+          yield* harness.publish({
+            type: "harness.artifact",
+            sessionId: "main",
+            version,
+            reason: "watch",
+            files: [{ path: "big.bin", encoding: "base64", content }],
+          });
+        }
+        const received = yield* Queue.unbounded<HarnessAttachEvent>();
+        yield* (yield* clients.attach(roomCode, "harness-1")).pipe(
+          Stream.runForEach((event) => Queue.offer(received, event)),
+          Effect.forkScoped
+        );
+
+        yield* joinParticipant({
+          roomCode,
+          participantId: "harness-1",
+          profile: { model: "fake", harness: { id: "fake" } },
+          handlers: HarnessParticipantHandlers.pipe(
+            Layer.provide(Layer.succeedContext(running))
+          ),
+        });
+
+        const heard: (readonly [string, number])[] = [];
+        while (heard.length < 6) {
+          const event = yield* Queue.take(received);
+          heard.push([
+            event.type,
+            event.type === "harness.artifact" ? event.version : 0,
+          ]);
+        }
+        const tunnel = yield* tunnels.client(roomCode, "harness-1");
+        expect(heard).toEqual([
+          ["harness.disconnected", 0],
+          ["harness.connected", 0],
+          ["harness.session", 0],
+          ["harness.artifact", 1],
+          ["harness.artifact", 2],
+          ["harness.artifact", 3],
+        ]);
+        expect(yield* tunnel.Echo({ text: "ainda aqui" })).toBe("ainda aqui");
+      }),
+    20_000
   );
 });

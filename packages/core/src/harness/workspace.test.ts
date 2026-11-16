@@ -133,6 +133,34 @@ layer(BunServices.layer, { excludeTestServices: true })(
     );
 
     it.effect(
+      "a folder that holds more than one artifact can carry is not collected at all",
+      () =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const folder = yield* temporaryFolder;
+          yield* fs.writeFileString(path.join(folder, "a.txt"), "123456");
+          yield* fs.writeFile(
+            path.join(folder, "b.bin"),
+            new Uint8Array([255, 255, 255, 255, 255, 255])
+          );
+
+          const fits = yield* prepare({ path: folder, maxArtifactBytes: 12 });
+          const tooSmall = yield* prepare({
+            path: folder,
+            maxArtifactBytes: 11,
+          });
+
+          expect(yield* fits.collect).toHaveLength(2);
+          const failure = yield* Effect.flip(tooSmall.collect);
+          expect(failure._tag).toBe("WorkspaceTooLarge");
+          expect(failure.message).toBe(
+            `The Workspace at '${folder}' holds more than the 11 bytes one artifact can carry.`
+          );
+        })
+    );
+
+    it.effect(
       "a change anywhere in the folder is noticed, in a subfolder that did not exist when the Workspace was prepared too",
       () =>
         Effect.gen(function* () {
