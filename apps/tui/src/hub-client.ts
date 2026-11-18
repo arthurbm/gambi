@@ -28,16 +28,9 @@ export const hubClient = (hubUrl: string): GambiClient => {
 };
 
 /**
- * `value` without the keys that hold `undefined`. A form leaves an empty
- * optional field as `undefined`, and the client refuses a field that is
- * present without a value.
+ * What the create-room form collects. An empty optional field is `undefined`,
+ * which the client takes for a field not given.
  */
-export const definedFields = <T extends object>(value: T): T =>
-  Object.fromEntries(
-    Object.entries(value).filter(([, field]) => field !== undefined)
-  ) as T;
-
-/** What the create-room form collects. An empty optional field is `undefined`. */
 export interface CreateRoomData {
   defaults?: CreateRoomInput["defaults"] | undefined;
   name: string;
@@ -47,5 +40,4 @@ export interface CreateRoomData {
 export const createRoom = (
   client: GambiClient,
   data: CreateRoomData
-): Promise<RoomCreated> =>
-  client.rooms.create(definedFields(data) as CreateRoomInput);
+): Promise<RoomCreated> => client.rooms.create(data);

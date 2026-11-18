@@ -6,11 +6,11 @@
  * `useParticipantSession` and the tests call them against a real hub.
  */
 import {
-  type HostedParticipant,
-  hostParticipant,
+  createParticipantSession,
   type ParticipantAuthHeaders,
   type ParticipantLifecycleEvent,
-} from "../hosting/participant";
+  type ParticipantSession,
+} from "gambi-sdk/participant";
 import { useSessionStore } from "../store/session-store";
 import type {
   MachineSpecs,
@@ -31,7 +31,7 @@ export interface JoinParticipantData {
 }
 
 // The participant this process hosts - persists across navigation
-let activeSession: HostedParticipant | null = null;
+let activeSession: ParticipantSession | null = null;
 
 const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
@@ -59,7 +59,7 @@ export const joinAsParticipant = async (
   store.setJoining(code);
 
   try {
-    let session: HostedParticipant | undefined;
+    let session: ParticipantSession | undefined;
     const onLifecycle = (event: ParticipantLifecycleEvent) => {
       // An event of a session that is no longer the current one.
       if (session !== undefined && activeSession !== session) {
@@ -67,7 +67,7 @@ export const joinAsParticipant = async (
       }
       followLifecycle(event);
     };
-    session = await hostParticipant({
+    session = await createParticipantSession({
       hubUrl,
       roomCode: code,
       participantId: data.id,

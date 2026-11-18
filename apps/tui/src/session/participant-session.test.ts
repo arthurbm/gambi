@@ -100,10 +100,15 @@ layer(layerHub(), { excludeTestServices: true })(
             }),
           })
         );
-        const call = yield* provider.nextCall;
+        // The join form sent no capabilities, so the session probed the
+        // provider first: those calls came before the request of the room.
+        const call = (yield* provider.calls).find(
+          (received) =>
+            received.path === "/v1/chat/completions" &&
+            JSON.stringify(received.body).includes("Oi")
+        );
         expect(answer.status).toBe(200);
-        expect(call.path).toBe("/v1/chat/completions");
-        expect(call.headers.authorization).toBe("Bearer segredo");
+        expect(call?.headers.authorization).toBe("Bearer segredo");
       })
     );
 

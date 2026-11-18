@@ -1,5 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useKeyboard } from "@opentui/react";
+import type { ParticipantAuthHeaders } from "gambi-sdk/participant";
 import { useCallback, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -12,7 +13,6 @@ import {
 } from "../hooks/queries";
 import type { Screen } from "../hooks/use-navigation";
 import { useParticipantSession } from "../hooks/use-participant-session";
-import type { ParticipantAuthHeaders } from "../hosting/participant";
 import { useAppStore } from "../store/app-store";
 import { colors } from "../types";
 import { generateNickname } from "../utils/nickname-generator";

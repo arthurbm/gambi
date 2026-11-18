@@ -15,10 +15,13 @@
     "verbatimModuleSyntax": true,
     "noEmit": true,
 
-    // The management client of `gambi-sdk`, from its source: the package's
-    // own `exports` point at `dist/`, which only exists after a build.
+    // The entries of `gambi-sdk` the TUI uses, from their source: the
+    // package's own `exports` point at `dist/`, which only exists after a
+    // build.
     "paths": {
-      "gambi-sdk": ["../../packages/sdk/src/index.ts"]
+      "gambi-sdk": ["../../packages/sdk/src/index.ts"],
+      "gambi-sdk/hub": ["../../packages/sdk/src/hub.ts"],
+      "gambi-sdk/participant": ["../../packages/sdk/src/participant.ts"]
     },
 
     // Best practices
