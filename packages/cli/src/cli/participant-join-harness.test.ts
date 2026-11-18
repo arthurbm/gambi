@@ -1,6 +1,6 @@
 import { expect } from "bun:test";
 import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hub } from "@gambi/core/hub/hub";
 import { layerHub, managementClient, watchRoom } from "@gambi/core/testing/hub";
@@ -419,6 +419,72 @@ layer(layerHub(), { excludeTestServices: true })(
           expect(errorOf(result.stderr).name).toBe("HarnessFailed");
           // biome-ignore lint/suspicious/noMisplacedAssertion: this is the body of a test of `it.effect.each`.
           expect(yield* participantsOf(room.code)).toEqual([]);
+        })
+    );
+
+    it.effect(
+      "a harness that ends by itself ends the stay as a failure, and the participant leaves the room",
+      () =>
+        Effect.gen(function* () {
+          const hub = yield* Hub;
+          const room = yield* createRoom("Harness que morre");
+          const workspace = yield* temporaryDirectory;
+          const joining = yield* startCommand(
+            joinWithHarness(
+              "fake",
+              hub.url,
+              room.code,
+              "--workspace",
+              workspace
+            ),
+            { spawner: realSpawner }
+          );
+          const pid = Number((yield* joining.nextEvent).data.pid);
+          yield* joining.nextEvent;
+          yield* joining.nextEvent;
+
+          process.kill(pid, "SIGKILL");
+
+          expect(yield* joining.nextEvent).toMatchObject({
+            type: "harness_exited",
+            data: {
+              roomCode: room.code,
+              participantId: "arthur-1",
+              harness: "fake",
+            },
+          });
+          // The harness is gone, and the Workspace still has its last state.
+          expect((yield* joining.nextEvent).type).toBe("artifact_sent");
+          expect(yield* joining.nextEvent).toMatchObject({
+            type: "left",
+            data: { reason: "harnessExited", removed: true },
+          });
+          const result = yield* joining.result;
+          expect(result.exitCode).toBe(3);
+          expect(errorOf(result.stderr)).toMatchObject({
+            name: "HarnessFailed",
+            details: { reason: "exited" },
+            exitCode: 3,
+          });
+          expect(yield* participantsOf(room.code)).toEqual([]);
+        }),
+      15_000
+    );
+
+    it.effect(
+      "without --workspace the harness runs in a folder of its own under ~/.gambi",
+      () =>
+        Effect.gen(function* () {
+          const hub = yield* Hub;
+
+          const result = yield* runCommand(
+            joinWithHarness("fake", hub.url, "ABC123", "--dry-run")
+          );
+
+          expect(result.exitCode).toBe(0);
+          expect(JSON.parse(result.stdout).data.workspace).toBe(
+            join(homedir(), ".gambi", "workspaces", "ABC123", "arthur-1")
+          );
         })
     );
 

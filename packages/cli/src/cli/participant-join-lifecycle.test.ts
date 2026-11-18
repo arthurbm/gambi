@@ -168,3 +168,26 @@ it.effect(
       });
     })
 );
+
+it.effect(
+  "told to leave while the hub is gone, it stops and says the hub did not confirm",
+  () =>
+    Effect.gen(function* () {
+      const hub = yield* startHub();
+      const joining = yield* Effect.gen(function* () {
+        const room = yield* newRoom;
+        return yield* joinRoom((yield* Hub).url, room.code);
+      }).pipe(Effect.provide(hub.context));
+
+      yield* hub.stop;
+      expect((yield* joining.nextEvent).type).toBe("reconnecting");
+      yield* joining.signal("SIGTERM");
+
+      expect((yield* joining.nextEvent).type).toBe("leaving");
+      expect(yield* joining.nextEvent).toMatchObject({
+        type: "left",
+        data: { reason: "stopped", removed: false },
+      });
+      expect((yield* joining.result).exitCode).toBe(0);
+    })
+);

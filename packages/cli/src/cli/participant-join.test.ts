@@ -529,6 +529,33 @@ it.effect(
     }).pipe(Effect.provide(layerHub()))
 );
 
+it.effect("--endpoint that is not a URL is invalid usage", () =>
+  Effect.gen(function* () {
+    const result = yield* runCommand(
+      joinWithEndpoint("http://127.0.0.1:9", "ABC123", "localhost:11434")
+    );
+
+    expect(result).toMatchObject({ exitCode: 2, stdout: "" });
+    expect(JSON.parse(result.stderr).error).toMatchObject({
+      name: "InvalidValue",
+      details: { option: "endpoint", value: "localhost:11434" },
+    });
+  })
+);
+
+it.effect("there is no heartbeat command", () =>
+  Effect.gen(function* () {
+    const heartbeat = yield* runCommand(["participant", "heartbeat"]);
+    expect(heartbeat).toMatchObject({ exitCode: 2, stdout: "" });
+    expect(JSON.parse(heartbeat.stderr).error.name).toBe("UnknownSubcommand");
+
+    const help = yield* runCommand(["participant", "--help"]);
+    expect(help.stdout).toContain("join");
+    expect(help.stdout).toContain("leave");
+    expect(help.stdout).not.toContain("heartbeat");
+  })
+);
+
 it.effect(
   "a hub of another minor version refuses the participant and says which version it expects",
   () =>
