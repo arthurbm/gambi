@@ -89,11 +89,22 @@ layer(BunServices.layer, { excludeTestServices: true })(
           yield* write("node_modules/dep/index.js", "ignored");
           yield* write("packages/app/node_modules/dep/index.js", "ignored");
           yield* write(".git/HEAD", "ref: refs/heads/main\n");
+          // A git worktree and a submodule have a file named `.git`.
+          yield* write(
+            "vendor/lib/.git",
+            "gitdir: /home/ana/.git/modules/lib\n"
+          );
+          // A byte order mark is part of the file.
+          yield* write(
+            "assets/bom.txt",
+            new Uint8Array([0xef, 0xbb, 0xbf, 0x6f, 0x69])
+          );
 
           const workspace = yield* prepare({ path: folder });
 
           expect(workspace.path).toBe(folder);
           expect(yield* workspace.collect).toEqual([
+            { path: "assets/bom.txt", encoding: "utf8", content: "\uFEFFoi" },
             { path: "assets/deep/notes.txt", encoding: "utf8", content: "" },
             { path: "assets/pixel.bin", encoding: "base64", content: "/w==" },
             {

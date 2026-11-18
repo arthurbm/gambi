@@ -296,7 +296,7 @@ it.effect(
   "an artifact goes up in a tunnel message of its own, whatever else was waiting to go with it",
   () =>
     Effect.gen(function* () {
-      const { change, close, harness } = yield* start({ reader: "nobody" });
+      const { change, harness } = yield* start({ reader: "nobody" });
       const said = (text: string) =>
         harness.publish({
           type: "harness.message",
@@ -308,7 +308,6 @@ it.effect(
       yield* change([text("a.txt", "a")]);
       yield* TestClock.adjust("1 second");
       yield* said("depois");
-      yield* close;
 
       // What the tunnel reads at once is what it writes as one message.
       const batches = yield* Queue.unbounded<readonly string[]>();
@@ -323,12 +322,43 @@ it.effect(
         yield* Queue.take(batches),
         yield* Queue.take(batches),
         yield* Queue.take(batches),
-        yield* Queue.take(batches),
       ]).toEqual([
         ["harness.session", "harness.message"],
         ["harness.artifact"],
         ["harness.message"],
-        ["harness.artifact"],
+      ]);
+    })
+);
+
+it.effect(
+  "while the tunnel is down only the newest artifact waits: the ones it replaced never go up",
+  () =>
+    Effect.gen(function* () {
+      const { change, close, harness, next, read } = yield* start({
+        reader: "nobody",
+      });
+      yield* change([text("a.txt", "um")]);
+      yield* TestClock.adjust("1 second");
+      yield* harness.publish({
+        type: "harness.message",
+        sessionId: "main",
+        message: { text: "entre um e dois" },
+      });
+      yield* change([text("a.txt", "dois")]);
+      yield* TestClock.adjust("1 second");
+      yield* change([text("a.txt", "três")]);
+      yield* close;
+
+      yield* Effect.forkScoped(read);
+      expect([yield* next, yield* next, yield* next]).toMatchObject([
+        { type: "harness.session" },
+        { type: "harness.message" },
+        {
+          type: "harness.artifact",
+          version: 3,
+          reason: "final",
+          files: [text("a.txt", "três")],
+        },
       ]);
     })
 );

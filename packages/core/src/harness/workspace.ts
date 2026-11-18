@@ -82,10 +82,11 @@ export class WorkspaceFailed extends Schema.TaggedError<WorkspaceFailed>()(
 }
 
 /**
- * Folders that are never part of an artifact, wherever they are in the
- * Workspace: they are large and are not what the harness session produced.
+ * Names that are never part of an artifact, wherever they are in the
+ * Workspace: what they hold is large and is not what the harness session
+ * produced.
  */
-const EXCLUDED_FOLDERS: ReadonlySet<string> = new Set([".git", "node_modules"]);
+const EXCLUDED_NAMES: ReadonlySet<string> = new Set([".git", "node_modules"]);
 
 /** How many changes wait for whoever observes the Workspace. */
 const NOTICED_CHANGES = 64;
@@ -97,7 +98,7 @@ const changesAnArtifact = (relativePath: string): boolean =>
   relativePath !== WORKSPACE_METADATA_FILE &&
   !relativePath
     .split(PATH_SEPARATOR)
-    .some((segment) => EXCLUDED_FOLDERS.has(segment));
+    .some((segment) => EXCLUDED_NAMES.has(segment));
 
 /** The file as an artifact carries it: as text when it is valid UTF-8. */
 const encodeFile = (path: string, bytes: Uint8Array): ArtifactFile => {
@@ -105,7 +106,12 @@ const encodeFile = (path: string, bytes: Uint8Array): ArtifactFile => {
     return {
       path,
       encoding: "utf8",
-      content: new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+      // `ignoreBOM` keeps a byte order mark: without it the file would lose
+      // its first three bytes on the way.
+      content: new TextDecoder("utf-8", {
+        fatal: true,
+        ignoreBOM: true,
+      }).decode(bytes),
     };
   } catch {
     return { path, encoding: "base64", content: Base64.encode(bytes) };
@@ -146,12 +152,17 @@ const collectFiles = Effect.fnUntraced(function* (
   ): Effect.Effect<void, PlatformError.PlatformError | WorkspaceTooLarge> =>
     Effect.gen(function* () {
       for (const entry of yield* fs.readDirectoryEntries(folder)) {
+        // By name, whatever it is: `.git` is a file in a git worktree and
+        // in a submodule.
+        if (EXCLUDED_NAMES.has(entry.name)) {
+          continue;
+        }
         const relative = `${prefix}${entry.name}`;
         const absolute = path.join(folder, entry.name);
         if (entry.type === "File" && relative !== WORKSPACE_METADATA_FILE) {
           yield* collect(relative, absolute);
         }
-        if (entry.type === "Directory" && !EXCLUDED_FOLDERS.has(entry.name)) {
+        if (entry.type === "Directory") {
           yield* visit(absolute, `${relative}/`);
         }
       }

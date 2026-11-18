@@ -223,14 +223,16 @@ The Workspace is the folder on the participant's machine where its harness sessi
 |---|---|---|
 | Prepare | Building the layer; `path` says where the folder is | Creates `<gambiHome>/workspaces/<roomCode>/<participantId>/`, or uses the `path` it was given, and writes `.gambi.json` there and nothing else |
 | Observe | `changes`: one element when something changed | A recursive watch of the folder, installed before the layer is built |
-| Collect | `collect`: the files as they are now | Every regular file, text in `utf8` and the rest in `base64`, without `.git`, `node_modules`, `.gambi.json` and symbolic links |
+| Collect | `collect`: the files as they are now | Every regular file, text in `utf8` and the rest in `base64`, without anything named `.git` or `node_modules` (a folder or a file), without `.gambi.json` and without symbolic links |
 
 Rules:
 
 - **Artifacts only go up.** Nothing in the tunnel writes a file on the participant's machine ([ADR-0006](../adr/0006-harness-participants-over-acp.md)), and no call may start to. `packages/core/src/harness/tunnel-writes-no-file.test.ts` makes every call of `TunnelRpcs` and fails when the participant runtime writes; it stops compiling when a call is added, until the new call is in it.
 - An artifact is a `harness.artifact` event: a whole snapshot of the Workspace, with the next `version`, sent through `Harness.publish` like everything else that goes up. It is taken when the Workspace changed and then stayed still for one second (`reason: "watch"`), and once more when the participant closes (`reason: "final"`).
 - An artifact is at most `MAX_ARTIFACT_BYTES` (8 MiB of JSON text). Both limits behind it were measured: the hub drops a tunnel that receives a WebSocket message of 16 MiB, and the derived client fails a stream on a Server-Sent Event above 10 MiB. A Workspace that does not fit sends no artifact and takes no version; the host hears `artifactSkipped` through `onArtifact`. Never send a part of the files: a snapshot without a file says the file is gone.
-- An artifact goes up in a tunnel message of its own (`events` in `harness.ts`). Events that waited while a tunnel was down go up together in one message otherwise, and two artifacts together pass the 16 MiB.
+- An artifact goes up in a tunnel message of its own (`events` in `harness.ts`): events that waited while a tunnel was down go up together in one message otherwise.
+- Only the newest artifact waits for the hub. One that a newer one replaced before it went is never sent, so a client may see versions skip, and a participant that works through a long drop of its tunnel holds one snapshot, not all of them.
+- Delivery is at most once. What the participant had handed to the tunnel when it dropped is not sent again; the next change of the Workspace sends a whole snapshot.
 - The last artifact is sent on a best effort. Closing waits for the hub to read it, for at most two seconds, and not at all when the tunnel is down (`Harness.flushed`).
 - A custom Workspace is a `Layer` that provides `Workspace`. To put starter content in the default one, build on it and write into `path` before the harness starts. `collect` must fail with `WorkspaceTooLarge` instead of reading what cannot be sent.
 - A test of the waits drives a Workspace of its own on the test clock (`packages/core/src/harness/artifacts.test.ts`); a test of the whole path uses the real folder and a short `settleTime`, and waits for the artifact (`packages/core/src/hub/harness-artifacts.test.ts`).

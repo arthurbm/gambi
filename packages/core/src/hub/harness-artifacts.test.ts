@@ -10,6 +10,7 @@ import type { HarnessAttachEvent } from "@gambi/protocol";
 import { layer } from "@gambi/testing/effect";
 import {
   Context,
+  type Duration,
   Effect,
   Exit,
   Fiber,
@@ -45,7 +46,17 @@ const makeRoom = (name: string) =>
  * folder of its own. It is online, and its session `main` is open, when this
  * returns. `stop` closes it the way its host does.
  */
-const host = (roomCode: string) =>
+const host = (
+  roomCode: string,
+  options: {
+    /**
+     * How long the Workspace stays still before an artifact. The real wait
+     * is one second; a test here waits for the artifact itself, so the
+     * default keeps the stillness that precedes it short.
+     */
+    readonly settleTime?: Duration.Input;
+  } = {}
+) =>
   Effect.gen(function* () {
     const hub = yield* Hub;
     const fs = yield* FileSystem.FileSystem;
@@ -78,9 +89,7 @@ const host = (roomCode: string) =>
           },
         },
         harness: { command: fakeHarnessCommand(), sessionId: "main" },
-        // The real wait is one second. Here the test waits for the artifact
-        // itself, so the stillness that precedes it is kept short.
-        artifacts: { settleTime: "20 millis" },
+        artifacts: { settleTime: options.settleTime ?? "20 millis" },
       }).pipe(
         Layer.provide(
           Workspace.layerLocalDirectory({
@@ -213,23 +222,19 @@ layer(Layer.merge(layerHub(), BunServices.layer), {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const roomCode = yield* makeRoom("Maracatu");
-        const { folder, stop } = yield* host(roomCode);
-        const attached = yield* attach(roomCode);
-        yield* fs.writeFileString(path.join(folder, "notes.md"), "# um\n");
-        expect(yield* attached.next).toMatchObject({
-          type: "harness.artifact",
-          version: 1,
-          reason: "watch",
+        // A stillness the test never reaches: the only artifact is the last.
+        const { folder, stop } = yield* host(roomCode, {
+          settleTime: "1 hour",
         });
+        const attached = yield* attach(roomCode);
         yield* fs.writeFileString(path.join(folder, "notes.md"), "# dois\n");
 
-        // Closed at once, before the change had its stillness.
         yield* stop;
 
         expect(yield* attached.next).toEqual({
           type: "harness.artifact",
           sessionId: "main",
-          version: 2,
+          version: 1,
           reason: "final",
           files: [{ path: "notes.md", encoding: "utf8", content: "# dois\n" }],
         });
@@ -238,7 +243,7 @@ layer(Layer.merge(layerHub(), BunServices.layer), {
   );
 
   it.effect(
-    "artifacts that waited while the tunnel was down go up one message each: together they are more than the hub accepts in one, and the tunnel stays open",
+    "of the artifacts taken while the tunnel was down only the newest goes up: together they are more than the hub accepts in one message, and the tunnel stays open",
     () =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
@@ -284,7 +289,7 @@ layer(Layer.merge(layerHub(), BunServices.layer), {
         });
 
         const heard: (readonly [string, number])[] = [];
-        while (heard.length < 6) {
+        while (heard.length < 4) {
           const event = yield* Queue.take(received);
           heard.push([
             event.type,
@@ -296,8 +301,6 @@ layer(Layer.merge(layerHub(), BunServices.layer), {
           ["harness.disconnected", 0],
           ["harness.connected", 0],
           ["harness.session", 0],
-          ["harness.artifact", 1],
-          ["harness.artifact", 2],
           ["harness.artifact", 3],
         ]);
         expect(yield* tunnel.Echo({ text: "ainda aqui" })).toBe("ainda aqui");
