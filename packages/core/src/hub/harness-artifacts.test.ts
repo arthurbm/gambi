@@ -159,6 +159,54 @@ layer(Layer.merge(layerHub(), BunServices.layer), {
   );
 
   it.effect(
+    "a client prompts the harness, the harness writes in its Workspace, and the client reads what it wrote as an artifact",
+    () =>
+      Effect.gen(function* () {
+        const client = yield* managementClient;
+        const roomCode = yield* makeRoom("Ciranda");
+        yield* host(roomCode);
+        const attached = yield* attach(roomCode);
+
+        yield* client.harness.send({
+          params: { code: roomCode, id: "harness-1" },
+          payload: {
+            sessionId: "main",
+            message: {
+              jsonrpc: "2.0",
+              id: 1,
+              method: "session/prompt",
+              params: {
+                sessionId: "main",
+                prompt: [{ type: "text", text: "escreve" }],
+              },
+            },
+          },
+        });
+
+        // The harness also answers the prompt; the artifact comes among its
+        // messages, a moment after the file was written.
+        let event = yield* attached.next;
+        while (event.type !== "harness.artifact") {
+          expect(event.type).toBe("harness.message");
+          event = yield* attached.next;
+        }
+        expect(event).toEqual({
+          type: "harness.artifact",
+          sessionId: "main",
+          version: 1,
+          reason: "watch",
+          files: [
+            {
+              path: "fake-output.txt",
+              encoding: "utf8",
+              content: "Fake ACP response: escreve\n",
+            },
+          ],
+        });
+      })
+  );
+
+  it.effect(
     "a participant that closes sends a last artifact, and its clients read it before they hear the harness went away",
     () =>
       Effect.gen(function* () {
