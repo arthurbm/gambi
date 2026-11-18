@@ -247,13 +247,13 @@ export const translatedMidStream =
     toClientError(hubUrl, failure, true);
 
 /** `true` only when `Public` and `Contract` are assignable to each other. */
-type Same<Public, Contract> = [Public] extends [Contract]
+export type Same<Public, Contract> = [Public] extends [Contract]
   ? [Contract] extends [Public]
     ? true
     : false
   : false;
 
-type Assert<Proof extends true> = Proof;
+export type Assert<Proof extends true> = Proof;
 
 /**
  * One line per public type that mirrors a schema of the contract. When the
