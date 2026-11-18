@@ -12,11 +12,8 @@ import { FetchHttpClient } from "effect/http";
 import { DEFAULT_HUB_URL } from "./client.ts";
 import { withoutUndefined } from "./input.ts";
 import { makePromiseBoundary } from "./promise.ts";
-import {
-  joinRoom,
-  type SessionControls,
-  type SessionOptions,
-} from "./session.ts";
+import { joinRoom } from "./session.ts";
+import type { SessionControls, SessionOptions } from "./session-types.ts";
 import type {
   MachineSpecs,
   ParticipantCapabilities,

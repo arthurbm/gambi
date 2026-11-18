@@ -11,16 +11,12 @@
  * `Workspace` of your own, or build on the default one.
  */
 import { BunServices } from "@effect/platform-bun";
-import {
-  Workspace as RuntimeWorkspace,
-  WorkspaceFailed,
-  WorkspaceTooLarge,
-} from "@gambi/core/harness/workspace";
+import { Workspace as RuntimeWorkspace } from "@gambi/core/harness/workspace";
 import { MAX_ARTIFACT_BYTES as CONTRACT_MAX_ARTIFACT_BYTES } from "@gambi/protocol";
-import { Cause, Effect, Layer, Queue, Stream } from "effect";
+import { Effect, Layer, Stream } from "effect";
 import { failingWith, host } from "./hosting.ts";
 import { withoutUndefined } from "./input.ts";
-import { ParticipantError, toParticipantError } from "./participant-error.ts";
+import { toParticipantError } from "./participant-failure.ts";
 import type { ArtifactFile } from "./types.ts";
 
 /**
@@ -144,85 +140,3 @@ export const createLocalDirectoryWorkspace = (
     };
   },
 });
-
-const messageOf = (cause: unknown): string =>
-  cause instanceof Error ? cause.message : String(cause);
-
-/**
- * A consumer's Workspace as the participant runtime takes it. Building the
- * layer prepares the Workspace, and fails with a `ParticipantError` when it
- * cannot be prepared; releasing it disposes of the Workspace.
- */
-export const workspaceLayer = (
-  workspace: Workspace,
-  context: WorkspaceContext
-): Layer.Layer<RuntimeWorkspace, ParticipantError> =>
-  Layer.effect(
-    RuntimeWorkspace,
-    Effect.gen(function* () {
-      const prepared = yield* Effect.acquireRelease(
-        Effect.tryPromise({
-          try: () => workspace.prepare(context),
-          catch: (cause) =>
-            cause instanceof ParticipantError
-              ? cause
-              : new ParticipantError({
-                  cause,
-                  code: "WORKSPACE_FAILED",
-                  message: `Could not prepare the Workspace: ${messageOf(cause)}`,
-                }),
-        }),
-        (ready) =>
-          Effect.promise(async () => {
-            await ready.dispose?.();
-          }).pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning("Disposing of the Workspace failed.", cause)
-            )
-          )
-      );
-      const { path } = prepared;
-      const failed = (operation: "collect" | "observe") => (cause: unknown) =>
-        new WorkspaceFailed({ path, operation, cause });
-      return RuntimeWorkspace.of({
-        path,
-        collect: Effect.tryPromise({
-          try: () => prepared.collect(),
-          catch: (cause) =>
-            cause instanceof ParticipantError &&
-            cause.code === "WORKSPACE_TOO_LARGE"
-              ? new WorkspaceTooLarge({
-                  path,
-                  maxBytes:
-                    typeof cause.details.maxBytes === "number"
-                      ? cause.details.maxBytes
-                      : MAX_ARTIFACT_BYTES,
-                })
-              : failed("collect")(cause),
-        }),
-        changes: Stream.callback<void, WorkspaceFailed>(
-          (queue) =>
-            Effect.acquireRelease(
-              Effect.try({
-                try: () =>
-                  prepared.watch(
-                    () => {
-                      Queue.offerUnsafe(queue, undefined);
-                    },
-                    (cause) => {
-                      Queue.failCauseUnsafe(
-                        queue,
-                        Cause.fail(failed("observe")(cause))
-                      );
-                    }
-                  ),
-                catch: failed("observe"),
-              }),
-              (stop) => Effect.sync(stop)
-            ),
-          // Each element only says "look again": the newest ones are enough.
-          { bufferSize: 64, strategy: "sliding" }
-        ),
-      });
-    })
-  );

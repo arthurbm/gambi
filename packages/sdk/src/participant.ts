@@ -10,6 +10,9 @@
  * It exports functions, one error class and types. No schema value and no
  * Effect type leaves this package.
  */
+// First, so that Node hears why this entry does not load there.
+import "./bun-only.ts";
+
 export {
   type FakeAgentCommand,
   runFakeAcpAgent,
@@ -27,7 +30,7 @@ export {
   type HarnessParticipantSessionOptions,
   type HostedHarness,
 } from "./harness-participant-session.ts";
-export type { LogEntry } from "./hosting.ts";
+export type { LogEntry } from "./log.ts";
 export {
   ParticipantError,
   type ParticipantErrorCode,
@@ -49,7 +52,7 @@ export type {
   ReconnectReason,
   SessionControls,
   SessionOptions,
-} from "./session.ts";
+} from "./session-types.ts";
 export type {
   ArtifactFile,
   GenerationConfig,

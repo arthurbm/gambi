@@ -16,6 +16,8 @@
  * // ...
  * await hub.close();
  */
+// First, so that Node hears why this entry does not load there.
+import "./bun-only.ts";
 import { BunHttpServer } from "@effect/platform-bun";
 import {
   Hub,
@@ -24,10 +26,11 @@ import {
 } from "@gambi/core/hub/hub";
 import { Mdns } from "@gambi/core/hub/mdns";
 import { Effect, Layer } from "effect";
-import { failingWith, host, type LogEntry, logsTo } from "./hosting.ts";
+import { failingWith, host, logsTo } from "./hosting.ts";
 import { withoutUndefined } from "./input.ts";
+import type { LogEntry } from "./log.ts";
 
-export type { LogEntry } from "./hosting.ts";
+export type { LogEntry } from "./log.ts";
 
 export interface HubOptions {
   /** The interface to listen on. Default `0.0.0.0`. */

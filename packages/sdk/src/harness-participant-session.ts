@@ -1,30 +1,14 @@
-/**
- * A harness participant session (ADR-0006): a participant that contributes a
- * harness instead of a model endpoint, hosted in this process. The harness
- * runs as a subprocess in the Workspace, the participant serves the harness
- * calls of its tunnel with it, and the artifacts of the Workspace go up to
- * the hub.
- */
-import type { ArtifactLifecycleEvent as RuntimeArtifactEvent } from "@gambi/core/harness/artifacts";
-import {
-  type HarnessNotReady,
-  HarnessTools,
-  resolveHarness,
-} from "@gambi/core/harness/detection";
+import { HarnessTools, resolveHarness } from "@gambi/core/harness/detection";
 import { Harness } from "@gambi/core/harness/harness";
 import { harnessParticipant } from "@gambi/core/harness/harness-participant";
 import { ParticipantRuntime } from "@gambi/core/participant/runtime";
 import { Effect, Layer } from "effect";
 import { DEFAULT_HUB_URL } from "./client.ts";
-import type { Assert, Same } from "./contract.ts";
 import { type FakeAgentCommand, ownFakeAgentCommand } from "./fake-harness.ts";
 import { withoutUndefined } from "./input.ts";
 import { ParticipantError } from "./participant-error.ts";
-import {
-  joinRoom,
-  type SessionControls,
-  type SessionOptions,
-} from "./session.ts";
+import { joinRoom } from "./session.ts";
+import type { SessionControls, SessionOptions } from "./session-types.ts";
 import type {
   MachineSpecs,
   ParticipantSummary,
@@ -34,8 +18,8 @@ import {
   createLocalDirectoryWorkspace,
   type HostedHarnessId,
   type Workspace,
-  workspaceLayer,
 } from "./workspace.ts";
+import { workspaceLayer } from "./workspace-layer.ts";
 
 /** Why an artifact was taken: the Workspace changed and then stayed still, or the participant was closing. */
 export type ArtifactReason = "watch" | "final";
@@ -334,10 +318,3 @@ export const createHarnessParticipantSession = async (
     [Symbol.asyncDispose]: session.leave,
   };
 };
-
-/** The public artifact events are the ones the runtime reports. */
-export type ArtifactProofs = [
-  Assert<Same<ArtifactLifecycleEvent, RuntimeArtifactEvent>>,
-  // `HarnessNotReady` is the one failure of detection: its code has a row.
-  Assert<Same<HarnessNotReady["_tag"], "HarnessNotReady">>,
-];

@@ -4,24 +4,12 @@
  * boundary, and where its log lines go.
  *
  * Internal: an entry embeds its own copy of this file. Nothing here crosses
- * from one entry to another, and nothing here is exported from an entry but
- * the `LogEntry` type.
+ * from one entry to another, and no public type lives here: the declarations
+ * of an entry must never reach this file (see `./log.ts`).
  */
 import { Effect, Layer, Logger } from "effect";
+import type { LogEntry } from "./log.ts";
 import { makePromiseBoundary, type PromiseBoundary } from "./promise.ts";
-
-/** One log line of something hosted in this process. Plain JSON. */
-export interface LogEntry {
-  /** What the line was annotated with: a room code, a participant id, an operation. */
-  readonly annotations: Readonly<Record<string, unknown>>;
-  /** The failure behind the line, rendered, when it has one. */
-  readonly cause?: string;
-  /** `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR` or `FATAL`. */
-  readonly level: string;
-  readonly message: unknown;
-  /** ISO 8601. */
-  readonly timestamp: string;
-}
 
 /**
  * Where the log lines of something hosted go: to `onLog`, or nowhere. Never
