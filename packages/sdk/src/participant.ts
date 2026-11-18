@@ -10,6 +10,23 @@
  * It exports functions, one error class and types. No schema value and no
  * Effect type leaves this package.
  */
+export {
+  type FakeAgentCommand,
+  runFakeAcpAgent,
+} from "./fake-harness.ts";
+export {
+  type ArtifactCollectFailed,
+  type ArtifactLifecycleEvent,
+  type ArtifactReason,
+  type ArtifactSent,
+  type ArtifactsOptions,
+  type ArtifactTooLarge,
+  createHarnessParticipantSession,
+  type HarnessExit,
+  type HarnessParticipantSession,
+  type HarnessParticipantSessionOptions,
+  type HostedHarness,
+} from "./harness-participant-session.ts";
 export type { LogEntry } from "./hosting.ts";
 export {
   ParticipantError,
@@ -35,6 +52,8 @@ export type {
 } from "./session.ts";
 export type {
   GenerationConfig,
+  HarnessId,
+  HarnessProfile,
   MachineSpecs,
   ParticipantCapabilities,
   ParticipantStatus,
@@ -43,3 +62,13 @@ export type {
   RuntimeConfig,
   RuntimeConfigPublic,
 } from "./types.ts";
+export {
+  type ArtifactFile,
+  createLocalDirectoryWorkspace,
+  type HostedHarnessId,
+  type LocalDirectoryWorkspaceOptions,
+  MAX_ARTIFACT_BYTES,
+  type PreparedWorkspace,
+  type Workspace,
+  type WorkspaceContext,
+} from "./workspace.ts";

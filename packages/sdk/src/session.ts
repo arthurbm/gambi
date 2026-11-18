@@ -15,6 +15,7 @@ import { createClient } from "./client.ts";
 import type { Assert, Same } from "./contract.ts";
 import { failingWith, host, type LogEntry, logsTo } from "./hosting.ts";
 import {
+  type ParticipantError,
   type ParticipantFailure,
   toParticipantError,
 } from "./participant-error.ts";
@@ -179,7 +180,7 @@ export const joinRoom = async <A, R>(options: {
   readonly onLog: SessionOptions["onLog"];
   readonly participant: (
     onLifecycle: (event: RuntimeLifecycleEvent) => Effect.Effect<void>
-  ) => Layer.Layer<R, ParticipantFailure, Platform>;
+  ) => Layer.Layer<R, ParticipantFailure | ParticipantError, Platform>;
   readonly participantId: string;
   readonly roomCode: string;
 }): Promise<Session<A, R>> => {

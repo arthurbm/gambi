@@ -81,11 +81,28 @@ export interface ParticipantCapabilities {
   readonly openResponses: ProtocolSupport;
 }
 
+/**
+ * The harnesses a participant can contribute. `fake` is the deterministic
+ * test harness, which calls no model.
+ */
+export type HarnessId = "opencode" | "claude-code" | "codex" | "pi" | "fake";
+
+/** What a harness participant says about its harness when it registers. */
+export interface HarnessProfile {
+  /** `true` when the room host runs this harness for someone who brought none. */
+  readonly hosted?: boolean;
+  readonly id: HarnessId;
+  /** The model the harness runs on, when the participant chose to say. */
+  readonly model?: string;
+}
+
 export interface ParticipantSummary {
   readonly capabilities: ParticipantCapabilities;
   readonly config: RuntimeConfigPublic;
   /** The provider endpoint on the participant's machine. The hub never calls it. */
   readonly endpoint?: string;
+  /** Present on a harness participant: the harness it contributes instead of a model endpoint. */
+  readonly harness?: HarnessProfile;
   /** The stable id the participant picked for itself. */
   readonly id: string;
   /** Milliseconds since the epoch. Kept across re-registrations. */
@@ -107,6 +124,8 @@ export interface RegisterParticipantInput {
   readonly capabilities?: ParticipantCapabilities;
   readonly config?: RuntimeConfig;
   readonly endpoint?: string;
+  /** The harness this participant contributes, which makes it a harness participant. */
+  readonly harness?: HarnessProfile;
   readonly model: string;
   readonly nickname: string;
   /** The room password, when the room has one. */

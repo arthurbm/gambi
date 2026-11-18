@@ -116,15 +116,22 @@ const NOT_A_DETAIL: ReadonlySet<string> = new Set([
   "requestId",
 ]);
 
-/** The typed failure as the error a consumer catches. */
+/**
+ * The typed failure as the error a consumer catches. A failure that already
+ * is one (a Workspace of the consumer's own rejected with it) stays as it is.
+ */
 export const toParticipantError = (
-  failure: ParticipantFailure
+  failure: ParticipantFailure | ParticipantError
 ): ParticipantError =>
-  new ParticipantError({
-    cause: "cause" in failure ? failure.cause : undefined,
-    code: CODES[failure._tag],
-    details: Object.fromEntries(
-      Object.entries({ ...failure }).filter(([key]) => !NOT_A_DETAIL.has(key))
-    ),
-    message: failure.message,
-  });
+  failure instanceof ParticipantError
+    ? failure
+    : new ParticipantError({
+        cause: "cause" in failure ? failure.cause : undefined,
+        code: CODES[failure._tag],
+        details: Object.fromEntries(
+          Object.entries({ ...failure }).filter(
+            ([key]) => !NOT_A_DETAIL.has(key)
+          )
+        ),
+        message: failure.message,
+      });
