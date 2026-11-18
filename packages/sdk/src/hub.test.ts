@@ -125,3 +125,65 @@ it.live("the hub's log lines go to onLog", () =>
     yield* Effect.promise(() => client.close());
   })
 );
+
+it.live(
+  "removes a participant that stays offline for the deadline it was given",
+  () =>
+    Effect.gen(function* () {
+      const hub = yield* Effect.acquireRelease(
+        Effect.promise(() =>
+          createHub({ hostname: "127.0.0.1", port: 0, reconnectDeadlineMs: 50 })
+        ),
+        (started) => Effect.promise(() => started.close())
+      );
+      const client = createClient({ hubUrl: hub.url });
+      const { room } = yield* Effect.promise(() =>
+        client.rooms.create({ name: "Frevo" })
+      );
+      const events = client.events.watch(room.code)[Symbol.asyncIterator]();
+      yield* Effect.promise(() => events.next());
+
+      // Registered and never online: the deadline is all that removes it.
+      yield* Effect.promise(() =>
+        client.participants.register(room.code, "arthur-1", {
+          nickname: "Arthur",
+          model: "llama3",
+        })
+      );
+      const joined = yield* Effect.promise(() => events.next());
+      const removed = yield* Effect.promise(() => events.next());
+
+      expect(joined.value?.type).toBe("participant.joined");
+      expect(removed.value).toMatchObject({
+        type: "participant.removed",
+        reason: "reconnectDeadlinePassed",
+      });
+      yield* Effect.promise(() => client.close());
+    })
+);
+
+it.live("an onLog that throws does not take the hub down", () =>
+  Effect.gen(function* () {
+    const hub = yield* Effect.acquireRelease(
+      Effect.promise(() =>
+        createHub({
+          hostname: "127.0.0.1",
+          onLog: () => {
+            throw new Error("The log sink is broken.");
+          },
+          port: 0,
+        })
+      ),
+      (started) => Effect.promise(() => started.close())
+    );
+    const client = createClient({ hubUrl: hub.url });
+
+    const { room } = yield* Effect.promise(() =>
+      client.rooms.create({ name: "Frevo" })
+    );
+    const rooms = yield* Effect.promise(() => client.rooms.list());
+
+    expect(rooms.map((listed) => listed.code)).toContain(room.code);
+    yield* Effect.promise(() => client.close());
+  })
+);

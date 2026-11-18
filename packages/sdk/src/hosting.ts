@@ -23,13 +23,18 @@ export const logsTo = (
       ? []
       : [
           Logger.map(Logger.formatStructured, (line) => {
-            onLog({
-              annotations: line.annotations,
-              level: line.level,
-              message: line.message,
-              timestamp: line.timestamp,
-              ...(line.cause === undefined ? {} : { cause: line.cause }),
-            });
+            try {
+              onLog({
+                annotations: line.annotations,
+                level: line.level,
+                message: line.message,
+                timestamp: line.timestamp,
+                ...(line.cause === undefined ? {} : { cause: line.cause }),
+              });
+            } catch {
+              // A sink that throws must not fail what was only being logged,
+              // and there is nowhere left to say so.
+            }
           }),
         ]
   );
