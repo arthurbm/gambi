@@ -210,7 +210,7 @@ layer(layerHub(), { excludeTestServices: true })(
     );
 
     it.effect(
-      "a hub that refuses the participant on its way back ends the session",
+      "the session is degraded while the runtime comes back and over once it is refused",
       () =>
         Effect.gen(function* () {
           const hub = yield* Hub;

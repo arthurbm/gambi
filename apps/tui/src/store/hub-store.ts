@@ -66,9 +66,7 @@ export const useHubStore = create<HubState>((set, get) => ({
       mdns: options?.mdns ?? get().mdns,
     };
 
-    set({ status: "starting", error: null, ...config });
-
-    starting = hostHub(config).then(
+    const thisStart = hostHub(config).then(
       (hub) => {
         hubInstance = hub;
         set({
@@ -82,8 +80,15 @@ export const useHubStore = create<HubState>((set, get) => ({
         set({ status: "error", error: messageOf(err, "Failed to start hub") });
       }
     );
-    await starting;
-    starting = null;
+    // Kept before `starting` is published: whoever reacts to that status by
+    // stopping the hub must find the start to wait for.
+    starting = thisStart;
+    set({ status: "starting", error: null, ...config });
+
+    await thisStart;
+    if (starting === thisStart) {
+      starting = null;
+    }
   },
 
   stop: async () => {

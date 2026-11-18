@@ -123,4 +123,19 @@ describe("hub hosted by the TUI", () => {
     await using client = createClient({ hubUrl: `http://127.0.0.1:${port}` });
     expect(await refusal(client.rooms.list())).toBe("HUB_UNREACHABLE");
   });
+  test("shutting down the moment the hub says it is starting still stops it", async () => {
+    let shutdown: Promise<void> | undefined;
+    const unsubscribe = useHubStore.subscribe((state) => {
+      if (state.status === "starting") {
+        shutdown ??= shutdownHub();
+      }
+    });
+
+    await hub().start({ port: 0, hostname: "127.0.0.1" });
+    unsubscribe();
+    await shutdown;
+
+    expect(isHubRunning()).toBe(false);
+    expect(hub()).toMatchObject({ status: "stopped", url: null });
+  });
 });

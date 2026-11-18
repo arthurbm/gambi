@@ -91,7 +91,8 @@ layer(layerHub(), { excludeTestServices: true })("hosted participant", (it) => {
             nickname: "Arthur",
             model: "llama3",
             endpoint: "http://127.0.0.1:1",
-            leaveTimeoutMs: 20,
+            // Long enough for the request to have reached the relay.
+            leaveTimeoutMs: 100,
           })
         );
         const watch = yield* watchRoom(room.code);

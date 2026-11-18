@@ -44,7 +44,7 @@ src/
 
 Read the section "The TUI" of [`docs/reference/effect-conventions.md`](../../docs/reference/effect-conventions.md) first.
 
-- Every call to a hub goes through `hubClient(hubUrl)` (`src/hub-client.ts`), the management client of `gambi-sdk`. Never call `fetch` on a hub, never read an event stream by hand, never declare the shape of a hub answer: the types come from `gambi-sdk` (re-exported in `types.ts`).
+- Every call to a hub goes through `hubClient(hubUrl)` (`src/hub-client.ts`), the management client of `gambi-sdk`. Never call `fetch` on a hub, never read an event stream by hand, never declare the shape of a hub answer: the types come from `gambi-sdk` (re-exported in `types.ts`). The one exception to `hubClient` is `leave` in `hosting/participant.ts`: it creates a client of its own, because closing a client is the only way to take back a request the hub is not answering.
 - The client refuses a field that is present with the value `undefined`. A form that leaves an optional field empty passes its data through `definedFields`.
 - A participant has one status, `online`, `busy` or `offline`, and the hub is its only source. Do not derive it from anything else (there is no heartbeat and no `connection` field).
 - React stays out of the logic. `watchRooms`, `joinAsParticipant` and the hub store are plain modules; the hooks only subscribe to them. That is what lets the tests run them against a real hub.
