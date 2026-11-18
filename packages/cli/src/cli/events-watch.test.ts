@@ -2,8 +2,10 @@ import { expect } from "bun:test";
 import { Hub } from "@gambi/core/hub/hub";
 import { layerHub, managementClient } from "@gambi/core/testing/hub";
 import { joinParticipant } from "@gambi/core/testing/participant";
-import { layer } from "@gambi/testing/effect";
-import { Effect } from "effect";
+import { makeManagementClient } from "@gambi/protocol";
+import { it, layer } from "@gambi/testing/effect";
+import { Context, Effect, Exit, Layer, Scope } from "effect";
+import { FetchHttpClient } from "effect/http";
 import { runCommand, startCommand } from "./testing.ts";
 
 const SNAPSHOT_LINE = /^\S+ room\.snapshot Frevo \(0 participants\)$/;
@@ -91,3 +93,29 @@ layer(layerHub(), { excludeTestServices: true })("events watch", (it) => {
     })
   );
 });
+
+it.live("events watch ends by itself, with 0, when the hub closes", () =>
+  Effect.gen(function* () {
+    const scope = yield* Scope.fork(yield* Effect.scope);
+    const hub = Context.get(
+      yield* Layer.buildWithScope(layerHub(), scope),
+      Hub
+    );
+    const { room } = yield* (yield* makeManagementClient(hub.url)).rooms.create(
+      { payload: { name: "Frevo" } }
+    );
+    const watching = yield* startCommand([
+      "events",
+      "watch",
+      "--room",
+      room.code,
+      "--hub",
+      hub.url,
+    ]);
+    yield* watching.nextLine;
+
+    yield* Scope.close(scope, Exit.void);
+
+    expect(yield* watching.result).toMatchObject({ exitCode: 0, stderr: "" });
+  }).pipe(Effect.provide(FetchHttpClient.layer))
+);

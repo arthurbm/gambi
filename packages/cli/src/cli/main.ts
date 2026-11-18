@@ -9,6 +9,7 @@ import { cpus, totalmem } from "node:os";
  * function (`testing.ts`); `main.test.ts` covers what is only here.
  */
 import { BunHttpServer, BunServices, BunSocket } from "@effect/platform-bun";
+import { runFakeAcpAgent } from "@gambi/core/fake-acp-agent";
 import { Mdns } from "@gambi/core/hub/mdns";
 import { Effect, Layer, Runtime } from "effect";
 import { FetchHttpClient } from "effect/http";
@@ -29,6 +30,12 @@ import {
  * copy; after it, a second signal is a person who stopped waiting.
  */
 const DUPLICATE_SIGNAL_WINDOW_MS = 1000;
+
+/**
+ * How `fakeHarnessCommand` (`@gambi/core`) starts the fake ACP agent from a
+ * compiled binary, where the agent's source file does not exist on disk.
+ */
+const FAKE_ACP_AGENT_COMMAND = "__fake-acp-agent";
 
 const termination = makeTermination();
 
@@ -95,9 +102,18 @@ const Platform: Layer.Layer<CliEnvironment> = Layer.mergeAll(
   BunSocket.layerWebSocketConstructor
 ).pipe(Layer.provideMerge(BunServices.layer));
 
-runCli(process.argv.slice(2)).pipe(
-  Effect.provide(Platform),
-  runMain({
-    teardown: (exit, onExit) => onExit(processExitCode(exit)),
-  })
-);
+const argv = process.argv.slice(2);
+
+if (argv[0] === FAKE_ACP_AGENT_COMMAND) {
+  // Not a command of the CLI: the `fake` harness of a compiled binary is the
+  // binary itself, started with this word. It speaks ACP on its stdio until
+  // its stdin closes.
+  runFakeAcpAgent().catch(() => process.exit(ExitCode.internal));
+} else {
+  runCli(argv).pipe(
+    Effect.provide(Platform),
+    runMain({
+      teardown: (exit, onExit) => onExit(processExitCode(exit)),
+    })
+  );
+}
