@@ -4,7 +4,7 @@
  * the two ways the other end can fail to be a hub.
  */
 import { type ManagementClient, makeManagementClient } from "@gambi/protocol";
-import { Effect, Schema } from "effect";
+import { Config, Effect, Schema } from "effect";
 import { Flag } from "effect/cli";
 import { type HttpClient, HttpClientError } from "effect/http";
 
@@ -16,11 +16,20 @@ const HubUrl = Schema.String.check(
   })
 );
 
-/** `--hub`, `-H`: shared by every command that talks to a hub. */
+/** The environment variable that says where the hub is when `--hub` does not. */
+export const HUB_URL_VARIABLE = "GAMBI_HUB";
+
+/**
+ * `--hub`, `-H`: shared by every command that talks to a hub. Without the
+ * flag the URL is `GAMBI_HUB`, and without that the hub of this machine.
+ */
 export const hubFlag = Flag.String("hub").pipe(
   Flag.withAlias("H"),
   Flag.withMetavar("url"),
-  Flag.withDescription("URL of the hub"),
+  Flag.withDescription(
+    `URL of the hub. Default: the ${HUB_URL_VARIABLE} variable, then ${DEFAULT_HUB_URL}`
+  ),
+  Flag.withFallbackConfig(Config.String(HUB_URL_VARIABLE)),
   Flag.withSchema(HubUrl),
   Flag.withDefault(DEFAULT_HUB_URL)
 );
@@ -35,7 +44,7 @@ export class HubUnreachable extends Schema.TaggedError<HubUnreachable>()(
   }
 
   get hint(): string {
-    return "Check that the hub is running (`gambi hub serve`) and that --hub points at it.";
+    return "Check that the hub is running (`gambi hub serve`) and that --hub, or GAMBI_HUB, points at it.";
   }
 }
 
