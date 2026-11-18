@@ -140,11 +140,17 @@ const collectFiles = Effect.fnUntraced(function* (
     relative: string,
     absolute: string
   ) {
-    total += Number((yield* fs.stat(absolute)).size);
+    if (total + Number((yield* fs.stat(absolute)).size) > maxBytes) {
+      return yield* new WorkspaceTooLarge({ path: root, maxBytes });
+    }
+    // Counted by what was read: the file may have grown since it was
+    // measured.
+    const bytes = yield* fs.readFile(absolute);
+    total += bytes.length;
     if (total > maxBytes) {
       return yield* new WorkspaceTooLarge({ path: root, maxBytes });
     }
-    files.push(encodeFile(relative, yield* fs.readFile(absolute)));
+    files.push(encodeFile(relative, bytes));
   });
   const visit = (
     folder: string,

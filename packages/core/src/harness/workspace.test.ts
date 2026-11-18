@@ -5,6 +5,7 @@ import { expect } from "bun:test";
 import { BunServices } from "@effect/platform-bun";
 import { layer } from "@gambi/testing/effect";
 import {
+  ByteSize,
   type Cause,
   Context,
   Effect,
@@ -168,6 +169,41 @@ layer(BunServices.layer, { excludeTestServices: true })(
           expect(failure.message).toBe(
             `The Workspace at '${folder}' holds more than the 11 bytes one artifact can carry.`
           );
+        })
+    );
+
+    it.effect(
+      "a file that grew after it was measured still counts for what it is",
+      () =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const folder = yield* temporaryFolder;
+          yield* fs.writeFileString(path.join(folder, "a.log"), "123456");
+          yield* fs.writeFileString(path.join(folder, "b.log"), "123456");
+          // Every file measures one byte, and then holds six.
+          const workspace = yield* Layer.build(
+            Workspace.layerLocalDirectory({
+              ...who,
+              path: folder,
+              maxArtifactBytes: 11,
+            }).pipe(
+              Layer.provide(
+                Layer.succeed(FileSystem.FileSystem, {
+                  ...fs,
+                  stat: (file) =>
+                    Effect.map(fs.stat(file), (info) => ({
+                      ...info,
+                      size: ByteSize.bytes(1),
+                    })),
+                })
+              )
+            )
+          ).pipe(Effect.map((context) => Context.get(context, Workspace)));
+
+          const failure = yield* Effect.flip(workspace.collect);
+
+          expect(failure._tag).toBe("WorkspaceTooLarge");
         })
     );
 

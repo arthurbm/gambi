@@ -110,36 +110,13 @@ export class HarnessStartFailed extends Schema.TaggedError<HarnessStartFailed>()
   }
 }
 
-/**
- * An event on its way to the hub, numbered in the order it was produced.
- * `event` is `undefined` for an artifact that a newer one replaced before it
- * went: its place stays, its files do not.
- */
+/** An event on its way to the hub, numbered in the order it was produced. */
 interface Outgoing {
-  event: HarnessEvent | undefined;
+  readonly event: HarnessEvent;
   readonly number: number;
 }
 
-/** An event that still has to go. */
-type Waiting = Outgoing & { readonly event: HarnessEvent };
-
-/**
- * What goes to the hub next, of what waits, and what stays for later: the
- * events up to the next artifact, or that artifact alone. An artifact that
- * was replaced is in neither.
- */
-const splitBatch = (
-  held: readonly Outgoing[]
-): { readonly batch: Waiting[]; readonly rest: Waiting[] } => {
-  const waiting = held.filter(
-    (entry): entry is Waiting => entry.event !== undefined
-  );
-  const artifactAt = waiting.findIndex(
-    (entry) => entry.event.type === "harness.artifact"
-  );
-  const size = artifactAt === -1 ? waiting.length : Math.max(artifactAt, 1);
-  return { batch: waiting.slice(0, size), rest: waiting.slice(size) };
-};
+const isArtifact = (entry: Outgoing) => entry.event.type === "harness.artifact";
 
 /**
  * Every request the runtime writes to the harness carries an id the runtime
@@ -258,10 +235,12 @@ export class Harness extends Context.Service<
           options.sessionId ??
           `session-${Math.abs(yield* Random.nextInt).toString(36)}${Math.abs(yield* Random.nextInt).toString(36)}`;
 
-        // What waits for the hub, numbered in the order it was produced.
-        const outbox = yield* Queue.sliding<Outgoing>(
-          options.outbox ?? DEFAULT_HARNESS_OUTBOX
-        );
+        // What waits for the hub, oldest first. Past `capacity` the oldest
+        // leaves.
+        const outbox: Outgoing[] = [];
+        const capacity = options.outbox ?? DEFAULT_HARNESS_OUTBOX;
+        /** The reader, when it waits for something to go. */
+        let wake: (() => void) | undefined;
         /** The number of the last event produced. */
         let produced = 0;
         /** Every event up to this number is with the hub, or lost. */
@@ -304,21 +283,25 @@ export class Harness extends Context.Service<
         let gone: HarnessFailed | undefined;
         let requests = 0;
 
-        /** The newest artifact that no reader has taken yet. */
-        let waitingArtifact: Outgoing | undefined;
+        // In one step that nothing interrupts: an event is numbered, takes
+        // its place, and wakes the reader.
         const emit = (event: HarnessEvent) =>
-          Effect.suspend(() => {
+          Effect.sync(() => {
             const entry: Outgoing = { event, number: ++produced };
-            if (event.type === "harness.artifact") {
-              // An artifact is a whole snapshot, so a newer one replaces the
-              // one still waiting. Otherwise a participant that works through
-              // a long drop of its tunnel would hold every snapshot it took.
-              if (waitingArtifact !== undefined) {
-                waitingArtifact.event = undefined;
+            if (isArtifact(entry)) {
+              // An artifact is a whole snapshot, so it replaces the one still
+              // waiting. Otherwise a participant that works through a long
+              // drop of its tunnel would hold every snapshot it took.
+              const waiting = outbox.findIndex(isArtifact);
+              if (waiting !== -1) {
+                outbox.splice(waiting, 1);
               }
-              waitingArtifact = entry;
             }
-            return Effect.asVoid(Queue.offer(outbox, entry));
+            outbox.push(entry);
+            if (outbox.length > capacity) {
+              outbox.shift();
+            }
+            wake?.();
           });
         // The reader pulls one batch at a time, and the tunnel's stream call
         // pulls the next only after the hub acknowledged the one before
@@ -332,39 +315,44 @@ export class Harness extends Context.Service<
         //
         // Delivery is at most once: a batch the reader took when its tunnel
         // dropped is gone, whether or not the hub got it.
-        /**
-         * Taken from the outbox for a batch that has not gone yet. It stays
-         * here for the next reader when this one goes away.
-         */
-        let held: Outgoing[] = [];
         const events: Stream.Stream<HarnessEvent> = Stream.suspend(() => {
           let taken = 0;
           readers++;
-          const pull: Effect.Effect<Arr.NonEmptyArray<HarnessEvent>> =
-            Effect.suspend(() => {
-              const { batch, rest } = splitBatch(held);
-              held = rest;
-              const [first, ...others] = batch;
-              if (first === undefined) {
-                return Effect.flatMap(Queue.takeAll(outbox), (all) => {
-                  held = all;
-                  return pull;
-                });
-              }
-              const last = others.at(-1) ?? first;
-              taken = last.number;
-              if (last === waitingArtifact) {
-                waitingArtifact = undefined;
-              }
-              return Effect.succeed([
-                first.event,
-                ...others.map((entry) => entry.event),
-              ]);
-            });
+          // The events up to the next artifact, or that artifact alone.
+          const nextBatch = (): Arr.NonEmptyArray<HarnessEvent> | undefined => {
+            const artifactAt = outbox.findIndex(isArtifact);
+            const [first, ...others] = outbox.splice(
+              0,
+              artifactAt === -1 ? outbox.length : Math.max(artifactAt, 1)
+            );
+            if (first === undefined) {
+              return;
+            }
+            taken = (others.at(-1) ?? first).number;
+            return [first.event, ...others.map((entry) => entry.event)];
+          };
+          const take = Effect.callback<Arr.NonEmptyArray<HarnessEvent>>(
+            (resume) => {
+              const settle = () => {
+                const batch = nextBatch();
+                if (batch !== undefined) {
+                  // Cleared before resuming: the reader may ask again at
+                  // once, and that sets a new one.
+                  wake = undefined;
+                  resume(Effect.succeed(batch));
+                }
+              };
+              wake = settle;
+              settle();
+              return Effect.sync(() => {
+                wake = undefined;
+              });
+            }
+          );
           return Stream.fromEffectRepeat(
             Effect.suspend(() => {
               pass(taken);
-              return pull;
+              return take;
             })
           ).pipe(
             Stream.flattenArray,

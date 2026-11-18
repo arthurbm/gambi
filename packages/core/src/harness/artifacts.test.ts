@@ -49,6 +49,8 @@ const start = (
      * took the first event and never asked for more.
      */
     readonly reader?: "hub" | "nobody" | "stalled";
+    /** How many events wait in the harness for the hub. */
+    readonly outbox?: number;
   } = {}
 ) =>
   Effect.gen(function* () {
@@ -77,6 +79,7 @@ const start = (
         command: fakeHarnessCommand(),
         workspacePath,
         sessionId: "main",
+        outbox: options.outbox,
       }).pipe(Layer.provide(Logger.layer([])))
     );
     const harness = Context.get(running, Harness);
@@ -359,6 +362,35 @@ it.effect(
           reason: "final",
           files: [text("a.txt", "três")],
         },
+      ]);
+    })
+);
+
+it.effect(
+  "an artifact that was replaced takes no place among the events that wait: it pushes out nothing the harness said",
+  () =>
+    Effect.gen(function* () {
+      // Room for three events: the session that opened, what the harness
+      // said, and one artifact.
+      const { change, harness, next, read } = yield* start({
+        reader: "nobody",
+        outbox: 3,
+      });
+      yield* harness.publish({
+        type: "harness.message",
+        sessionId: "main",
+        message: { text: "resposta" },
+      });
+      for (const content of ["um", "dois", "três"]) {
+        yield* change([text("a.txt", content)]);
+        yield* TestClock.adjust("1 second");
+      }
+
+      yield* Effect.forkScoped(read);
+      expect([yield* next, yield* next, yield* next]).toMatchObject([
+        { type: "harness.session" },
+        { type: "harness.message", message: { text: "resposta" } },
+        { type: "harness.artifact", version: 3 },
       ]);
     })
 );
