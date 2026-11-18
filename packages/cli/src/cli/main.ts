@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { cpus, totalmem } from "node:os";
 /**
  * The entrypoint of the `gambi` binary, and the only file of the CLI that
  * touches the platform (ADR-0007): the `@effect/platform-bun` layers, the
@@ -14,6 +15,7 @@ import { FetchHttpClient } from "effect/http";
 import { HubListen } from "./commands/hub.ts";
 import { ExitCode } from "./exit-codes.ts";
 import { Installation } from "./installation.ts";
+import { Machine } from "./machine.ts";
 import { type CliEnvironment, processExitCode, runCli } from "./run.ts";
 import {
   makeTermination,
@@ -84,6 +86,10 @@ const Platform: Layer.Layer<CliEnvironment> = Layer.mergeAll(
     pid: process.pid,
     platform: process.platform,
   }),
+  Layer.sync(Machine, () => ({
+    cpu: cpus()[0]?.model,
+    memoryBytes: totalmem(),
+  })),
   Mdns.layer,
   FetchHttpClient.layer,
   BunSocket.layerWebSocketConstructor

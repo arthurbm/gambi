@@ -31,6 +31,7 @@ import { FetchHttpClient } from "effect/http";
 import { type ChildProcess, ChildProcessSpawner } from "effect/process";
 import { HubListen } from "./commands/hub.ts";
 import { Installation } from "./installation.ts";
+import { Machine } from "./machine.ts";
 import { processExitCode, runCli } from "./run.ts";
 import {
   makeTermination,
@@ -63,6 +64,8 @@ export interface RunOptions {
    * Default: an executable `self update` cannot tell the origin of.
    */
   readonly installation?: Partial<Installation["Service"]> | undefined;
+  /** The hardware the operating system reports. Default: `TEST_MACHINE`. */
+  readonly machine?: Machine["Service"] | undefined;
   /** The mDNS responder. Default: `Mdns.layerTest`, which touches no network. */
   readonly mdns?: Layer.Layer<Mdns> | undefined;
   /**
@@ -89,6 +92,12 @@ export const UNKNOWN_INSTALLATION: Installation["Service"] = {
   execPath: "/workspace/bin/bun",
   pid: 4242,
   platform: "linux",
+};
+
+/** The machine every command test runs on, whatever machine runs the tests. */
+export const TEST_MACHINE: Machine["Service"] = {
+  cpu: "Test CPU",
+  memoryBytes: 16 * 1024 ** 3,
 };
 
 /** A command as the CLI handed it to the spawner. */
@@ -312,6 +321,7 @@ export const startCommand = (
             ...UNKNOWN_INSTALLATION,
             ...options.installation,
           }),
+          Layer.succeed(Machine, options.machine ?? TEST_MACHINE),
           options.mdns ?? Mdns.layerTest,
           options.spawner ?? refuseToSpawn,
           FetchHttpClient.layer,

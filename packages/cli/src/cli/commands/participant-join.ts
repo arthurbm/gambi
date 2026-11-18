@@ -29,6 +29,7 @@ import {
 import { CliError, Command, Flag } from "effect/cli";
 import { participantIdFlag, roomFlag } from "../flags.ts";
 import { HubUnreachable, hubFlag, withHub } from "../hub-client.ts";
+import { detectMachineSpecs } from "../machine-specs.ts";
 import { Output } from "../output.ts";
 import { Termination } from "../termination.ts";
 import { CLI_VERSION } from "../version.ts";
@@ -228,6 +229,8 @@ const join = Command.make(
       }
     });
 
+    const specs = input.noSpecs ? undefined : yield* detectMachineSpecs();
+
     const Host = ParticipantRuntime.layer({
       hubUrl: input.hub,
       ...identity,
@@ -237,6 +240,7 @@ const join = Command.make(
         model: input.model,
         endpoint: input.endpoint,
         capabilities: probe.capabilities,
+        ...(specs === undefined ? {} : { specs }),
       },
       onLifecycle: (event) => Queue.offer(lifecycle, event),
     }).pipe(
