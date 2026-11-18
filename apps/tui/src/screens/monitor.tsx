@@ -149,7 +149,6 @@ export function Monitor({
           {currentRoom ? (
             <ParticipantList
               expanded={expanded}
-              ownHealthStatus={isParticipant ? healthStatus : undefined}
               ownParticipantId={isParticipant ? session.participantId : null}
               participants={currentRoom.participants}
               processingRequests={currentRoom.processingRequests}

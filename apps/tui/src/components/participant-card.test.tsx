@@ -27,6 +27,8 @@ test.each([
 
   expect(frame).toContain(`${icon} Arthur`);
   expect(frame).toContain(`Status ${status}`);
+  // One status, shown once: no second dot beside the name to read against it.
+  expect(frame.match(/[●◐○]/g)).toEqual([icon]);
   // The tunnel is not a second thing to read: the status already says it.
   expect(frame).not.toContain("Tunnel");
   expect(frame).not.toContain("Last tunnel seen");
@@ -39,4 +41,16 @@ test("a participant with no model endpoint shows no endpoint line", async () => 
 
   expect(frame).toContain("Arthur");
   expect(frame).not.toContain("undefined");
+});
+
+test("the TUI's own card shows the hub's status and no health of its own", async () => {
+  const frame = await frameOf(
+    <ParticipantCard
+      isOwnParticipant
+      participant={createParticipant("p1", "Arthur", { status: "offline" })}
+    />
+  );
+
+  expect(frame).toContain("○ Arthur YOU");
+  expect(frame.match(/[●◐○]/g)).toEqual(["○"]);
 });

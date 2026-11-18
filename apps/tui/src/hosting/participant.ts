@@ -19,13 +19,14 @@ import {
 } from "@gambi/core/participant/runtime";
 import { Cause, Effect, Exit, Layer, Logger, ManagedRuntime } from "effect";
 import { FetchHttpClient } from "effect/http";
-import type {
-  MachineSpecs,
-  ParticipantCapabilities,
-  ParticipantSummary,
-  RuntimeConfig,
+import {
+  createClient,
+  type MachineSpecs,
+  type ParticipantCapabilities,
+  type ParticipantSummary,
+  type RuntimeConfig,
 } from "gambi-sdk";
-import { definedFields, hubClient } from "../hub-client";
+import { definedFields } from "../hub-client";
 
 export type { ParticipantLifecycleEvent } from "@gambi/core/participant/runtime";
 
@@ -71,6 +72,11 @@ export interface HostParticipantOptions {
   /** Where the provider listens, for example `http://127.0.0.1:11434`. */
   readonly endpoint: string;
   readonly hubUrl: string;
+  /**
+   * How long leaving waits for the hub to answer before it gives up on
+   * telling it. Default 3 seconds.
+   */
+  readonly leaveTimeoutMs?: number | undefined;
   readonly model: string;
   readonly nickname: string;
   /**
@@ -173,16 +179,26 @@ export const hostParticipant = async (
     leaving = true;
     // The hub first, so the room hears one thing: the participant left.
     // Stopping the runtime first would show it `offline` in between.
+    //
+    // A client of its own, so that giving up can take the request back:
+    // closing a client interrupts its calls in flight. A request left
+    // behind would hold the process, and could still take effect later,
+    // when the participant with this id may be another runtime.
+    const client = createClient({ hubUrl: options.hubUrl });
     const gaveUp = Promise.withResolvers<void>();
-    const timer = setTimeout(gaveUp.resolve, LEAVE_TIMEOUT_MS);
+    const timer = setTimeout(
+      gaveUp.resolve,
+      options.leaveTimeoutMs ?? LEAVE_TIMEOUT_MS
+    );
     await Promise.race([
-      hubClient(options.hubUrl)
-        .participants.remove(options.roomCode, options.participantId)
+      client.participants
+        .remove(options.roomCode, options.participantId)
         .catch(() => undefined),
       gaveUp.promise,
     ]);
     // A pending timer would keep the process alive after the TUI quits.
     clearTimeout(timer);
+    await client.close();
     await runtime.dispose();
   };
 

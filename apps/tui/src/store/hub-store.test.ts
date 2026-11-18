@@ -104,4 +104,23 @@ describe("hub hosted by the TUI", () => {
     // An open stream would hold a graceful stop for 20 seconds.
     expect(performance.now() - started).toBeLessThan(2000);
   });
+
+  test("shutting down while the hub is still starting leaves no hub behind", async () => {
+    using probe = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => new Response("placeholder"),
+    });
+    const { port } = probe;
+    probe.stop(true);
+
+    const starting = hub().start({ port, hostname: "127.0.0.1" });
+    await shutdownHub();
+    await starting;
+
+    expect(isHubRunning()).toBe(false);
+    expect(hub()).toMatchObject({ status: "stopped", url: null });
+    await using client = createClient({ hubUrl: `http://127.0.0.1:${port}` });
+    expect(await refusal(client.rooms.list())).toBe("HUB_UNREACHABLE");
+  });
 });

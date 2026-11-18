@@ -31,6 +31,8 @@ interface HubState {
 
 // The hub this process hosts - persists across React re-renders and navigation
 let hubInstance: HostedHub | null = null;
+// Settles when the start under way has ended, whichever way.
+let starting: Promise<void> | null = null;
 
 const messageOf = (error: unknown, fallback: string) =>
   error instanceof Error ? error.message : fallback;
@@ -66,21 +68,28 @@ export const useHubStore = create<HubState>((set, get) => ({
 
     set({ status: "starting", error: null, ...config });
 
-    try {
-      const hub = await hostHub(config);
-      hubInstance = hub;
-      set({
-        status: "running",
-        url: hub.url,
-        mdnsName: hub.mdnsName ?? null,
-        error: null,
-      });
-    } catch (err) {
-      set({ status: "error", error: messageOf(err, "Failed to start hub") });
-    }
+    starting = hostHub(config).then(
+      (hub) => {
+        hubInstance = hub;
+        set({
+          status: "running",
+          url: hub.url,
+          mdnsName: hub.mdnsName ?? null,
+          error: null,
+        });
+      },
+      (err) => {
+        set({ status: "error", error: messageOf(err, "Failed to start hub") });
+      }
+    );
+    await starting;
+    starting = null;
   },
 
   stop: async () => {
+    // A hub that is still starting is stopped once it has started: stopping
+    // before that would return with nothing to stop and leave it listening.
+    await starting;
     const hub = hubInstance;
     if (!hub) {
       return;

@@ -1,4 +1,3 @@
-import type { HealthStatus } from "../store/session-store";
 import type { LogMetrics, ParticipantSummary } from "../types";
 import { colors } from "../types";
 import { ParticipantCard } from "./participant-card";
@@ -10,7 +9,6 @@ interface ParticipantListProps {
   selectedId?: string;
   expanded?: boolean;
   ownParticipantId?: string | null;
-  ownHealthStatus?: HealthStatus;
 }
 
 export function ParticipantList({
@@ -20,7 +18,6 @@ export function ParticipantList({
   selectedId,
   expanded = false,
   ownParticipantId,
-  ownHealthStatus,
 }: ParticipantListProps) {
   const sortedParticipants = [...participants.values()].sort((a, b) => {
     // Online first, then busy, then offline
@@ -71,7 +68,6 @@ export function ParticipantList({
               isProcessing={processingRequests.has(participant.id)}
               key={participant.id}
               metrics={metrics?.get(participant.id)}
-              ownHealthStatus={isOwn ? ownHealthStatus : undefined}
               participant={participant}
               selected={selectedId === participant.id}
             />

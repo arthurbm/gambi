@@ -1,7 +1,5 @@
-import type { HealthStatus } from "../store/session-store";
 import type { LogMetrics, ParticipantSummary } from "../types";
 import { colors, statusIndicators } from "../types";
-import { HealthIndicator } from "./health-indicator";
 
 const statusColorMap: Record<ParticipantSummary["status"], string> = {
   online: colors.success,
@@ -16,7 +14,6 @@ interface ParticipantCardProps {
   expanded?: boolean;
   selected?: boolean;
   isOwnParticipant?: boolean;
-  ownHealthStatus?: HealthStatus;
 }
 
 export function ParticipantCard({
@@ -26,7 +23,6 @@ export function ParticipantCard({
   expanded = false,
   selected = false,
   isOwnParticipant = false,
-  ownHealthStatus,
 }: ParticipantCardProps) {
   // The one status of a participant, as the hub reports it. Nothing here
   // derives it from a second signal.
@@ -74,14 +70,6 @@ export function ParticipantCard({
               <span fg={colors.primary}> ◉</span>
             )}
           </text>
-          {/* Health indicator: own participant uses session health, others derive from status */}
-          {isOwnParticipant && ownHealthStatus ? (
-            <HealthIndicator status={ownHealthStatus} />
-          ) : (
-            <HealthIndicator
-              status={status === "offline" ? "unhealthy" : "healthy"}
-            />
-          )}
         </box>
         {isProcessing && (
           <text>
