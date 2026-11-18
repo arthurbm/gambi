@@ -10,8 +10,10 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { BunServices } from "@effect/platform-bun";
+import type { HarnessAttachEvent } from "@gambi/protocol";
 import { layer } from "@gambi/testing/effect";
-import { Effect, FileSystem, Layer } from "effect";
+import { Effect, FileSystem, Layer, Path, Queue, Stream } from "effect";
+import { HarnessClients } from "../hub/harness-clients.ts";
 import { Hub } from "../hub/hub.ts";
 import { Tunnels } from "../hub/tunnels.ts";
 import {
@@ -77,6 +79,7 @@ const startHost = (mode: FixtureMode) =>
     return {
       ...ready,
       roomCode: room.code,
+      workspacePath,
       exited: Effect.promise(() => exited),
       /** Every process that held the FIFO open is gone: the harness and what it started. */
       nothingLeft: held.released,
@@ -121,6 +124,48 @@ layer(Layer.merge(layerHub(), BunServices.layer), {
         yield* host.nothingLeft;
         expect(isAlive(host.harnessPid)).toBe(false);
         yield* tunnels.awaitDrop(host.roomCode, "harness-1");
+      }),
+    20_000
+  );
+
+  it.effect.each([{ signal: "SIGINT" }, { signal: "SIGTERM" }] as const)(
+    "$signal sends the last artifact of the Workspace before the tunnel closes",
+    ({ signal }) =>
+      Effect.gen(function* () {
+        const clients = yield* HarnessClients;
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const host = yield* startHost("with-child");
+        const heard = yield* Queue.unbounded<HarnessAttachEvent>();
+        yield* (yield* clients.attach(host.roomCode, "harness-1")).pipe(
+          Stream.runForEach((event) => Queue.offer(heard, event)),
+          Effect.forkScoped
+        );
+        yield* fs.writeFileString(
+          path.join(host.workspacePath, "notes.md"),
+          "# até logo\n"
+        );
+
+        // Stopped at once: the change never had its second of stillness, so
+        // the only artifact is the last one.
+        process.kill(signal === "SIGINT" ? -host.pid : host.pid, signal);
+
+        let event = yield* Queue.take(heard);
+        while (event.type !== "harness.artifact") {
+          event = yield* Queue.take(heard);
+        }
+        // biome-ignore lint/suspicious/noMisplacedAssertion: `it.effect.each` is a test body.
+        expect(event).toMatchObject({
+          version: 1,
+          reason: "final",
+          files: [
+            { path: "notes.md", encoding: "utf8", content: "# até logo\n" },
+          ],
+        });
+        // biome-ignore lint/suspicious/noMisplacedAssertion: `it.effect.each` is a test body.
+        expect((yield* Queue.take(heard)).type).toBe("harness.disconnected");
+        yield* host.exited;
+        yield* host.nothingLeft;
       }),
     20_000
   );

@@ -64,10 +64,10 @@ export const Ticks = Rpc.make("Ticks", {
 
 /**
  * The long-lived stream of a harness participant: everything that is born on
- * the participant (ACP messages of the harness, the status of its sessions)
- * goes up as a chunk of this one call. The hub opens it on every tunnel, right
- * after `Welcome`, and reads it for as long as the tunnel lives; it ends with
- * the tunnel.
+ * the participant (ACP messages of the harness, the status of its sessions,
+ * the artifacts of its Workspace) goes up as a chunk of this one call. The
+ * hub opens it on every tunnel, right after `Welcome`, and reads it for as
+ * long as the tunnel lives; it ends with the tunnel.
  *
  * A participant that shares a model endpoint answers it with
  * `CallNotSupported`.

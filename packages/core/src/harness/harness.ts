@@ -93,8 +93,9 @@ export interface HarnessOptions {
    */
   readonly stopTimeout?: Duration.Input | undefined;
   /**
-   * The folder the harness runs in, on this machine. Every session stays
-   * inside it. It must exist.
+   * The folder the harness runs in, on this machine: the `path` of its
+   * Workspace (`./workspace.ts`). Every session stays inside it. It must
+   * exist.
    */
   readonly workspacePath: string;
 }

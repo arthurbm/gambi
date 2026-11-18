@@ -167,12 +167,15 @@ A harness participant contributes a harness instead of a model endpoint ([ADR-00
 
 | What | Where |
 |---|---|
-| The events and the attach schemas (`HarnessEvent`, `HarnessAttachEvent`) | `packages/protocol/src/harness.ts` |
+| The events and the attach schemas (`HarnessEvent`, `HarnessAttachEvent`, `HarnessArtifact`, `MAX_ARTIFACT_BYTES`) | `packages/protocol/src/harness.ts` |
 | The harness calls of the tunnel and their errors | `packages/protocol/src/tunnel/rpcs.ts`, `tunnel/errors.ts` |
 | The subprocess, the ACP session and the relay (`Harness`) | `packages/core/src/harness/harness.ts` |
 | The three typed ACP calls | `packages/core/src/harness/acp.ts` |
 | Is it installed and logged in (`resolveHarness`, `HarnessNotReady`) | `packages/core/src/harness/detection.ts` |
 | The tunnel handlers of a harness participant | `packages/core/src/harness/tunnel-handlers.ts` |
+| The Workspace seam and its default, a local folder (`Workspace`) | `packages/core/src/harness/workspace.ts` |
+| The artifacts of the Workspace going up (`workspaceArtifacts`) | `packages/core/src/harness/artifacts.ts` |
+| A harness participant whole, with its layers in order (`harnessParticipant`) | `packages/core/src/harness/harness-participant.ts` |
 | The clients attached in the hub (`HarnessClients`) | `packages/core/src/hub/harness-clients.ts` |
 | The `harness` group of the management contract and its handlers | `packages/protocol/src/management/api.ts`, `packages/core/src/hub/harness-attach.ts` |
 
@@ -185,18 +188,26 @@ To host a harness participant:
 
 ```ts
 const { command } = yield* resolveHarness("opencode"); // fails with HarnessNotReady
-const Host = ParticipantRuntime.layer({
-  hubUrl, roomCode, participantId,
-  profile: { nickname, model: "opencode", harness: { id: "opencode" } },
+const Host = harnessParticipant({
+  runtime: {
+    hubUrl, roomCode, participantId,
+    profile: { nickname, model: "opencode", harness: { id: "opencode" } },
+  },
+  harness: { command },
+  artifacts: { onArtifact }, // optional: what happened to each artifact
 }).pipe(
-  Layer.provide(HarnessParticipantHandlers),
-  Layer.provideMerge(Harness.layer({ command, workspacePath }))
+  Layer.provide(
+    Workspace.layerLocalDirectory({ roomCode, participantId, harness: "opencode", model: "opencode", path })
+  )
 );
 ```
+
+`harnessParticipant` is three layers in one order: the `Harness`, then `ParticipantRuntime` with `HarnessParticipantHandlers`, then `workspaceArtifacts`. Use it instead of putting them together by hand.
 
 Rules:
 
 - The `Harness` layer goes under the runtime, so it is built first and released last. The harness then outlives every tunnel of a runtime that reconnects: its sessions stay open, and what it says while the tunnel is down waits (the last 4096 events) and goes up on the next tunnel.
+- The artifacts go over the runtime, so they are released first: the last artifact is taken and sent while the tunnel is open and the harness is running. Released in another order, it is sent to nobody.
 - The harness runs in a process group of its own, and releasing its layer signals the whole group, with SIGKILL after `stopTimeout` (2 s). The reasons are at the top of `harness.ts`. Do not start a harness with a bare `spawn`.
 - The runtime types the three ACP calls it makes (`initialize`, `session/new`, `session/close`) and reads nothing else of ACP. Of a message it relays it swaps the session id and the JSON-RPC id of a client's request, so that several clients never share one. A new need to read an ACP message is a decision, not an edit: ACP stays opaque and on v1.
 - A harness session opens and closes one at a time and to the end, even when whoever asked went away: the harness opens the session all the same, and the runtime has to know it.
@@ -204,11 +215,31 @@ Rules:
 - A management client attaches with `GET /v1/rooms/:code/participants/:id/harness/events` (the same `eventStream` as room events) and talks with `POST .../harness/messages`, `PUT .../harness/sessions/:sessionId` and `DELETE .../harness/sessions/:sessionId`. There is no WebSocket for clients.
 - A client is attached to a participant, not to a tunnel. Its stream starts with `harness.connected` or `harness.disconnected`, says so again at every change, and ends with `harness.detached` when the participant is out of the room.
 
+### The Workspace and its artifacts
+
+The Workspace is the folder on the participant's machine where its harness sessions run ([`GLOSSARY.md`](../../GLOSSARY.md)). It is a seam: the `Workspace` service has three operations, and whoever hosts decides which Workspace is in the environment.
+
+| Operation | In the service | The default (`Workspace.layerLocalDirectory`) |
+|---|---|---|
+| Prepare | Building the layer; `path` says where the folder is | Creates `<gambiHome>/workspaces/<roomCode>/<participantId>/`, or uses the `path` it was given, and writes `.gambi.json` there and nothing else |
+| Observe | `changes`: one element when something changed | A recursive watch of the folder, installed before the layer is built |
+| Collect | `collect`: the files as they are now | Every regular file, text in `utf8` and the rest in `base64`, without `.git`, `node_modules`, `.gambi.json` and symbolic links |
+
+Rules:
+
+- **Artifacts only go up.** Nothing in the tunnel writes a file on the participant's machine ([ADR-0006](../adr/0006-harness-participants-over-acp.md)), and no call may start to. `packages/core/src/harness/tunnel-writes-no-file.test.ts` makes every call of `TunnelRpcs` and fails when the participant runtime writes; it stops compiling when a call is added, until the new call is in it.
+- An artifact is a `harness.artifact` event: a whole snapshot of the Workspace, with the next `version`, sent through `Harness.publish` like everything else that goes up. It is taken when the Workspace changed and then stayed still for one second (`reason: "watch"`), and once more when the participant closes (`reason: "final"`).
+- An artifact is at most `MAX_ARTIFACT_BYTES` (8 MiB of JSON text). Both limits behind it were measured: the hub drops a tunnel that receives a WebSocket message of 16 MiB, and the derived client fails a stream on a Server-Sent Event above 10 MiB. A Workspace that does not fit sends no artifact and takes no version; the host hears `artifactSkipped` through `onArtifact`. Never send a part of the files: a snapshot without a file says the file is gone.
+- An artifact goes up in a tunnel message of its own (`events` in `harness.ts`). Events that waited while a tunnel was down go up together in one message otherwise, and two artifacts together pass the 16 MiB.
+- The last artifact is sent on a best effort. Closing waits for the hub to read it, for at most two seconds, and not at all when the tunnel is down (`Harness.flushed`).
+- A custom Workspace is a `Layer` that provides `Workspace`. To put starter content in the default one, build on it and write into `path` before the harness starts. `collect` must fail with `WorkspaceTooLarge` instead of reading what cannot be sent.
+- A test of the waits drives a Workspace of its own on the test clock (`packages/core/src/harness/artifacts.test.ts`); a test of the whole path uses the real folder and a short `settleTime`, and waits for the artifact (`packages/core/src/hub/harness-artifacts.test.ts`).
+
 ### A harness in a test
 
 Tests run a harness as a real subprocess and never call a model or a real harness.
 
-- `fakeHarnessCommand()` (`packages/core/src/harness/adapters.ts`) is the well-behaved one: the deterministic fake ACP agent.
+- `fakeHarnessCommand()` (`packages/core/src/harness/adapters.ts`) is the well-behaved one: the deterministic fake ACP agent. On a prompt it writes `fake-output.txt` in the folder of the session, so a prompt is also a way to make an artifact.
 - `fixtureHarness(mode, path)` (`@gambi/core/testing/harness-fixtures`) misbehaves on purpose: it never answers, answers ACP v2, exits on a prompt, starts a child, ignores SIGTERM.
 - `nothingHoldsOpen` gives a `path` to hand to one fixture and a `released` effect that completes when the fixture and everything it started are gone. Use it instead of polling a pid: a process that is a zombie still answers `kill(pid, 0)`.
 - A test that needs the platform provides `BunServices.layer`: `layer(Layer.merge(layerHub(), BunServices.layer), { excludeTestServices: true })`.
