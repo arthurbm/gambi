@@ -1,8 +1,7 @@
-import { RoomSummary as RoomInfoSchema } from "@gambi/core/types";
 import { useKeyboard } from "@opentui/react";
 import { useCallback, useEffect, useState } from "react";
-import { z } from "zod";
-import type { RoomInfo } from "../types";
+import { hubClient } from "../hub-client";
+import type { RoomSummary } from "../types";
 import { colors } from "../types";
 
 interface RoomSelectorProps {
@@ -11,9 +10,8 @@ interface RoomSelectorProps {
   onQuit: () => void;
 }
 
-interface RoomWithSelection extends RoomInfo {
+interface RoomWithSelection extends RoomSummary {
   selected: boolean;
-  participantCount: number;
 }
 
 export function RoomSelector({
@@ -33,44 +31,9 @@ export function RoomSelector({
         setLoading(true);
         setError(null);
 
-        const response = await fetch(`${hubUrl}/v1/rooms`);
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const envelope = (await response.json()) as { data?: unknown };
-        const parsed = z
-          .array(RoomInfoSchema)
-          .safeParse(envelope.data ?? envelope);
-        if (!parsed.success) {
-          throw new Error("Invalid room data");
-        }
-
-        // Fetch participant counts for each room
-        const roomsWithCounts = await Promise.all(
-          parsed.data.map(async (room) => {
-            try {
-              const participantsRes = await fetch(
-                `${hubUrl}/v1/rooms/${room.code}/participants`
-              );
-              const participantsEnvelope = participantsRes.ok
-                ? ((await participantsRes.json()) as { data?: unknown })
-                : undefined;
-              const participants = participantsEnvelope?.data ?? [];
-              return {
-                ...room,
-                selected: false,
-                participantCount: Array.isArray(participants)
-                  ? participants.length
-                  : 0,
-              };
-            } catch {
-              return { ...room, selected: false, participantCount: 0 };
-            }
-          })
-        );
-
-        setRooms(roomsWithCounts);
+        // A room summary already says how many participants it has.
+        const listed = await hubClient(hubUrl).rooms.list();
+        setRooms(listed.map((room) => ({ ...room, selected: false })));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to fetch rooms");
       } finally {

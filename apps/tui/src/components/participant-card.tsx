@@ -1,33 +1,19 @@
-import type { HealthStatus } from "../store/session-store";
-import type { LogMetrics, ParticipantInfo } from "../types";
+import type { LogMetrics, ParticipantSummary } from "../types";
 import { colors, statusIndicators } from "../types";
-import { HealthIndicator } from "./health-indicator";
 
-const statusColorMap: Record<ParticipantInfo["status"], string> = {
+const statusColorMap: Record<ParticipantSummary["status"], string> = {
   online: colors.success,
   busy: colors.warning,
   offline: colors.muted,
 };
 
-function formatTunnelSeenAt(timestamp: number | null): string {
-  if (!timestamp) {
-    return "never";
-  }
-  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
-  if (seconds < 60) {
-    return `${seconds}s ago`;
-  }
-  return `${Math.floor(seconds / 60)}m ago`;
-}
-
 interface ParticipantCardProps {
-  participant: ParticipantInfo;
+  participant: ParticipantSummary;
   isProcessing?: boolean;
   metrics?: LogMetrics;
   expanded?: boolean;
   selected?: boolean;
   isOwnParticipant?: boolean;
-  ownHealthStatus?: HealthStatus;
 }
 
 export function ParticipantCard({
@@ -37,15 +23,10 @@ export function ParticipantCard({
   expanded = false,
   selected = false,
   isOwnParticipant = false,
-  ownHealthStatus,
 }: ParticipantCardProps) {
-  const available = participant.connection.connected;
-  const status =
-    isProcessing && available
-      ? "busy"
-      : available
-        ? participant.status
-        : "offline";
+  // The one status of a participant, as the hub reports it. Nothing here
+  // derives it from a second signal.
+  const status = participant.status;
   const indicator = statusIndicators[status];
   const statusColor = statusColorMap[status];
 
@@ -89,14 +70,6 @@ export function ParticipantCard({
               <span fg={colors.primary}> ◉</span>
             )}
           </text>
-          {/* Health indicator: own participant uses session health, others derive from status */}
-          {isOwnParticipant && ownHealthStatus ? (
-            <HealthIndicator status={ownHealthStatus} />
-          ) : (
-            <HealthIndicator
-              status={status === "offline" ? "unhealthy" : "healthy"}
-            />
-          )}
         </box>
         {isProcessing && (
           <text>
@@ -112,8 +85,10 @@ export function ParticipantCard({
         {metricsText && <span fg={colors.metrics}> {metricsText}</span>}
       </text>
 
-      {/* Endpoint */}
-      <text fg={colors.muted}> {participant.endpoint}</text>
+      {/* Endpoint: a harness participant shares no model endpoint */}
+      {participant.endpoint !== undefined && (
+        <text fg={colors.muted}> {participant.endpoint}</text>
+      )}
 
       {/* Expanded details */}
       {expanded && (
@@ -140,12 +115,9 @@ export function ParticipantCard({
               )}
             </box>
           )}
-          <text fg={participant.connection.connected ? colors.success : colors.error}>
-            Tunnel {participant.connection.connected ? "connected" : "disconnected"}
-          </text>
-          <text fg={colors.muted}>
-            Last tunnel seen:{" "}
-            {formatTunnelSeenAt(participant.connection.lastTunnelSeenAt)}
+          <text>
+            <span fg={colors.muted}> Status </span>
+            <span fg={statusColor}>{status}</span>
           </text>
           {participant.config.hasInstructions && (
             <text fg={colors.muted}> Prompt defaults configured</text>

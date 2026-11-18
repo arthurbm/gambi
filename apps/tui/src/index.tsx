@@ -21,9 +21,20 @@ const queryClient = new QueryClient({
 export async function startTUI(options: StartTUIOptions) {
   useAppStore.getState().setHubUrl(options.hubUrl);
   const renderer = await createCliRenderer();
-  createRoot(renderer).render(
+  const root = createRoot(renderer);
+  // The tree goes first. A state update that is still pending when the
+  // renderer is destroyed would be rendered into it and abort the process;
+  // unmounting also stops what the screens keep open (the watched rooms).
+  const quit = () => {
+    root.unmount();
+    // A query nobody observes any more would hold the process for its
+    // garbage-collection timer.
+    queryClient.clear();
+    renderer.destroy();
+  };
+  root.render(
     <QueryClientProvider client={queryClient}>
-      <App />
+      <App onQuit={quit} />
     </QueryClientProvider>
   );
 }

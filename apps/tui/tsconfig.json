@@ -15,6 +15,12 @@
     "verbatimModuleSyntax": true,
     "noEmit": true,
 
+    // The management client of `gambi-sdk`, from its source: the package's
+    // own `exports` point at `dist/`, which only exists after a build.
+    "paths": {
+      "gambi-sdk": ["../../packages/sdk/src/index.ts"]
+    },
+
     // Best practices
     "strict": true,
     "skipLibCheck": true,
@@ -26,5 +32,8 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
-  }
+  },
+  // The built bundle is JavaScript (`allowJs`), and it embeds Effect: the
+  // compiler overflows its stack on it.
+  "exclude": ["dist", "node_modules"]
 }
