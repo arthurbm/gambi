@@ -9,9 +9,14 @@ import { Effect } from "effect";
 import { createClient } from "./client.ts";
 import { ClientError } from "./client-error.ts";
 import {
+  type ArtifactLifecycleEvent,
   createHarnessParticipantSession,
   createLocalDirectoryWorkspace,
   type HarnessParticipantSessionOptions,
+  type LogEntry,
+  ParticipantError,
+  type Workspace,
+  type WorkspaceContext,
 } from "./participant.ts";
 import type { HarnessAttachEvent } from "./types.ts";
 
@@ -239,6 +244,227 @@ layer(layerHub(), { excludeTestServices: true })(
           ]);
           expect(closed).toEqual({ sessionId: "roda-1" });
           expect(status.sessionId).toBe("roda-1");
+        }),
+      20_000
+    );
+
+    it.effect(
+      "a Workspace of the host's own decides where the harness runs and what an artifact carries",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* frevo;
+          const folder = yield* emptyFolder;
+          const artifacts: ArtifactLifecycleEvent[] = [];
+          const seen: {
+            changed?: () => void;
+            context?: WorkspaceContext;
+            disposed: boolean;
+            watching: boolean;
+          } = { disposed: false, watching: false };
+          const workspace: Workspace = {
+            prepare: (context) => {
+              seen.context = context;
+              return Promise.resolve({
+                path: folder,
+                collect: () =>
+                  Promise.resolve([
+                    { path: "NOTAS.md", encoding: "utf8", content: "# Frevo" },
+                  ]),
+                watch: (onChange) => {
+                  seen.changed = onChange;
+                  seen.watching = true;
+                  return () => {
+                    seen.watching = false;
+                  };
+                },
+                dispose: () => {
+                  seen.disposed = true;
+                  return Promise.resolve();
+                },
+              });
+            },
+          };
+          const session = yield* hosted({
+            hubUrl: room.hubUrl,
+            roomCode: room.roomCode,
+            participantId: "frevo-bot",
+            nickname: "Frevo bot",
+            harness: "fake",
+            model: "frevo-1",
+            workspace,
+            artifacts: { settleTimeMs: 20 },
+            onArtifact: (event) => artifacts.push(event),
+          });
+          const harness = attached(room.client, room.roomCode, "frevo-bot");
+          yield* harness.until(ofType("harness.connected"));
+
+          seen.changed?.();
+          const artifact = yield* harness.until(ofType("harness.artifact"));
+          const watchingWhileHosted = seen.watching;
+          yield* Effect.promise(() => session.leave());
+
+          expect(seen.context).toEqual({
+            harness: "fake",
+            model: "frevo-1",
+            participantId: "frevo-bot",
+            roomCode: room.roomCode,
+          });
+          expect(session.harness.workspacePath).toBe(folder);
+          expect(artifact).toMatchObject({
+            sessionId: session.harness.sessionId,
+            version: 1,
+            reason: "watch",
+            files: [{ path: "NOTAS.md", encoding: "utf8", content: "# Frevo" }],
+          });
+          expect(artifacts[0]).toMatchObject({
+            type: "artifactSent",
+            version: 1,
+            reason: "watch",
+            fileCount: 1,
+          });
+          expect(watchingWhileHosted).toBe(true);
+          expect(seen).toMatchObject({ disposed: true, watching: false });
+        }),
+      20_000
+    );
+
+    it.effect(
+      "leaving sends a last artifact of a Workspace seeded on top of the default one, then detaches the clients",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* frevo;
+          const folder = yield* emptyFolder;
+          const local = createLocalDirectoryWorkspace({ path: folder });
+          const seeded: Workspace = {
+            prepare: async (context) => {
+              const prepared = await local.prepare(context);
+              await Bun.write(join(prepared.path, "README.md"), "# Frevo\n");
+              return prepared;
+            },
+          };
+          const session = yield* hosted({
+            hubUrl: room.hubUrl,
+            roomCode: room.roomCode,
+            participantId: "frevo-bot",
+            nickname: "Frevo bot",
+            harness: "fake",
+            workspace: seeded,
+            // No artifact but the last one.
+            artifacts: { settleTimeMs: 3_600_000 },
+          });
+          const harness = attached(room.client, room.roomCode, "frevo-bot");
+          yield* harness.until(ofType("harness.connected"));
+
+          yield* Effect.promise(() => session.leave());
+          const last = yield* harness.until(ofType("harness.artifact"));
+          const detached = yield* harness.until(ofType("harness.detached"));
+
+          expect(last).toMatchObject({
+            reason: "final",
+            files: [
+              { path: "README.md", encoding: "utf8", content: "# Frevo\n" },
+            ],
+          });
+          expect(detached.reason).toBe("left");
+        }),
+      20_000
+    );
+
+    it.effect(
+      "a join the hub refuses leaves no harness running",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* frevo;
+          const folder = yield* emptyFolder;
+          const lines: LogEntry[] = [];
+
+          const error = yield* Effect.promise(() =>
+            createHarnessParticipantSession({
+              hubUrl: room.hubUrl,
+              roomCode: "NOPE00",
+              participantId: "frevo-bot",
+              nickname: "Frevo bot",
+              harness: "fake",
+              workspace: createLocalDirectoryWorkspace({ path: folder }),
+              onLog: (entry) => lines.push(entry),
+            }).then(
+              () => {
+                throw new Error("Expected the join to be refused.");
+              },
+              (caught: unknown) => caught
+            )
+          );
+
+          const pid = lines.find((line) => line.message === "harness started")
+            ?.annotations.pid;
+          expect(error).toBeInstanceOf(ParticipantError);
+          expect((error as ParticipantError).code).toBe("ROOM_NOT_FOUND");
+          expect(pid).toBeNumber();
+          expect(isRunning(pid as number)).toBe(false);
+        }),
+      20_000
+    );
+
+    it.effect("a harness whose command cannot be run refuses the session", () =>
+      Effect.gen(function* () {
+        const room = yield* frevo;
+        const folder = yield* emptyFolder;
+
+        const error = yield* Effect.promise(() =>
+          createHarnessParticipantSession({
+            hubUrl: room.hubUrl,
+            roomCode: room.roomCode,
+            participantId: "frevo-bot",
+            nickname: "Frevo bot",
+            harness: "fake",
+            fakeAgentCommand: { command: join(folder, "no-such-agent") },
+            workspace: createLocalDirectoryWorkspace({ path: folder }),
+          }).then(
+            () => {
+              throw new Error("Expected the session to be refused.");
+            },
+            (caught: unknown) => caught
+          )
+        );
+
+        expect(error).toBeInstanceOf(ParticipantError);
+        expect((error as ParticipantError).code).toBe("HARNESS_START_FAILED");
+        expect(
+          yield* Effect.promise(() =>
+            room.client.participants.list(room.roomCode)
+          )
+        ).toEqual([]);
+      })
+    );
+
+    it.effect(
+      "a harness that exits on its own is told to the host, and the participant stays in the room",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* frevo;
+          const folder = yield* emptyFolder;
+          const session = yield* hosted({
+            hubUrl: room.hubUrl,
+            roomCode: room.roomCode,
+            participantId: "frevo-bot",
+            nickname: "Frevo bot",
+            harness: "fake",
+            workspace: createLocalDirectoryWorkspace({ path: folder }),
+          });
+
+          process.kill(session.harness.pid, "SIGKILL");
+          const exit = yield* Effect.promise(() => session.harness.exited);
+
+          expect(exit.message).toStartWith("Harness process exited");
+          const participants = yield* Effect.promise(() =>
+            room.client.participants.list(room.roomCode)
+          );
+          expect(
+            participants.map((participant) => [
+              participant.id,
+              participant.status,
+            ])
+          ).toEqual([["frevo-bot", "online"]]);
         }),
       20_000
     );
