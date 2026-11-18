@@ -73,6 +73,8 @@ export interface RunOptions {
   readonly spawner?:
     | Layer.Layer<ChildProcessSpawner.ChildProcessSpawner>
     | undefined;
+  /** What is piped into the command's stdin. Default: nothing. */
+  readonly stdin?: string | undefined;
   /** Whether stdin and stdout are a terminal. Default `false`: a pipe. */
   readonly tty?: boolean | undefined;
 }
@@ -301,6 +303,7 @@ export const startCommand = (
             stdinIsTerminal: Effect.succeed(tty),
             stdoutIsTerminal: Effect.succeed(tty),
             stderrIsTerminal: Effect.succeed(tty),
+            stdin: Stream.encodeText(Stream.make(options.stdin ?? "")),
           }),
           Layer.succeed(Terminal.Terminal, terminal),
           Layer.succeed(Termination, termination.service),

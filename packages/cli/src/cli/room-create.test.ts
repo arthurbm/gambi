@@ -125,6 +125,89 @@ layer(layerHub(), { excludeTestServices: true })("room create", (it) => {
     })
   );
 
+  it.effect("--config - reads the runtime defaults from stdin", () =>
+    Effect.gen(function* () {
+      const hub = yield* Hub;
+
+      const result = yield* runCommand(
+        [
+          "room",
+          "create",
+          "--name",
+          "Pelo pipe",
+          "--config",
+          "-",
+          "--hub",
+          hub.url,
+        ],
+        {
+          stdin: JSON.stringify({
+            temperature: 0.2,
+            instructions: "Seja breve.",
+          }),
+        }
+      );
+
+      expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+      expect(JSON.parse(result.stdout).data.room.defaults).toEqual({
+        temperature: 0.2,
+        hasInstructions: true,
+      });
+    })
+  );
+
+  it.effect("--config - with something that is not JSON is invalid usage", () =>
+    Effect.gen(function* () {
+      const hub = yield* Hub;
+
+      const result = yield* runCommand(
+        [
+          "room",
+          "create",
+          "--name",
+          "Quebrada",
+          "--config",
+          "-",
+          "--hub",
+          hub.url,
+        ],
+        { stdin: "temperature: 0.2" }
+      );
+
+      expect(result.exitCode).toBe(2);
+      expect(result.stdout).toBe("");
+      expect(JSON.parse(result.stderr).error).toMatchObject({
+        name: "InvalidValue",
+        details: { option: "config", value: "-" },
+      });
+      expect(result.stderr).toContain("a runtime config as JSON on stdin");
+    })
+  );
+
+  it.effect("a config file that does not exist is invalid usage", () =>
+    Effect.gen(function* () {
+      const hub = yield* Hub;
+      const missing = join(yield* temporaryDirectory, "nope.json");
+
+      const result = yield* runCommand([
+        "room",
+        "create",
+        "--name",
+        "Sem arquivo",
+        "--config",
+        missing,
+        "--hub",
+        hub.url,
+      ]);
+
+      expect(result.exitCode).toBe(2);
+      expect(JSON.parse(result.stderr).error).toMatchObject({
+        name: "InvalidValue",
+        details: { option: "config", value: missing },
+      });
+    })
+  );
+
   it.effect(
     "on a terminal it asks for the name and prints readable lines",
     () =>
