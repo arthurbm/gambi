@@ -62,6 +62,8 @@ export const failureKinds = {
   UpdateNotScheduled: "internal",
 
   // Hosting a participant (`commands/participant-join.ts`).
+  EndpointUnreachable: "connectivity",
+  ModelNotOnEndpoint: "connectivity",
   TunnelOpenFailed: "connectivity",
 
   // The management contract (`@gambi/protocol`).
