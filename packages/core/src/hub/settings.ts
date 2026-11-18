@@ -29,6 +29,12 @@ export class HubSettings extends Context.Service<
      */
     readonly reconnectDeadline: Duration.Duration;
     /**
+     * How many Responses the hub remembers the participant of, so that one
+     * can be read back, deleted or cancelled. Past it the hub forgets the one
+     * used the longest ago.
+     */
+    readonly storedResponsesLimit: number;
+    /**
      * How often the hub pings a tunnel. A tunnel that stays silent for one
      * more interval after a ping is dropped.
      */

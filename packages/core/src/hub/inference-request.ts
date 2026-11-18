@@ -11,7 +11,7 @@
  *    means something to the hub only.
  */
 import {
-  type InferenceOperation,
+  type InferenceCreation,
   InvalidInferenceRequest,
   type RuntimeConfig,
 } from "@gambi/protocol";
@@ -75,7 +75,7 @@ export const mergeDefaults = (
  * `instructions` is not here: each API takes it in its own way.
  */
 const DEFAULT_FIELDS: Record<
-  InferenceOperation,
+  InferenceCreation,
   Partial<Record<Exclude<keyof RuntimeConfig, "instructions">, string>>
 > = {
   "chatCompletions.create": {
@@ -107,18 +107,18 @@ const hasSystemMessage = (messages: readonly unknown[]) =>
   );
 
 /**
- * The JSON text the provider receives: the app's body with the defaults
- * filled in and `model` replaced by the participant's model.
+ * The body the provider receives: the app's body with the defaults filled in
+ * and `model` replaced by the participant's model.
  *
  * In Chat Completions the default instructions become a `system` message at
  * the start, unless the app sent one; in Responses they fill `instructions`.
  */
 export const providerBody = (
-  operation: InferenceOperation,
+  operation: InferenceCreation,
   body: RequestBody,
   defaults: RuntimeConfig,
   model: string
-): string => {
+): RequestBody => {
   const filled: Record<string, unknown> = { ...body, model };
   for (const [name, field] of Object.entries(DEFAULT_FIELDS[operation])) {
     const value = defaults[name as keyof typeof defaults];
@@ -139,5 +139,5 @@ export const providerBody = (
       ];
     }
   }
-  return JSON.stringify(filled);
+  return filled;
 };
