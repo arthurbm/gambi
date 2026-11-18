@@ -17,6 +17,7 @@ function getEntryIcon(type: ActivityLogEntry["type"]): {
 } {
   switch (type) {
     case "join":
+    case "online":
       return { icon: statusIndicators.online, color: colors.success };
     case "leave":
       return { icon: statusIndicators.leave, color: colors.warning };

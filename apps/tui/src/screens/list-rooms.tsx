@@ -1,4 +1,3 @@
-import type { RoomSummary } from "@gambi/core/types";
 import { useKeyboard } from "@opentui/react";
 import { useCallback, useState } from "react";
 import { Footer } from "../components/footer";
@@ -7,7 +6,7 @@ import { Table, type TableColumn } from "../components/table";
 import { useRoomsList } from "../hooks/queries";
 import type { Screen } from "../hooks/use-navigation";
 import { useAppStore } from "../store/app-store";
-import { colors } from "../types";
+import { colors, type RoomSummary } from "../types";
 
 interface RoomData {
   code: string;

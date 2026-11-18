@@ -1,6 +1,7 @@
 import { useKeyboard } from "@opentui/react";
+import { ClientError } from "gambi-sdk";
 import { useCallback, useState } from "react";
-import { useAppStore } from "../store/app-store";
+import { useHubClient } from "../hooks/use-hub-client";
 import { colors } from "../types";
 
 interface AddRoomModalProps {
@@ -9,7 +10,7 @@ interface AddRoomModalProps {
 }
 
 export function AddRoomModal({ onAdd, onCancel }: AddRoomModalProps) {
-  const hubUrl = useAppStore((s) => s.hubUrl);
+  const client = useHubClient();
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -26,16 +27,17 @@ export function AddRoomModal({ onAdd, onCancel }: AddRoomModalProps) {
 
     try {
       // Verify room exists
-      const response = await fetch(`${hubUrl}/v1/rooms/${code}`);
-      if (!response.ok) {
-        throw new Error("Room not found");
-      }
+      await client.rooms.get(code);
       onAdd(code);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to join room");
+      const notFound =
+        err instanceof ClientError && err.code === "ROOM_NOT_FOUND";
+      setError(
+        notFound || !(err instanceof Error) ? "Room not found" : err.message
+      );
       setLoading(false);
     }
-  }, [value, hubUrl, onAdd]);
+  }, [value, client, onAdd]);
 
   useKeyboard((key) => {
     if (key.name === "escape") {

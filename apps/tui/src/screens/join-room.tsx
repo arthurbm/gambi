@@ -1,4 +1,3 @@
-import type { ParticipantAuthHeaders } from "@gambi/core/types";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useKeyboard } from "@opentui/react";
 import { useCallback, useState } from "react";
@@ -13,6 +12,7 @@ import {
 } from "../hooks/queries";
 import type { Screen } from "../hooks/use-navigation";
 import { useParticipantSession } from "../hooks/use-participant-session";
+import type { ParticipantAuthHeaders } from "../hosting/participant";
 import { useAppStore } from "../store/app-store";
 import { colors } from "../types";
 import { generateNickname } from "../utils/nickname-generator";
@@ -49,7 +49,7 @@ function resolveAuthHeadersFromEnv(entries: AuthHeaderEnvEntry[]): {
   authHeaders: ParticipantAuthHeaders;
   error: string | null;
 } {
-  const authHeaders: ParticipantAuthHeaders = {};
+  const authHeaders: Record<string, string> = {};
 
   for (const entry of entries) {
     const name = entry.name.trim();
@@ -174,7 +174,7 @@ function EndpointStatusIndicator({
 }
 
 // Model suggestions
-function ModelSuggestions({ models }: { models: string[] }) {
+function ModelSuggestions({ models }: { models: readonly string[] }) {
   return (
     <box flexDirection="column" paddingLeft={1}>
       <text fg={colors.muted}>Press 1-5 to select:</text>
@@ -380,7 +380,9 @@ function JoinSuccessScreen({
             <span fg={colors.accent}>{model}</span>
           </text>
         </box>
-        <text fg={colors.muted}>Health checks running in background</text>
+        <text fg={colors.muted}>
+          Tunnel open. It reconnects by itself if it drops.
+        </text>
       </box>
       <Footer
         canGoBack={canGoBack}

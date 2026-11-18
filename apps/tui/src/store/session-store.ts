@@ -13,9 +13,9 @@ interface SessionState {
   endpoint: string | null;
   error: string | null;
 
-  // Health tracking
+  // How the participant runtime is doing: `healthy` while its tunnel is
+  // open, `degraded` while it tries to come back, `unhealthy` once it ended.
   healthStatus: HealthStatus;
-  lastHealthCheck: Date | null;
 
   // Connection actions
   setJoining: (roomCode: string) => void;
@@ -24,6 +24,8 @@ interface SessionState {
     roomCode: string,
     details?: { nickname?: string; model?: string; endpoint?: string }
   ) => void;
+  /** The runtime lost its tunnel (`degraded`) or got it back (`healthy`). */
+  setConnection: (healthStatus: "healthy" | "degraded") => void;
   setLeaving: () => void;
   setError: (error: string) => void;
   reset: () => void;
@@ -41,7 +43,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   // Initial health state
   healthStatus: "healthy",
-  lastHealthCheck: null,
 
   // Connection actions
   setJoining: (roomCode) =>
@@ -50,7 +51,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       roomCode,
       error: null,
       healthStatus: "degraded",
-      lastHealthCheck: null,
     }),
 
   setJoined: (participantId, roomCode, details) =>
@@ -63,8 +63,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       endpoint: details?.endpoint ?? null,
       error: null,
       healthStatus: "healthy",
-      lastHealthCheck: new Date(),
     }),
+
+  setConnection: (healthStatus) => {
+    // Only a session that is in the room has a connection to speak of.
+    if (get().status === "joined") {
+      set({ healthStatus });
+    }
+  },
 
   setLeaving: () => set({ status: "leaving", healthStatus: "degraded" }),
 
@@ -85,6 +91,5 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       endpoint: null,
       error: null,
       healthStatus: "healthy",
-      lastHealthCheck: null,
     }),
 }));

@@ -491,6 +491,28 @@ To add an entry (`gambi-sdk/<name>`): a line in `entries.ts`, an `exports` entry
 
 Tests of the SDK call the `Promise` API against a real hub (`layerHub`), inside `it.effect` with `Effect.promise`. Something that is not a hub is a real `Bun.serve` on port `0`. Never replace `fetch`. `packages/sdk/src/node.test.ts` builds the default entry and runs it in a Node process; `bun run --cwd packages/sdk build && bun run --cwd packages/sdk check:packed-types` checks the package as a consumer installs it.
 
+## The TUI
+
+`apps/tui` is React (OpenTUI) and stays that way ([ADR-0007](../adr/0007-effect-as-runtime-foundation.md)). It reaches Effect code through `Promise` boundaries only.
+
+| What | Where |
+|---|---|
+| The management client of a hub (`hubClient`) | `apps/tui/src/hub-client.ts` |
+| The watched rooms and their reconnection (`watchRooms`, `applyRoomEvent`) | `apps/tui/src/rooms/` |
+| The TUI's own participant session (`joinAsParticipant`, `leaveAsParticipant`) | `apps/tui/src/session/participant-session.ts` |
+| A hub hosted in the TUI's process (`hostHub`) | `apps/tui/src/hosting/hub.ts` |
+| A participant hosted in the TUI's process (`hostParticipant`, `probeProvider`) | `apps/tui/src/hosting/participant.ts` |
+
+Rules:
+
+- The TUI reaches a hub through `createClient` of `gambi-sdk` and nothing else. It has no `fetch` to a hub, no SSE parser and no schema of a hub answer; its types of rooms, participants and events are the ones `gambi-sdk` exports.
+- `gambi-sdk` is imported from its source, through `paths` in `apps/tui/tsconfig.json`: the package's `exports` point at `dist/`, which only exists after a build. The TUI's own build embeds it, like `@gambi/core`.
+- Only `apps/tui/src/hosting/` imports `effect`, `@effect/platform-bun` and `@gambi/core`. Each thing hosted there owns one `ManagedRuntime` and hands out plain values, `Promise`s and callbacks. These two files stand where the hosting entries of `gambi-sdk` will.
+- A hosted hub or runtime gets `Logger.layer([])`: a log line on the terminal would be drawn over the screen.
+- Logic lives in plain modules (`watchRooms`, the session, the stores); a hook only subscribes to one. The tests run those modules against a real hub (`layerHub`), inside `it.effect` with `Effect.promise`, and wait for what a store or a watcher shows. Never replace `fetch`.
+- A room whose event stream ends is watched again, whether the stream failed or just ended. The `room.snapshot` of the next stream realigns it.
+- A runtime that ended by itself (`left`) is released without telling the hub: after `replaced`, the participant with that id in the room is another runtime.
+
 ## The CLI
 
 The new CLI lives in `packages/cli/src/cli/`, beside the current one, on `effect/cli`. `main.ts` is its entrypoint and the only file that imports `@effect/platform-bun`; lint rejects it anywhere else outside the tests.
