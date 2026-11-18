@@ -205,6 +205,25 @@ export class TunnelOpenFailed extends Schema.TaggedError<TunnelOpenFailed>()(
   }
 }
 
+/**
+ * Another participant runtime joined the room with the same `participantId`
+ * and the hub kept that one: this runtime ended, and does not come back. For
+ * whoever hosts it that is a failure, because nothing it shares is in the
+ * room any more.
+ */
+export class ParticipantReplaced extends Schema.TaggedError<ParticipantReplaced>()(
+  "ParticipantReplaced",
+  { roomCode: Schema.String, participantId: Schema.String }
+) {
+  override get message(): string {
+    return `Another participant runtime joined room '${this.roomCode}' as '${this.participantId}', and the hub kept that one.`;
+  }
+
+  get hint(): string {
+    return "Two runtimes cannot share a participant id. Stop the other one, or join again with another id.";
+  }
+}
+
 /** Why a registration was refused, as the hub said it, or `HubUnreachable`. */
 export type RegistrationError =
   | RoomNotFound
@@ -479,11 +498,15 @@ export class ParticipantRuntime extends Context.Service<
   {
     /**
      * Completes when the runtime has ended and tries no more: with the hub's
-     * refusal as its error when the hub refused it on its way back, and
-     * without one when it was stopped, when another runtime replaced it or,
-     * with `reconnect: false`, when its tunnel dropped.
+     * refusal as its error when the hub refused it on its way back, with
+     * `ParticipantReplaced` when another runtime took its place, and without
+     * an error when it was stopped or, with `reconnect: false`, when its
+     * tunnel dropped.
      */
-    readonly ended: Effect.Effect<void, RegistrationError | TunnelOpenFailed>;
+    readonly ended: Effect.Effect<
+      void,
+      RegistrationError | TunnelOpenFailed | ParticipantReplaced
+    >;
     /** The participant as the hub registered it when it joined. */
     readonly participant: ParticipantSummary;
     /**
@@ -524,7 +547,10 @@ export class ParticipantRuntime extends Context.Service<
       Effect.gen(function* () {
         type Failure = RegistrationError | TunnelOpenFailed;
         const joined = yield* Deferred.make<ParticipantSummary, Failure>();
-        const ended = yield* Deferred.make<void, Failure>();
+        const ended = yield* Deferred.make<
+          void,
+          Failure | ParticipantReplaced
+        >();
         const identity = {
           roomCode: options.roomCode,
           participantId: options.participantId,
@@ -613,11 +639,15 @@ export class ParticipantRuntime extends Context.Service<
             if (left !== undefined) {
               yield* tell({ type: "left", ...identity, ...left });
             }
-            // Being stopped is not a failure of the runtime.
-            yield* Deferred.done(
-              ended,
-              left?.reason === "stopped" ? Exit.void : Exit.asVoid(exit)
-            );
+            // Being stopped is not a failure of the runtime. Being replaced
+            // is one, for its host.
+            if (left?.reason === "stopped") {
+              yield* Deferred.done(ended, Exit.void);
+            } else if (left?.reason === "replaced") {
+              yield* Deferred.fail(ended, new ParticipantReplaced(identity));
+            } else {
+              yield* Deferred.done(ended, Exit.asVoid(exit));
+            }
           });
 
         yield* run.pipe(Effect.onExit(conclude), Effect.forkScoped);

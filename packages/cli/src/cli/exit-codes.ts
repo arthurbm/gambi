@@ -64,6 +64,8 @@ export const failureKinds = {
   // Hosting a participant (`commands/participant-join.ts`).
   EndpointUnreachable: "connectivity",
   ModelNotOnEndpoint: "connectivity",
+  // Another runtime took the participant's place: the hub said no to this one.
+  ParticipantReplaced: "rejected",
   TunnelOpenFailed: "connectivity",
 
   // The management contract (`@gambi/protocol`).

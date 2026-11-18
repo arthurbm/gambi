@@ -23,6 +23,7 @@ import {
   Context,
   Duration,
   Effect,
+  Exit,
   Layer,
   Option,
   Queue,
@@ -145,6 +146,19 @@ const headerEnvFlag = Flag.KeyValuePair("header-env").pipe(
   Flag.withDefault({})
 );
 
+/** The last line a person reads: how the stay in the room ended. */
+const leftText = (
+  roomCode: string,
+  stay: { readonly reason: string; readonly removed: boolean }
+): string => {
+  if (stay.reason !== "stopped") {
+    return `No longer in room ${roomCode} (${stay.reason}).`;
+  }
+  return stay.removed
+    ? `Left room ${roomCode}.`
+    : `Stopped. The hub did not confirm: it takes the participant out of room ${roomCode} by itself in a minute.`;
+};
+
 const join = Command.make(
   "join",
   {
@@ -192,170 +206,186 @@ const join = Command.make(
       Flag.withDefault(false)
     ),
   },
-  Effect.fn("participant.join")(function* (input) {
-    const output = yield* Output;
-    const termination = yield* Termination;
-    const identity: Identity = {
-      roomCode: input.room,
-      participantId: input.participantId,
-    };
-    const lifecycle = yield* Queue.unbounded<ParticipantLifecycleEvent>();
-    // `ParticipantAuthHeaders`: they go to the probe and to the handler that
-    // calls the provider. The runtime, and so the hub, never sees them.
-    const authHeaders: ParticipantAuthHeaders = {
-      ...input.headers,
-      ...input.headersFromEnvironment,
-    };
-    const provider = { endpoint: input.endpoint, authHeaders };
+  Effect.fn("participant.join")(
+    function* (input) {
+      const output = yield* Output;
+      const termination = yield* Termination;
+      const identity: Identity = {
+        roomCode: input.room,
+        participantId: input.participantId,
+      };
+      const lifecycle = yield* Queue.unbounded<ParticipantLifecycleEvent>();
+      // `ParticipantAuthHeaders`: they go to the probe and to the handler that
+      // calls the provider. The runtime, and so the hub, never sees them.
+      const authHeaders: ParticipantAuthHeaders = {
+        ...input.headers,
+        ...input.headersFromEnvironment,
+      };
+      const provider = { endpoint: input.endpoint, authHeaders };
 
-    // What the provider lists and which inference APIs it answers, found on
-    // this machine. The hub never probes a provider.
-    const probe = yield* probeEndpoint(provider);
-    if (!probe.reachable) {
-      return yield* new EndpointUnreachable({ endpoint: input.endpoint });
-    }
-    if (!probe.models.includes(input.model)) {
-      return yield* new ModelNotOnEndpoint({
-        endpoint: input.endpoint,
-        model: input.model,
-        available: probe.models,
-      });
-    }
-
-    /** Writes each step of the runtime's life, until the one that ends it. */
-    const untilTheRuntimeLeaves = Effect.gen(function* () {
-      while (true) {
-        const event = yield* Queue.take(lifecycle);
-        if (event.type === "left") {
-          return event;
-        }
-        if (event.type === "connected") {
-          yield* output.event(
-            "tunnel_connected",
-            {
-              ...identity,
-              attempt: event.attempt,
-              hubVersion: event.hubVersion,
-            },
-            event.attempt === 0
-              ? "Tunnel connected. Press Ctrl+C to leave."
-              : "Tunnel connected again."
-          );
-        } else {
-          yield* output.event(
-            "reconnecting",
-            {
-              ...identity,
-              attempt: event.attempt,
-              delayMillis: event.delayMillis,
-              reason: event.reason,
-            },
-            `Lost the hub (${event.reason}). Trying again in ${event.delayMillis / 1000} s (attempt ${event.attempt})...`
-          );
-        }
+      // What the provider lists and which inference APIs it answers, found on
+      // this machine. The hub never probes a provider.
+      const probe = yield* probeEndpoint(provider);
+      if (!probe.reachable) {
+        return yield* new EndpointUnreachable({ endpoint: input.endpoint });
       }
-    });
+      if (!probe.models.includes(input.model)) {
+        return yield* new ModelNotOnEndpoint({
+          endpoint: input.endpoint,
+          model: input.model,
+          available: probe.models,
+        });
+      }
 
-    const specs = input.noSpecs ? undefined : yield* detectMachineSpecs();
+      /** Writes each step of the runtime's life, until the one that ends it. */
+      const untilTheRuntimeLeaves = Effect.gen(function* () {
+        while (true) {
+          const event = yield* Queue.take(lifecycle);
+          if (event.type === "left") {
+            return event;
+          }
+          if (event.type === "connected") {
+            yield* output.event(
+              "tunnel_connected",
+              {
+                ...identity,
+                attempt: event.attempt,
+                hubVersion: event.hubVersion,
+              },
+              event.attempt === 0
+                ? "Tunnel connected. Press Ctrl+C to leave."
+                : "Tunnel connected again."
+            );
+          } else {
+            yield* output.event(
+              "reconnecting",
+              {
+                ...identity,
+                attempt: event.attempt,
+                delayMillis: event.delayMillis,
+                reason: event.reason,
+              },
+              `Lost the hub (${event.reason}). Trying again in ${event.delayMillis / 1000} s (attempt ${event.attempt})...`
+            );
+          }
+        }
+      });
 
-    // A field that is present has a value: the registration refuses
-    // `undefined`.
-    const profile: ParticipantProfile = {
-      nickname: Option.getOrElse(
-        input.nickname,
-        () => `${input.model}@${input.participantId.slice(0, 6)}`
-      ),
-      model: input.model,
-      endpoint: input.endpoint,
-      capabilities: probe.capabilities,
-      ...(specs === undefined ? {} : { specs }),
-      ...Option.match(input.config, {
-        onNone: () => ({}),
-        onSome: (config) => ({ config }),
-      }),
-    };
+      const specs = input.noSpecs ? undefined : yield* detectMachineSpecs();
 
-    if (input.dryRun) {
-      const preview = {
+      // A field that is present has a value: the registration refuses
+      // `undefined`.
+      const profile: ParticipantProfile = {
+        nickname: Option.getOrElse(
+          input.nickname,
+          () => `${input.model}@${input.participantId.slice(0, 6)}`
+        ),
+        model: input.model,
+        endpoint: input.endpoint,
+        capabilities: probe.capabilities,
+        ...(specs === undefined ? {} : { specs }),
+        ...Option.match(input.config, {
+          onNone: () => ({}),
+          onSome: (config) => ({ config }),
+        }),
+      };
+
+      if (input.dryRun) {
+        const preview = {
+          hubUrl: input.hub,
+          ...identity,
+          ...(Option.isSome(input.password) ? { password: REDACTED } : {}),
+          ...(Object.keys(authHeaders).length === 0
+            ? {}
+            : {
+                authHeaders: Object.fromEntries(
+                  Object.keys(authHeaders).map((name) => [name, REDACTED])
+                ),
+              }),
+          profile,
+        };
+        return yield* output.result(
+          preview,
+          () =>
+            `Would join room ${identity.roomCode} on ${input.hub} as ${identity.participantId}.\n${JSON.stringify(preview, null, 2)}`
+        );
+      }
+
+      const Host = ParticipantRuntime.layer({
         hubUrl: input.hub,
         ...identity,
-        ...(Option.isSome(input.password) ? { password: REDACTED } : {}),
-        ...(Object.keys(authHeaders).length === 0
-          ? {}
-          : {
-              authHeaders: Object.fromEntries(
-                Object.keys(authHeaders).map((name) => [name, REDACTED])
-              ),
-            }),
+        ...Option.match(input.password, {
+          onNone: () => ({}),
+          onSome: (password) => ({ password: Redacted.value(password) }),
+        }),
+        version: CLI_VERSION,
         profile,
-      };
-      return yield* output.result(
-        preview,
-        () =>
-          `Would join room ${identity.roomCode} on ${input.hub} as ${identity.participantId}.\n${JSON.stringify(preview, null, 2)}`
-      );
-    }
-
-    const Host = ParticipantRuntime.layer({
-      hubUrl: input.hub,
-      ...identity,
-      ...Option.match(input.password, {
-        onNone: () => ({}),
-        onSome: (password) => ({ password: Redacted.value(password) }),
-      }),
-      version: CLI_VERSION,
-      profile,
-      onLifecycle: (event) => Queue.offer(lifecycle, event),
-    }).pipe(
-      Layer.provide(
-        Layer.mergeAll(
-          TunnelDiagnostics,
-          HarnessCallsNotSupported,
-          providerInference(provider)
+        onLifecycle: (event) => Queue.offer(lifecycle, event),
+      }).pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            TunnelDiagnostics,
+            HarnessCallsNotSupported,
+            providerInference(provider)
+          )
         )
-      )
-    );
+      );
 
-    // The scope holds the participant in the room: it closes, and the
-    // tunnel with it, before `left` is written.
-    const removed = yield* Effect.scoped(
-      Effect.gen(function* () {
-        const runtime = Context.get(
-          yield* Layer.build(Host),
-          ParticipantRuntime
-        );
-        yield* output.event(
-          "registered",
-          { roomCode: identity.roomCode, participant: runtime.participant },
-          `Registered ${runtime.participant.nickname} (${identity.participantId}) in room ${identity.roomCode}.`
-        );
-        const signal = yield* Effect.raceFirst(
-          termination.signal,
-          untilTheRuntimeLeaves.pipe(Effect.andThen(Effect.never))
-        );
-        yield* output.event(
-          "leaving",
-          { ...identity, signal },
-          `Leaving room ${identity.roomCode} (${signal})...`
-        );
-        // The hub first, so the room hears one thing: the participant left.
-        // Closing the tunnel first would show it offline in between.
-        return yield* leaveRoom(input.hub, identity);
-      })
-    ).pipe(
-      // The runtime names the same failure without saying what to do.
-      Effect.catchTag("HubUnreachable", ({ cause, hubUrl }) =>
-        Effect.fail(new HubUnreachable({ hubUrl, cause }))
-      )
-    );
-    yield* output.event(
-      "left",
-      { ...identity, reason: "stopped", removed },
-      removed
-        ? `Left room ${identity.roomCode}.`
-        : `Stopped. The hub did not confirm: it takes the participant out of room ${identity.roomCode} by itself in a minute.`
-    );
-  })
+      // The scope holds the participant in the room: it closes, and the
+      // tunnel with it, before `left` is written.
+      const stay = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const runtime = Context.get(
+            yield* Layer.build(Host),
+            ParticipantRuntime
+          );
+          yield* output.event(
+            "registered",
+            { roomCode: identity.roomCode, participant: runtime.participant },
+            `Registered ${runtime.participant.nickname} (${identity.participantId}) in room ${identity.roomCode}.`
+          );
+          const ending = yield* Effect.raceFirst(
+            Effect.map(termination.signal, (signal) => ({ signal })),
+            Effect.map(untilTheRuntimeLeaves, (left) => ({ left }))
+          );
+          if ("left" in ending) {
+            // The runtime ended by itself: the hub refused it on its way back,
+            // or gave its place to another runtime. The hub is told nothing:
+            // the participant with this id in the room, if there is one, is
+            // not this runtime any more.
+            return {
+              reason: ending.left.reason,
+              removed: false,
+              ended: yield* Effect.exit(runtime.ended),
+            };
+          }
+          yield* output.event(
+            "leaving",
+            { ...identity, signal: ending.signal },
+            `Leaving room ${identity.roomCode} (${ending.signal})...`
+          );
+          // The hub first, so the room hears one thing: the participant left.
+          // Closing the tunnel first would show it offline in between.
+          return {
+            reason: "stopped" as const,
+            removed: yield* leaveRoom(input.hub, identity),
+            ended: Exit.void,
+          };
+        })
+      );
+      yield* output.event(
+        "left",
+        { ...identity, reason: stay.reason, removed: stay.removed },
+        leftText(identity.roomCode, stay)
+      );
+      // A runtime that ended by itself is a failure, with the name of why.
+      yield* stay.ended;
+    },
+    // The runtime names the same failure without saying what to do.
+    Effect.catchTag("HubUnreachable", ({ cause, hubUrl }) =>
+      Effect.fail(new HubUnreachable({ hubUrl, cause }))
+    )
+  )
 ).pipe(
   Command.withDescription(
     "Join a room with a model endpoint of this machine, until Ctrl+C"
