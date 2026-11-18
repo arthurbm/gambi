@@ -256,6 +256,42 @@ layer(layerHub({ version: "0.8.3" }), { excludeTestServices: true })(
     );
 
     it.effect(
+      "refuses a harness that has no adapter: only opencode, claude-code, codex and fake can be contributed",
+      () =>
+        Effect.gen(function* () {
+          const client = yield* managementClient;
+          const { room } = yield* client.rooms.create({
+            payload: { name: "Coco" },
+          });
+          const registerWith = (harness: string) =>
+            raw((url) =>
+              HttpClientRequest.put(
+                `${url}/v1/rooms/${room.code}/participants/arthur-1`
+              ).pipe(
+                HttpClientRequest.bodyJsonUnsafe({
+                  nickname: "Arthur",
+                  model: harness,
+                  version: "0.8.0",
+                  harness: { id: harness },
+                })
+              )
+            );
+
+          const refused = yield* registerWith("pi");
+          expect(refused.status).toBe(400);
+          expect(refused.body).toMatchObject({
+            error: {
+              code: "INVALID_REQUEST",
+              details: { issues: [{ path: ["payload", "harness", "id"] }] },
+            },
+          });
+          for (const harness of ["opencode", "claude-code", "codex", "fake"]) {
+            expect((yield* registerWith(harness)).status).toBe(200);
+          }
+        })
+    );
+
+    it.effect(
       "registering the same id again updates the participant and keeps when it joined",
       () =>
         Effect.gen(function* () {

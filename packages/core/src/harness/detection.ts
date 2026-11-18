@@ -29,8 +29,8 @@ import {
   isCompiledBinary,
 } from "./adapters.ts";
 
-/** The harnesses that have an adapter. `pi` is in the schema and has none yet. */
-export type SupportedHarnessId = Exclude<HarnessId, "pi">;
+/** The harnesses that have an adapter: every one a participant can contribute. */
+export type SupportedHarnessId = HarnessId;
 
 /** What a status command printed and how it exited. */
 export interface CommandResult {
