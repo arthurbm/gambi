@@ -87,6 +87,9 @@ export class WorkspaceFailed extends Schema.TaggedError<WorkspaceFailed>()(
  */
 const EXCLUDED_FOLDERS: ReadonlySet<string> = new Set([".git", "node_modules"]);
 
+/** How many changes wait for whoever observes the Workspace. */
+const NOTICED_CHANGES = 64;
+
 const PATH_SEPARATOR = /[\\/]/;
 
 /** Whether a change at this path, relative to the Workspace, can change an artifact. */
@@ -246,10 +249,12 @@ export class Workspace extends Context.Service<
         // a change is never missed for having come too early. Being unable
         // to observe does not fail the preparation; `changes` fails instead,
         // and the folder can still be collected.
-        const noticed = yield* Queue.unbounded<
+        // Each element only says "look again", so the newest ones are enough
+        // when nobody is reading them.
+        const noticed = yield* Queue.sliding<
           void,
           WorkspaceFailed | Cause.Done
-        >();
+        >(NOTICED_CHANGES);
         const observing = yield* Deferred.make<void>();
         yield* fs
           .watch(folder, {
@@ -257,7 +262,14 @@ export class Workspace extends Context.Service<
             onReady: () => Deferred.doneUnsafe(observing, Exit.void),
           })
           .pipe(
-            Stream.filter((event) => changesAnArtifact(event.path)),
+            // A watch reports a path inside the folder, or the whole path.
+            Stream.filter((event) =>
+              changesAnArtifact(
+                path.isAbsolute(event.path)
+                  ? path.relative(folder, event.path)
+                  : event.path
+              )
+            ),
             Stream.runForEach(() => Queue.offer(noticed, undefined)),
             Effect.matchEffect({
               onSuccess: () => Queue.end(noticed),

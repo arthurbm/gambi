@@ -222,7 +222,8 @@ layer(BunServices.layer, { excludeTestServices: true })(
             { _tag: "Update", path: "packages/app/node_modules/dep/a.js" },
             { _tag: "Update", path: ".git/index" },
             { _tag: "Update", path: "src/index.ts" },
-            { _tag: "Remove", path: "src/old.ts" },
+            { _tag: "Update", path: `${folder}/.git/HEAD` },
+            { _tag: "Remove", path: `${folder}/src/old.ts` },
           ]);
           yield* Queue.end(reported);
 
