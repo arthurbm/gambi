@@ -8,7 +8,7 @@
  * long-running one and hands back a handle to read its events, signal it and
  * wait for it.
  */
-import { BunHttpServer, BunServices } from "@effect/platform-bun";
+import { BunHttpServer, BunServices, BunSocket } from "@effect/platform-bun";
 import { Mdns } from "@gambi/core/hub/mdns";
 import {
   type Cause,
@@ -315,7 +315,8 @@ export const startCommand = (
           options.mdns ?? Mdns.layerTest,
           options.spawner ?? refuseToSpawn,
           FetchHttpClient.layer,
-          Layer.succeed(FetchHttpClient.Fetch, loopbackOnlyFetch)
+          Layer.succeed(FetchHttpClient.Fetch, loopbackOnlyFetch),
+          BunSocket.layerWebSocketConstructor
         )
       ),
       Effect.provide(BunServices.layer),

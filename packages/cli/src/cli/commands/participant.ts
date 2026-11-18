@@ -3,6 +3,7 @@ import { Command } from "effect/cli";
 import { participantIdFlag, roomFlag } from "../flags.ts";
 import { hubFlag, withHub } from "../hub-client.ts";
 import { Output } from "../output.ts";
+import { join } from "./participant-join.ts";
 
 const leave = Command.make(
   "leave",
@@ -32,5 +33,5 @@ const leave = Command.make(
 
 export const participant = Command.make("participant").pipe(
   Command.withDescription("Join a room as a participant, or leave it"),
-  Command.withSubcommands([leave])
+  Command.withSubcommands([join, leave])
 );

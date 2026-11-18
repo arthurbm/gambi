@@ -61,11 +61,16 @@ export const failureKinds = {
   UpdateDownloadFailed: "connectivity",
   UpdateNotScheduled: "internal",
 
+  // Hosting a participant (`commands/participant-join.ts`).
+  TunnelOpenFailed: "connectivity",
+
   // The management contract (`@gambi/protocol`).
   InternalError: "internal",
+  InvalidPassword: "rejected",
   InvalidRequest: "usage",
   ParticipantNotFound: "rejected",
   RoomNotFound: "rejected",
+  VersionMismatch: "rejected",
 } as const satisfies Record<FailureTag, FailureKind>;
 
 export const exitCodeOf = (failure: CommandFailure): number =>

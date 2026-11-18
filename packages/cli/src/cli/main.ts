@@ -7,7 +7,7 @@
  * Everything a command does is in `runCli`. The command tests run that same
  * function (`testing.ts`); `main.test.ts` covers what is only here.
  */
-import { BunHttpServer, BunServices } from "@effect/platform-bun";
+import { BunHttpServer, BunServices, BunSocket } from "@effect/platform-bun";
 import { Mdns } from "@gambi/core/hub/mdns";
 import { Effect, Layer, Runtime } from "effect";
 import { FetchHttpClient } from "effect/http";
@@ -85,7 +85,8 @@ const Platform: Layer.Layer<CliEnvironment> = Layer.mergeAll(
     platform: process.platform,
   }),
   Mdns.layer,
-  FetchHttpClient.layer
+  FetchHttpClient.layer,
+  BunSocket.layerWebSocketConstructor
 ).pipe(Layer.provideMerge(BunServices.layer));
 
 runCli(process.argv.slice(2)).pipe(
