@@ -8,7 +8,12 @@
  * long-running one and hands back a handle to read its events, signal it and
  * wait for it.
  */
-import { BunHttpServer, BunServices, BunSocket } from "@effect/platform-bun";
+import {
+  BunChildProcessSpawner,
+  BunHttpServer,
+  BunServices,
+  BunSocket,
+} from "@effect/platform-bun";
 import { Mdns } from "@gambi/core/hub/mdns";
 import {
   type Cause,
@@ -71,7 +76,7 @@ export interface RunOptions {
   /**
    * What starts subprocesses. Default: nothing does, and a command that
    * spawns one fails the test. Pass `spawnerThat(...)` to play the
-   * subprocess, or `BunChildProcessSpawner.layer` to really start it.
+   * subprocess, or `realSpawner` to really start it.
    */
   readonly spawner?:
     | Layer.Layer<ChildProcessSpawner.ChildProcessSpawner>
@@ -187,6 +192,13 @@ export const spawnerThat = (
       );
     })
   );
+
+/**
+ * The spawner that really starts processes, for a test that runs the `fake`
+ * harness as a subprocess: `options.spawner: realSpawner`.
+ */
+export const realSpawner: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner> =
+  BunChildProcessSpawner.layer.pipe(Layer.provide(BunServices.layer));
 
 /** No test starts a real process without saying so. */
 const refuseToSpawn = spawnerThat(({ args, command }) => {

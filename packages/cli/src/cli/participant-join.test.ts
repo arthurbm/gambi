@@ -460,6 +460,76 @@ layer(layerHub(), { excludeTestServices: true })(
 );
 
 it.effect(
+  "without a terminal a missing --model is an error, never a prompt",
+  () =>
+    Effect.gen(function* () {
+      const provider = yield* fakeProvider();
+
+      const result = yield* runCommand([
+        "participant",
+        "join",
+        "--room",
+        "ABC123",
+        "--participant-id",
+        "arthur-1",
+        "--endpoint",
+        provider.url,
+      ]);
+
+      expect(result.exitCode).toBe(2);
+      expect(result.stdout).toBe("");
+      expect(JSON.parse(result.stderr).error).toMatchObject({
+        name: "MissingOption",
+        message: "Missing required flag: --model",
+      });
+      expect(yield* provider.calls).toEqual([]);
+    })
+);
+
+it.effect(
+  "on a terminal it asks for the room, the participant id and one of the endpoint's models",
+  () =>
+    Effect.gen(function* () {
+      const hub = yield* Hub;
+      const provider = yield* fakeProvider();
+      const room = yield* createRoom("Perguntada");
+
+      const joining = yield* startCommand(
+        [
+          "participant",
+          "join",
+          "--endpoint",
+          provider.url,
+          "--no-specs",
+          "--hub",
+          hub.url,
+          "--log-level",
+          "none",
+        ],
+        // Enter on the list of models takes the first one.
+        { tty: true, answers: [room.code, "arthur-1", ""] }
+      );
+
+      expect(yield* joining.nextLine).toBe(
+        `Registered ${FAKE_MODEL}@arthur (arthur-1) in room ${room.code}.`
+      );
+      expect(yield* joining.nextLine).toBe(
+        "Tunnel connected. Press Ctrl+C to leave."
+      );
+      yield* joining.signal("SIGINT");
+      expect(yield* joining.nextLine).toBe(
+        `Leaving room ${room.code} (SIGINT)...`
+      );
+      expect(yield* joining.nextLine).toBe(`Left room ${room.code}.`);
+      const result = yield* joining.result;
+      expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+      expect(result.terminal).toContain("Room code");
+      expect(result.terminal).toContain("Participant id");
+      expect(result.terminal).toContain("Model to share");
+    }).pipe(Effect.provide(layerHub()))
+);
+
+it.effect(
   "a hub of another minor version refuses the participant and says which version it expects",
   () =>
     Effect.gen(function* () {

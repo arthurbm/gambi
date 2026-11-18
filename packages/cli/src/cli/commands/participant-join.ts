@@ -1,11 +1,21 @@
 /**
  * `gambi participant join`: hosts a participant runtime in this process until
- * it is told to stop. The participant shares a model endpoint of this
- * machine with a room.
+ * it is told to leave. The participant shares one of two things with a room:
  *
- * The command writes one event per step of the participant's life:
- * `registered`, `tunnel_connected`, `reconnecting`, `leaving`, `left`.
+ * - a model endpoint of this machine (the default), or
+ * - a harness that runs on this machine (`--harness`), in a Workspace.
+ *
+ * This file prepares what is hosted; `../participant-stay.ts` is the stay
+ * itself, and writes its events.
  */
+import type { HarnessCommand } from "@gambi/core/harness/adapters";
+import {
+  HarnessTools,
+  resolveHarness,
+  type SupportedHarnessId,
+} from "@gambi/core/harness/detection";
+import { harnessParticipant } from "@gambi/core/harness/harness-participant";
+import { localDirectoryPath, Workspace } from "@gambi/core/harness/workspace";
 import { TunnelDiagnostics } from "@gambi/core/participant/diagnostics";
 import { probeEndpoint } from "@gambi/core/participant/endpoint-capabilities";
 import { HarnessCallsNotSupported } from "@gambi/core/participant/harness-not-supported";
@@ -14,63 +24,40 @@ import {
   providerInference,
 } from "@gambi/core/participant/inference";
 import {
-  type ParticipantLifecycleEvent,
   type ParticipantProfile,
   ParticipantRuntime,
 } from "@gambi/core/participant/runtime";
+import { Config, Effect, Layer, Option, Redacted, Schema } from "effect";
 import {
-  Config,
-  Context,
-  Duration,
-  Effect,
-  Exit,
-  Layer,
-  Option,
-  Queue,
-  Redacted,
-  Schema,
-} from "effect";
-import { CliError, Command, Flag } from "effect/cli";
+  CliError,
+  Command,
+  Flag,
+  Prompt,
+  TerminalCapabilities,
+} from "effect/cli";
 import { participantIdFlag, roomFlag, runtimeConfigFlag } from "../flags.ts";
-import { HubUnreachable, hubFlag, withHub } from "../hub-client.ts";
+import { HubUnreachable, hubFlag } from "../hub-client.ts";
 import { detectMachineSpecs } from "../machine-specs.ts";
 import { Output } from "../output.ts";
-import { Termination } from "../termination.ts";
+import {
+  type Identity,
+  reportArtifact,
+  stayInRoom,
+} from "../participant-stay.ts";
 import { CLI_VERSION } from "../version.ts";
 
 const DEFAULT_ENDPOINT = "http://localhost:11434";
 
+/** The harnesses a participant can contribute from the CLI. */
+const HARNESSES = [
+  "opencode",
+  "claude-code",
+  "codex",
+  "fake",
+] as const satisfies readonly SupportedHarnessId[];
+
 /** What a preview shows in the place of a secret. */
 const REDACTED = "[redacted]";
-
-/** How long leaving waits for the hub to confirm before it gives up on telling it. */
-const LEAVE_TIMEOUT = Duration.seconds(3);
-
-interface Identity {
-  readonly participantId: string;
-  readonly roomCode: string;
-}
-
-/**
- * Tells the hub that the participant left the room. `true` when the hub
- * confirmed it, or said the participant or the room is already gone; `false`
- * when the hub did not answer in time, and then it removes the participant
- * by itself once the reconnection deadline passes.
- */
-const leaveRoom = (hubUrl: string, { participantId, roomCode }: Identity) =>
-  withHub(hubUrl, (client) =>
-    client.participants.remove({
-      params: { code: roomCode, id: participantId },
-    })
-  ).pipe(
-    Effect.as(true),
-    Effect.catchTag(["ParticipantNotFound", "RoomNotFound"], () =>
-      Effect.succeed(true)
-    ),
-    Effect.timeoutOption(LEAVE_TIMEOUT),
-    Effect.map((left) => left._tag === "Some" && left.value),
-    Effect.catch(() => Effect.succeed(false))
-  );
 
 /** Nothing at the endpoint answered like a provider: no model list, no inference API. */
 export class EndpointUnreachable extends Schema.TaggedError<EndpointUnreachable>()(
@@ -105,6 +92,29 @@ export class ModelNotOnEndpoint extends Schema.TaggedError<ModelNotOnEndpoint>()
       : `Models it lists: ${this.available.join(", ")}.`;
   }
 }
+
+/** Flags that were given together and belong to different kinds of participant. */
+export class FlagsDoNotCombine extends Schema.TaggedError<FlagsDoNotCombine>()(
+  "FlagsDoNotCombine",
+  {
+    /** The flags that are out of place, as they are typed. */
+    flags: Schema.Array(Schema.String),
+    /** `with` when `flag` was given too, `without` when it is missing. */
+    relation: Schema.Literals(["with", "without"]),
+    flag: Schema.String,
+    reason: Schema.String,
+  }
+) {
+  override get message(): string {
+    return `${this.flags.join(", ")} cannot be used ${this.relation} ${this.flag}: ${this.reason}.`;
+  }
+}
+
+const HttpUrl = Schema.String.check(
+  Schema.isPattern(/^https?:\/\/[^\s/]+/, {
+    message: "Expected an http:// or https:// URL",
+  })
+);
 
 /**
  * `--header Name=Value`, repeatable: a `ParticipantAuthHeader`. It is added
@@ -146,181 +156,216 @@ const headerEnvFlag = Flag.KeyValuePair("header-env").pipe(
   Flag.withDefault({})
 );
 
-/** The last line a person reads: how the stay in the room ended. */
-const leftText = (
-  roomCode: string,
-  stay: { readonly reason: string; readonly removed: boolean }
-): string => {
-  if (stay.reason !== "stopped") {
-    return `No longer in room ${roomCode} (${stay.reason}).`;
-  }
-  return stay.removed
-    ? `Left room ${roomCode}.`
-    : `Stopped. The hub did not confirm: it takes the participant out of room ${roomCode} by itself in a minute.`;
+const flags = {
+  room: roomFlag,
+  participantId: participantIdFlag,
+  model: Flag.String("model").pipe(
+    Flag.withAlias("m"),
+    Flag.withDescription(
+      "Model of the endpoint to share; on a terminal, chosen from the ones the endpoint lists. With --harness: the model the harness runs on, when you want to say"
+    ),
+    Flag.optional
+  ),
+  endpoint: Flag.String("endpoint").pipe(
+    Flag.withAlias("e"),
+    Flag.withMetavar("url"),
+    Flag.withDescription(
+      `Where the provider listens on this machine. The hub never calls it. Default: ${DEFAULT_ENDPOINT}`
+    ),
+    Flag.withSchema(HttpUrl),
+    Flag.optional
+  ),
+  headers: headerFlag,
+  headersFromEnvironment: headerEnvFlag,
+  harness: Flag.Literals("harness", HARNESSES).pipe(
+    Flag.withDescription(
+      "Share a harness of this machine instead of a model endpoint. fake is a test harness that calls no model"
+    ),
+    Flag.optional
+  ),
+  workspace: Flag.String("workspace").pipe(
+    Flag.withMetavar("folder"),
+    Flag.withDescription(
+      "With --harness: the folder the harness runs in and its artifacts are collected from. Default: an empty folder under ~/.gambi/workspaces/"
+    ),
+    Flag.optional
+  ),
+  nickname: Flag.String("nickname").pipe(
+    Flag.withAlias("n"),
+    Flag.withDescription(
+      "Name the room shows for the participant. Default: <model>@<participant id>"
+    ),
+    Flag.optional
+  ),
+  password: Flag.Redacted("password").pipe(
+    Flag.withAlias("p"),
+    Flag.withDescription("Password of the room, when it has one"),
+    Flag.optional
+  ),
+  config: runtimeConfigFlag(
+    "Runtime config of the participant (temperature, instructions, ...) as JSON: a file, or - for stdin"
+  ),
+  noSpecs: Flag.Boolean("no-specs").pipe(
+    Flag.withoutNegation,
+    Flag.withDescription("Do not tell the room what this machine has"),
+    Flag.withDefault(false)
+  ),
+  hub: hubFlag,
+  dryRun: Flag.Boolean("dry-run").pipe(
+    Flag.withDescription(
+      "Check the endpoint or the harness and print what would be registered, without joining"
+    ),
+    Flag.withDefault(false)
+  ),
 };
 
-const join = Command.make(
-  "join",
-  {
-    room: roomFlag,
-    participantId: participantIdFlag,
-    model: Flag.String("model").pipe(
-      Flag.withAlias("m"),
-      Flag.withDescription("Model of the endpoint to share")
+type JoinInput = Command.Command.Config.Infer<typeof flags>;
+
+/** What both kinds of participant tell the room about themselves. */
+const commonProfile = Effect.fnUntraced(function* (
+  input: JoinInput,
+  model: string
+) {
+  const specs = input.noSpecs ? undefined : yield* detectMachineSpecs();
+  // A field that is present has a value: the registration refuses
+  // `undefined`.
+  return {
+    nickname: Option.getOrElse(
+      input.nickname,
+      () => `${model}@${input.participantId.slice(0, 6)}`
     ),
-    endpoint: Flag.String("endpoint").pipe(
-      Flag.withAlias("e"),
-      Flag.withMetavar("url"),
-      Flag.withDescription(
-        "Where the provider listens on this machine. The hub never calls it"
+    model,
+    ...(specs === undefined ? {} : { specs }),
+    ...Option.match(input.config, {
+      onNone: () => ({}),
+      onSome: (config) => ({ config }),
+    }),
+  } satisfies ParticipantProfile;
+});
+
+/** What the participant runtime of both kinds is started with. */
+const runtimeOptions = (
+  input: JoinInput,
+  identity: Identity,
+  profile: ParticipantProfile
+) => ({
+  hubUrl: input.hub,
+  ...identity,
+  ...Option.match(input.password, {
+    onNone: () => ({}),
+    onSome: (password) => ({ password: Redacted.value(password) }),
+  }),
+  // The registration carries the version of the CLI; the hub refuses
+  // another minor.
+  version: CLI_VERSION,
+  profile,
+});
+
+/** What `--dry-run` prints for both kinds, without any secret. */
+const previewOf = (input: JoinInput, identity: Identity) => ({
+  hubUrl: input.hub,
+  ...identity,
+  ...(Option.isSome(input.password) ? { password: REDACTED } : {}),
+});
+
+const showPreview = Effect.fnUntraced(function* (
+  input: JoinInput,
+  identity: Identity,
+  preview: object
+) {
+  const output = yield* Output;
+  yield* output.result(
+    preview,
+    () =>
+      `Would join room ${identity.roomCode} on ${input.hub} as ${identity.participantId}.\n${JSON.stringify(preview, null, 2)}`
+  );
+});
+
+/** Joins with a model endpoint of this machine. */
+const joinWithEndpoint = Effect.fnUntraced(function* (
+  input: JoinInput,
+  identity: Identity
+) {
+  if (Option.isSome(input.workspace)) {
+    return yield* new FlagsDoNotCombine({
+      flags: ["--workspace"],
+      relation: "without",
+      flag: "--harness",
+      reason: "a participant that shares a model endpoint has no Workspace",
+    });
+  }
+  const { canPrompt } = yield* TerminalCapabilities.TerminalCapabilities;
+  const modelIsMissing = new CliError.MissingOption({ option: "model" });
+  if (Option.isNone(input.model) && !canPrompt) {
+    return yield* modelIsMissing;
+  }
+
+  // `ParticipantAuthHeaders`: they go to the probe and to the handler that
+  // calls the provider. The runtime, and so the hub, never sees them.
+  const authHeaders: ParticipantAuthHeaders = {
+    ...input.headers,
+    ...input.headersFromEnvironment,
+  };
+  const endpoint = Option.getOrElse(input.endpoint, () => DEFAULT_ENDPOINT);
+  const provider = { endpoint, authHeaders };
+
+  // What the provider lists and which inference APIs it answers, found on
+  // this machine. The hub never probes a provider.
+  const probe = yield* probeEndpoint(provider);
+  if (!probe.reachable) {
+    return yield* new EndpointUnreachable({ endpoint });
+  }
+  const model = yield* Option.match(input.model, {
+    onSome: (named) => Effect.succeed(named),
+    onNone: () =>
+      Prompt.run(
+        Prompt.Select({
+          message: "Model to share",
+          choices: probe.models.map((listed) => ({
+            title: listed,
+            value: listed,
+          })),
+        })
+      ).pipe(
+        // Leaving the question unanswered leaves the flag missing.
+        Effect.mapError(() => modelIsMissing)
       ),
-      Flag.withDefault(DEFAULT_ENDPOINT)
-    ),
-    nickname: Flag.String("nickname").pipe(
-      Flag.withAlias("n"),
-      Flag.withDescription(
-        "Name the room shows for the participant. Default: <model>@<participant id>"
-      ),
-      Flag.optional
-    ),
-    password: Flag.Redacted("password").pipe(
-      Flag.withAlias("p"),
-      Flag.withDescription("Password of the room, when it has one"),
-      Flag.optional
-    ),
-    config: runtimeConfigFlag(
-      "Runtime config of the participant (temperature, instructions, ...) as JSON: a file, or - for stdin"
-    ),
-    headers: headerFlag,
-    headersFromEnvironment: headerEnvFlag,
-    noSpecs: Flag.Boolean("no-specs").pipe(
-      Flag.withoutNegation,
-      Flag.withDescription("Do not tell the room what this machine has"),
-      Flag.withDefault(false)
-    ),
-    hub: hubFlag,
-    dryRun: Flag.Boolean("dry-run").pipe(
-      Flag.withDescription(
-        "Print what would be registered, after probing the endpoint, without joining"
-      ),
-      Flag.withDefault(false)
-    ),
-  },
-  Effect.fn("participant.join")(
-    function* (input) {
-      const output = yield* Output;
-      const termination = yield* Termination;
-      const identity: Identity = {
-        roomCode: input.room,
-        participantId: input.participantId,
-      };
-      const lifecycle = yield* Queue.unbounded<ParticipantLifecycleEvent>();
-      // `ParticipantAuthHeaders`: they go to the probe and to the handler that
-      // calls the provider. The runtime, and so the hub, never sees them.
-      const authHeaders: ParticipantAuthHeaders = {
-        ...input.headers,
-        ...input.headersFromEnvironment,
-      };
-      const provider = { endpoint: input.endpoint, authHeaders };
+  });
+  if (!probe.models.includes(model)) {
+    return yield* new ModelNotOnEndpoint({
+      endpoint,
+      model,
+      available: probe.models,
+    });
+  }
 
-      // What the provider lists and which inference APIs it answers, found on
-      // this machine. The hub never probes a provider.
-      const probe = yield* probeEndpoint(provider);
-      if (!probe.reachable) {
-        return yield* new EndpointUnreachable({ endpoint: input.endpoint });
-      }
-      if (!probe.models.includes(input.model)) {
-        return yield* new ModelNotOnEndpoint({
-          endpoint: input.endpoint,
-          model: input.model,
-          available: probe.models,
-        });
-      }
+  const profile: ParticipantProfile = {
+    ...(yield* commonProfile(input, model)),
+    endpoint,
+    capabilities: probe.capabilities,
+  };
+  if (input.dryRun) {
+    return yield* showPreview(input, identity, {
+      ...previewOf(input, identity),
+      ...(Object.keys(authHeaders).length === 0
+        ? {}
+        : {
+            authHeaders: Object.fromEntries(
+              Object.keys(authHeaders).map((name) => [name, REDACTED])
+            ),
+          }),
+      profile,
+    });
+  }
 
-      /** Writes each step of the runtime's life, until the one that ends it. */
-      const untilTheRuntimeLeaves = Effect.gen(function* () {
-        while (true) {
-          const event = yield* Queue.take(lifecycle);
-          if (event.type === "left") {
-            return event;
-          }
-          if (event.type === "connected") {
-            yield* output.event(
-              "tunnel_connected",
-              {
-                ...identity,
-                attempt: event.attempt,
-                hubVersion: event.hubVersion,
-              },
-              event.attempt === 0
-                ? "Tunnel connected. Press Ctrl+C to leave."
-                : "Tunnel connected again."
-            );
-          } else {
-            yield* output.event(
-              "reconnecting",
-              {
-                ...identity,
-                attempt: event.attempt,
-                delayMillis: event.delayMillis,
-                reason: event.reason,
-              },
-              `Lost the hub (${event.reason}). Trying again in ${event.delayMillis / 1000} s (attempt ${event.attempt})...`
-            );
-          }
-        }
-      });
-
-      const specs = input.noSpecs ? undefined : yield* detectMachineSpecs();
-
-      // A field that is present has a value: the registration refuses
-      // `undefined`.
-      const profile: ParticipantProfile = {
-        nickname: Option.getOrElse(
-          input.nickname,
-          () => `${input.model}@${input.participantId.slice(0, 6)}`
-        ),
-        model: input.model,
-        endpoint: input.endpoint,
-        capabilities: probe.capabilities,
-        ...(specs === undefined ? {} : { specs }),
-        ...Option.match(input.config, {
-          onNone: () => ({}),
-          onSome: (config) => ({ config }),
-        }),
-      };
-
-      if (input.dryRun) {
-        const preview = {
-          hubUrl: input.hub,
-          ...identity,
-          ...(Option.isSome(input.password) ? { password: REDACTED } : {}),
-          ...(Object.keys(authHeaders).length === 0
-            ? {}
-            : {
-                authHeaders: Object.fromEntries(
-                  Object.keys(authHeaders).map((name) => [name, REDACTED])
-                ),
-              }),
-          profile,
-        };
-        return yield* output.result(
-          preview,
-          () =>
-            `Would join room ${identity.roomCode} on ${input.hub} as ${identity.participantId}.\n${JSON.stringify(preview, null, 2)}`
-        );
-      }
-
-      const Host = ParticipantRuntime.layer({
-        hubUrl: input.hub,
-        ...identity,
-        ...Option.match(input.password, {
-          onNone: () => ({}),
-          onSome: (password) => ({ password: Redacted.value(password) }),
-        }),
-        version: CLI_VERSION,
-        profile,
-        onLifecycle: (event) => Queue.offer(lifecycle, event),
+  yield* stayInRoom({
+    hubUrl: input.hub,
+    identity,
+    label: model,
+    host: (onLifecycle) =>
+      ParticipantRuntime.layer({
+        ...runtimeOptions(input, identity, profile),
+        onLifecycle,
       }).pipe(
         Layer.provide(
           Layer.mergeAll(
@@ -329,57 +374,110 @@ const join = Command.make(
             providerInference(provider)
           )
         )
-      );
+      ),
+  });
+});
 
-      // The scope holds the participant in the room: it closes, and the
-      // tunnel with it, before `left` is written.
-      const stay = yield* Effect.scoped(
-        Effect.gen(function* () {
-          const runtime = Context.get(
-            yield* Layer.build(Host),
-            ParticipantRuntime
-          );
-          yield* output.event(
-            "registered",
-            { roomCode: identity.roomCode, participant: runtime.participant },
-            `Registered ${runtime.participant.nickname} (${identity.participantId}) in room ${identity.roomCode}.`
-          );
-          const ending = yield* Effect.raceFirst(
-            Effect.map(termination.signal, (signal) => ({ signal })),
-            Effect.map(untilTheRuntimeLeaves, (left) => ({ left }))
-          );
-          if ("left" in ending) {
-            // The runtime ended by itself: the hub refused it on its way back,
-            // or gave its place to another runtime. The hub is told nothing:
-            // the participant with this id in the room, if there is one, is
-            // not this runtime any more.
-            return {
-              reason: ending.left.reason,
-              removed: false,
-              ended: yield* Effect.exit(runtime.ended),
-            };
-          }
-          yield* output.event(
-            "leaving",
-            { ...identity, signal: ending.signal },
-            `Leaving room ${identity.roomCode} (${ending.signal})...`
-          );
-          // The hub first, so the room hears one thing: the participant left.
-          // Closing the tunnel first would show it offline in between.
-          return {
-            reason: "stopped" as const,
-            removed: yield* leaveRoom(input.hub, identity),
-            ended: Exit.void,
-          };
-        })
-      );
-      yield* output.event(
-        "left",
-        { ...identity, reason: stay.reason, removed: stay.removed },
-        leftText(identity.roomCode, stay)
-      );
-      // A runtime that ended by itself is a failure, with the name of why.
-      yield* stay.ended;
+/** The provider flags that were given, which a harness participant does not take. */
+const providerFlagsOf = (input: JoinInput): readonly string[] => [
+  ...(Option.isSome(input.endpoint) ? ["--endpoint"] : []),
+  ...(Object.keys(input.headers).length === 0 ? [] : ["--header"]),
+  ...(Object.keys(input.headersFromEnvironment).length === 0
+    ? []
+    : ["--header-env"]),
+];
+
+/** Joins with a harness of this machine, running in a Workspace. */
+const joinWithHarness = Effect.fnUntraced(function* (
+  input: JoinInput,
+  identity: Identity,
+  harnessId: SupportedHarnessId
+) {
+  const providerFlags = providerFlagsOf(input);
+  if (providerFlags.length > 0) {
+    return yield* new FlagsDoNotCombine({
+      flags: providerFlags,
+      relation: "with",
+      flag: "--harness",
+      reason: "the credentials of a harness stay in the harness",
+    });
+  }
+
+  // Is the harness installed and logged in? This only looks: it runs the
+  // harness's own status commands and reads no credential.
+  const resolved = yield* resolveHarness(harnessId).pipe(
+    Effect.provide(HarnessTools.layer)
+  );
+  for (const note of [...resolved.notes, resolved.warning]) {
+    if (note !== undefined) {
+      yield* Effect.logWarning(note);
+    }
+  }
+  const command: HarnessCommand = resolved.command;
+
+  const model = Option.getOrElse(input.model, () => harnessId);
+  const profile: ParticipantProfile = {
+    ...(yield* commonProfile(input, model)),
+    harness: {
+      id: harnessId,
+      ...Option.match(input.model, {
+        onNone: () => ({}),
+        onSome: (named) => ({ model: named }),
+      }),
+    },
+  };
+  const workspace = {
+    ...identity,
+    harness: harnessId,
+    model,
+    ...Option.match(input.workspace, {
+      onNone: () => ({}),
+      onSome: (path) => ({ path }),
+    }),
+  };
+  if (input.dryRun) {
+    return yield* showPreview(input, identity, {
+      ...previewOf(input, identity),
+      workspace: yield* localDirectoryPath(workspace),
+      harness: { id: harnessId, command: command.command, args: command.args },
+      profile,
+    });
+  }
+
+  const output = yield* Output;
+  const onArtifact = reportArtifact(identity);
+  yield* stayInRoom({
+    hubUrl: input.hub,
+    identity,
+    label: harnessId,
+    host: (onLifecycle) =>
+      harnessParticipant({
+        runtime: {
+          ...runtimeOptions(input, identity, profile),
+          onLifecycle,
+        },
+        harness: { command },
+        artifacts: {
+          onArtifact: (event) =>
+            Effect.provideService(onArtifact(event), Output, output),
+        },
+      }).pipe(Layer.provide(Workspace.layerLocalDirectory(workspace))),
+  });
+});
+
+export const join = Command.make(
+  "join",
+  flags,
+  Effect.fn("participant.join")(
+    function* (input) {
+      const identity: Identity = {
+        roomCode: input.room,
+        participantId: input.participantId,
+      };
+      if (Option.isSome(input.harness)) {
+        return yield* joinWithHarness(input, identity, input.harness.value);
+      }
+      return yield* joinWithEndpoint(input, identity);
     },
     // The runtime names the same failure without saying what to do.
     Effect.catchTag("HubUnreachable", ({ cause, hubUrl }) =>
@@ -388,8 +486,34 @@ const join = Command.make(
   )
 ).pipe(
   Command.withDescription(
-    "Join a room with a model endpoint of this machine, until Ctrl+C"
-  )
+    "Join a room with a model endpoint or a harness of this machine, and stay until Ctrl+C"
+  ),
+  Command.withExamples([
+    {
+      command:
+        "gambi participant join --room ABC123 --participant-id worker-1 --model llama3",
+      description: "Share a model of the local Ollama with a room",
+    },
+    {
+      command:
+        "gambi participant join --room ABC123 --participant-id worker-1 --model gpt-4.1 --endpoint https://api.openai.com --header-env Authorization=OPENAI_AUTH",
+      description:
+        "Share a model of a hosted provider; the header stays on this machine",
+    },
+    {
+      command:
+        "gambi participant join --room ABC123 --participant-id worker-1 --harness opencode",
+      description: "Share your OpenCode, running in an empty Workspace",
+    },
+    {
+      command:
+        "gambi participant join --room ABC123 --participant-id worker-1 --harness codex --workspace ./my-project",
+      description: "Share your Codex, running in a folder you choose",
+    },
+    {
+      command:
+        "gambi participant join --room ABC123 --participant-id worker-1 --model llama3 --dry-run",
+      description: "Check the endpoint and print what would be registered",
+    },
+  ])
 );
-
-export { join };

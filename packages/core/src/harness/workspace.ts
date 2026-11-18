@@ -206,6 +206,28 @@ const asSegment = (value: string): string => {
   return encoded === ".." ? "%2E%2E" : encoded;
 };
 
+/**
+ * Where the default Workspace of a participant is: the folder it was given,
+ * or its own under `<gambiHome>/workspaces/`. It only says where; nothing is
+ * created.
+ */
+export const localDirectoryPath = (
+  options: Pick<
+    LocalDirectoryOptions,
+    "gambiHome" | "participantId" | "path" | "roomCode"
+  >
+): Effect.Effect<string, never, Path.Path> =>
+  Effect.map(Path.Path, (path) =>
+    options.path === undefined
+      ? path.join(
+          options.gambiHome ?? path.join(homedir(), ".gambi"),
+          "workspaces",
+          asSegment(options.roomCode),
+          asSegment(options.participantId)
+        )
+      : path.resolve(options.path)
+  );
+
 export class Workspace extends Context.Service<
   Workspace,
   {
@@ -240,15 +262,7 @@ export class Workspace extends Context.Service<
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
-        const folder =
-          options.path === undefined
-            ? path.join(
-                options.gambiHome ?? path.join(homedir(), ".gambi"),
-                "workspaces",
-                asSegment(options.roomCode),
-                asSegment(options.participantId)
-              )
-            : path.resolve(options.path);
+        const folder = yield* localDirectoryPath(options);
         const { harness, model, participantId, roomCode } = options;
 
         yield* fs.makeDirectory(folder, { recursive: true }).pipe(
