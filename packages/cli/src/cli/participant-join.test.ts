@@ -529,6 +529,72 @@ it.effect(
     }).pipe(Effect.provide(layerHub()))
 );
 
+it.effect(
+  "a server that is not a hub is named as that, not as unreachable",
+  () =>
+    Effect.gen(function* () {
+      const provider = yield* fakeProvider();
+      const notAHub = yield* Effect.acquireRelease(
+        Effect.sync(() =>
+          Bun.serve({
+            hostname: "127.0.0.1",
+            port: 0,
+            fetch: () => new Response("Not Found", { status: 404 }),
+          })
+        ),
+        (server) => Effect.promise(() => server.stop(true))
+      );
+      const url = `http://127.0.0.1:${notAHub.port}`;
+
+      const result = yield* runCommand(
+        joinWithEndpoint(url, "ABC123", provider.url)
+      );
+
+      expect(result).toMatchObject({ exitCode: 3, stdout: "" });
+      expect(JSON.parse(result.stderr).error).toMatchObject({
+        name: "NotAHub",
+        message: `The server at ${url} did not answer like a Gambi hub (HTTP 404).`,
+      });
+    })
+);
+
+it.effect("an empty --nickname or --model is invalid usage", () =>
+  Effect.gen(function* () {
+    const provider = yield* fakeProvider();
+
+    const nickname = yield* runCommand(
+      joinWithEndpoint(
+        "http://127.0.0.1:9",
+        "ABC123",
+        provider.url,
+        "--nickname",
+        ""
+      )
+    );
+    expect(nickname).toMatchObject({ exitCode: 2, stdout: "" });
+    expect(JSON.parse(nickname.stderr).error).toMatchObject({
+      name: "InvalidValue",
+      details: { option: "nickname" },
+    });
+
+    const model = yield* runCommand([
+      "participant",
+      "join",
+      "--room",
+      "ABC123",
+      "--participant-id",
+      "arthur-1",
+      "--model",
+      "",
+    ]);
+    expect(model).toMatchObject({ exitCode: 2, stdout: "" });
+    expect(JSON.parse(model.stderr).error).toMatchObject({
+      name: "InvalidValue",
+      details: { option: "model" },
+    });
+  })
+);
+
 it.effect("--endpoint that is not a URL is invalid usage", () =>
   Effect.gen(function* () {
     const result = yield* runCommand(

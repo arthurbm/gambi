@@ -36,7 +36,7 @@ import {
   TerminalCapabilities,
 } from "effect/cli";
 import { participantIdFlag, roomFlag, runtimeConfigFlag } from "../flags.ts";
-import { HubUnreachable, hubFlag } from "../hub-client.ts";
+import { hubFailure, hubFlag } from "../hub-client.ts";
 import { detectMachineSpecs } from "../machine-specs.ts";
 import { Output } from "../output.ts";
 import {
@@ -164,6 +164,7 @@ const flags = {
     Flag.withDescription(
       "Model of the endpoint to share; on a terminal, chosen from the ones the endpoint lists. With --harness: the model the harness runs on, when you want to say"
     ),
+    Flag.withSchema(Schema.NonEmptyString),
     Flag.optional
   ),
   endpoint: Flag.String("endpoint").pipe(
@@ -195,6 +196,7 @@ const flags = {
     Flag.withDescription(
       "Name the room shows for the participant. Default: <model>@<participant id>"
     ),
+    Flag.withSchema(Schema.NonEmptyString),
     Flag.optional
   ),
   password: Flag.Redacted("password").pipe(
@@ -483,9 +485,10 @@ export const join = Command.make(
       }
       return yield* joinWithEndpoint(input, identity);
     },
-    // The runtime names the same failure without saying what to do.
+    // The runtime has one name for a hub that did not answer and for a
+    // server that is not a hub. The failure behind it tells them apart.
     Effect.catchTag("HubUnreachable", ({ cause, hubUrl }) =>
-      Effect.fail(new HubUnreachable({ hubUrl, cause }))
+      Effect.fail(hubFailure(hubUrl, cause))
     )
   )
 ).pipe(

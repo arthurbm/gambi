@@ -1,6 +1,6 @@
 import { expect } from "bun:test";
 import { Hub } from "@gambi/core/hub/hub";
-import { layerHub, managementClient } from "@gambi/core/testing/hub";
+import { layerHub, managementClient, watchRoom } from "@gambi/core/testing/hub";
 import { linkToHub } from "@gambi/core/testing/hub-link";
 import { joinParticipant } from "@gambi/core/testing/participant";
 import { FAKE_MODEL, fakeProvider } from "@gambi/core/testing/provider";
@@ -190,4 +190,115 @@ it.effect(
       });
       expect((yield* joining.result).exitCode).toBe(0);
     })
+);
+
+/**
+ * A server in front of the hub of the test that passes plain requests on
+ * and never answers `held`: the tunnel's WebSocket upgrade, or everything.
+ */
+const hubThatHolds = (held: "the tunnel" | "everything") =>
+  Effect.gen(function* () {
+    const hub = yield* Hub;
+    const server = yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        Bun.serve({
+          hostname: "127.0.0.1",
+          port: 0,
+          idleTimeout: 0,
+          fetch: async (request) => {
+            if (held === "everything" || request.headers.has("upgrade")) {
+              return new Promise<Response>(() => undefined);
+            }
+            const { pathname, search } = new URL(request.url);
+            return fetch(`${hub.url}${pathname}${search}`, {
+              method: request.method,
+              headers: request.headers,
+              body: await request.text(),
+            });
+          },
+        })
+      ),
+      (running) => Effect.promise(() => running.stop(true))
+    );
+    return `http://127.0.0.1:${server.port}`;
+  });
+
+it.effect(
+  "told to leave after it registered and before its tunnel opened, it still leaves the room and ends with 0",
+  () =>
+    Effect.gen(function* () {
+      const room = yield* newRoom;
+      const provider = yield* fakeProvider();
+      const watch = yield* watchRoom(room.code);
+      const joining = yield* startCommand([
+        "participant",
+        "join",
+        "--room",
+        room.code,
+        "--participant-id",
+        "arthur-1",
+        "--model",
+        FAKE_MODEL,
+        "--endpoint",
+        provider.url,
+        "--no-specs",
+        "--hub",
+        yield* hubThatHolds("the tunnel"),
+      ]);
+      expect((yield* watch.next).type).toBe("participant.joined");
+
+      yield* joining.signal("SIGINT");
+
+      expect(yield* joining.nextEvent).toMatchObject({
+        type: "leaving",
+        data: { roomCode: room.code, signal: "SIGINT" },
+      });
+      expect(yield* joining.nextEvent).toMatchObject({
+        type: "left",
+        data: { reason: "stopped", removed: true },
+      });
+      expect((yield* joining.result).exitCode).toBe(0);
+      expect(yield* watch.next).toMatchObject({
+        type: "participant.removed",
+        reason: "left",
+      });
+    }).pipe(Effect.provide(TestHub))
+);
+
+it.effect(
+  "told to leave while the hub has not answered the registration, it ends with 0 without waiting for the hub",
+  () =>
+    Effect.gen(function* () {
+      const room = yield* newRoom;
+      const provider = yield* fakeProvider();
+      const frozen = yield* hubThatHolds("everything");
+      const joining = yield* startCommand([
+        "participant",
+        "join",
+        "--room",
+        room.code,
+        "--participant-id",
+        "arthur-1",
+        "--model",
+        FAKE_MODEL,
+        "--endpoint",
+        provider.url,
+        "--no-specs",
+        "--hub",
+        frozen,
+      ]);
+      // The probe of the endpoint ran: the join is waiting for the hub.
+      yield* provider.nextCall;
+
+      yield* joining.signal("SIGTERM");
+
+      expect((yield* joining.nextEvent).type).toBe("leaving");
+      // The hub does not answer the removal either; leaving gives up on it.
+      yield* TestClock.adjust("3 seconds");
+      expect(yield* joining.nextEvent).toMatchObject({
+        type: "left",
+        data: { reason: "stopped", removed: false },
+      });
+      expect((yield* joining.result).exitCode).toBe(0);
+    }).pipe(Effect.provide(TestHub))
 );

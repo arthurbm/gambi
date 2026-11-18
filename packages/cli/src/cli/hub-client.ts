@@ -83,6 +83,23 @@ const fromHttpClientError = (
 };
 
 /**
+ * Names what kept a hub from answering as the management contract says,
+ * from the failure behind it: an answer outside the contract is `NotAHub`,
+ * and no answer at all is `HubUnreachable`.
+ */
+export const hubFailure = (
+  hubUrl: string,
+  cause: unknown
+): HubUnreachable | NotAHub => {
+  if (HttpClientError.isHttpClientError(cause)) {
+    return fromHttpClientError(hubUrl, cause);
+  }
+  return Schema.isSchemaError(cause)
+    ? new NotAHub({ hubUrl, cause })
+    : new HubUnreachable({ hubUrl, cause });
+};
+
+/**
  * Runs `use` with the management client of the hub at `hubUrl`. The typed
  * errors of the contract pass through unchanged; a transport failure becomes
  * `HubUnreachable` and an answer outside the contract becomes `NotAHub`.
@@ -99,13 +116,9 @@ export const withHub = <A, E, R>(
 ): Effect.Effect<A, E | HubUnreachable | NotAHub, R | HttpClient.HttpClient> =>
   makeManagementClient(hubUrl).pipe(
     Effect.flatMap(use),
-    Effect.mapError((error) => {
-      if (HttpClientError.isHttpClientError(error)) {
-        return fromHttpClientError(hubUrl, error);
-      }
-      if (Schema.isSchemaError(error)) {
-        return new NotAHub({ hubUrl, cause: error });
-      }
-      return error;
-    })
+    Effect.mapError((error) =>
+      HttpClientError.isHttpClientError(error) || Schema.isSchemaError(error)
+        ? hubFailure(hubUrl, error)
+        : error
+    )
   );

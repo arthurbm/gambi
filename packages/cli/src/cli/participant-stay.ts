@@ -23,7 +23,7 @@ import {
 import { Context, Duration, Effect, Exit, Layer, Option, Queue } from "effect";
 import { withHub } from "./hub-client.ts";
 import { Output } from "./output.ts";
-import { Termination } from "./termination.ts";
+import { Termination, type TerminationSignal } from "./termination.ts";
 
 /** Who stays: one participant of one room. Every event carries it. */
 export interface Identity {
@@ -152,14 +152,38 @@ export const stayInRoom = <Hosted, E, R>(stay: Stay<Hosted, E, R>) =>
       }
     });
 
+    const leaving = (signal: TerminationSignal) =>
+      output.event(
+        "leaving",
+        { ...identity, signal },
+        `Leaving room ${identity.roomCode} (${signal})...`
+      );
+
     // The scope holds the participant in the room. When it closes, a harness
     // participant sends its last artifact, the tunnel closes and the harness
     // stops, in that order, before `left` is written.
     const ending = yield* Effect.scoped(
       Effect.gen(function* () {
-        const hosted = yield* Layer.build(
-          stay.host((event) => Queue.offer(lifecycle, event))
+        // The signal is listened for from here on, not only once the
+        // participant is online: the hub may already have registered a
+        // participant whose tunnel is still opening.
+        const joining = yield* Effect.raceFirst(
+          Effect.map(termination.signal, (signal) => ({ signal })),
+          Effect.map(
+            Layer.build(stay.host((event) => Queue.offer(lifecycle, event))),
+            (hosted) => ({ hosted })
+          )
         );
+        if ("signal" in joining) {
+          yield* leaving(joining.signal);
+          return {
+            reason: "stopped" as const,
+            removed: false,
+            tellTheHub: true,
+            ended: Exit.void,
+          };
+        }
+        const { hosted } = joining;
         const runtime = Context.get(hosted, ParticipantRuntime);
         const harness = Option.getOrUndefined(
           Context.getOption(hosted, Harness)
@@ -224,11 +248,7 @@ export const stayInRoom = <Hosted, E, R>(stay: Stay<Hosted, E, R>) =>
             ended: Exit.fail(how.failure),
           };
         }
-        yield* output.event(
-          "leaving",
-          { ...identity, signal: how.signal },
-          `Leaving room ${identity.roomCode} (${how.signal})...`
-        );
+        yield* leaving(how.signal);
         // A participant that shares a model endpoint tells the hub first, so
         // the room hears one thing: the participant left. Closing the tunnel
         // first would show it offline in between.
