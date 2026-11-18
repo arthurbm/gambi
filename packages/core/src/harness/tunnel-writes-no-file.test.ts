@@ -47,6 +47,7 @@ const READS: ReadonlySet<string> = new Set([
   "readFile",
   "readFileString",
   "stat",
+  "stream",
   "watch",
 ]);
 

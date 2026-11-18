@@ -25,6 +25,7 @@ import {
   MAX_ARTIFACT_BYTES,
 } from "@gambi/protocol";
 import {
+  Bytes,
   type Cause,
   Context,
   Deferred,
@@ -123,10 +124,10 @@ const encodeFile = (path: string, bytes: Uint8Array): ArtifactFile => {
  * is neither followed nor collected: what an artifact carries is inside the
  * Workspace, and a link may point anywhere on the machine.
  *
- * It fails before reading a file that would take the total past `maxBytes`:
- * no file travels in fewer bytes than it has, so the artifact could not be
- * sent, and a folder of gigabytes must not be read for nothing at every
- * change.
+ * It never reads more than `maxBytes` and one byte more, and fails when the
+ * files hold more than that: no file travels in fewer bytes than it has, so
+ * the artifact could not be sent, and a folder of gigabytes must not be read
+ * for nothing at every change.
  */
 const collectFiles = Effect.fnUntraced(function* (
   root: string,
@@ -140,12 +141,13 @@ const collectFiles = Effect.fnUntraced(function* (
     relative: string,
     absolute: string
   ) {
-    if (total + Number((yield* fs.stat(absolute)).size) > maxBytes) {
-      return yield* new WorkspaceTooLarge({ path: root, maxBytes });
-    }
-    // Counted by what was read: the file may have grown since it was
-    // measured.
-    const bytes = yield* fs.readFile(absolute);
+    // One byte more than what is left of the budget is enough to know that
+    // the file does not fit, however large it is or grows.
+    const bytes = Bytes.concat(
+      yield* Stream.runCollect(
+        fs.stream(absolute, { bytesToRead: maxBytes - total + 1 })
+      )
+    );
     total += bytes.length;
     if (total > maxBytes) {
       return yield* new WorkspaceTooLarge({ path: root, maxBytes });

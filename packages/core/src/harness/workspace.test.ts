@@ -5,7 +5,6 @@ import { expect } from "bun:test";
 import { BunServices } from "@effect/platform-bun";
 import { layer } from "@gambi/testing/effect";
 import {
-  ByteSize,
   type Cause,
   Context,
   Effect,
@@ -173,15 +172,18 @@ layer(BunServices.layer, { excludeTestServices: true })(
     );
 
     it.effect(
-      "a file that grew after it was measured still counts for what it is",
+      "a file larger than what an artifact can still carry is not read whole",
       () =>
         Effect.gen(function* () {
           const fs = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
           const folder = yield* temporaryFolder;
-          yield* fs.writeFileString(path.join(folder, "a.log"), "123456");
-          yield* fs.writeFileString(path.join(folder, "b.log"), "123456");
-          // Every file measures one byte, and then holds six.
+          yield* fs.writeFileString(path.join(folder, "a.txt"), "12345");
+          yield* fs.writeFile(
+            path.join(folder, "b.log"),
+            new Uint8Array(1024 * 1024)
+          );
+          let read = 0;
           const workspace = yield* Layer.build(
             Workspace.layerLocalDirectory({
               ...who,
@@ -191,11 +193,14 @@ layer(BunServices.layer, { excludeTestServices: true })(
               Layer.provide(
                 Layer.succeed(FileSystem.FileSystem, {
                   ...fs,
-                  stat: (file) =>
-                    Effect.map(fs.stat(file), (info) => ({
-                      ...info,
-                      size: ByteSize.bytes(1),
-                    })),
+                  stream: (file, options) =>
+                    fs.stream(file, options).pipe(
+                      Stream.tap((chunk) =>
+                        Effect.sync(() => {
+                          read += chunk.length;
+                        })
+                      )
+                    ),
                 })
               )
             )
@@ -204,6 +209,8 @@ layer(BunServices.layer, { excludeTestServices: true })(
           const failure = yield* Effect.flip(workspace.collect);
 
           expect(failure._tag).toBe("WorkspaceTooLarge");
+          // The five bytes of the first file, and one more than the six left.
+          expect(read).toBe(12);
         })
     );
 
