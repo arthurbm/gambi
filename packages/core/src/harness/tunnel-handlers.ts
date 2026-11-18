@@ -15,6 +15,9 @@
  * participant registers, and it outlives every tunnel of the runtime. What it
  * produces while the tunnel is down waits in the harness and goes up when the
  * hub opens `HarnessEvents` on the next tunnel.
+ *
+ * `harnessParticipant` (`./harness-participant.ts`) is this, in a Workspace
+ * and with its artifacts: a host uses that one.
  */
 import { TunnelRpcs } from "@gambi/protocol";
 import { Effect, Layer, Stream } from "effect";

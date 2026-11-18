@@ -65,13 +65,60 @@ export const HarnessSessionStatus = Schema.Struct({
 export type HarnessSessionStatus = typeof HarnessSessionStatus.Type;
 
 /**
+ * One file of an artifact: its path inside the Workspace, with `/` between
+ * the segments on every platform, and its whole content. A file that is valid
+ * UTF-8 travels as it is (`utf8`); any other travels in `base64`.
+ */
+export const ArtifactFile = Schema.Struct({
+  path: Schema.NonEmptyString,
+  encoding: Schema.Literals(["utf8", "base64"]),
+  content: Schema.String,
+});
+export type ArtifactFile = typeof ArtifactFile.Type;
+
+/**
+ * The largest artifact a participant runtime sends, in bytes of the JSON text
+ * of its event. A Workspace that does not fit sends no artifact at all.
+ *
+ * An artifact is one event, and two things on its way have a limit, both
+ * measured: the hub drops a tunnel that receives a WebSocket message of 16 MiB
+ * (the default of Bun's server), and the client derived from the contract
+ * fails a stream on a Server-Sent Event above 10 MiB (the default of
+ * `effect/encoding/Sse`). This stays under both.
+ */
+export const MAX_ARTIFACT_BYTES = 8 * 1024 * 1024;
+
+/**
+ * An artifact: the files of the participant's Workspace at one moment. It is
+ * a whole snapshot, never a difference, so each one replaces the one before:
+ * a file that is not in `files` is not in the Workspace any more. `version`
+ * counts the artifacts of one participant runtime from 1.
+ *
+ * `reason` says why it was taken: `watch` when the Workspace changed and then
+ * stayed still, `final` when the participant runtime was closing.
+ *
+ * Artifacts only go up, from the participant to the hub. Nothing in the
+ * tunnel writes a file on the participant's machine (ADR-0006).
+ */
+export const HarnessArtifact = Schema.Struct({
+  type: Schema.tag("harness.artifact"),
+  /** The harness session the runtime opened at start. */
+  sessionId: HarnessSessionId,
+  version: Schema.Int,
+  reason: Schema.Literals(["watch", "final"]),
+  files: Schema.Array(ArtifactFile),
+});
+export type HarnessArtifact = typeof HarnessArtifact.Type;
+
+/**
  * Everything that is born on a harness participant and goes up to the hub: one
  * chunk of the `HarnessEvents` tunnel call. A new kind of thing the
- * participant produces (the artifacts of its Workspace) is a new member here.
+ * participant produces is a new member here.
  */
 export const HarnessEvent = Schema.Union([
   HarnessMessage,
   HarnessSessionStatus,
+  HarnessArtifact,
 ]);
 export type HarnessEvent = typeof HarnessEvent.Type;
 
@@ -126,6 +173,7 @@ export type HarnessDetached = typeof HarnessDetached.Type;
 export const HarnessAttachEvent = Schema.Union([
   HarnessMessage,
   HarnessSessionStatus,
+  HarnessArtifact,
   HarnessConnected,
   HarnessDisconnected,
   HarnessEventsDropped,

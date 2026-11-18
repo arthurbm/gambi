@@ -36,6 +36,7 @@ import {
   HarnessSessionOutsideWorkspace,
 } from "@gambi/protocol";
 import {
+  type Array as Arr,
   Context,
   Deferred,
   Duration,
@@ -92,8 +93,9 @@ export interface HarnessOptions {
    */
   readonly stopTimeout?: Duration.Input | undefined;
   /**
-   * The folder the harness runs in, on this machine. Every session stays
-   * inside it. It must exist.
+   * The folder the harness runs in, on this machine: the `path` of its
+   * Workspace (`./workspace.ts`). Every session stays inside it. It must
+   * exist.
    */
   readonly workspacePath: string;
 }
@@ -107,6 +109,14 @@ export class HarnessStartFailed extends Schema.TaggedError<HarnessStartFailed>()
     return `Failed to start ${this.harness}: could not run '${this.command}'.`;
   }
 }
+
+/** An event on its way to the hub, numbered in the order it was produced. */
+interface Outgoing {
+  readonly event: HarnessEvent;
+  readonly number: number;
+}
+
+const isArtifact = (entry: Outgoing) => entry.event.type === "harness.artifact";
 
 /**
  * Every request the runtime writes to the harness carries an id the runtime
@@ -159,6 +169,15 @@ export class Harness extends Context.Service<
      * about it. It never completes for a harness the runtime stopped.
      */
     readonly exited: Effect.Effect<HarnessFailed>;
+    /**
+     * Waits while what was produced so far is on its way to the hub. It
+     * completes when the hub has read all of it, and also when it cannot get
+     * there: at once when nobody reads `events` (the tunnel is down), and
+     * when the reader goes away. It is how the last thing a participant has
+     * to say is given the time to leave before the tunnel closes; put a
+     * timeout on it, since a hub may stop reading without going away.
+     */
+    readonly flushed: Effect.Effect<void>;
     /**
      * Opens a harness session under an id the caller picks, in `cwd` (default:
      * the Workspace). One that is already open stays as it is. Says `opened`
@@ -216,9 +235,31 @@ export class Harness extends Context.Service<
           options.sessionId ??
           `session-${Math.abs(yield* Random.nextInt).toString(36)}${Math.abs(yield* Random.nextInt).toString(36)}`;
 
-        const outbox = yield* Queue.sliding<HarnessEvent>(
-          options.outbox ?? DEFAULT_HARNESS_OUTBOX
-        );
+        // What waits for the hub, oldest first. Past `capacity` the oldest
+        // leaves.
+        const outbox: Outgoing[] = [];
+        const capacity = options.outbox ?? DEFAULT_HARNESS_OUTBOX;
+        /** The reader, when it waits for something to go. */
+        let wake: (() => void) | undefined;
+        /** The number of the last event produced. */
+        let produced = 0;
+        /** Every event up to this number is with the hub, or lost. */
+        let passed = 0;
+        /** How many readers `events` has now: one while a tunnel is open. */
+        let readers = 0;
+        const flushing = new Set<{
+          readonly upTo: number;
+          readonly done: () => void;
+        }>();
+        const pass = (upTo: number) => {
+          passed = Math.max(passed, upTo);
+          for (const waiter of [...flushing]) {
+            if (waiter.upTo <= passed || readers === 0) {
+              flushing.delete(waiter);
+              waiter.done();
+            }
+          }
+        };
         const stdin = yield* Queue.unbounded<string>();
         const exited = yield* Deferred.make<HarnessFailed>();
         /** The runtime's own calls that the harness has not answered yet. */
@@ -242,8 +283,98 @@ export class Harness extends Context.Service<
         let gone: HarnessFailed | undefined;
         let requests = 0;
 
+        // In one step that nothing interrupts: an event is numbered, takes
+        // its place, and wakes the reader.
         const emit = (event: HarnessEvent) =>
-          Effect.asVoid(Queue.offer(outbox, event));
+          Effect.sync(() => {
+            const entry: Outgoing = { event, number: ++produced };
+            if (isArtifact(entry)) {
+              // An artifact is a whole snapshot, so it replaces the one still
+              // waiting. Otherwise a participant that works through a long
+              // drop of its tunnel would hold every snapshot it took.
+              const waiting = outbox.findIndex(isArtifact);
+              if (waiting !== -1) {
+                outbox.splice(waiting, 1);
+              }
+            }
+            outbox.push(entry);
+            if (outbox.length > capacity) {
+              outbox.shift();
+            }
+            wake?.();
+          });
+        // The reader pulls one batch at a time, and the tunnel's stream call
+        // pulls the next only after the hub acknowledged the one before
+        // (`effect/rpc` waits for the `Ack` of each chunk). So a reader that
+        // asks for more has delivered everything it took.
+        //
+        // A batch is what the tunnel writes as one message, and a message
+        // has a size the hub accepts. An artifact is the one large event,
+        // and is kept under that size by whoever publishes it
+        // (`MAX_ARTIFACT_BYTES`), so it always goes in a batch of its own.
+        //
+        // Delivery is at most once: a batch the reader took when its tunnel
+        // dropped is gone, whether or not the hub got it.
+        const events: Stream.Stream<HarnessEvent> = Stream.suspend(() => {
+          let taken = 0;
+          readers++;
+          // The events up to the next artifact, or that artifact alone.
+          const nextBatch = (): Arr.NonEmptyArray<HarnessEvent> | undefined => {
+            const artifactAt = outbox.findIndex(isArtifact);
+            const [first, ...others] = outbox.splice(
+              0,
+              artifactAt === -1 ? outbox.length : Math.max(artifactAt, 1)
+            );
+            if (first === undefined) {
+              return;
+            }
+            taken = (others.at(-1) ?? first).number;
+            return [first.event, ...others.map((entry) => entry.event)];
+          };
+          const take = Effect.callback<Arr.NonEmptyArray<HarnessEvent>>(
+            (resume) => {
+              const settle = () => {
+                const batch = nextBatch();
+                if (batch !== undefined) {
+                  // Cleared before resuming: the reader may ask again at
+                  // once, and that sets a new one.
+                  wake = undefined;
+                  resume(Effect.succeed(batch));
+                }
+              };
+              wake = settle;
+              settle();
+              return Effect.sync(() => {
+                wake = undefined;
+              });
+            }
+          );
+          return Stream.fromEffectRepeat(
+            Effect.suspend(() => {
+              pass(taken);
+              return take;
+            })
+          ).pipe(
+            Stream.flattenArray,
+            // A reader that goes away took what it took with it: whether or
+            // not the hub got its last batch, nothing of it is on its way.
+            Stream.ensuring(
+              Effect.sync(() => {
+                readers--;
+                pass(taken);
+              })
+            )
+          );
+        });
+        const flushed = Effect.callback<void>((resume) => {
+          if (produced <= passed || readers === 0) {
+            resume(Effect.void);
+            return;
+          }
+          const waiter = { upTo: produced, done: () => resume(Effect.void) };
+          flushing.add(waiter);
+          return Effect.sync(() => flushing.delete(waiter));
+        });
         const write = (message: AcpMessage) =>
           Effect.asVoid(Queue.offer(stdin, `${JSON.stringify(message)}\n`));
 
@@ -533,8 +664,9 @@ export class Harness extends Context.Service<
 
         return Harness.of({
           closeSession,
-          events: Stream.fromQueue(outbox),
+          events,
           exited: Deferred.await(exited),
+          flushed,
           openSession,
           pid: Number(handle.pid),
           publish: emit,
