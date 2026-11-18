@@ -103,7 +103,7 @@ Rules:
 - The hub's wiring of a tunnel (`Tunnels.serve`) has three load-bearing details, listed at the top of `tunnels.ts`. Read them before changing it.
 - The hub pings every 5 s (`HubOptions.tunnelPingInterval`) and drops a tunnel that stays silent for one more interval. The participant has no ping of its own: it watches the hub's frames instead, and drops a tunnel that stays silent for three ping intervals (`HUB_SILENCE_PING_INTERVALS`). The hub says its interval in `Welcome`.
 - `ParticipantRuntime.layer` joins once and fails when the join fails. After that it comes back by itself when the tunnel drops: it registers again (a bootstrap token opens one tunnel) and dials again with the same `participantId`, waiting 1 s and then twice as long after each attempt that fails, up to 30 s. A refusal of the hub (`VersionMismatch`, `RoomNotFound`, `InvalidPassword`, `InvalidRequest`) ends the runtime instead of being retried; `ParticipantRuntime.ended` fails with it.
-- A participant has one tunnel, and the last one to open wins. The hub closes the tunnel it replaces with the WebSocket close code `TUNNEL_REPLACED_CLOSE_CODE` (`packages/protocol/src/tunnel/rpcs.ts`). A runtime whose tunnel closes with that code was replaced by another runtime with its `participantId`: it ends with `left` and the reason `replaced`, and does not dial again, or the two would take the tunnel from each other forever. A runtime that comes back by itself never sees the code, because it had already let go of the tunnel the hub closes.
+- A participant has one tunnel, and the last one to open wins. The hub closes the tunnel it replaces with the WebSocket close code `TUNNEL_REPLACED_CLOSE_CODE` (`packages/protocol/src/tunnel/rpcs.ts`). A runtime whose tunnel closes with that code was replaced by another runtime with its `participantId`: it ends with `left` and the reason `replaced`, `ParticipantRuntime.ended` fails with `ParticipantReplaced`, and it does not dial again, or the two would take the tunnel from each other forever. A runtime that comes back by itself never sees the code, because it had already let go of the tunnel the hub closes.
 - A host follows the runtime through `onLifecycle`, which receives `connected`, `reconnecting` and `left` (`ParticipantLifecycleEvent`), in order. Add a step of the runtime's life there, not as a second callback.
 - A knob of the hub is a field of `HubSettings` (`packages/core/src/hub/settings.ts`), with its default resolved in `Hub.layer`. Services read it from there, not from parameters.
 - A participant that is `offline` is removed after `HubSettings.reconnectDeadline` (60 s). Going online cancels the deadline; registering again restarts it.
@@ -525,11 +525,24 @@ A command:
 - reaches a hub with `withHub(hubUrl, (client) => ...)` and the shared `hubFlag`. It turns a transport failure into `HubUnreachable` and an answer outside the contract into `NotAHub`.
 - asks for a missing required flag with `Flag.withFallbackPrompt`. The prompt only runs on a terminal; without one the flag is reported as missing.
 - when it runs until stopped, awaits `Termination.signal` and then returns, so that a deliberate stop exits with `0`.
-- reaches the outside through a service, never through a global: the network through `HttpClient`, a subprocess through `ChildProcessSpawner`, a file through `FileSystem`, and what the running process is (`execPath`, `argv`, `platform`, `pid`) through `Installation`. `main.ts` provides the real ones.
+- reaches the outside through a service, never through a global: the network through `HttpClient`, a subprocess through `ChildProcessSpawner`, a file through `FileSystem`, stdin through `Stdio`, an environment variable through `Config`, what the running process is (`execPath`, `argv`, `platform`, `pid`) through `Installation`, and what the hardware is through `Machine`. `main.ts` provides the real ones.
+- takes the flags other commands take from `flags.ts` (`roomFlag`, `participantIdFlag`, `runtimeConfigFlag`) and `hub-client.ts` (`hubFlag`), so that a flag means the same everywhere. `--hub` falls back to the `GAMBI_HUB` variable; `--config -` reads the JSON from stdin.
+- writes a stream of data (`events watch`) with `Output.record`: the value on one JSON line, as it is.
 
 `exit-codes.ts` holds the one table from typed error to exit code. A command that can fail with a new error does not compile until the error has a row there.
 
 A boolean flag needs `Flag.withDefault(false)`: without it the flag is required.
+
+### Hosting a participant from the CLI
+
+`participant join` hosts a participant runtime in its own process. `commands/participant-join.ts` prepares what is hosted, for a model endpoint or for a harness; `participant-stay.ts` (`stayInRoom`) is the stay itself and writes its events, listed at the top of that file.
+
+- The stay ends with `0` only when a signal asked for it. A stay that ended by itself fails with the typed error of why, after `left` is written: the hub's refusal, `ParticipantReplaced`, or the `HarnessFailed` of a harness that exited.
+- Leaving tells the hub (`participants.remove`) with a time limit, and `left` says in `removed` whether the hub confirmed. A participant that shares a model endpoint tells the hub before it closes its tunnel, so the room hears one event; a harness participant closes first, so its last artifact goes up through the tunnel.
+- A runtime that ended by itself tells the hub nothing: after `replaced`, the participant with that id in the room is another runtime.
+- Whoever hosts probes the endpoint (`probeEndpoint`) and detects the machine (`detectMachineSpecs`) before registering, and gives the `ParticipantAuthHeaders` to the probe and to `providerInference` only.
+- The registration carries `CLI_VERSION`, and `hub serve` answers for the same version, so that one binary never refuses itself.
+- `main.ts` answers `gambi __fake-acp-agent` before any command is parsed: it is how the `fake` harness starts from a compiled binary.
 
 ### A command in a test
 
@@ -559,6 +572,8 @@ layer(layerHub(), { excludeTestServices: true })("room commands", (it) => {
 - A command in a test reaches this machine only. `fetch` refuses any host but loopback, so serve what the command downloads from a `Bun.serve` on `127.0.0.1`.
 - A command in a test starts no process unless the test says so. `options.spawner: spawnerThat((command) => ({ exitCode, stdout, stderr }))` plays the subprocess and shows the test the command line; without it, spawning fails the test.
 - `options.installation` says what the running `gambi` is (`execPath`, `argv`, `platform`, `arch`, `pid`). The default is an installation of unknown origin.
+- `options.stdin` is what is piped into the command, and `options.machine` the hardware it runs on.
+- `options.spawner: realSpawner` really starts processes, for a test that runs the `fake` harness. A real harness (OpenCode, Claude Code, Codex) never runs in a test: put empty executable files on a `PATH` of the test (`options.env`) and play their status commands with `spawnerThat`.
 - `startCommand(args)` starts a long-running command: read its events with `nextEvent`, send `signal("SIGTERM")`, then await `result`.
 - Assert on stdout, stderr and the exit code. Do not call a handler or `Output` directly.
 - What only the real process shows (the two file descriptors, the exit code of the process, signals) is covered by `main.test.ts`, which spawns the entrypoint.
