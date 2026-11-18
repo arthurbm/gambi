@@ -15,6 +15,7 @@ import {
 } from "@gambi/core/participant/inference";
 import {
   type ParticipantLifecycleEvent,
+  type ParticipantProfile,
   ParticipantRuntime,
 } from "@gambi/core/participant/runtime";
 import {
@@ -23,11 +24,13 @@ import {
   Duration,
   Effect,
   Layer,
+  Option,
   Queue,
+  Redacted,
   Schema,
 } from "effect";
 import { CliError, Command, Flag } from "effect/cli";
-import { participantIdFlag, roomFlag } from "../flags.ts";
+import { participantIdFlag, roomFlag, runtimeConfigFlag } from "../flags.ts";
 import { HubUnreachable, hubFlag, withHub } from "../hub-client.ts";
 import { detectMachineSpecs } from "../machine-specs.ts";
 import { Output } from "../output.ts";
@@ -35,6 +38,9 @@ import { Termination } from "../termination.ts";
 import { CLI_VERSION } from "../version.ts";
 
 const DEFAULT_ENDPOINT = "http://localhost:11434";
+
+/** What a preview shows in the place of a secret. */
+const REDACTED = "[redacted]";
 
 /** How long leaving waits for the hub to confirm before it gives up on telling it. */
 const LEAVE_TIMEOUT = Duration.seconds(3);
@@ -156,6 +162,21 @@ const join = Command.make(
       ),
       Flag.withDefault(DEFAULT_ENDPOINT)
     ),
+    nickname: Flag.String("nickname").pipe(
+      Flag.withAlias("n"),
+      Flag.withDescription(
+        "Name the room shows for the participant. Default: <model>@<participant id>"
+      ),
+      Flag.optional
+    ),
+    password: Flag.Redacted("password").pipe(
+      Flag.withAlias("p"),
+      Flag.withDescription("Password of the room, when it has one"),
+      Flag.optional
+    ),
+    config: runtimeConfigFlag(
+      "Runtime config of the participant (temperature, instructions, ...) as JSON: a file, or - for stdin"
+    ),
     headers: headerFlag,
     headersFromEnvironment: headerEnvFlag,
     noSpecs: Flag.Boolean("no-specs").pipe(
@@ -164,6 +185,12 @@ const join = Command.make(
       Flag.withDefault(false)
     ),
     hub: hubFlag,
+    dryRun: Flag.Boolean("dry-run").pipe(
+      Flag.withDescription(
+        "Print what would be registered, after probing the endpoint, without joining"
+      ),
+      Flag.withDefault(false)
+    ),
   },
   Effect.fn("participant.join")(function* (input) {
     const output = yield* Output;
@@ -231,17 +258,53 @@ const join = Command.make(
 
     const specs = input.noSpecs ? undefined : yield* detectMachineSpecs();
 
+    // A field that is present has a value: the registration refuses
+    // `undefined`.
+    const profile: ParticipantProfile = {
+      nickname: Option.getOrElse(
+        input.nickname,
+        () => `${input.model}@${input.participantId.slice(0, 6)}`
+      ),
+      model: input.model,
+      endpoint: input.endpoint,
+      capabilities: probe.capabilities,
+      ...(specs === undefined ? {} : { specs }),
+      ...Option.match(input.config, {
+        onNone: () => ({}),
+        onSome: (config) => ({ config }),
+      }),
+    };
+
+    if (input.dryRun) {
+      const preview = {
+        hubUrl: input.hub,
+        ...identity,
+        ...(Option.isSome(input.password) ? { password: REDACTED } : {}),
+        ...(Object.keys(authHeaders).length === 0
+          ? {}
+          : {
+              authHeaders: Object.fromEntries(
+                Object.keys(authHeaders).map((name) => [name, REDACTED])
+              ),
+            }),
+        profile,
+      };
+      return yield* output.result(
+        preview,
+        () =>
+          `Would join room ${identity.roomCode} on ${input.hub} as ${identity.participantId}.\n${JSON.stringify(preview, null, 2)}`
+      );
+    }
+
     const Host = ParticipantRuntime.layer({
       hubUrl: input.hub,
       ...identity,
+      ...Option.match(input.password, {
+        onNone: () => ({}),
+        onSome: (password) => ({ password: Redacted.value(password) }),
+      }),
       version: CLI_VERSION,
-      profile: {
-        nickname: `${input.model}@${input.participantId.slice(0, 6)}`,
-        model: input.model,
-        endpoint: input.endpoint,
-        capabilities: probe.capabilities,
-        ...(specs === undefined ? {} : { specs }),
-      },
+      profile,
       onLifecycle: (event) => Queue.offer(lifecycle, event),
     }).pipe(
       Layer.provide(

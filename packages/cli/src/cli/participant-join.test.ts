@@ -8,9 +8,10 @@ import {
   fakeProvider,
 } from "@gambi/core/testing/provider";
 import { GAMBI_VERSION } from "@gambi/protocol";
-import { layer } from "@gambi/testing/effect";
+import { it, layer } from "@gambi/testing/effect";
 import { Effect } from "effect";
 import { runCommand, startCommand } from "./testing.ts";
+import { CLI_VERSION } from "./version.ts";
 
 /** A room of the hub of the block, for one test. */
 const createRoom = (name: string) =>
@@ -307,5 +308,177 @@ layer(layerHub(), { excludeTestServices: true })(
           expect(yield* provider.calls).toEqual([]);
         })
     );
+
+    it.effect(
+      "--nickname and --config say how the room sees the participant",
+      () =>
+        Effect.gen(function* () {
+          const hub = yield* Hub;
+          const provider = yield* fakeProvider();
+          const room = yield* createRoom("Perfil");
+
+          const joining = yield* startCommand(
+            joinWithEndpoint(
+              hub.url,
+              room.code,
+              provider.url,
+              "--nickname",
+              "Arthur",
+              "--config",
+              "-"
+            ),
+            {
+              stdin: JSON.stringify({
+                temperature: 0.2,
+                instructions: "Seja breve.",
+              }),
+            }
+          );
+
+          expect((yield* joining.nextEvent).data.participant).toMatchObject({
+            nickname: "Arthur",
+            config: { temperature: 0.2, hasInstructions: true },
+          });
+        })
+    );
+
+    it.effect("--password opens a protected room and is never written", () =>
+      Effect.gen(function* () {
+        const hub = yield* Hub;
+        const client = yield* managementClient;
+        const provider = yield* fakeProvider();
+        const { room } = yield* client.rooms.create({
+          payload: { name: "Fechada", password: "senha-da-sala" },
+        });
+
+        const wrong = yield* runCommand(
+          joinWithEndpoint(hub.url, room.code, provider.url, "-p", "errada")
+        );
+        expect(wrong.exitCode).toBe(4);
+        expect(JSON.parse(wrong.stderr).error).toMatchObject({
+          name: "InvalidPassword",
+          hint: "Provide the room password and retry.",
+        });
+
+        const joining = yield* startCommand(
+          joinWithEndpoint(
+            hub.url,
+            room.code,
+            provider.url,
+            "--password",
+            "senha-da-sala"
+          )
+        );
+        expect((yield* joining.nextEvent).type).toBe("registered");
+        yield* joining.signal("SIGINT");
+        const { exitCode, stderr, stdout } = yield* joining.result;
+        expect(exitCode).toBe(0);
+        expect(`${stdout}${stderr}`).not.toContain("senha-da-sala");
+      })
+    );
+
+    it.effect("a room that does not exist is a remote rejection", () =>
+      Effect.gen(function* () {
+        const hub = yield* Hub;
+        const provider = yield* fakeProvider();
+
+        const result = yield* runCommand(
+          joinWithEndpoint(hub.url, "NOPE00", provider.url)
+        );
+
+        expect(result.exitCode).toBe(4);
+        expect(result.stdout).toBe("");
+        expect(JSON.parse(result.stderr).error).toMatchObject({
+          name: "RoomNotFound",
+          details: { roomCode: "NOPE00" },
+          exitCode: 4,
+        });
+      })
+    );
+
+    it.effect("a hub that is not running is a connectivity failure", () =>
+      Effect.gen(function* () {
+        const provider = yield* fakeProvider();
+        const hubUrl = yield* closedPort;
+
+        const result = yield* runCommand(
+          joinWithEndpoint(hubUrl, "ABC123", provider.url)
+        );
+
+        expect(result.exitCode).toBe(3);
+        expect(result.stdout).toBe("");
+        expect(JSON.parse(result.stderr).error).toMatchObject({
+          name: "HubUnreachable",
+          message: `Could not reach a hub at ${hubUrl}.`,
+          hint: "Check that the hub is running (`gambi hub serve`) and that --hub, or GAMBI_HUB, points at it.",
+        });
+      })
+    );
+
+    it.effect(
+      "--dry-run prints what would be registered and joins nothing",
+      () =>
+        Effect.gen(function* () {
+          const hub = yield* Hub;
+          const provider = yield* fakeProvider();
+          const room = yield* createRoom("Ensaio");
+
+          const result = yield* runCommand(
+            joinWithEndpoint(
+              hub.url,
+              room.code,
+              provider.url,
+              "--password",
+              "senha-da-sala",
+              "--header",
+              "Authorization=Bearer segredo",
+              "--dry-run"
+            )
+          );
+
+          expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+          expect(JSON.parse(result.stdout).data).toEqual({
+            hubUrl: hub.url,
+            roomCode: room.code,
+            participantId: "arthur-1",
+            password: "[redacted]",
+            authHeaders: { Authorization: "[redacted]" },
+            profile: {
+              nickname: `${FAKE_MODEL}@arthur`,
+              model: FAKE_MODEL,
+              endpoint: provider.url,
+              capabilities: {
+                chatCompletions: "supported",
+                openResponses: "supported",
+              },
+            },
+          });
+          expect(yield* participantsOf(room.code)).toEqual([]);
+        })
+    );
   }
+);
+
+it.effect(
+  "a hub of another minor version refuses the participant and says which version it expects",
+  () =>
+    Effect.gen(function* () {
+      const hub = yield* Hub;
+      const provider = yield* fakeProvider();
+      const room = yield* createRoom("Outra versão");
+
+      const result = yield* runCommand(
+        joinWithEndpoint(hub.url, room.code, provider.url)
+      );
+
+      expect(result.exitCode).toBe(4);
+      expect(result.stdout).toBe("");
+      expect(JSON.parse(result.stderr).error).toMatchObject({
+        name: "VersionMismatch",
+        message: `This hub runs Gambi 9.4.1 and expects participants on 9.4.x; this participant runs ${CLI_VERSION}.`,
+        hint: "Install Gambi 9.4 on the participant's machine, or update the hub, so both are on the same minor version.",
+        exitCode: 4,
+      });
+      expect(yield* participantsOf(room.code)).toEqual([]);
+    }).pipe(Effect.provide(layerHub({ version: "9.4.1" })))
 );
