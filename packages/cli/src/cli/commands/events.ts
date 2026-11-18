@@ -1,6 +1,7 @@
 import type { RoomEvent } from "@gambi/protocol";
 import { DateTime, Effect, Stream } from "effect";
-import { Command, Flag, Prompt } from "effect/cli";
+import { Command } from "effect/cli";
+import { roomFlag } from "../flags.ts";
 import { hubFlag, NotAHub, withHub } from "../hub-client.ts";
 import { Output } from "../output.ts";
 import { Termination } from "../termination.ts";
@@ -34,11 +35,7 @@ const describeEvent = (event: RoomEvent): string =>
 const watch = Command.make(
   "watch",
   {
-    room: Flag.String("room").pipe(
-      Flag.withAlias("r"),
-      Flag.withDescription("Code of the room"),
-      Flag.withFallbackPrompt(Prompt.String({ message: "Room code" }))
-    ),
+    room: roomFlag,
     hub: hubFlag,
   },
   Effect.fn("events.watch")(function* ({ hub, room }) {

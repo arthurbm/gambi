@@ -64,6 +64,7 @@ export const failureKinds = {
   // The management contract (`@gambi/protocol`).
   InternalError: "internal",
   InvalidRequest: "usage",
+  ParticipantNotFound: "rejected",
   RoomNotFound: "rejected",
 } as const satisfies Record<FailureTag, FailureKind>;
 
