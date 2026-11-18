@@ -315,6 +315,10 @@ const joinWithEndpoint = Effect.fnUntraced(function* (
   if (!probe.reachable) {
     return yield* new EndpointUnreachable({ endpoint });
   }
+  if (Option.isNone(input.model) && probe.models.length === 0) {
+    // Nothing to choose from: the provider answers and lists no model.
+    return yield* modelIsMissing;
+  }
   const model = yield* Option.match(input.model, {
     onSome: (named) => Effect.succeed(named),
     onNone: () =>
