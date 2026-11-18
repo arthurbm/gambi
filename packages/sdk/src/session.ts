@@ -65,13 +65,14 @@ export const joinRoom = async <A, R>(options: {
 }): Promise<Session<A, R>> => {
   // After `leave` or `stop` started, a drop of the tunnel is our own doing.
   let stopping = false;
-  let endedByItself = false;
+  // Another runtime has this participant's id now: the room's is not ours.
+  let replaced = false;
   const ended = Promise.withResolvers<ParticipantSessionEnd>();
 
   const onLifecycle = (event: RuntimeLifecycleEvent) =>
     Effect.sync(() => {
       if (event.type === "left") {
-        endedByItself = event.reason !== "stopped";
+        replaced = event.reason === "replaced";
         ended.resolve({
           reason: event.reason,
           ...(event.error === undefined ? {} : { error: event.error }),
@@ -129,7 +130,7 @@ export const joinRoom = async <A, R>(options: {
 
   const leave = async (): Promise<void> => {
     stopping = true;
-    if (endedByItself) {
+    if (replaced) {
       await boundary.close();
     } else if (options.leaves === "beforeStopping") {
       await tellHub();

@@ -119,8 +119,8 @@ export interface SessionControls {
    * Leaves the room: takes the participant out of it at once and stops the
    * runtime. It never rejects and never waits long for a hub that is gone.
    *
-   * When the runtime already ended by itself the hub is told nothing: after
-   * `replaced`, the participant with this id in the room is another runtime.
+   * After `replaced` the hub is told nothing: the participant with this id
+   * in the room is another runtime, and it stays.
    */
   readonly leave: () => Promise<void>;
   /**

@@ -46,7 +46,7 @@ Mudança aqui é mudança pública. A documentação pública (`apps/docs/src/co
 - `harness.attach()` devolve um `AsyncIterable<HarnessAttachEvent>` com as mesmas regras de fim; `harness.send()`, `openSession()` e `closeSession()` são `Promise`. O attach é SSE e requisições comuns: a entrada padrão continua sem sockets.
 - Um campo com valor `undefined` é um campo não informado, no cliente e nas entradas de hospedagem.
 - `createHub()` rejeita só com `HubError` (`PORT_IN_USE`, `LISTEN_FAILED`, `MDNS_ANNOUNCE_FAILED`); as duas sessões de participante rejeitam só com `ParticipantError`. Cada entrada tem a própria classe de erro.
-- Uma sessão de participante tem `participant`, `ended` (uma `Promise` que nunca rejeita), `leave()` (sai da sala e para) e `stop()` (só para). `leave()` de uma sessão que acabou sozinha não avisa o hub.
+- Uma sessão de participante tem `participant`, `ended` (uma `Promise` que nunca rejeita), `leave()` (sai da sala e para) e `stop()` (só para). `leave()` de uma sessão que foi substituída (`replaced`) não avisa o hub: o participante com aquele id na sala já é outro runtime.
 - O que é hospedado não escreve log por conta própria: as linhas vão para `onLog` ou para lugar nenhum.
 - `DiscoveryError.code` (`NO_HUBS_FOUND`, `NO_ROOMS_FOUND`, `ROOM_NOT_FOUND`, `AMBIGUOUS_ROOM_MATCH`).
 - Helpers de routing do provider (`any`, `model`, `participant`) e namespaces por protocolo (`openResponses`, `chatCompletions`).

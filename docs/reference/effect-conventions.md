@@ -503,7 +503,7 @@ To add an entry (`gambi-sdk/<name>`): a line in `entries.ts`, an `exports` entry
 
 To host something new in the consumer's process, build it on `host` (`hosting.ts`): the layer of the thing, already failing with the entry's public error (`failingWith`), behind one `makePromiseBoundary`. A participant session is built on `joinRoom` (`session.ts`), which adds the lifecycle, `leave`, `stop` and `ended`.
 
-A participant session leaves a room in one of two orders, and the order is part of what it promises. A session that shares a model endpoint tells the hub first and stops its runtime after, so the room hears one event (`participant.removed`). A harness participant session stops its runtime first, because its last artifact goes up through the tunnel that leaving would close, and tells the hub after. A session whose runtime ended by itself (`replaced`, `refused`) tells the hub nothing: the participant with that id in the room is no longer this one.
+A participant session leaves a room in one of two orders, and the order is part of what it promises. A session that shares a model endpoint tells the hub first and stops its runtime after, so the room hears one event (`participant.removed`). A harness participant session stops its runtime first, because its last artifact goes up through the tunnel that leaving would close, and tells the hub after. A session whose runtime was `replaced` tells the hub nothing: the participant with that id in the room is another runtime. After any other end (`refused`, `tunnelDropped`) the participant in the room is still this one, `offline`, and leaving takes it out.
 
 The `fake` harness is a subprocess, and the participant entry runs it from its own file (`fake-harness.ts`: `bun -e 'import("<this file>").then(...)'`). That only works when the entry is loaded as the SDK ships it or from its source. Bundled into another program, loading "this file" in a subprocess would run that program again, so the session refuses and asks for `fakeAgentCommand`.
 
@@ -529,7 +529,7 @@ Rules:
 - A hosted hub or session gets no `onLog`: a log line on the terminal would be drawn over the screen.
 - Logic lives in plain modules (`watchRooms`, the session, the stores); a hook only subscribes to one. The tests run those modules against a real hub (`layerHub`), inside `it.effect` with `Effect.promise`, and wait for what a store or a watcher shows. Never replace `fetch`.
 - A room whose event stream ends is watched again, whether the stream failed or just ended. The `room.snapshot` of the next stream realigns it.
-- A runtime that ended by itself (`left`) is released without telling the hub: after `replaced`, the participant with that id in the room is another runtime. `stop` and `leave` of the session both do that for such a runtime.
+- A runtime that ended by itself (`left`) is released with `stop`, without telling the hub: after `replaced`, the participant with that id in the room is another runtime.
 
 ## The CLI
 

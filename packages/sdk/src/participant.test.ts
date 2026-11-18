@@ -2,6 +2,7 @@ import { expect } from "bun:test";
 import { connect, createServer, type Socket } from "node:net";
 import { Hub } from "@gambi/core/hub/hub";
 import { layerHub } from "@gambi/core/testing/hub";
+import { linkToHub } from "@gambi/core/testing/hub-link";
 import {
   chatCompletionsOnly,
   FAKE_MODEL,
@@ -196,6 +197,8 @@ layer(layerHub(), { excludeTestServices: true })(
           expect(response.status).toBe(200);
           expect(call.path).toBe("/v1/chat/completions");
           expect(call.headers.authorization).toBe("Bearer segredo");
+          // `ParticipantAuthHeaders` stay on this machine.
+          expect(JSON.stringify(participants)).not.toContain("segredo");
           expect(
             participants.map((participant) => [
               participant.id,
@@ -290,6 +293,35 @@ layer(layerHub(), { excludeTestServices: true })(
           expect(yield* watch.next).toMatchObject({
             type: "participant.offline",
             participant: { id: "arthur-1" },
+          });
+        })
+    );
+
+    it.effect(
+      "a session that ended when its tunnel dropped is still this participant: leaving takes it out of the room",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* frevo;
+          const link = yield* linkToHub;
+          const session = yield* joined({
+            ...arthur(room),
+            hubUrl: link.url,
+            reconnect: false,
+          });
+          const watch = yield* watching(room.roomCode);
+
+          yield* link.cut;
+          const end = yield* Effect.promise(() => session.ended);
+          const offline = yield* watch.next;
+          yield* link.restore;
+          yield* Effect.promise(() => session.leave());
+
+          expect(end).toEqual({ reason: "tunnelDropped" });
+          expect(offline.type).toBe("participant.offline");
+          expect(yield* watch.next).toMatchObject({
+            type: "participant.removed",
+            participantId: "arthur-1",
+            reason: "left",
           });
         })
     );
