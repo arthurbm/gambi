@@ -24,13 +24,8 @@ import {
 } from "@gambi/core/hub/hub";
 import { Mdns } from "@gambi/core/hub/mdns";
 import { Effect, Layer } from "effect";
-import {
-  failingWith,
-  host,
-  type LogEntry,
-  logsTo,
-  withoutUndefined,
-} from "./hosting.ts";
+import { failingWith, host, type LogEntry, logsTo } from "./hosting.ts";
+import { withoutUndefined } from "./input.ts";
 
 export type { LogEntry } from "./hosting.ts";
 

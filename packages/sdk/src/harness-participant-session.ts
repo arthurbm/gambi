@@ -7,7 +7,7 @@
  */
 import type { ArtifactLifecycleEvent as RuntimeArtifactEvent } from "@gambi/core/harness/artifacts";
 import {
-  HarnessNotReady,
+  type HarnessNotReady,
   HarnessTools,
   resolveHarness,
 } from "@gambi/core/harness/detection";
@@ -18,7 +18,7 @@ import { Effect, Layer } from "effect";
 import { DEFAULT_HUB_URL } from "./client.ts";
 import type { Assert, Same } from "./contract.ts";
 import { type FakeAgentCommand, ownFakeAgentCommand } from "./fake-harness.ts";
-import { withoutUndefined } from "./hosting.ts";
+import { withoutUndefined } from "./input.ts";
 import { ParticipantError } from "./participant-error.ts";
 import {
   joinRoom,

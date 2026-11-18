@@ -16,14 +16,12 @@ import {
   WorkspaceFailed,
   WorkspaceTooLarge,
 } from "@gambi/core/harness/workspace";
-import {
-  type ArtifactFile as ContractArtifactFile,
-  MAX_ARTIFACT_BYTES as CONTRACT_MAX_ARTIFACT_BYTES,
-} from "@gambi/protocol";
+import { MAX_ARTIFACT_BYTES as CONTRACT_MAX_ARTIFACT_BYTES } from "@gambi/protocol";
 import { Cause, Effect, Layer, Queue, Stream } from "effect";
-import type { Assert, Same } from "./contract.ts";
-import { failingWith, host, withoutUndefined } from "./hosting.ts";
+import { failingWith, host } from "./hosting.ts";
+import { withoutUndefined } from "./input.ts";
 import { ParticipantError, toParticipantError } from "./participant-error.ts";
+import type { ArtifactFile } from "./types.ts";
 
 /**
  * The largest artifact a participant sends, in bytes of the JSON text of its
@@ -42,17 +40,6 @@ export interface WorkspaceContext {
   readonly model: string;
   readonly participantId: string;
   readonly roomCode: string;
-}
-
-/**
- * One file of an artifact: its path inside the Workspace, with `/` between
- * the segments on every platform, and its whole content. A file that is
- * valid UTF-8 travels as it is (`utf8`); any other travels in `base64`.
- */
-export interface ArtifactFile {
-  readonly content: string;
-  readonly encoding: "utf8" | "base64";
-  readonly path: string;
 }
 
 /** A Workspace that is ready for harness sessions to run in. */
@@ -239,8 +226,3 @@ export const workspaceLayer = (
       });
     })
   );
-
-/** The public types are the ones the contract carries. */
-export type WorkspaceProofs = [
-  Assert<Same<ArtifactFile, ContractArtifactFile>>,
-];

@@ -51,6 +51,7 @@ export type {
   SessionOptions,
 } from "./session.ts";
 export type {
+  ArtifactFile,
   GenerationConfig,
   HarnessId,
   HarnessProfile,
@@ -63,7 +64,6 @@ export type {
   RuntimeConfigPublic,
 } from "./types.ts";
 export {
-  type ArtifactFile,
   createLocalDirectoryWorkspace,
   type HostedHarnessId,
   type LocalDirectoryWorkspaceOptions,

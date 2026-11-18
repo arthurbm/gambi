@@ -10,7 +10,7 @@ import { ParticipantRuntime } from "@gambi/core/participant/runtime";
 import { Effect, Layer } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { DEFAULT_HUB_URL } from "./client.ts";
-import { withoutUndefined } from "./hosting.ts";
+import { withoutUndefined } from "./input.ts";
 import { makePromiseBoundary } from "./promise.ts";
 import {
   joinRoom,

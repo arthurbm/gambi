@@ -1,7 +1,7 @@
 /**
  * What the two hosting entries of the SDK (`./hub.ts`, `./participant.ts`)
  * share: how something hosted in this process starts behind a `Promise`
- * boundary, where its log lines go, and what an input loses on its way in.
+ * boundary, and where its log lines go.
  *
  * Internal: an entry embeds its own copy of this file. Nothing here crosses
  * from one entry to another, and nothing here is exported from an entry but
@@ -45,34 +45,6 @@ export const logsTo = (
           }),
         ]
   );
-
-const isPlainObject = (value: unknown): value is Record<string, unknown> => {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-};
-
-/**
- * `value` without the keys that hold `undefined`, at any depth of its plain
- * objects. A form, or a spread of optional values, leaves such keys behind,
- * and the contract refuses a field that is present without a value: to a
- * consumer the two mean the same, "not given".
- */
-export const withoutUndefined = <T>(value: T): T => {
-  if (Array.isArray(value)) {
-    return value.map(withoutUndefined) as T;
-  }
-  if (!isPlainObject(value)) {
-    return value;
-  }
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([, field]) => field !== undefined)
-      .map(([key, field]) => [key, withoutUndefined(field)])
-  ) as T;
-};
 
 /** `layer`, failing with `translate(error)` instead of with its own error. */
 export const failingWith =
