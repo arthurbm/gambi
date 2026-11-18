@@ -36,7 +36,7 @@ import {
   HarnessSessionOutsideWorkspace,
 } from "@gambi/protocol";
 import {
-  Array as Arr,
+  type Array as Arr,
   Context,
   Deferred,
   Duration,
@@ -119,6 +119,27 @@ interface Outgoing {
   event: HarnessEvent | undefined;
   readonly number: number;
 }
+
+/** An event that still has to go. */
+type Waiting = Outgoing & { readonly event: HarnessEvent };
+
+/**
+ * What goes to the hub next, of what waits, and what stays for later: the
+ * events up to the next artifact, or that artifact alone. An artifact that
+ * was replaced is in neither.
+ */
+const splitBatch = (
+  held: readonly Outgoing[]
+): { readonly batch: Waiting[]; readonly rest: Waiting[] } => {
+  const waiting = held.filter(
+    (entry): entry is Waiting => entry.event !== undefined
+  );
+  const artifactAt = waiting.findIndex(
+    (entry) => entry.event.type === "harness.artifact"
+  );
+  const size = artifactAt === -1 ? waiting.length : Math.max(artifactAt, 1);
+  return { batch: waiting.slice(0, size), rest: waiting.slice(size) };
+};
 
 /**
  * Every request the runtime writes to the harness carries an id the runtime
@@ -319,43 +340,26 @@ export class Harness extends Context.Service<
         const events: Stream.Stream<HarnessEvent> = Stream.suspend(() => {
           let taken = 0;
           readers++;
-          // The next batch of `held`: the events up to the next artifact, or
-          // that artifact alone. `undefined` when nothing in `held` still has
-          // to go.
-          const nextBatch = (): Arr.NonEmptyArray<HarnessEvent> | undefined => {
-            const batch: HarnessEvent[] = [];
-            let size = 0;
-            for (const entry of held) {
-              const { event } = entry;
-              const alone = event?.type === "harness.artifact";
-              if (alone && batch.length > 0) {
-                break;
-              }
-              size++;
-              if (event !== undefined) {
-                batch.push(event);
-              }
-              if (alone) {
-                if (entry === waitingArtifact) {
-                  waitingArtifact = undefined;
-                }
-                break;
-              }
-            }
-            taken = held[size - 1]?.number ?? taken;
-            held = held.slice(size);
-            return Arr.isArrayNonEmpty(batch) ? batch : undefined;
-          };
           const pull: Effect.Effect<Arr.NonEmptyArray<HarnessEvent>> =
             Effect.suspend(() => {
-              const batch = nextBatch();
-              if (batch !== undefined) {
-                return Effect.succeed(batch);
+              const { batch, rest } = splitBatch(held);
+              held = rest;
+              const [first, ...others] = batch;
+              if (first === undefined) {
+                return Effect.flatMap(Queue.takeAll(outbox), (all) => {
+                  held = all;
+                  return pull;
+                });
               }
-              return Effect.flatMap(Queue.takeAll(outbox), (all) => {
-                held = all;
-                return pull;
-              });
+              const last = others.at(-1) ?? first;
+              taken = last.number;
+              if (last === waitingArtifact) {
+                waitingArtifact = undefined;
+              }
+              return Effect.succeed([
+                first.event,
+                ...others.map((entry) => entry.event),
+              ]);
             });
           return Stream.fromEffectRepeat(
             Effect.suspend(() => {
