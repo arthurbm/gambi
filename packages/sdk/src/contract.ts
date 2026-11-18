@@ -262,10 +262,19 @@ export const translatedMidStream =
   (failure: ManagementFailure): ClientError =>
     toClientError(hubUrl, failure, true);
 
-/** `true` only when `Public` and `Contract` are assignable to each other. */
+/**
+ * `true` only when `Public` and `Contract` are assignable to each other and
+ * name the same keys. The keys are compared too because an optional key that
+ * one side lacks leaves the two assignable: that is how `harness` once went
+ * missing from the public `ParticipantSummary` without a line failing.
+ */
 export type Same<Public, Contract> = [Public] extends [Contract]
   ? [Contract] extends [Public]
-    ? true
+    ? [keyof Public] extends [keyof Contract]
+      ? [keyof Contract] extends [keyof Public]
+        ? true
+        : false
+      : false
     : false
   : false;
 
