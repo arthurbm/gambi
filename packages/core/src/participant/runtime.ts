@@ -625,6 +625,20 @@ export class ParticipantRuntime extends Context.Service<
           return dropped === "replaced" ? dropped : "tunnelDropped";
         });
 
+        // Being stopped is not a failure of the runtime. Being replaced is
+        // one, for its host.
+        const howItEnded = (
+          reason: string | undefined,
+          exit: Exit.Exit<unknown, Failure>
+        ): Exit.Exit<void, Failure | ParticipantReplaced> => {
+          if (reason === "stopped") {
+            return Exit.void;
+          }
+          return reason === "replaced"
+            ? Exit.fail(new ParticipantReplaced(identity))
+            : Exit.asVoid(exit);
+        };
+
         // How the runtime ended, told to whoever waits for it: the build of
         // the layer when it never joined, the host afterwards.
         const conclude = (
@@ -639,15 +653,7 @@ export class ParticipantRuntime extends Context.Service<
             if (left !== undefined) {
               yield* tell({ type: "left", ...identity, ...left });
             }
-            // Being stopped is not a failure of the runtime. Being replaced
-            // is one, for its host.
-            if (left?.reason === "stopped") {
-              yield* Deferred.done(ended, Exit.void);
-            } else if (left?.reason === "replaced") {
-              yield* Deferred.fail(ended, new ParticipantReplaced(identity));
-            } else {
-              yield* Deferred.done(ended, Exit.asVoid(exit));
-            }
+            yield* Deferred.done(ended, howItEnded(left?.reason, exit));
           });
 
         yield* run.pipe(Effect.onExit(conclude), Effect.forkScoped);

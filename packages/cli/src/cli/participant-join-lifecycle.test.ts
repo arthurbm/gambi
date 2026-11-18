@@ -44,9 +44,13 @@ const joinRoom = (hubUrl: string, roomCode: string) =>
       "--hub",
       hubUrl,
     ]);
-    expect((yield* joining.nextEvent).type).toBe("registered");
-    expect((yield* joining.nextEvent).type).toBe("tunnel_connected");
-    return joining;
+    const read = [
+      (yield* joining.nextEvent).type,
+      (yield* joining.nextEvent).type,
+    ];
+    return read.join() === "registered,tunnel_connected"
+      ? joining
+      : yield* Effect.die(new Error(`The join started with ${read.join()}.`));
   });
 
 const newRoom = Effect.gen(function* () {
