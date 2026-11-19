@@ -276,6 +276,55 @@ layer(layerHub(), { excludeTestServices: true })(
             participantId: "arthur-1",
             attempt: 0,
           });
+          // The hub took the participant out because this program asked.
+          expect(lifecycle[1]).toMatchObject({ reason: "stopped" });
+        })
+    );
+
+    it.effect(
+      "a session whose participant someone else takes out of the room ends by itself, and does not come back",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* frevo;
+          const lifecycle: ParticipantLifecycleEvent[] = [];
+          const session = yield* joined({
+            ...arthur(room),
+            onLifecycle: (event) => lifecycle.push(event),
+          });
+          const watch = yield* watching(room.roomCode);
+          const [inTheRoom] = yield* Effect.promise(() =>
+            room.client.participants.list(room.roomCode)
+          );
+
+          yield* Effect.promise(() =>
+            room.client.participants.remove(
+              room.roomCode,
+              "arthur-1",
+              inTheRoom?.runtimeId ?? ""
+            )
+          );
+
+          // It ends: a runtime that took this for a drop would be waiting
+          // to register again, and `ended` would not settle.
+          expect(yield* Effect.promise(() => session.ended)).toEqual({
+            reason: "removed",
+          });
+          expect(lifecycle.map((event) => event.type)).toEqual([
+            "connected",
+            "left",
+          ]);
+          expect(lifecycle[1]).toMatchObject({ reason: "removed" });
+          // Leaving afterwards has nothing to take out, and asks for nothing.
+          yield* Effect.promise(() => session.leave());
+          expect(yield* watch.next).toMatchObject({
+            type: "participant.removed",
+            participantId: "arthur-1",
+          });
+          expect(
+            yield* Effect.promise(() =>
+              room.client.participants.list(room.roomCode)
+            )
+          ).toEqual([]);
         })
     );
 

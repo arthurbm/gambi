@@ -110,6 +110,12 @@ export interface ParticipantSummary {
   readonly joinedAt: number;
   readonly model: string;
   readonly nickname: string;
+  /**
+   * The participant runtime this participant belongs to: the one whose tunnel
+   * is open, or, while no tunnel is open, the one that registered last. It is
+   * what `participants.remove` names. Not a secret.
+   */
+  readonly runtimeId: string;
   readonly specs: MachineSpecs;
   readonly status: ParticipantStatus;
   /** Milliseconds since the epoch: the last registration or status change. */
@@ -131,6 +137,12 @@ export interface RegisterParticipantInput {
   readonly nickname: string;
   /** The room password, when the room has one. */
   readonly password?: string;
+  /**
+   * The id of the participant runtime that registers, the same in every
+   * registration of its life. Without one the hub gives the registration an
+   * id of its own, and the answer says which (`participant.runtimeId`).
+   */
+  readonly runtimeId?: string;
   readonly specs?: MachineSpecs;
   /**
    * The Gambi version of the participant runtime. A hub refuses a minor

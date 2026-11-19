@@ -49,6 +49,8 @@ export interface ParticipantReconnecting {
  * - `refused`: the hub refused it when it tried to come back; `error` says why.
  * - `replaced`: another runtime joined the room with the same `participantId`
  *   and the hub kept that one.
+ * - `removed`: someone else took the participant out of the room
+ *   (`client.participants.remove`, `gambi participant leave`).
  * - `tunnelDropped`: the tunnel dropped and the session was started with
  *   `reconnect: false`.
  */
@@ -56,7 +58,12 @@ export interface ParticipantLeft {
   /** The error behind `refused`: its name and its message. */
   readonly error?: { readonly name: string; readonly message: string };
   readonly participantId: string;
-  readonly reason: "stopped" | "refused" | "replaced" | "tunnelDropped";
+  readonly reason:
+    | "stopped"
+    | "refused"
+    | "replaced"
+    | "removed"
+    | "tunnelDropped";
   readonly roomCode: string;
   readonly type: "left";
 }
@@ -119,8 +126,10 @@ export interface SessionControls {
    * Leaves the room: takes the participant out of it at once and stops the
    * runtime. It never rejects and never waits long for a hub that is gone.
    *
-   * After `replaced` the hub is told nothing: the participant with this id
-   * in the room is another runtime, and it stays.
+   * After `replaced` or `removed` the hub is told nothing: the participant
+   * with this id in the room, if there is one, is another runtime's, and it
+   * stays. The hub would refuse anyway: a session only ever takes out the
+   * participant of its own runtime.
    */
   readonly leave: () => Promise<void>;
   /**

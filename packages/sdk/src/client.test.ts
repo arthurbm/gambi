@@ -278,19 +278,54 @@ layer(layerHub(), { excludeTestServices: true })(
       })
     );
 
+    it.effect(
+      "a removal that names another runtime than the one the participant belongs to is refused, and the participant stays",
+      () =>
+        Effect.gen(function* () {
+          const client = yield* hubClient;
+          const { room } = yield* Effect.promise(() =>
+            client.rooms.create({ name: "Xote" })
+          );
+          const { participant } = yield* Effect.promise(() =>
+            client.participants.register(room.code, "ze-1", {
+              nickname: "Zé",
+              model: "llama3",
+              runtimeId: "the-runtime-of-ze",
+            })
+          );
+
+          const refused = yield* rejection(() =>
+            client.participants.remove(room.code, "ze-1", "a-runtime-that-left")
+          );
+
+          expect(participant.runtimeId).toBe("the-runtime-of-ze");
+          expect(refused).toMatchObject({
+            code: "PARTICIPANT_OF_ANOTHER_RUNTIME",
+            status: 409,
+            details: { roomCode: room.code, participantId: "ze-1" },
+          });
+          expect(
+            yield* Effect.promise(() => client.participants.list(room.code))
+          ).toMatchObject([{ id: "ze-1", runtimeId: "the-runtime-of-ze" }]);
+        })
+    );
+
     it.effect("takes a participant out of the room, once", () =>
       Effect.gen(function* () {
         const client = yield* hubClient;
         const { room } = yield* Effect.promise(() =>
           client.rooms.create({ name: "Baião" })
         );
-        yield* joinParticipant({ roomCode: room.code, participantId: "ze-1" });
+        const { runtime } = yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "ze-1",
+        });
 
         const left = yield* Effect.promise(() =>
-          client.participants.remove(room.code, "ze-1")
+          client.participants.remove(room.code, "ze-1", runtime.runtimeId)
         );
         const again = yield* rejection(() =>
-          client.participants.remove(room.code, "ze-1")
+          client.participants.remove(room.code, "ze-1", runtime.runtimeId)
         );
 
         expect(left).toEqual({ participantId: "ze-1" });
@@ -378,14 +413,14 @@ layer(layerHub(), { excludeTestServices: true })(
           const watch = client.events.watch(room.code)[Symbol.asyncIterator]();
 
           const snapshot = yield* nextEvent(watch);
-          yield* joinParticipant({
+          const ze = yield* joinParticipant({
             roomCode: room.code,
             participantId: "ze-1",
           });
           const joined = yield* nextEvent(watch);
           const online = yield* nextEvent(watch);
           yield* Effect.promise(() =>
-            client.participants.remove(room.code, "ze-1")
+            client.participants.remove(room.code, "ze-1", ze.runtime.runtimeId)
           );
           const removed = yield* nextEvent(watch);
 

@@ -201,7 +201,7 @@ export const createHarnessParticipantSession = async (
     leaves: "afterStopping",
     onLifecycle: options.onLifecycle,
     onLog: options.onLog,
-    participant: (onLifecycle) =>
+    participant: (runtime) =>
       Layer.unwrap(
         Effect.gen(function* () {
           const fake = options.fakeAgentCommand ?? ownFakeAgentCommand();
@@ -243,7 +243,7 @@ export const createHarnessParticipantSession = async (
                 specs: options.specs,
                 config: options.config,
               }),
-              onLifecycle,
+              ...runtime,
             },
             harness: {
               command: resolved.command,

@@ -9,6 +9,8 @@
  * Answered by the hub, in its error envelope:
  *
  * - `ROOM_NOT_FOUND`, `PARTICIPANT_NOT_FOUND`: what the call named is not there.
+ * - `PARTICIPANT_OF_ANOTHER_RUNTIME`: the removal named a participant runtime
+ *   and the participant belongs to another one by now. It stays in the room.
  * - `INVALID_PASSWORD`: the room has a password and the call brought none, or the wrong one.
  * - `VERSION_MISMATCH`: the participant and the hub are on different minor versions.
  * - `INVALID_REQUEST`: the call does not match the management contract.
@@ -32,6 +34,7 @@
 export type ClientErrorCode =
   | "ROOM_NOT_FOUND"
   | "PARTICIPANT_NOT_FOUND"
+  | "PARTICIPANT_OF_ANOTHER_RUNTIME"
   | "INVALID_PASSWORD"
   | "VERSION_MISMATCH"
   | "INVALID_REQUEST"

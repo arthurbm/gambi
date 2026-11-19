@@ -133,7 +133,7 @@ export const createParticipantSession = async (
     leaves: "beforeStopping",
     onLifecycle: options.onLifecycle,
     onLog: options.onLog,
-    participant: (onLifecycle) =>
+    participant: (runtime) =>
       Layer.unwrap(
         Effect.gen(function* () {
           // The probe runs here, on the participant's machine, with its
@@ -155,7 +155,7 @@ export const createParticipantSession = async (
               config: options.config,
               capabilities,
             }),
-            onLifecycle,
+            ...runtime,
           });
         })
       ).pipe(
