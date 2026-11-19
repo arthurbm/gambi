@@ -368,10 +368,10 @@ const joinWithEndpoint = Effect.fnUntraced(function* (
     hubUrl: input.hub,
     identity,
     label: model,
-    host: (onLifecycle) =>
+    host: (runtime) =>
       ParticipantRuntime.layer({
         ...runtimeOptions(input, identity, profile),
-        onLifecycle,
+        ...runtime,
       }).pipe(
         Layer.provide(
           Layer.mergeAll(
@@ -456,11 +456,11 @@ const joinWithHarness = Effect.fnUntraced(function* (
     hubUrl: input.hub,
     identity,
     label: harnessId,
-    host: (onLifecycle) =>
+    host: (runtime) =>
       harnessParticipant({
         runtime: {
           ...runtimeOptions(input, identity, profile),
-          onLifecycle,
+          ...runtime,
         },
         harness: { command },
         artifacts: {

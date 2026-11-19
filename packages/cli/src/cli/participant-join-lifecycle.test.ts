@@ -4,10 +4,11 @@ import { layerHub, managementClient, watchRoom } from "@gambi/core/testing/hub";
 import { linkToHub } from "@gambi/core/testing/hub-link";
 import { joinParticipant } from "@gambi/core/testing/participant";
 import { FAKE_MODEL, fakeProvider } from "@gambi/core/testing/provider";
+import { GAMBI_VERSION } from "@gambi/protocol";
 import { it } from "@gambi/testing/effect";
 import { Context, Deferred, Effect, Exit, Layer, Scope } from "effect";
 import { TestClock } from "effect/testing";
-import { type RunningCommand, startCommand } from "./testing.ts";
+import { type RunningCommand, runCommand, startCommand } from "./testing.ts";
 
 // The hub of these tests is built inside each test, so it reads the test
 // clock, and it pings every hour: moving the clock by the wait of a
@@ -130,6 +131,66 @@ it.effect(
       expect(
         yield* client.participants.list({ params: { code: room.code } })
       ).toMatchObject([{ id: "arthur-1", status: "online" }]);
+    }).pipe(Effect.provide(TestHub))
+);
+
+it.effect(
+  "taken out of the room by `participant leave`, it ends as a remote rejection and never comes back: the room stays empty",
+  () =>
+    Effect.gen(function* () {
+      const hub = yield* Hub;
+      const client = yield* managementClient;
+      const room = yield* newRoom;
+      const joining = yield* joinRoom(hub.url, room.code);
+      const watch = yield* watchRoom(room.code);
+
+      const leaving = yield* runCommand([
+        "participant",
+        "leave",
+        "--room",
+        room.code,
+        "--participant-id",
+        "arthur-1",
+        "--hub",
+        hub.url,
+      ]);
+
+      expect(leaving).toMatchObject({ exitCode: 0, stderr: "" });
+      // The participant is out of the room, and the runtime knows it.
+      expect(yield* joining.nextEvent).toMatchObject({
+        type: "left",
+        data: {
+          roomCode: room.code,
+          participantId: "arthur-1",
+          reason: "removed",
+          removed: true,
+        },
+      });
+      expect(yield* failureOf(joining)).toMatchObject({
+        exitCode: 4,
+        error: {
+          name: "ParticipantRemoved",
+          message: `Participant 'arthur-1' was taken out of room '${room.code}'.`,
+          details: { roomCode: room.code, participantId: "arthur-1" },
+        },
+      });
+      // The longest wait of a reconnection passes and nobody registers.
+      yield* TestClock.adjust("31 seconds");
+      expect(
+        yield* client.participants.list({ params: { code: room.code } })
+      ).toEqual([]);
+      // The room heard that it left, and the next thing it hears is someone
+      // else joining: the participant never came back in between.
+      expect(yield* watch.next).toMatchObject({
+        type: "participant.removed",
+        participantId: "arthur-1",
+        reason: "left",
+      });
+      yield* joinParticipant({ roomCode: room.code, participantId: "ze-1" });
+      expect(yield* watch.next).toMatchObject({
+        type: "participant.joined",
+        participant: { id: "ze-1" },
+      });
     }).pipe(Effect.provide(TestHub))
 );
 
@@ -317,14 +378,27 @@ it.effect(
 /**
  * `participant join` as `arthur-1`, told to leave while its registration is
  * still on its way to the hub, in a room where another runtime is already
- * online as `arthur-1`.
+ * `arthur-1`: `online`, or `offline` because it only registered so far.
  */
-const signalledBeforeItRegistered = (...flags: readonly string[]) =>
+const signalledBeforeItRegistered = (
+  other: "online" | "offline",
+  ...flags: readonly string[]
+) =>
   Effect.gen(function* () {
     const client = yield* managementClient;
     const room = yield* newRoom;
     const provider = yield* fakeProvider();
-    yield* joinParticipant({ roomCode: room.code, participantId: "arthur-1" });
+    yield* other === "online"
+      ? joinParticipant({ roomCode: room.code, participantId: "arthur-1" })
+      : client.participants.register({
+          params: { code: room.code, id: "arthur-1" },
+          payload: {
+            nickname: "Arthur",
+            model: FAKE_MODEL,
+            runtimeId: "another-runtime",
+            version: GAMBI_VERSION,
+          },
+        });
     const slow = yield* hubThatHolds("the registration");
     const joining = yield* startCommand([
       "participant",
@@ -355,7 +429,8 @@ it.effect(
   "told to leave before its registration reached the hub, it does not take out of the room who is online with its participant id",
   () =>
     Effect.gen(function* () {
-      const { joining, participants } = yield* signalledBeforeItRegistered();
+      const { joining, participants } =
+        yield* signalledBeforeItRegistered("online");
 
       expect((yield* joining.nextEvent).type).toBe("leaving");
       expect(yield* joining.nextEvent).toMatchObject({
@@ -369,11 +444,33 @@ it.effect(
     }).pipe(Effect.provide(TestHub))
 );
 
+// What the review of #122 left open (S6): an entry that is offline looks like
+// the one this command would have registered, and is another runtime's.
+it.effect(
+  "nor who is offline with its participant id: a participant another runtime registered stays in the room",
+  () =>
+    Effect.gen(function* () {
+      const { joining, participants } =
+        yield* signalledBeforeItRegistered("offline");
+
+      expect((yield* joining.nextEvent).type).toBe("leaving");
+      expect(yield* joining.nextEvent).toMatchObject({
+        type: "left",
+        data: { reason: "stopped", removed: false },
+      });
+      expect((yield* joining.result).exitCode).toBe(0);
+      expect(yield* participants).toMatchObject([
+        { id: "arthur-1", status: "offline", runtimeId: "another-runtime" },
+      ]);
+    }).pipe(Effect.provide(TestHub))
+);
+
 it.effect(
   "and it tells the person that the participant in the room is another one, not that the hub did not confirm",
   () =>
     Effect.gen(function* () {
       const { joining, roomCode } = yield* signalledBeforeItRegistered(
+        "online",
         "--format",
         "text",
         "--log-level",
@@ -384,7 +481,7 @@ it.effect(
         `Leaving room ${roomCode} (SIGTERM)...`
       );
       expect(yield* joining.nextLine).toBe(
-        `Stopped before joining. Another participant is online as arthur-1 in room ${roomCode}, and it stays there.`
+        `Stopped. Another participant runtime holds arthur-1 in room ${roomCode}, and it stays there.`
       );
       expect((yield* joining.result).exitCode).toBe(0);
     }).pipe(Effect.provide(TestHub))

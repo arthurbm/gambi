@@ -1,3 +1,4 @@
+import { ParticipantNotFound } from "@gambi/protocol";
 import { Effect } from "effect";
 import { Command } from "effect/cli";
 import { participantIdFlag, roomFlag } from "../flags.ts";
@@ -10,8 +11,24 @@ const leave = Command.make(
   { room: roomFlag, participantId: participantIdFlag, hub: hubFlag },
   Effect.fn("participant.leave")(function* ({ hub, participantId, room }) {
     const output = yield* Output;
+    // A removal names the runtime it takes out. This command takes out
+    // whoever holds the participant now, so it asks the hub who that is.
     const left = yield* withHub(hub, (client) =>
-      client.participants.remove({ params: { code: room, id: participantId } })
+      Effect.gen(function* () {
+        const inTheRoom = (yield* client.participants.list({
+          params: { code: room },
+        })).find((participant) => participant.id === participantId);
+        if (inTheRoom === undefined) {
+          return yield* new ParticipantNotFound({
+            roomCode: room,
+            participantId,
+          });
+        }
+        return yield* client.participants.remove({
+          params: { code: room, id: participantId },
+          query: { runtimeId: inTheRoom.runtimeId },
+        });
+      })
     );
     yield* output.result(
       left,
