@@ -32,14 +32,25 @@ export interface Identity {
   readonly roomCode: string;
 }
 
+/**
+ * How telling the hub that the participant left went.
+ *
+ * - `removed`: the hub confirmed it, or said the participant or the room is
+ *   already gone.
+ * - `unconfirmed`: the hub did not answer in time, or was not told. It
+ *   removes an offline participant by itself once the reconnection deadline
+ *   passes.
+ * - `leftAlone`: the participant with that id is another runtime's, and was
+ *   not removed.
+ */
+type Leave = "removed" | "unconfirmed" | "leftAlone";
+
 /** How long leaving waits for the hub to confirm before it gives up on telling it. */
 const LEAVE_TIMEOUT = Duration.seconds(3);
 
 /**
- * Tells the hub that the participant left the room. `true` when the hub
- * confirmed it, or said the participant or the room is already gone; `false`
- * when the hub did not answer in time, and then it removes the participant
- * by itself once the reconnection deadline passes.
+ * Tells the hub that the participant left the room, and answers how that
+ * went (`Leave`).
  *
  * A participant that `neverCameOnline` is the one case in which the entry
  * with its id may not be its own: the signal came during the join, and the
@@ -53,40 +64,51 @@ const leaveRoom = (
   neverCameOnline = false
 ) =>
   withHub(hubUrl, (client) =>
-    Effect.gen(function* () {
+    Effect.gen(function* (): Effect.fn.Return<
+      Leave,
+      Effect.Error<ReturnType<typeof client.participants.remove>>
+    > {
       const params = { code: roomCode, id: participantId };
       if (neverCameOnline) {
         const inTheRoom = (yield* client.participants.list({
           params: { code: roomCode },
         })).find((participant) => participant.id === participantId);
-        if (inTheRoom?.status !== "offline") {
-          return inTheRoom === undefined;
+        if (inTheRoom === undefined) {
+          return "removed";
+        }
+        if (inTheRoom.status !== "offline") {
+          return "leftAlone";
         }
       }
       yield* client.participants.remove({ params });
-      return true;
+      return "removed";
     })
   ).pipe(
     Effect.catchTag(["ParticipantNotFound", "RoomNotFound"], () =>
-      Effect.succeed(true)
+      Effect.succeed("removed" as const)
     ),
     Effect.timeoutOption(LEAVE_TIMEOUT),
-    Effect.map((left) => left._tag === "Some" && left.value),
-    Effect.catch(() => Effect.succeed(false))
+    Effect.map(Option.getOrElse((): Leave => "unconfirmed")),
+    Effect.catch(() => Effect.succeed<Leave>("unconfirmed"))
   );
 
 /** The last line a person reads: how the stay ended. */
 const leftText = (
-  roomCode: string,
+  { participantId, roomCode }: Identity,
   reason: string,
-  removed: boolean
+  leave: Leave
 ): string => {
   if (reason !== "stopped") {
     return `No longer in room ${roomCode} (${reason}).`;
   }
-  return removed
-    ? `Left room ${roomCode}.`
-    : `Stopped. The hub did not confirm: it takes the participant out of room ${roomCode} by itself in a minute.`;
+  switch (leave) {
+    case "removed":
+      return `Left room ${roomCode}.`;
+    case "leftAlone":
+      return `Stopped before joining. Another participant is online as ${participantId} in room ${roomCode}, and it stays there.`;
+    default:
+      return `Stopped. The hub did not confirm: it takes the participant out of room ${roomCode} by itself in a minute.`;
+  }
 };
 
 /**
@@ -208,8 +230,7 @@ export const stayInRoom = <Hosted, E, R>(stay: Stay<Hosted, E, R>) =>
           yield* leaving(joining.signal);
           return {
             reason: "stopped" as const,
-            removed: false,
-            tellTheHub: "ifItRegistered" as const,
+            leave: "tellIfItRegistered" as const,
             ended: Exit.void,
           };
         }
@@ -253,8 +274,7 @@ export const stayInRoom = <Hosted, E, R>(stay: Stay<Hosted, E, R>) =>
           // this runtime any more.
           return {
             reason: how.left.reason,
-            removed: false,
-            tellTheHub: false,
+            leave: "unconfirmed" as const,
             ended: yield* Effect.exit(runtime.ended),
           };
         }
@@ -266,8 +286,7 @@ export const stayInRoom = <Hosted, E, R>(stay: Stay<Hosted, E, R>) =>
           );
           return {
             reason: "harnessExited" as const,
-            removed: false,
-            tellTheHub: true,
+            leave: "tell" as const,
             ended: Exit.fail(how.failure),
           };
         }
@@ -278,29 +297,28 @@ export const stayInRoom = <Hosted, E, R>(stay: Stay<Hosted, E, R>) =>
         return harness === undefined
           ? {
               reason: "stopped" as const,
-              removed: yield* leaveRoom(stay.hubUrl, identity),
-              tellTheHub: false,
+              leave: yield* leaveRoom(stay.hubUrl, identity),
               ended: Exit.void,
             }
           : {
               reason: "stopped" as const,
-              removed: false,
-              tellTheHub: true,
+              leave: "tell" as const,
               ended: Exit.void,
             };
       })
     );
-    const removed = ending.tellTheHub
-      ? yield* leaveRoom(
-          stay.hubUrl,
-          identity,
-          ending.tellTheHub === "ifItRegistered"
-        )
-      : ending.removed;
+    const leave =
+      ending.leave === "tell" || ending.leave === "tellIfItRegistered"
+        ? yield* leaveRoom(
+            stay.hubUrl,
+            identity,
+            ending.leave === "tellIfItRegistered"
+          )
+        : ending.leave;
     yield* output.event(
       "left",
-      { ...identity, reason: ending.reason, removed },
-      leftText(identity.roomCode, ending.reason, removed)
+      { ...identity, reason: ending.reason, removed: leave === "removed" },
+      leftText(identity, ending.reason, leave)
     );
     // A stay that ended by itself is a failure, with the name of why.
     yield* ending.ended;

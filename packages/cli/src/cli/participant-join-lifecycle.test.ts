@@ -314,36 +314,48 @@ it.effect(
     }).pipe(Effect.provide(TestHub))
 );
 
+/**
+ * `participant join` as `arthur-1`, told to leave while its registration is
+ * still on its way to the hub, in a room where another runtime is already
+ * online as `arthur-1`.
+ */
+const signalledBeforeItRegistered = (...flags: readonly string[]) =>
+  Effect.gen(function* () {
+    const client = yield* managementClient;
+    const room = yield* newRoom;
+    const provider = yield* fakeProvider();
+    yield* joinParticipant({ roomCode: room.code, participantId: "arthur-1" });
+    const slow = yield* hubThatHolds("the registration");
+    const joining = yield* startCommand([
+      "participant",
+      "join",
+      "--room",
+      room.code,
+      "--participant-id",
+      "arthur-1",
+      "--model",
+      FAKE_MODEL,
+      "--endpoint",
+      provider.url,
+      "--no-specs",
+      "--hub",
+      slow.url,
+      ...flags,
+    ]);
+    yield* slow.holding;
+    yield* joining.signal("SIGTERM");
+    return {
+      joining,
+      roomCode: room.code,
+      participants: client.participants.list({ params: { code: room.code } }),
+    };
+  });
+
 it.effect(
   "told to leave before its registration reached the hub, it does not take out of the room who is online with its participant id",
   () =>
     Effect.gen(function* () {
-      const client = yield* managementClient;
-      const room = yield* newRoom;
-      const provider = yield* fakeProvider();
-      yield* joinParticipant({
-        roomCode: room.code,
-        participantId: "arthur-1",
-      });
-      const slow = yield* hubThatHolds("the registration");
-      const joining = yield* startCommand([
-        "participant",
-        "join",
-        "--room",
-        room.code,
-        "--participant-id",
-        "arthur-1",
-        "--model",
-        FAKE_MODEL,
-        "--endpoint",
-        provider.url,
-        "--no-specs",
-        "--hub",
-        slow.url,
-      ]);
-      yield* slow.holding;
-
-      yield* joining.signal("SIGTERM");
+      const { joining, participants } = yield* signalledBeforeItRegistered();
 
       expect((yield* joining.nextEvent).type).toBe("leaving");
       expect(yield* joining.nextEvent).toMatchObject({
@@ -351,8 +363,29 @@ it.effect(
         data: { reason: "stopped", removed: false },
       });
       expect((yield* joining.result).exitCode).toBe(0);
-      expect(
-        yield* client.participants.list({ params: { code: room.code } })
-      ).toMatchObject([{ id: "arthur-1", status: "online" }]);
+      expect(yield* participants).toMatchObject([
+        { id: "arthur-1", status: "online" },
+      ]);
+    }).pipe(Effect.provide(TestHub))
+);
+
+it.effect(
+  "and it tells the person that the participant in the room is another one, not that the hub did not confirm",
+  () =>
+    Effect.gen(function* () {
+      const { joining, roomCode } = yield* signalledBeforeItRegistered(
+        "--format",
+        "text",
+        "--log-level",
+        "none"
+      );
+
+      expect(yield* joining.nextLine).toBe(
+        `Leaving room ${roomCode} (SIGTERM)...`
+      );
+      expect(yield* joining.nextLine).toBe(
+        `Stopped before joining. Another participant is online as arthur-1 in room ${roomCode}, and it stays there.`
+      );
+      expect((yield* joining.result).exitCode).toBe(0);
     }).pipe(Effect.provide(TestHub))
 );
