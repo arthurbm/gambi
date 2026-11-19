@@ -12,6 +12,10 @@ const ROOT = resolve(import.meta.dir, "..");
 const SOURCE_FILE = /\.tsx?$/;
 const TEST_FILE = /\.test\.tsx?$/;
 
+/** Declared by the old hub and never answered (`ENDPOINT_NOT_REACHABLE` and the rest). */
+const UNUSED_ERROR_CODE =
+  /\b(?:ENDPOINT_NOT_REACHABLE|PARTICIPANT_CONFLICT|PARTICIPANT_BUSY|MODEL_NOT_FOUND|PARTICIPANT_TUNNEL_NOT_CONNECTED)\b/;
+
 const ZOD_IMPORT = /from\s+["']zod(?:\/[^"']*)?["']|require\(["']zod/;
 
 /**
@@ -117,6 +121,22 @@ describe("the old CLI", () => {
     expect(await Bun.file(join(ROOT, "packages/cli/src/cli.ts")).exists()).toBe(
       false
     );
+  });
+});
+
+describe("the error codes nothing answered with", () => {
+  // `gambi-sdk` names one of them on purpose, as a code that must not type-check.
+  const CONSUMER_PROBE = "packages/sdk/scripts/check-packed-types.ts";
+
+  test("are in no package", async () => {
+    const naming = (await sources("packages"))
+      .filter(
+        ([file, text]) =>
+          file !== CONSUMER_PROBE && UNUSED_ERROR_CODE.test(text)
+      )
+      .map(([file]) => file);
+
+    expect(naming).toEqual([]);
   });
 });
 

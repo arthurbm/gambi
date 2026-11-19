@@ -20,7 +20,9 @@
       "!**/wrangler.jsonc",
       "!**/.source",
       "!**/convex/_generated",
-      "!**/.agents"
+      "!**/.agents",
+      "!**/.impeccable",
+      "!docs/product/presentations"
     ]
   },
   "javascript": {
