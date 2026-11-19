@@ -180,7 +180,7 @@ Um participante de harness não tem `endpoint`. O objeto `harness` dele contém 
 
 Cria ou atualiza o registro de um participante. Os runtimes de participante (a CLI, a entrada `gambi-sdk/participant` do SDK) chamam esta rota por você; raramente você a chama à mão.
 
-Quando o registro dá certo, o hub responde `200`. Registrar o mesmo ID de participante atualiza o perfil e mantém o status. Se o participante está `offline`, ele passa a pertencer ao runtime que o registrou. Se o túnel está aberto, o participante só muda de dono quando o novo runtime abre seu túnel. O hub guarda o `endpoint` do participante como metadado e nunca se conecta a ele.
+Quando o registro dá certo, o hub responde `200`. Registrar o mesmo ID de participante mantém o status. A resposta inclui o perfil enviado e o dono atual. Se o participante está `offline`, ele passa a pertencer ao runtime que o registrou. O runtime que atende pelo túnel atual pode atualizar seu perfil ativo registrando-se de novo. O perfil de outro runtime entra em vigor quando o túnel substituto abre. O hub guarda o `endpoint` do participante como metadado e nunca se conecta a ele.
 
 Corpo da requisição:
 
@@ -391,8 +391,8 @@ Um participante só está disponível quando está `online`: o túnel dele está
 
 - Fechar a requisição HTTP (abortar o `fetch`, parar o stream) cancela a requisição no provedor do participante, e o participante volta a ficar disponível.
 - Se o participante não enviar nada por 5 minutos, antes do primeiro chunk ou entre dois, o hub cancela a requisição e responde `inference_timeout`.
-- Se o seu app lê um stream tão devagar que mais de 8 Mi caracteres dele ficam esperando, o hub cancela a requisição e encerra o stream com `consumer_too_slow`.
-- Uma resposta que não é stream fica retida no hub até estar completa, até 32 Mi caracteres.
+- Se o seu app lê um stream tão devagar que mais de 8 MiB dele ficam esperando, o hub cancela a requisição e encerra o stream com `consumer_too_slow`.
+- Uma resposta que não é stream fica retida no hub até estar completa, até 32 MiB. Os dois limites contam bytes em UTF-8.
 
 ### Erros de inferência
 
@@ -479,7 +479,7 @@ Endpoints adicionais de ciclo de vida:
 - `POST /rooms/:code/v1/responses/:id/cancel`
 - `GET /rooms/:code/v1/responses/:id/input_items`
 
-Eles chegam ao participante cujo provedor criou a Response, mesmo enquanto ele está ocupado; enquanto ele está offline, respondem `participant_offline`. O hub lembra até 10 000 Responses; além disso, ele esquece a usada há mais tempo, e as rotas de ciclo de vida dela respondem `response_not_found`.
+Para uma Response armazenada pelo provedor, essas rotas chegam ao runtime que a criou, mesmo quando ele está ocupado. Enquanto o dono está offline, respondem `participant_offline`. Se outro runtime tomar seu lugar, o hub responde `404 response_not_found`. Para uma Response que o hub traduziu de Chat Completions e ainda mantém no registro, ele responde `501 response_not_stored`, inclusive após a substituição. O hub lembra até 10 000 Responses. Ao atingir o limite, ele descarta a entrada usada há mais tempo para dar lugar à próxima. Quando esquece uma entrada, essas rotas respondem `404 response_not_found`.
 
 ### POST /rooms/:code/v1/chat/completions
 

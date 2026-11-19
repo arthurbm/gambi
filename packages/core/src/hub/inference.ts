@@ -49,7 +49,7 @@
  * stream it reads nothing else, pongs included, so the hub would drop the
  * whole tunnel on a ping timeout (measured, see the ticket notes). What an
  * app has not read yet is bounded instead: past
- * `MAX_PENDING_STREAM_CHARACTERS` the request is cancelled with
+ * `MAX_PENDING_STREAM_BYTES` the request is cancelled with
  * `ConsumerTooSlow`.
  *
  * A failure is an `InferenceError` (`@gambi/protocol`), written in the
@@ -132,22 +132,24 @@ import { Tunnels } from "./tunnels.ts";
 
 /**
  * How much of a streamed response may wait in the hub for the app to read
- * it, in characters. A whole text completion is a small fraction of it; an
+ * it, in UTF-8 bytes. A whole text completion is a small fraction of it; an
  * app only reaches it by not reading while the provider keeps producing.
  */
-export const MAX_PENDING_STREAM_CHARACTERS = 8 * 1024 * 1024;
+export const MAX_PENDING_STREAM_BYTES = 8 * 1024 * 1024;
 
 /**
  * How much of a response that is not a stream the hub holds before it gives
- * up, in characters. A completion with a few images fits many times over.
+ * up, in UTF-8 bytes. A completion with a few images fits many times over.
  */
-export const MAX_HELD_RESPONSE_CHARACTERS = 32 * 1024 * 1024;
+export const MAX_HELD_RESPONSE_BYTES = 32 * 1024 * 1024;
 
 /**
  * How long an unfinished server-sent event may get while the hub holds it,
  * waiting for its end, in characters. Past it the text goes out as it is.
  */
 const MAX_HELD_EVENT_CHARACTERS = 1024 * 1024;
+
+const utf8 = new TextEncoder();
 
 const EVENT_STREAM = "text/event-stream";
 
@@ -279,17 +281,34 @@ interface ProviderAnswer {
 const askProvider = Effect.fnUntraced(function* (
   roomCode: string,
   participantId: string,
+  runtimeId: string,
   request: InferenceRequest
 ): Effect.fn.Return<
   ProviderAnswer,
   InferenceError,
-  HubSettings | Tunnels | Scope.Scope
+  HubSettings | Tunnels | Participants | Scope.Scope
 > {
   const settings = yield* HubSettings;
   const tunnels = yield* Tunnels;
-  const tunnel = yield* tunnels.client(roomCode, participantId).pipe(
+  const tunnel = yield* tunnels.client(roomCode, participantId, runtimeId).pipe(
     // The tunnel dropped between the routing and here.
-    Effect.mapError(() => new ParticipantIsOffline({ roomCode, participantId }))
+    Effect.catch(
+      Effect.fnUntraced(function* () {
+        if ("responseId" in request) {
+          const participants = yield* Participants;
+          if (
+            (yield* participants.get(roomCode, participantId))?.runtimeId !==
+            runtimeId
+          ) {
+            return yield* new ResponseNotFound({
+              roomCode,
+              responseId: request.responseId,
+            });
+          }
+        }
+        return yield* new ParticipantIsOffline({ roomCode, participantId });
+      })
+    )
   );
   const chunks = yield* tunnel.Infer(request, { asQueue: true });
 
@@ -449,13 +468,13 @@ const respond = Effect.fnUntraced(function* (
     yield* answer.eachPiece((text) => {
       report.piece();
       parts.push(text);
-      size += text.length;
-      return size > MAX_HELD_RESPONSE_CHARACTERS
+      size += utf8.encode(text).byteLength;
+      return size > MAX_HELD_RESPONSE_BYTES
         ? Effect.fail(
             new ProviderResponseTooLarge({
               roomCode,
               participantId,
-              limitCharacters: MAX_HELD_RESPONSE_CHARACTERS,
+              limitBytes: MAX_HELD_RESPONSE_BYTES,
             })
           )
         : Effect.void;
@@ -472,21 +491,25 @@ const respond = Effect.fnUntraced(function* (
   }
 
   const stream = yield* form.stream;
-  const pending = yield* Queue.unbounded<string, InferenceError | Cause.Done>();
+  const pending = yield* Queue.unbounded<
+    { text: string; bytes: number },
+    InferenceError | Cause.Done
+  >();
   let waiting = 0;
   const send = (text: string) => {
-    waiting += text.length;
-    if (waiting > MAX_PENDING_STREAM_CHARACTERS) {
+    const bytes = utf8.encode(text).byteLength;
+    waiting += bytes;
+    if (waiting > MAX_PENDING_STREAM_BYTES) {
       return Effect.fail(
         new ConsumerTooSlow({
           roomCode,
           participantId,
-          limitCharacters: MAX_PENDING_STREAM_CHARACTERS,
+          limitBytes: MAX_PENDING_STREAM_BYTES,
         })
       );
     }
     if (text !== "") {
-      Queue.offerUnsafe(pending, text);
+      Queue.offerUnsafe(pending, { text, bytes });
     }
     return Effect.void;
   };
@@ -501,7 +524,6 @@ const respond = Effect.fnUntraced(function* (
         return Effect.flatMap(stream.piece(text), send);
       })
     ),
-    Effect.andThen(Effect.flatMap(stream.end, send)),
     Effect.tap(() => Effect.sync(() => report.completed(answer.status))),
     Effect.tapError((error) => {
       report.failed(error);
@@ -519,10 +541,12 @@ const respond = Effect.fnUntraced(function* (
     Effect.forkIn(call.requestScope)
   );
   const body = Stream.fromQueue(pending).pipe(
-    Stream.map((text) => {
-      waiting -= text.length;
+    Stream.map(({ text, bytes }) => {
+      waiting -= bytes;
       return text;
-    })
+    }),
+    // The provider has finished. Build the closing events when the app reads them.
+    Stream.concat(Stream.fromEffect(stream.end))
   );
   return {
     streaming: true,
@@ -600,16 +624,22 @@ const createResponse = Effect.fnUntraced(function* (
 
   if (capabilities.openResponses !== "unsupported") {
     const attempt = yield* Scope.fork(yield* Effect.scope);
-    const answer = yield* askProvider(roomCode, participantId, {
-      operation: "responses.create",
-      body: JSON.stringify(body),
-    }).pipe(Scope.provide(attempt));
+    const answer = yield* askProvider(
+      roomCode,
+      participantId,
+      participant.runtimeId,
+      {
+        operation: "responses.create",
+        body: JSON.stringify(body),
+      }
+    ).pipe(Scope.provide(attempt));
     if (!saysNoResponsesApi(answer.status)) {
       // The provider keeps the Response it created. Whoever asks for it
       // later is sent to this participant.
       const remember = (responseId: string) =>
         stored.remember(roomCode, responseId, {
           participantId,
+          runtimeId: participant.runtimeId,
           translated: false,
         });
       return yield* respond(call, answer, {
@@ -629,10 +659,15 @@ const createResponse = Effect.fnUntraced(function* (
   }
 
   const chatBody = yield* toChatCompletionsRequest(body);
-  const answer = yield* askProvider(roomCode, participantId, {
-    operation: "chatCompletions.create",
-    body: JSON.stringify(chatBody),
-  });
+  const answer = yield* askProvider(
+    roomCode,
+    participantId,
+    participant.runtimeId,
+    {
+      operation: "chatCompletions.create",
+      body: JSON.stringify(chatBody),
+    }
+  );
   if (answer.status < 200 || answer.status >= 300) {
     // The provider refused the request. Its answer says why, in a format
     // the two APIs share, so the app gets it as it is.
@@ -648,6 +683,7 @@ const createResponse = Effect.fnUntraced(function* (
   // no provider behind it, to say so instead of "not found".
   const remember = stored.remember(roomCode, translation.responseId, {
     participantId,
+    runtimeId: participant.runtimeId,
     translated: true,
   });
   return yield* respond(call, answer, {
@@ -696,8 +732,7 @@ const infer = (operation: InferenceCreation) =>
       Effect.fnUntraced(function* (scopes) {
         const participant = yield* Effect.acquireRelease(
           participants.dispatch(roomCode, asked.model),
-          (dispatched) =>
-            participants.transition(roomCode, dispatched.id, "requestEnded")
+          (dispatched) => dispatched.finish
         );
         const participantId = participant.id;
         const call: Call = { ...scopes, roomCode, participantId };
@@ -723,7 +758,7 @@ const infer = (operation: InferenceCreation) =>
         const answering =
           operation === "responses.create"
             ? createResponse(call, participant, body, report)
-            : askProvider(roomCode, participantId, {
+            : askProvider(roomCode, participantId, participant.runtimeId, {
                 operation,
                 body: JSON.stringify(body),
               }).pipe(
@@ -756,7 +791,6 @@ const storedResponse = (operation: StoredResponseOperation) =>
     request: HttpServerRequest.HttpServerRequest
   ) {
     const rooms = yield* Rooms;
-    const participants = yield* Participants;
     const stored = yield* StoredResponses;
     const params = yield* HttpRouter.params;
     const room = yield* rooms.get(params.code ?? "");
@@ -770,12 +804,6 @@ const storedResponse = (operation: StoredResponseOperation) =>
       return yield* new ResponseNotStored({ roomCode, responseId });
     }
     const { participantId } = known;
-    // Without its participant in the room nobody can reach the Response. The
-    // hub keeps what it knows: a participant that comes back under its id
-    // brings its provider, and the Response, back with it.
-    if ((yield* participants.status(roomCode, participantId)) === undefined) {
-      return yield* new ResponseNotFound({ roomCode, responseId });
-    }
     // Cancelling takes no parameters; the other operations take theirs in
     // the query, which goes to the provider as the app wrote it.
     const query = operation === "responses.cancel" ? "" : queryOf(request.url);
@@ -788,11 +816,16 @@ const storedResponse = (operation: StoredResponseOperation) =>
     return yield* withCall(
       Effect.fnUntraced(function* (scopes) {
         const call: Call = { ...scopes, roomCode, participantId };
-        const answer = yield* askProvider(roomCode, participantId, {
-          operation,
-          responseId,
-          ...(query === "" ? {} : { query }),
-        });
+        const answer = yield* askProvider(
+          roomCode,
+          participantId,
+          known.runtimeId,
+          {
+            operation,
+            responseId,
+            ...(query === "" ? {} : { query }),
+          }
+        );
         const succeeded = answer.status >= 200 && answer.status < 300;
         // The Response is gone from the provider: deleted now, or found
         // missing by an operation on the Response itself.
@@ -801,7 +834,7 @@ const storedResponse = (operation: StoredResponseOperation) =>
             ? succeeded || answer.status === 404
             : operation === "responses.retrieve" && answer.status === 404;
         if (gone) {
-          yield* stored.forget(roomCode, responseId);
+          yield* stored.forget(roomCode, responseId, known);
         }
         return yield* respond(call, answer, untouched);
       })

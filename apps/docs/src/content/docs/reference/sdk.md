@@ -155,7 +155,7 @@ const client = createClient({
 | `client.events` | `watch` |
 | `client.harness` | `attach`, `openSession`, `send`, `closeSession` |
 
-`client.close()` ends the watches that are open, cancels the calls in flight, and refuses new ones; those `Promise` methods reject with a plain `Error` (`The client is closed.`), not a `ClientError`, and a new `events.watch()` or `harness.attach()` throws that `Error` at once. It is optional: a client that is never closed holds nothing once its watches end. The client also works with `await using`.
+`client.close()` ends open watches. Interrupted and subsequent calls reject with a `ClientError` whose code is `INVALID_REQUEST` and whose message is `The client is closed.`. A new `events.watch()` or `harness.attach()` throws the same error immediately. Closing is optional. A client releases its resources once its watches end and supports `await using`.
 
 ### `client.hub.health()`
 

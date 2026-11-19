@@ -180,7 +180,7 @@ A harness participant has no `endpoint`. Its `harness` object contains `id` (`op
 
 Create or update a participant registration. Participant runtimes (the CLI, the SDK's `gambi-sdk/participant` entry) call it for you; you rarely call it by hand.
 
-A successful registration returns `200`. Registering the same participant ID updates its profile and keeps its status. If the participant is `offline`, the registering runtime becomes its owner. If the tunnel is open, ownership changes only when the new runtime opens its tunnel. The hub stores the participant `endpoint` as metadata and never connects to it.
+A successful registration returns `200`. Registering the same participant ID preserves its status. The reply includes the submitted profile and the current owner. If the participant is `offline`, the registering runtime becomes its owner. The runtime serving the current tunnel can update its active profile by registering again. A different runtime’s profile takes effect when its replacement tunnel opens. The hub stores the participant `endpoint` as metadata and never connects to it.
 
 Request body:
 
@@ -391,8 +391,8 @@ A participant is available only when it is `online`: its tunnel is open and it i
 
 - Closing the HTTP request (aborting `fetch`, stopping the stream) cancels the request on the participant's provider, and the participant becomes available again.
 - If the participant sends nothing for 5 minutes, before the first chunk or between two, the hub cancels the request and answers `inference_timeout`.
-- If your app reads a stream so slowly that more than 8 Mi characters of it are waiting, the hub cancels the request and ends the stream with `consumer_too_slow`.
-- An answer that is not a stream is held by the hub until it is complete, up to 32 Mi characters.
+- If your app reads a stream so slowly that more than 8 MiB of it are waiting, the hub cancels the request and ends the stream with `consumer_too_slow`.
+- An answer that is not a stream is held by the hub until it is complete, up to 32 MiB. Both limits count UTF-8 bytes.
 
 ### Inference errors
 
@@ -479,7 +479,7 @@ Additional lifecycle endpoints:
 - `POST /rooms/:code/v1/responses/:id/cancel`
 - `GET /rooms/:code/v1/responses/:id/input_items`
 
-They reach the participant whose provider created the Response, even while it is busy; while it is offline they answer `participant_offline`. The hub remembers up to 10 000 Responses; past that it forgets the one used longest ago, and its lifecycle routes answer `response_not_found`.
+For a Response stored by a provider, these routes reach the runtime that created it, even while it is busy. An offline owner gives `participant_offline`. If another runtime takes its place, the hub returns `404 response_not_found`. For a Response the hub translated from Chat Completions and still remembers, it returns `501 response_not_stored`, even after replacement. The hub remembers up to 10 000 Responses. At capacity it forgets the least recently used entry. Once it forgets an entry, these routes return `404 response_not_found`.
 
 ### POST /rooms/:code/v1/chat/completions
 

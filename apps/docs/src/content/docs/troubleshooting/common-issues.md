@@ -140,7 +140,7 @@ If someone removes the participant while its runtime is waiting between retries,
 
 ## Streaming request ends with `consumer_too_slow`
 
-The app read a streamed answer too slowly, and more than 8 Mi characters of it piled up on the hub. The hub cancels the request on the participant and ends the stream with this error. Read the stream as it arrives, or ask for an answer that is not a stream.
+The app read a streamed answer too slowly, and more than 8 MiB of it piled up on the hub. The hub cancels the request on the participant and ends the stream with this error. Read the stream as it arrives, or ask for an answer that is not a stream.
 
 ## Request fails with `inference_timeout`
 

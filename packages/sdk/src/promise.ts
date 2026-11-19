@@ -120,15 +120,14 @@ const stoppable = <A>(
  */
 export const makePromiseBoundary = <R, E>(
   layer: Layer.Layer<R, E>,
-  what: string
+  what: string,
+  closedError: () => Error = () => new Error(`${what} is closed.`)
 ): PromiseBoundary<R> => {
   const runtime = ManagedRuntime.make(layer);
   // Iterations run on fibers the runtime does not own, so `close` ends them
   // through this signal.
   const closing = new AbortController();
   let closed: Promise<void> | undefined;
-
-  const closedError = (): Error => new Error(`${what} is closed.`);
 
   return {
     run: async (effect) => {

@@ -59,7 +59,8 @@ import {
 } from "effect/rpc";
 import { Socket } from "effect/socket";
 import { HarnessClients } from "./harness-clients.ts";
-import { Participants } from "./participants.ts";
+import { participantKey } from "./participant-key.ts";
+import { type ParticipantProfile, Participants } from "./participants.ts";
 import { HubSettings } from "./settings.ts";
 
 /** How long a bootstrap token is valid for. */
@@ -93,6 +94,7 @@ export class TunnelNotOpen extends Schema.TaggedError<TunnelNotOpen>()(
  * in reads it to know that there is nobody to be online as.
  */
 export interface RedeemedToken {
+  readonly profile: ParticipantProfile;
   /**
    * The participant the token was issued for (`Participants.generation`):
    * another one with the same id is not it.
@@ -162,10 +164,6 @@ const disconnectedBy = (
   message: error.message,
 });
 
-// A room code never contains a space, so the pair is unambiguous.
-const keyOf = (roomCode: string, participantId: string) =>
-  `${roomCode} ${participantId}`;
-
 export class Tunnels extends Context.Service<
   Tunnels,
   {
@@ -186,7 +184,8 @@ export class Tunnels extends Context.Service<
      */
     readonly client: (
       roomCode: string,
-      participantId: string
+      participantId: string,
+      runtimeId?: string
     ) => Effect.Effect<TunnelClient, TunnelNotOpen, Scope.Scope>;
     /**
      * Closes the participant's tunnel from the hub's side and waits until it
@@ -225,7 +224,8 @@ export class Tunnels extends Context.Service<
       roomCode: string,
       participantId: string,
       runtimeId: string,
-      generation: number
+      generation: number,
+      profile: ParticipantProfile
     ) => Effect.Effect<BootstrapToken>;
     /**
      * Spends a bootstrap token. It fails when the token was not issued for
@@ -274,7 +274,8 @@ export class Tunnels extends Context.Service<
         roomCode: string,
         participantId: string,
         runtimeId: string,
-        generation: number
+        generation: number,
+        profile: ParticipantProfile
       ) {
         const now = yield* Clock.currentTimeMillis;
         // Tokens that expired leave here, without a timer.
@@ -290,6 +291,7 @@ export class Tunnels extends Context.Service<
           participantId,
           runtimeId,
           generation,
+          profile,
           expiresAt,
           left: false,
           spent: false,
@@ -332,7 +334,7 @@ export class Tunnels extends Context.Service<
           socket: Socket.Socket,
           token: RedeemedToken
         ) {
-          const key = keyOf(roomCode, participantId);
+          const key = participantKey(roomCode, participantId);
           const dropped = yield* Deferred.make<void>();
           const gone = yield* Deferred.make<void>();
           // The socket lives in `socketScope`. The RPC client lives in
@@ -534,7 +536,8 @@ export class Tunnels extends Context.Service<
               roomCode,
               participantId,
               "tunnelOpened",
-              token.runtimeId
+              token.runtimeId,
+              { profile: token.profile }
             );
             if (opened === undefined) {
               // The participant is not this runtime's to be online as.
@@ -620,14 +623,16 @@ export class Tunnels extends Context.Service<
       return Tunnels.of({
         awaitDrop: (roomCode, participantId) =>
           Effect.suspend(
-            () => open.get(keyOf(roomCode, participantId))?.gone ?? Effect.void
+            () =>
+              open.get(participantKey(roomCode, participantId))?.gone ??
+              Effect.void
           ),
         close: (roomCode, participantId, reason, leaving) =>
           Effect.suspend(() => {
             if (leaving !== undefined) {
               markLeft(roomCode, participantId, leaving);
             }
-            const tunnel = open.get(keyOf(roomCode, participantId));
+            const tunnel = open.get(participantKey(roomCode, participantId));
             return (
               tunnel?.close(
                 reason,
@@ -638,10 +643,11 @@ export class Tunnels extends Context.Service<
             );
           }),
         closeAll,
-        client: (roomCode, participantId) =>
+        client: (roomCode, participantId, runtimeId) =>
           Effect.suspend(() => {
-            const tunnel = open.get(keyOf(roomCode, participantId));
-            return tunnel === undefined
+            const tunnel = open.get(participantKey(roomCode, participantId));
+            return tunnel === undefined ||
+              (runtimeId !== undefined && tunnel.runtimeId !== runtimeId)
               ? Effect.fail(new TunnelNotOpen({ roomCode, participantId }))
               : tunnel.hold;
           }),

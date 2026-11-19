@@ -325,6 +325,51 @@ layer(BunServices.layer, { excludeTestServices: true })(
         })
     );
 
+    it.effect(
+      "a session keeps its Workspace directory when its alias changes",
+      () =>
+        Effect.gen(function* () {
+          const { harness, next, workspacePath } = yield* start();
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const folder = path.join(workspacePath, "work");
+          const alias = path.join(workspacePath, "alias");
+          yield* fs.makeDirectory(folder);
+          yield* fs.symlink(folder, alias);
+          yield* next;
+          yield* harness.openSession("linked", alias);
+          yield* next;
+          yield* fs.remove(alias);
+          yield* fs.symlink(workspacePath, alias);
+          yield* harness.send("linked", prompt(1, "linked", "hello"));
+          yield* next;
+          yield* next;
+          expect(yield* fs.exists(path.join(folder, "fake-output.txt"))).toBe(
+            true
+          );
+        })
+    );
+
+    it.effect(
+      "a linked Workspace accepts its advertised directory for a new session",
+      () =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const root = yield* fs.makeTempDirectoryScoped();
+          const folder = path.join(root, "work");
+          const alias = path.join(root, "alias");
+          yield* fs.makeDirectory(folder);
+          yield* fs.symlink(folder, alias);
+          const { harness } = yield* start({ workspacePath: alias });
+          yield* harness.openSession(
+            "canonical",
+            path.join(harness.workspacePath, "sub")
+          );
+          expect(yield* fs.exists(path.join(folder, "sub"))).toBe(true);
+        })
+    );
+
     it.effect("a session cannot leave the Workspace", () =>
       Effect.gen(function* () {
         const { harness, next, workspacePath } = yield* start();

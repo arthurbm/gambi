@@ -3,7 +3,14 @@
  * the client derived from the management contract to the command and names
  * the two ways the other end can fail to be a hub.
  */
-import { type ManagementClient, makeManagementClient } from "@gambi/protocol";
+import {
+  type InvalidRequest,
+  invalidManagementInput,
+  isConnectionFailure,
+  type ManagementClient,
+  makeManagementClient,
+  withRequestProgress,
+} from "@gambi/protocol";
 import { Config, Effect, Schema } from "effect";
 import { Flag } from "effect/cli";
 import { type HttpClient, HttpClientError } from "effect/http";
@@ -73,7 +80,7 @@ const fromHttpClientError = (
   error: HttpClientError.HttpClientError
 ): HubUnreachable | NotAHub => {
   const reason = error.reason;
-  if (reason._tag === "TransportError" || reason._tag === "InvalidUrlError") {
+  if (isConnectionFailure(error)) {
     return new HubUnreachable({ hubUrl, cause: error });
   }
   // An undeclared status arrives as `DecodeError`, not as `StatusCodeError`.
@@ -113,12 +120,20 @@ export const withHub = <A, E, R>(
     E | HttpClientError.HttpClientError | Schema.SchemaError,
     R
   >
-): Effect.Effect<A, E | HubUnreachable | NotAHub, R | HttpClient.HttpClient> =>
-  makeManagementClient(hubUrl).pipe(
-    Effect.flatMap(use),
-    Effect.mapError((error) =>
-      HttpClientError.isHttpClientError(error) || Schema.isSchemaError(error)
+): Effect.Effect<
+  A,
+  E | InvalidRequest | HubUnreachable | NotAHub,
+  R | HttpClient.HttpClient
+> =>
+  withRequestProgress(
+    makeManagementClient(hubUrl).pipe(Effect.flatMap(use)),
+    (error, sent) => {
+      if (Schema.isSchemaError(error) && !sent) {
+        return invalidManagementInput(error);
+      }
+      return HttpClientError.isHttpClientError(error) ||
+        Schema.isSchemaError(error)
         ? hubFailure(hubUrl, error)
-        : error
-    )
+        : error;
+    }
   );

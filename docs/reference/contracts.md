@@ -88,7 +88,7 @@ All under `/v1`:
 Notes:
 
 - `POST /v1/rooms` is not idempotent. The body is `{ name, password?, defaults? }`.
-- `PUT .../participants/:id` is an idempotent upsert and answers `200` on success. Registering an id that is already in the room updates its profile and keeps its `joinedAt` and its status. The hub checks the version first, then the room, then the password, so a participant on another minor hears "update" even with a wrong password. Another runtime takes ownership when it registers an offline participant. While the tunnel is open, registration only updates the profile. The new runtime takes ownership when it opens its tunnel.
+- `PUT .../participants/:id` is an idempotent upsert and answers `200` on success. Registering an id that is already in the room keeps its `joinedAt` and its status. The registration reply describes the submitted profile and identifies the current owner. The hub checks the version first, then the room, then the password, so a participant on another minor hears "update" even with a wrong password. Another runtime takes ownership when it registers an offline participant. While the tunnel is open, a different runtime’s registration leaves the active profile with its current tunnel. Opening the replacement tunnel activates the profile associated with its bootstrap token.
 - `DELETE .../participants/:id?runtimeId=...` removes the participant only if `runtimeId` matches the owner. The room hears one `participant.removed` with `reason: "left"`. The hub closes the owner's tunnel with code `4002`. A missing or empty `runtimeId` returns `400 INVALID_REQUEST`.
 - The tunnel route is internal: only a participant runtime calls it, with the token its registration returned. A missing, unknown, expired, or spent token, a token of another participant, and a room that does not exist are all `401 TUNNEL_TOKEN_INVALID`. The token is spent before the upgrade, so a request with a valid token and no WebSocket upgrade burns it and gets `400 INVALID_REQUEST`.
 - Any other path under `/v1` answers `404 ROUTE_NOT_FOUND` in the error envelope. The inference plane, outside `/v1`, answers in the OpenAI format.
@@ -163,11 +163,11 @@ The Responses API is preferred; Chat Completions remains for compatibility.
 - **What the hub reads.** The body must be a JSON object with a non-empty `model` string; `stream` may be absent, a boolean, or `null` (`null` is not a stream). Every other field goes to the provider as it came.
 - **Defaults.** Fields the app left out or sent as `null` are filled from the participant's config, then the room defaults (the participant wins). In the Responses API, `max_tokens` fills `max_output_tokens` and `stop` fills `stop_sequences`. The default instructions become a leading `system` message in Chat Completions, unless the app sent one, and fill `instructions` in the Responses API. `model` is replaced by the participant's model.
 - **Responses through Chat Completions.** When the participant's provider has no Responses API, the hub creates the Response through Chat Completions and translates the answer. A request that Chat Completions cannot carry fails with `request_not_translatable`, and such a Response cannot be read back, deleted, or cancelled (`response_not_stored`).
-- **Stored Responses.** The hub remembers which participant created each Response (10 000 per hub by default), so the routes about a stored Response reach that participant whatever it is doing. They change no status and emit no room event.
+- **Stored Responses.** The hub remembers the participant and runtime that created each Response (10 000 per hub by default). Its lifecycle routes reach that runtime even while it is busy. If the participant leaves or another runtime takes its place, the hub answers `response_not_found`. They change no status and emit no room event.
 - **Model list.** `GET .../models` lists the participants that share a model endpoint and are not `offline`. Each `id` is the participant id, which is a model selector, and `gambi` says what stands behind it: `{ nickname, model, endpoint, capabilities, status }`.
 - **Cancellation.** When the app closes the HTTP request, the hub interrupts the call in the tunnel, the participant runtime aborts the request to its provider, and the participant goes back to `online`.
 - **Timeout.** A request that receives no piece of the provider's answer for 5 minutes, before the first piece or between any two, is cancelled the same way and fails with `inference_timeout`.
-- **Streaming.** A streamed answer is pumped from the tunnel as soon as each piece arrives. When more than 8 MiB of it is waiting for the app to read, the hub cancels the request and the stream ends with `consumer_too_slow`. An answer that is not a stream is held whole on the hub, up to 32 MiB, so a failure still has a status and a name.
+- **Streaming.** A streamed answer is pumped from the tunnel as soon as each piece arrives. When more than 8 MiB of it is waiting for the app to read, the hub cancels the request and the stream ends with `consumer_too_slow`. An answer that is not a stream is held whole on the hub, up to 32 MiB, so a failure still has a status and a name. Both limits count UTF-8 bytes.
 
 ### Inference errors
 
@@ -362,8 +362,8 @@ Known limits:
 | Registration and tunnel opening limits | 10 s each | `ParticipantRuntimeOptions` |
 | Bootstrap token lifetime | 60 s, single use | `BOOTSTRAP_TOKEN_TTL` in `packages/core/src/hub/tunnels.ts` |
 | Inference idle timeout | 5 min | `HubOptions.inferenceIdleTimeout` |
-| Unread stream limit | 8 Mi characters | `MAX_PENDING_STREAM_CHARACTERS` in `packages/core/src/hub/inference.ts` |
-| Held non-stream answer limit | 32 Mi characters | `MAX_HELD_RESPONSE_CHARACTERS` |
+| Unread stream limit | 8 MiB | `MAX_PENDING_STREAM_BYTES` in `packages/core/src/hub/inference.ts` |
+| Held non-stream answer limit | 32 MiB | `MAX_HELD_RESPONSE_BYTES` |
 | Stored Responses per hub | 10 000 | `HubOptions.storedResponsesLimit` |
 | Room events held per subscriber | 256 | `ROOM_EVENT_BUFFER` in `packages/core/src/hub/room-events.ts` |
 | Attach events held per client | 1024 | `HubOptions.harnessClientBuffer` |
@@ -387,7 +387,7 @@ Sensitive config is not exposed raw in public management responses. Provider aut
 
 ## SDK management client
 
-`createClient()` from `gambi-sdk` derives from the contract and returns plain values, without the envelope. Every failure of a call to the hub is a `ClientError` (after `client.close()`, a `Promise` method rejects with a plain `Error`, and `events.watch()` or `harness.attach()` throws one at once) with `code`, `status?`, `hint?`, `details`, `requestId?`, and `cause`. `code` is one of the management codes above except `TUNNEL_TOKEN_INVALID` and `ROUTE_NOT_FOUND`, plus two the client finds on its own:
+`createClient()` from `gambi-sdk` derives from the contract and returns plain values, without the envelope. Every failure of a call to the hub is a `ClientError` with `code`, `status?`, `hint?`, `details`, `requestId?`, and `cause`. `code` is one of the management codes above except `TUNNEL_TOKEN_INVALID` and `ROUTE_NOT_FOUND`, plus two the client finds on its own. Closing the client rejects interrupted and subsequent calls with `INVALID_REQUEST`. A new `events.watch()` or `harness.attach()` throws that error immediately.
 
 - `HUB_UNREACHABLE`: nothing answered at the hub URL.
 - `NOT_A_HUB`: something answered outside the contract: another server, a proxy, or a hub of another version. A `ROUTE_NOT_FOUND` arrives as `NOT_A_HUB` with `status: 404`.

@@ -53,6 +53,24 @@ layer(layerHub(), { excludeTestServices: true })("room create", (it) => {
     })
   );
 
+  it.effect("an empty password is invalid command usage", () =>
+    Effect.gen(function* () {
+      const hub = yield* Hub;
+      const result = yield* runCommand([
+        "room",
+        "create",
+        "--name",
+        "Demo",
+        "--password",
+        "",
+        "--hub",
+        hub.url,
+      ]);
+      expect(result.exitCode).toBe(2);
+      expect(JSON.parse(result.stderr).error.name).toBe("InvalidRequest");
+    })
+  );
+
   it.effect("--password protects the room", () =>
     Effect.gen(function* () {
       const hub = yield* Hub;

@@ -140,7 +140,7 @@ Se alguém remover o participante enquanto o runtime espera entre tentativas de 
 
 ## Requisição de streaming termina com `consumer_too_slow`
 
-O app leu uma resposta em streaming devagar demais, e mais de 8 Mi caracteres dela se acumularam no hub. O hub cancela a requisição no participante e encerra o stream com esse erro. Leia o stream conforme ele chega, ou peça uma resposta que não seja stream.
+O app leu uma resposta em streaming devagar demais, e mais de 8 MiB dela se acumularam no hub. O hub cancela a requisição no participante e encerra o stream com esse erro. Leia o stream conforme ele chega, ou peça uma resposta que não seja stream.
 
 ## Requisição falha com `inference_timeout`
 

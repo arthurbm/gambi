@@ -28,6 +28,8 @@ import {
   InternalError,
   InvalidPassword,
   InvalidRequest,
+  invalidManagementInput,
+  isConnectionFailure,
   type ManagementClient,
   makeManagementClient,
   NotAHarnessParticipant,
@@ -38,10 +40,11 @@ import {
   type RegisterParticipant,
   RoomNotFound,
   VersionMismatch,
+  withRequestProgress,
 } from "@gambi/protocol";
-import { Context, Effect, Layer, Schema, SchemaIssue } from "effect";
+import { Context, type Effect, Layer, Schema } from "effect";
 import type { Sse } from "effect/encoding";
-import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http";
+import { FetchHttpClient, HttpClientError } from "effect/http";
 import { ClientError, type ClientErrorCode } from "./client-error.ts";
 import type {
   CreateRoomInput,
@@ -59,32 +62,6 @@ import type {
 } from "./types.ts";
 
 /**
- * Whether the call in progress already sent its request. The derived client
- * fails with the same `SchemaError` for an input it could not encode and for
- * an answer it could not decode; this is what tells them apart. `translated`
- * gives each call its own.
- */
-const RequestProgress = Context.Reference<{ sent: boolean }>(
-  "gambi/sdk/RequestProgress",
-  { defaultValue: () => ({ sent: false }) }
-);
-
-/** `fetch`, marking the call in progress as sent when its request goes out. */
-const FetchThatMarksProgress = Layer.effect(
-  HttpClient.HttpClient,
-  Effect.gen(function* () {
-    const fetch = yield* HttpClient.HttpClient;
-    return fetch.pipe(
-      HttpClient.tapRequest(() =>
-        Effect.gen(function* () {
-          (yield* RequestProgress).sent = true;
-        })
-      )
-    );
-  })
-).pipe(Layer.provide(FetchHttpClient.layer));
-
-/**
  * The management plane of one hub, as a client sees it: the client derived
  * from the contract. It calls the hub with `fetch`, so it runs wherever
  * `fetch` does.
@@ -96,7 +73,7 @@ export class ManagementPlane extends Context.Service<
   /** The management plane of the hub at `hubUrl` (without `/v1`). */
   static readonly layer = (hubUrl: string): Layer.Layer<ManagementPlane> =>
     Layer.effect(ManagementPlane, makeManagementClient(hubUrl)).pipe(
-      Layer.provide(FetchThatMarksProgress)
+      Layer.provide(FetchHttpClient.layer)
     );
 }
 
@@ -188,27 +165,12 @@ export const notAHub = (
     status,
   });
 
-const formatIssues = SchemaIssue.makeFormatterStandardSchemaV1();
-
-/**
- * An input the contract refuses, found before any request was sent. It reads
- * like the `INVALID_REQUEST` a hub would answer, without a status or a
- * request id, and its issue paths start at the input instead of at the part
- * of the request.
- */
 const invalidInput = (failure: Schema.SchemaError): ClientError => {
-  const issues = formatIssues(failure.issue).issues.map((issue) => ({
-    path: (issue.path ?? []).map((segment) => {
-      const key = typeof segment === "object" ? segment.key : segment;
-      return typeof key === "number" ? key : String(key);
-    }),
-    message: issue.message,
-  }));
-  const refused = new InvalidRequest({ issues });
+  const refused = invalidManagementInput(failure);
   return new ClientError({
     cause: failure,
     code: InvalidRequest.code,
-    details: { issues },
+    details: { issues: refused.issues },
     hint: refused.hint,
     message: refused.message,
   });
@@ -227,7 +189,7 @@ const toClientError = (
 ): ClientError => {
   if (HttpClientError.isHttpClientError(failure)) {
     const reason = failure.reason;
-    if (reason._tag === "TransportError" || reason._tag === "InvalidUrlError") {
+    if (isConnectionFailure(failure)) {
       return hubUnreachable(hubUrl, failure);
     }
     // An undeclared status arrives as `DecodeError`, not as `StatusCodeError`.
@@ -256,15 +218,9 @@ export const translated =
   <A, R>(
     call: Effect.Effect<A, ManagementFailure, R>
   ): Effect.Effect<A, ClientError, R> =>
-    Effect.suspend(() => {
-      const progress = { sent: false };
-      return call.pipe(
-        Effect.provideService(RequestProgress, progress),
-        Effect.mapError((failure) =>
-          toClientError(hubUrl, failure, progress.sent)
-        )
-      );
-    });
+    withRequestProgress(call, (failure, sent) =>
+      toClientError(hubUrl, failure, sent)
+    );
 
 /** A failure in the middle of a stream of events the hub was already sending. */
 export const translatedMidStream =

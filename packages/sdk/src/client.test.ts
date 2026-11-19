@@ -586,7 +586,11 @@ layer(layerHub(), { excludeTestServices: true })(
           );
 
           expect((yield* Effect.promise(() => waiting)).done).toBe(true);
-          expect(refused).toEqual(new Error("The client is closed."));
+          expect(refused).toBeInstanceOf(ClientError);
+          expect(refused).toMatchObject({
+            code: "INVALID_REQUEST",
+            message: "The client is closed.",
+          });
           expect(() => client.events.watch(room.code)).toThrow(
             "The client is closed."
           );
@@ -693,9 +697,12 @@ describe("management client: the end of a watch", () => {
       yield* Deferred.await(asked);
       yield* Effect.promise(() => client.close());
 
-      expect(yield* Effect.promise(() => listing)).toEqual(
-        new Error("The client is closed.")
-      );
+      const error = yield* Effect.promise(() => listing);
+      expect(error).toBeInstanceOf(ClientError);
+      expect(error).toMatchObject({
+        code: "INVALID_REQUEST",
+        message: "The client is closed.",
+      });
     })
   );
 });

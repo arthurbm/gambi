@@ -44,6 +44,7 @@ import {
 } from "@gambi/protocol";
 import { Clock, Context, Effect, FiberMap, Layer, Random } from "effect";
 import { HarnessClients } from "./harness-clients.ts";
+import { participantKey } from "./participant-key.ts";
 import { RoomEvents } from "./room-events.ts";
 import { HubSettings } from "./settings.ts";
 
@@ -56,7 +57,15 @@ export type ParticipantProfile = Omit<
   "authHeaders" | "password" | "runtimeId" | "version"
 >;
 
+interface TransitionOptions {
+  readonly profile?: ParticipantProfile;
+  readonly request?: symbol;
+}
+
 interface ParticipantState {
+  readonly activeRequest: symbol | undefined;
+  /** A replacement has claimed ownership and is waiting for the previous tunnel to close. */
+  readonly handingOver: boolean;
   readonly capabilities: ParticipantCapabilities;
   readonly config: RuntimeConfig;
   readonly endpoint: string | undefined;
@@ -80,6 +89,8 @@ interface ParticipantState {
  * stays inside the hub.
  */
 export interface DispatchedParticipant {
+  readonly finish: Effect.Effect<void>;
+  readonly runtimeId: string;
   /** Which inference APIs its provider answers, as the participant registered them. */
   readonly capabilities: ParticipantCapabilities;
   readonly config: RuntimeConfig;
@@ -108,6 +119,16 @@ const UNKNOWN_CAPABILITIES: ParticipantCapabilities = {
   chatCompletions: "unknown",
 };
 
+const profileFields = (profile: ParticipantProfile) => ({
+  nickname: profile.nickname,
+  model: profile.model,
+  endpoint: profile.endpoint,
+  harness: profile.harness,
+  config: profile.config ?? {},
+  specs: profile.specs ?? {},
+  capabilities: profile.capabilities ?? UNKNOWN_CAPABILITIES,
+});
+
 // The instructions text never leaves the hub.
 const toSummary = (participant: ParticipantState): ParticipantSummary => ({
   id: participant.id,
@@ -128,9 +149,28 @@ const toSummary = (participant: ParticipantState): ParticipantSummary => ({
   updatedAt: participant.updatedAt,
 });
 
-// A room code never contains a space, so the pair is unambiguous.
-const keyOf = (roomCode: string, participantId: string) =>
-  `${roomCode} ${participantId}`;
+/** Only the current runtime and the request that acquired busy may finish their work. */
+const acceptsTransition = (
+  participant: ParticipantState,
+  event: StatusEvent,
+  runtimeId?: string,
+  request?: symbol
+) => {
+  if (
+    (event === "left" || event === "tunnelOpened" || runtimeId !== undefined) &&
+    participant.runtimeId !== runtimeId
+  ) {
+    return false;
+  }
+  if (event === "requestDispatched") {
+    return !participant.handingOver;
+  }
+  return (
+    event !== "requestEnded" ||
+    request === undefined ||
+    participant.activeRequest === request
+  );
+};
 
 /** The room event of a change of status: one per row of the status table. */
 const eventOf = (
@@ -209,7 +249,7 @@ export class Participants extends Context.Service<
      * why (`ParticipantIsBusy`, `ParticipantIsOffline`); every other miss is
      * `NoParticipantAvailable`.
      *
-     * The caller owes a `transition(..., "requestEnded")` when the request
+     * The caller runs the dispatched request’s `finish` effect when the request
      * ends, however it ends.
      */
     readonly dispatch: (
@@ -256,7 +296,8 @@ export class Participants extends Context.Service<
       roomCode: string,
       participantId: string,
       event: StatusEvent,
-      runtimeId?: string
+      runtimeId?: string,
+      options?: TransitionOptions
     ) => Effect.Effect<StatusChange | undefined>;
   }
 >()("gambi/core/Participants") {
@@ -289,7 +330,7 @@ export class Participants extends Context.Service<
           Effect.andThen(
             transition(roomCode, participantId, "reconnectDeadlinePassed")
           ),
-          FiberMap.run(deadlines, keyOf(roomCode, participantId)),
+          FiberMap.run(deadlines, participantKey(roomCode, participantId)),
           Effect.asVoid
         );
 
@@ -299,21 +340,18 @@ export class Participants extends Context.Service<
         roomCode: string,
         participantId: string,
         event: StatusEvent,
-        runtimeId?: string
+        runtimeId?: string,
+        options?: TransitionOptions
       ) {
+        const now = yield* Clock.currentTimeMillis;
         const room = roomOf(roomCode);
         const participant = room.get(participantId);
         const to = transitionStatus(participant?.status, event);
         // Only registration brings a participant in, with its profile.
-        if (to === undefined || participant === undefined) {
-          return undefined;
-        }
-        // Leaving and coming online are for the runtime the participant
-        // belongs to. Checked and applied in one step: nothing runs between
-        // this and the change.
         if (
-          (event === "left" || event === "tunnelOpened") &&
-          participant.runtimeId !== runtimeId
+          to === undefined ||
+          participant === undefined ||
+          !acceptsTransition(participant, event, runtimeId, options?.request)
         ) {
           return undefined;
         }
@@ -322,8 +360,13 @@ export class Participants extends Context.Service<
             ? undefined
             : {
                 ...participant,
+                ...(options?.profile && profileFields(options.profile)),
+                activeRequest:
+                  event === "requestDispatched" ? options?.request : undefined,
+                handingOver:
+                  event !== "tunnelOpened" && participant.handingOver,
                 status: to,
-                updatedAt: yield* Clock.currentTimeMillis,
+                updatedAt: now,
               };
         if (after === undefined) {
           room.delete(participantId);
@@ -355,7 +398,10 @@ export class Participants extends Context.Service<
           yield* startDeadline(roomCode, participantId);
         } else if (event !== "reconnectDeadlinePassed") {
           // The deadline that passed is the fiber running this.
-          yield* FiberMap.remove(deadlines, keyOf(roomCode, participantId));
+          yield* FiberMap.remove(
+            deadlines,
+            participantKey(roomCode, participantId)
+          );
         }
         return change;
       });
@@ -367,8 +413,23 @@ export class Participants extends Context.Service<
         runtimeId: string
       ) {
         const room = roomOf(roomCode);
-        const existing = room.get(participantId);
         const now = yield* Clock.currentTimeMillis;
+        const existing = room.get(participantId);
+        if (
+          existing &&
+          existing.status !== "offline" &&
+          (existing.handingOver || existing.runtimeId !== runtimeId)
+        ) {
+          // This registration's profile travels with its bootstrap token.
+          return {
+            participant: toSummary({
+              ...existing,
+              ...profileFields(profile),
+              updatedAt: now,
+            }),
+            generation: existing.generation,
+          };
+        }
         // The table has one row for registration: a new participant starts
         // offline. For one already in the room it changes no status.
         const status =
@@ -380,20 +441,12 @@ export class Participants extends Context.Service<
         }
         const participant: ParticipantState = {
           id: participantId,
-          nickname: profile.nickname,
-          model: profile.model,
-          endpoint: profile.endpoint,
-          harness: profile.harness,
-          config: profile.config ?? {},
-          specs: profile.specs ?? {},
-          capabilities: profile.capabilities ?? UNKNOWN_CAPABILITIES,
+          ...profileFields(profile),
+          handingOver: existing?.handingOver ?? false,
+          activeRequest: existing?.activeRequest,
           status,
           generation: existing?.generation ?? ++generations,
-          // While a tunnel is open the participant is that tunnel's runtime's.
-          runtimeId:
-            existing === undefined || existing.status === "offline"
-              ? runtimeId
-              : existing.runtimeId,
+          runtimeId,
           joinedAt: existing?.joinedAt ?? now,
           updatedAt: now,
         };
@@ -433,7 +486,9 @@ export class Participants extends Context.Service<
         // only by its id, and then hears that from the participant itself.
         const online = [...(room?.values() ?? [])].filter(
           (participant) =>
-            participant.status === "online" && participant.harness === undefined
+            participant.status === "online" &&
+            !participant.handingOver &&
+            participant.harness === undefined
         );
         const sharing = (model: string) =>
           online.find((participant) => participant.model === model);
@@ -449,7 +504,7 @@ export class Participants extends Context.Service<
           return sharing(modelSelector.slice(MODEL_PREFIX.length)) ?? none;
         }
         const named = room?.get(modelSelector);
-        if (named?.status === "online") {
+        if (named?.status === "online" && !named.handingOver) {
           return named;
         }
         const byModel = sharing(modelSelector);
@@ -459,7 +514,7 @@ export class Participants extends Context.Service<
         if (named?.status === "busy") {
           return new ParticipantIsBusy({ roomCode, participantId: named.id });
         }
-        if (named?.status === "offline") {
+        if (named?.status === "offline" || named?.handingOver) {
           return new ParticipantIsOffline({
             roomCode,
             participantId: named.id,
@@ -480,14 +535,27 @@ export class Participants extends Context.Service<
           if (!("status" in picked)) {
             return yield* picked;
           }
+          const request = Symbol("inference request");
           const change = yield* transition(
             roomCode,
             picked.id,
-            "requestDispatched"
+            "requestDispatched",
+            picked.runtimeId,
+            { request }
           );
           if (change !== undefined) {
             return {
+              finish: Effect.asVoid(
+                transition(
+                  roomCode,
+                  picked.id,
+                  "requestEnded",
+                  picked.runtimeId,
+                  { request }
+                )
+              ),
               id: picked.id,
+              runtimeId: picked.runtimeId,
               nickname: picked.nickname,
               model: picked.model,
               config: picked.config,
@@ -521,7 +589,11 @@ export class Participants extends Context.Service<
             ) {
               return false;
             }
-            room.set(participantId, { ...participant, runtimeId });
+            room.set(participantId, {
+              ...participant,
+              runtimeId,
+              handingOver: true,
+            });
             return true;
           }),
         list: (roomCode) =>
