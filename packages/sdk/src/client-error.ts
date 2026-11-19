@@ -13,6 +13,15 @@
  * - `VERSION_MISMATCH`: the participant and the hub are on different minor versions.
  * - `INVALID_REQUEST`: the call does not match the management contract.
  * - `INTERNAL_ERROR`: a bug in the hub.
+ * - `NOT_A_HARNESS_PARTICIPANT`: the participant contributes a model
+ *   endpoint, so there is no harness to attach to.
+ * - `PARTICIPANT_UNREACHABLE`: the participant's tunnel is not open now.
+ * - `HARNESS_FAILED`: the harness did not answer the participant runtime, or
+ *   its process is gone; `details.reason` says which.
+ * - `HARNESS_SESSION_NOT_OPEN`: the message was for a harness session that
+ *   never opened or closed already.
+ * - `HARNESS_SESSION_OUTSIDE_WORKSPACE`: the session was asked to run outside
+ *   the participant's Workspace.
  *
  * Found by the client, with no envelope:
  *
@@ -27,6 +36,11 @@ export type ClientErrorCode =
   | "VERSION_MISMATCH"
   | "INVALID_REQUEST"
   | "INTERNAL_ERROR"
+  | "NOT_A_HARNESS_PARTICIPANT"
+  | "PARTICIPANT_UNREACHABLE"
+  | "HARNESS_FAILED"
+  | "HARNESS_SESSION_NOT_OPEN"
+  | "HARNESS_SESSION_OUTSIDE_WORKSPACE"
   | "HUB_UNREACHABLE"
   | "NOT_A_HUB";
 
@@ -46,7 +60,8 @@ export class ClientError extends Error {
   /**
    * The structured fields of the error: `roomCode` for `ROOM_NOT_FOUND`,
    * `hubVersion` and `participantVersion` for `VERSION_MISMATCH`, `issues`
-   * for `INVALID_REQUEST`, `hubUrl` for the two the client finds.
+   * for `INVALID_REQUEST`, `sessionId` for the two of a harness session,
+   * `hubUrl` for the two the client finds.
    */
   readonly details: Readonly<Record<string, unknown>>;
   /** What the caller can do about it. */

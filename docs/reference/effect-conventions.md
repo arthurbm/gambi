@@ -464,6 +464,12 @@ Known traps:
 |---|---|
 | The entries of the package and how each is built | `packages/sdk/entries.ts` |
 | The `Promise` boundary (`makePromiseBoundary`) | `packages/sdk/src/promise.ts` |
+| What an input loses on its way in (`withoutUndefined`) | `packages/sdk/src/input.ts` |
+| A hub hosted in the consumer's process (`createHub`), entry `gambi-sdk/hub` | `packages/sdk/src/hub.ts` |
+| A participant hosted in the consumer's process, entry `gambi-sdk/participant` | `packages/sdk/src/participant.ts` and the files it exports from |
+| What the two participant sessions share (`joinRoom`: join, `leave`, `stop`, `ended`) | `packages/sdk/src/session.ts` |
+| The Workspace seam in `Promise`, and its way into the runtime (`workspaceLayer`) | `packages/sdk/src/workspace.ts`, `workspace-layer.ts` |
+| The proofs that the public hosting types are the runtime's | `packages/sdk/src/hosting-proofs.ts` |
 | The bridge to the management contract (`ManagementPlane`, `translated`, `ContractProofs`) | `packages/sdk/src/contract.ts` |
 | The management client (`createClient`, `GambiClient`) | `packages/sdk/src/client.ts` |
 | The public types of rooms, participants and events | `packages/sdk/src/types.ts` |
@@ -473,12 +479,19 @@ Known traps:
 Rules:
 
 - A public signature names only `Promise`, `AsyncIterable`, `AbortSignal` and types declared in the SDK. Never `Effect`, `Stream`, `Layer`, a `Schema`, or `typeof X.Type`: the declarations are bundled with `effect` left as an import, so any of these would make the published `.d.ts` import a package the consumer does not have.
-- A public type that mirrors a schema is an interface written by hand in `types.ts`, with no import, plus one line in `ContractProofs` (`contract.ts`). The line stops compiling when the schema and the type drift apart.
+- A public type that mirrors a schema is an interface written by hand in `types.ts`, with no import, plus one line in `ContractProofs` (`contract.ts`). The line stops compiling when the schema and the type drift apart. A public type of a hosting entry that mirrors a type of the core gets its line in `hosting-proofs.ts`.
+- A file that declares a public type exports nothing that names a type of Effect or of `@gambi/*`. The declarations of an entry are bundled from every file its types reach, and each of those files is emitted whole: one internal export there (a `Layer`, a function that takes an `Effect`) fails the build with TS2742 or leaks an import of `effect`. Internal machinery lives in its own file (`session.ts`, `hosting.ts`, `participant-failure.ts`, `workspace-layer.ts`), which a public file imports for its values only.
+- Every `Promise` boundary passes its input through `withoutUndefined`: a key that holds `undefined` is a field not given. The contract uses `Schema.optionalKey` and would refuse it, and a consumer's form produces such keys all the time.
 - The SDK exports functions, error classes and types. It never exports a schema value or a service.
 - Each thing a consumer creates (a client, a hosted hub, a hosted participant) owns one `ManagedRuntime`, through `makePromiseBoundary(layer, what)`. An Effect leaves through `run`, a `Stream` through `iterate`, and `close` releases the layer. Nothing else in the SDK calls `Effect.runPromise`.
 - Translate the failure before the boundary: `run` and `iterate` hand the failure to the consumer as it is, so the Effect must already fail with the public error.
 - A stream leaves as an `AsyncIterable`, pulled one element at a time. It takes an optional `signal`, ends without an error when the signal aborts or the object is closed, and is interrupted when the consumer leaves the loop.
 - The management client rejects only with `ClientError`. Its `code` is a closed union: the codes of the contract, plus `HUB_UNREACHABLE` and `NOT_A_HUB`, which the client finds by itself.
+- Each entry has its own error class (`ClientError`, `HubError`, `ParticipantError`), never one class shared by name: an entry embeds its own copy of everything, so the "same" class of two entries would fail `instanceof` across them.
+- Nothing crosses from one entry to another but plain JSON and `Promise`s. Each entry is one file with its own copy of `effect`: a `Layer`, an `Effect` or a schema of one entry means nothing to another.
+- A hosting entry never logs by itself. The log lines of what it hosts go to the `onLog` of its options, as plain JSON, or nowhere: stdout belongs to the program that hosts.
+- A callback of the consumer's (`onLifecycle`, `onArtifact`, `onLog`) is called through `calling` (`hosting.ts`) and never awaited. It may throw, and it may be `async` and reject later; either way nothing hosted fails for it, and the failure of the first two becomes an `ERROR` line for `onLog`. Awaiting it would deadlock a callback that stops its own session.
+- A hosting entry is Bun only and says so: its first import is `./bun-only.ts`, which throws in any other runtime before a missing built-in can fail in a stranger way.
 
 To cover another group of the contract in the client:
 
@@ -487,9 +500,19 @@ To cover another group of the contract in the client:
 3. Add the group to `GambiClient` and implement each method in `createClient` as a `call((management) => management.<group>.<endpoint>(...))`. An endpoint that streams events follows `events.watch`: `boundary.iterate` over the `Effect` of a `Stream`.
 4. Use the new methods and types in the consumer file of `check-packed-types.ts`.
 
-To add an entry (`gambi-sdk/<name>`): a line in `entries.ts`, an `exports` entry in `packages/sdk/package.json` and a line in `RUNTIME_EXPORTS` of `check-packed-types.ts`. Each entry is built on its own, as one file, so importing one never loads another. `runsOn` says what its JavaScript may import: `anywhere` (no built-in module of Node or Bun; the default entry), `node` (Node's built-ins) or `bun`. An entry that hosts something imports `@effect/platform-bun` and is `bun`.
+To add an entry (`gambi-sdk/<name>`): a line in `entries.ts`, an `exports` entry in `packages/sdk/package.json`, a line in `RUNTIME_EXPORTS` of `check-packed-types.ts`, and a line of `paths` in the `tsconfig.json` of each workspace that imports it (`apps/tui`). Each entry is built on its own, as one file, so importing one never loads another. `runsOn` says what its JavaScript may import: `anywhere` (no built-in module of Node or Bun; the default entry), `node` (Node's built-ins) or `bun`. An entry that hosts something imports `@effect/platform-bun` and is `bun`.
 
-Tests of the SDK call the `Promise` API against a real hub (`layerHub`), inside `it.effect` with `Effect.promise`. Something that is not a hub is a real `Bun.serve` on port `0`. Never replace `fetch`. `packages/sdk/src/node.test.ts` builds the default entry and runs it in a Node process; `bun run --cwd packages/sdk build && bun run --cwd packages/sdk check:packed-types` checks the package as a consumer installs it.
+To host something new in the consumer's process, build it on `host` (`hosting.ts`): the layer of the thing, already failing with the entry's public error (`failingWith`), behind one `makePromiseBoundary`. A participant session is built on `joinRoom` (`session.ts`), which adds the lifecycle, `leave`, `stop` and `ended`.
+
+A participant session leaves a room in one of two orders, and the order is part of what it promises. A session that shares a model endpoint tells the hub first and stops its runtime after, so the room hears one event (`participant.removed`). A harness participant session stops its runtime first, because its last artifact goes up through the tunnel that leaving would close, and tells the hub after. A session whose runtime was `replaced` tells the hub nothing: the participant with that id in the room is another runtime. After any other end (`refused`, `tunnelDropped`) the participant in the room is still this one, `offline`, and leaving takes it out.
+
+A runtime that ended by itself holds nothing worth keeping, so the session releases what it hosted (the harness, the Workspace) and only then settles `ended`. While a session leaves, a drop of its tunnel is the hub closing the tunnel of the participant it took out: the runtime is released at its `reconnecting`, before it registers again, and a `tunnelDropped` end is reported as `stopped`. A session that leaves while its runtime is already waiting to come back stops the runtime first and tells the hub after, whatever its order. Both are started from the lifecycle callback and run after it returned (`queueMicrotask`): releasing waits for the fiber the callback runs in.
+
+A Workspace of the consumer's is watched as soon as it is prepared, before the harness starts, like the default one (`workspace-layer.ts`): a change is never missed for having come before the artifacts started to be taken.
+
+The `fake` harness is a subprocess, and the participant entry runs it from its own file (`fake-harness.ts`: `bun -e 'import("<this file>").then(...)'`). That only works when the entry is loaded as the SDK ships it or from its source. Bundled into another program, loading "this file" in a subprocess would run that program again, so the session refuses and asks for `fakeAgentCommand`.
+
+Tests of the SDK call the `Promise` API against a real hub (`layerHub`), inside `it.effect` with `Effect.promise`. Something that is not a hub is a real `Bun.serve` on port `0`. Never replace `fetch`. A harness participant is tested on the `fake` harness, as a real subprocess. `packages/sdk/src/node.test.ts` builds the default entry and runs it in a Node process; `bun run --cwd packages/sdk build && bun run --cwd packages/sdk check:packed-types` checks the package as a consumer installs it: every entry in its runtime, the default entry with the files of the others taken away, and a Bun program that hosts a hub and both kinds of participant.
 
 ## The TUI
 
@@ -500,18 +523,18 @@ Tests of the SDK call the `Promise` API against a real hub (`layerHub`), inside 
 | The management client of a hub (`hubClient`) | `apps/tui/src/hub-client.ts` |
 | The watched rooms and their reconnection (`watchRooms`, `applyRoomEvent`) | `apps/tui/src/rooms/` |
 | The TUI's own participant session (`joinAsParticipant`, `leaveAsParticipant`) | `apps/tui/src/session/participant-session.ts` |
-| A hub hosted in the TUI's process (`hostHub`) | `apps/tui/src/hosting/hub.ts` |
-| A participant hosted in the TUI's process (`hostParticipant`, `probeProvider`) | `apps/tui/src/hosting/participant.ts` |
+| The hub hosted in the TUI's process (`createHub` of `gambi-sdk/hub`) | `apps/tui/src/store/hub-store.ts` |
+| The participant hosted in the TUI's process (`createParticipantSession`, `probeProvider` of `gambi-sdk/participant`) | `apps/tui/src/session/participant-session.ts`, `apps/tui/src/hooks/queries/use-endpoint-test-query.ts` |
 
 Rules:
 
 - The TUI reaches a hub through `createClient` of `gambi-sdk` and nothing else. It has no `fetch` to a hub, no SSE parser and no schema of a hub answer; its types of rooms, participants and events are the ones `gambi-sdk` exports.
-- `gambi-sdk` is imported from its source, through `paths` in `apps/tui/tsconfig.json`: the package's `exports` point at `dist/`, which only exists after a build. The TUI's own build embeds it, like `@gambi/core`.
-- Only `apps/tui/src/hosting/` imports `effect`, `@effect/platform-bun` and `@gambi/core`. Each thing hosted there owns one `ManagedRuntime` and hands out plain values, `Promise`s and callbacks. These two files stand where the hosting entries of `gambi-sdk` will.
-- A hosted hub or runtime gets `Logger.layer([])`: a log line on the terminal would be drawn over the screen.
+- `gambi-sdk` is imported from its source, through `paths` in `apps/tui/tsconfig.json`, one line per entry: the package's `exports` point at `dist/`, which only exists after a build. The TUI's own build embeds it.
+- The TUI hosts its hub and its participant through `gambi-sdk/hub` and `gambi-sdk/participant`. No file of the TUI but its tests imports `effect`, `@effect/platform-bun` or `@gambi/core`.
+- A hosted hub or session gets no `onLog`: a log line on the terminal would be drawn over the screen.
 - Logic lives in plain modules (`watchRooms`, the session, the stores); a hook only subscribes to one. The tests run those modules against a real hub (`layerHub`), inside `it.effect` with `Effect.promise`, and wait for what a store or a watcher shows. Never replace `fetch`.
 - A room whose event stream ends is watched again, whether the stream failed or just ended. The `room.snapshot` of the next stream realigns it.
-- A runtime that ended by itself (`left`) is released without telling the hub: after `replaced`, the participant with that id in the room is another runtime.
+- A runtime that ended by itself (`left`) is released with `stop`, without telling the hub: after `replaced`, the participant with that id in the room is another runtime.
 
 ## The CLI
 

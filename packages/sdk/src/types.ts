@@ -1,6 +1,7 @@
 /**
- * The public types of the management plane: rooms, participants and room
- * events, as a hub answers them.
+ * The public types of the management plane: rooms, participants, room
+ * events and what a client attached to a harness participant reads and
+ * sends, as a hub answers them.
  *
  * They are written by hand, with no import, so the published declarations
  * never reach for a package the consumer does not have. `contract.ts` proves
@@ -81,11 +82,28 @@ export interface ParticipantCapabilities {
   readonly openResponses: ProtocolSupport;
 }
 
+/**
+ * The harnesses a participant can contribute. `fake` is the deterministic
+ * test harness, which calls no model.
+ */
+export type HarnessId = "opencode" | "claude-code" | "codex" | "fake";
+
+/** What a harness participant says about its harness when it registers. */
+export interface HarnessProfile {
+  /** `true` when the room host runs this harness for someone who brought none. */
+  readonly hosted?: boolean;
+  readonly id: HarnessId;
+  /** The model the harness runs on, when the participant chose to say. */
+  readonly model?: string;
+}
+
 export interface ParticipantSummary {
   readonly capabilities: ParticipantCapabilities;
   readonly config: RuntimeConfigPublic;
   /** The provider endpoint on the participant's machine. The hub never calls it. */
   readonly endpoint?: string;
+  /** Present on a harness participant: the harness it contributes instead of a model endpoint. */
+  readonly harness?: HarnessProfile;
   /** The stable id the participant picked for itself. */
   readonly id: string;
   /** Milliseconds since the epoch. Kept across re-registrations. */
@@ -107,6 +125,8 @@ export interface RegisterParticipantInput {
   readonly capabilities?: ParticipantCapabilities;
   readonly config?: RuntimeConfig;
   readonly endpoint?: string;
+  /** The harness this participant contributes, which makes it a harness participant. */
+  readonly harness?: HarnessProfile;
   readonly model: string;
   readonly nickname: string;
   /** The room password, when the room has one. */
@@ -285,3 +305,117 @@ export type RoomEvent =
   | LlmRequest
   | LlmComplete
   | LlmError;
+
+/**
+ * One ACP v1 message: a JSON-RPC 2.0 object. The hub and the participant
+ * runtime relay it as it is; what it means is between the client and the
+ * harness.
+ */
+export type AcpMessage = Readonly<Record<string, unknown>>;
+
+/** An ACP message the harness wrote, for the clients of one harness session. */
+export interface HarnessMessage {
+  readonly message: AcpMessage;
+  readonly sessionId: string;
+  readonly type: "harness.message";
+}
+
+/**
+ * A harness session changed: it opened, it closed, or something about it
+ * failed (`message` says what).
+ */
+export interface HarnessSessionStatus {
+  readonly message?: string;
+  readonly sessionId: string;
+  readonly status: "opened" | "closed" | "error";
+  readonly type: "harness.session";
+}
+
+/**
+ * One file of an artifact: its path inside the Workspace, with `/` between
+ * the segments on every platform, and its whole content. A file that is
+ * valid UTF-8 travels as it is (`utf8`); any other travels in `base64`.
+ */
+export interface ArtifactFile {
+  readonly content: string;
+  readonly encoding: "utf8" | "base64";
+  readonly path: string;
+}
+
+/**
+ * An artifact: the files of the participant's Workspace at one moment. It is
+ * a whole snapshot, never a difference, so each one replaces the one before:
+ * a file that is not in `files` is not in the Workspace any more. `version`
+ * counts the artifacts of one participant runtime from 1, and may skip.
+ *
+ * `reason` says why it was taken: `watch` when the Workspace changed and
+ * then stayed still, `final` when the participant runtime was closing.
+ */
+export interface HarnessArtifact {
+  readonly files: readonly ArtifactFile[];
+  readonly reason: "watch" | "final";
+  /** The harness session the participant runtime opened at start. */
+  readonly sessionId: string;
+  readonly type: "harness.artifact";
+  readonly version: number;
+}
+
+/** The hub is receiving the harness participant's events: its tunnel is open. */
+export interface HarnessConnected {
+  readonly type: "harness.connected";
+}
+
+/**
+ * The hub is not receiving the harness participant's events. `reason` names
+ * why: `NoTunnel` when the participant has no open tunnel yet, otherwise the
+ * error that ended the stream. The client stays attached and hears
+ * `harness.connected` when the participant is back.
+ */
+export interface HarnessDisconnected {
+  readonly message?: string;
+  readonly reason: string;
+  readonly type: "harness.disconnected";
+}
+
+/**
+ * This client read too slowly: the hub dropped the `count` oldest events it
+ * was holding for it, at this point of the stream.
+ */
+export interface HarnessEventsDropped {
+  readonly count: number;
+  readonly type: "harness.dropped";
+}
+
+/**
+ * The participant is out of the room, so the client is detached: this is the
+ * last event of its stream.
+ */
+export interface HarnessDetached {
+  readonly reason: RemovalReason;
+  readonly type: "harness.detached";
+}
+
+/**
+ * Everything a client attached to a harness participant reads, told apart by
+ * `type`: what the harness says, plus what the hub has to say about the
+ * stream itself.
+ */
+export type HarnessAttachEvent =
+  | HarnessMessage
+  | HarnessSessionStatus
+  | HarnessArtifact
+  | HarnessConnected
+  | HarnessDisconnected
+  | HarnessEventsDropped
+  | HarnessDetached;
+
+/** Where a harness session a client opens runs. */
+export interface OpenHarnessSessionInput {
+  /** A folder inside the participant's Workspace. Default: the Workspace itself. */
+  readonly cwd?: string;
+}
+
+/** The harness session a call was about. */
+export interface HarnessSessionRef {
+  readonly sessionId: string;
+}

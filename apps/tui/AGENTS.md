@@ -11,7 +11,7 @@ Interactive terminal interface for Gambi using OpenTUI (React reconciler for ter
 | Server State | TanStack Query | Calls of the client, caching, background refetch |
 | Client State | Zustand | Navigation, session, hub URL |
 | Real-time | `client.events.watch` | Live room updates |
-| Hosting | `@gambi/core` behind a `Promise` boundary | The hub and the participant runtime the TUI runs in its own process |
+| Hosting | `createHub` from `gambi-sdk/hub`, `createParticipantSession` from `gambi-sdk/participant` | The hub and the participant runtime the TUI runs in its own process |
 | Validation | Zod | Local form validation only |
 
 ## Directory Structure
@@ -27,9 +27,6 @@ src/
 │   └── watch-rooms.ts  # watchRooms: watched rooms, with reconnection
 ├── session/
 │   └── participant-session.ts  # join, follow the runtime, leave
-├── hosting/            # The only files that import Effect and @gambi/core
-│   ├── hub.ts          # hostHub: a hub in this process
-│   └── participant.ts  # hostParticipant, probeProvider
 ├── screens/            # Full-page views
 ├── components/         # Reusable UI pieces
 ├── hooks/              # Thin React wrappers over the modules above
@@ -44,8 +41,9 @@ src/
 
 Read the section "The TUI" of [`docs/reference/effect-conventions.md`](../../docs/reference/effect-conventions.md) first.
 
-- Every call to a hub goes through `hubClient(hubUrl)` (`src/hub-client.ts`), the management client of `gambi-sdk`. Never call `fetch` on a hub, never read an event stream by hand, never declare the shape of a hub answer: the types come from `gambi-sdk` (re-exported in `types.ts`). The one exception to `hubClient` is `leave` in `hosting/participant.ts`: it creates a client of its own, because closing a client is the only way to take back a request the hub is not answering.
-- The client refuses a field that is present with the value `undefined`. A form that leaves an optional field empty passes its data through `definedFields`.
+- Every call to a hub goes through `hubClient(hubUrl)` (`src/hub-client.ts`), the management client of `gambi-sdk`. Never call `fetch` on a hub, never read an event stream by hand, never declare the shape of a hub answer: the types come from `gambi-sdk` (re-exported in `types.ts`).
+- The hub and the participant the TUI hosts come from the hosting entries of `gambi-sdk` (`gambi-sdk/hub` in `store/hub-store.ts`, `gambi-sdk/participant` in `session/participant-session.ts` and in the endpoint test). No file of the TUI imports `effect` or `@gambi/core` outside its tests.
+- A form leaves an empty optional field as `undefined`. The client and the hosting entries take that for a field not given, so the forms pass their data as it is.
 - A participant has one status, `online`, `busy` or `offline`, and the hub is its only source. Do not derive it from anything else (there is no heartbeat and no `connection` field).
 - React stays out of the logic. `watchRooms`, `joinAsParticipant` and the hub store are plain modules; the hooks only subscribe to them. That is what lets the tests run them against a real hub.
 
@@ -298,7 +296,6 @@ The tests run the plain modules against a real hub on a free port (`layerHub` fr
 | `rooms/room-state.test.ts` | `applyRoomEvent`, one event at a time |
 | `store/hub-store.test.ts` | The hub the TUI hosts: start, stop, a port in use |
 | `session/participant-session.test.ts` | Join, leave, a hub that goes away, a replaced session |
-| `hosting/participant.test.ts` | Probing the local provider |
 | `hub-client.test.ts` | The client per hub; a form with empty optional fields |
 | `components/participant-card.test.tsx` | What a participant card shows, rendered with `testRender` |
 | `store/session-store.test.ts`, `types.test.ts` | State transitions, local schemas |

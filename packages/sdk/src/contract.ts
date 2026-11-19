@@ -12,6 +12,8 @@
  * Internal: nothing here is exported from an entry of the SDK.
  */
 import {
+  type HarnessAttachEvent as ContractHarnessAttachEvent,
+  type HarnessSessionRef as ContractHarnessSessionRef,
   type ParticipantLeft as ContractParticipantLeft,
   type ParticipantRegistered as ContractParticipantRegistered,
   type ParticipantSummary as ContractParticipantSummary,
@@ -19,13 +21,19 @@ import {
   type RoomEvent as ContractRoomEvent,
   type RoomSummary as ContractRoomSummary,
   type CreateRoom,
+  HarnessFailed,
+  HarnessSessionNotOpen,
+  HarnessSessionOutsideWorkspace,
   type Health,
   InternalError,
   InvalidPassword,
   InvalidRequest,
   type ManagementClient,
   makeManagementClient,
+  NotAHarnessParticipant,
+  type OpenHarnessSession,
   ParticipantNotFound,
+  ParticipantUnreachable,
   type RegisterParticipant,
   RoomNotFound,
   VersionMismatch,
@@ -36,7 +44,10 @@ import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http";
 import { ClientError, type ClientErrorCode } from "./client-error.ts";
 import type {
   CreateRoomInput,
+  HarnessAttachEvent,
+  HarnessSessionRef,
   HubHealth,
+  OpenHarnessSessionInput,
   ParticipantLeft,
   ParticipantRegistered,
   ParticipantSummary,
@@ -94,10 +105,15 @@ export class ManagementPlane extends Context.Service<
  * here and its code is in `ClientErrorCode`.
  */
 const hubErrors = {
+  HarnessFailed,
+  HarnessSessionNotOpen,
+  HarnessSessionOutsideWorkspace,
   InternalError,
   InvalidPassword,
   InvalidRequest,
+  NotAHarnessParticipant,
   ParticipantNotFound,
+  ParticipantUnreachable,
   RoomNotFound,
   VersionMismatch,
 };
@@ -130,7 +146,7 @@ const fromHubError = (error: HubError): ClientError => {
   return new ClientError({
     code,
     details: detailsOf(error),
-    hint: error.hint,
+    hint: "hint" in error ? error.hint : undefined,
     message: error.message,
     requestId: error.requestId,
     status: errorClass.status,
@@ -246,14 +262,23 @@ export const translatedMidStream =
   (failure: ManagementFailure): ClientError =>
     toClientError(hubUrl, failure, true);
 
-/** `true` only when `Public` and `Contract` are assignable to each other. */
-type Same<Public, Contract> = [Public] extends [Contract]
+/**
+ * `true` only when `Public` and `Contract` are assignable to each other and
+ * name the same keys. The keys are compared too because an optional key that
+ * one side lacks leaves the two assignable: that is how `harness` once went
+ * missing from the public `ParticipantSummary` without a line failing.
+ */
+export type Same<Public, Contract> = [Public] extends [Contract]
   ? [Contract] extends [Public]
-    ? true
+    ? [keyof Public] extends [keyof Contract]
+      ? [keyof Contract] extends [keyof Public]
+        ? true
+        : false
+      : false
     : false
   : false;
 
-type Assert<Proof extends true> = Proof;
+export type Assert<Proof extends true> = Proof;
 
 /**
  * One line per public type that mirrors a schema of the contract. When the
@@ -275,4 +300,7 @@ export type ContractProofs = [
   Assert<Same<ParticipantRegistered, ContractParticipantRegistered>>,
   Assert<Same<ParticipantLeft, ContractParticipantLeft>>,
   Assert<Same<RoomEvent, ContractRoomEvent>>,
+  Assert<Same<HarnessAttachEvent, ContractHarnessAttachEvent>>,
+  Assert<Same<OpenHarnessSessionInput, OpenHarnessSession>>,
+  Assert<Same<HarnessSessionRef, ContractHarnessSessionRef>>,
 ];

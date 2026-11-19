@@ -3,7 +3,9 @@
  * runs in Node and in Bun: it reaches a hub with `fetch`, imports no built-in
  * module, and brings no server, no socket and nothing of Bun.
  *
- * Other entries: `gambi-sdk/discovery` finds hubs on the local network.
+ * Other entries: `gambi-sdk/discovery` finds hubs on the local network;
+ * `gambi-sdk/hub` and `gambi-sdk/participant` host a hub and a participant in
+ * this process, in Bun only. Importing this entry loads none of them.
  *
  * It exports functions, one error class and types. No schema value and no
  * Effect type leaves this package.

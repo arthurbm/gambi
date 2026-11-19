@@ -148,6 +148,39 @@ layer(layerHub(), { excludeTestServices: true })("management client", (it) => {
     })
   );
 
+  it.effect("a field left undefined is a field not given", () =>
+    Effect.gen(function* () {
+      const client = yield* hubClient;
+
+      // What a form sends for the optional fields left empty.
+      const { room } = yield* Effect.promise(() =>
+        client.rooms.create({
+          name: "Frevo",
+          password: undefined,
+          defaults: { temperature: 0.2, seed: undefined },
+        })
+      );
+      const registered = yield* Effect.promise(() =>
+        client.participants.register(room.code, "arthur-1", {
+          nickname: "Arthur",
+          model: "llama3",
+          endpoint: undefined,
+          password: undefined,
+          specs: { gpu: undefined, ram: 32 },
+          config: undefined,
+          version: undefined,
+        })
+      );
+
+      expect(room.passwordProtected).toBe(false);
+      expect(room.defaults).toEqual({
+        hasInstructions: false,
+        temperature: 0.2,
+      });
+      expect(registered.participant.specs).toEqual({ ram: 32 });
+    })
+  );
+
   it.effect("lists the rooms without what stays in the hub", () =>
     Effect.gen(function* () {
       const client = yield* hubClient;

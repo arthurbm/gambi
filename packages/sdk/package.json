@@ -35,6 +35,14 @@
     "./discovery": {
       "types": "./dist/discovery.d.ts",
       "default": "./dist/discovery.js"
+    },
+    "./hub": {
+      "types": "./dist/hub.d.ts",
+      "default": "./dist/hub.js"
+    },
+    "./participant": {
+      "types": "./dist/participant.d.ts",
+      "default": "./dist/participant.js"
     }
   },
   "files": [

@@ -44,6 +44,18 @@ export const entries: readonly Entry[] = [
     runsOn: "node",
     source: "src/discovery.ts",
   },
+  {
+    exportPath: "./hub",
+    name: "hub",
+    runsOn: "bun",
+    source: "src/hub.ts",
+  },
+  {
+    exportPath: "./participant",
+    name: "participant",
+    runsOn: "bun",
+    source: "src/participant.ts",
+  },
 ];
 
 /**

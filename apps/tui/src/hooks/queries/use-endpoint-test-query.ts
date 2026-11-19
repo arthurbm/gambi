@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   type ParticipantAuthHeaders,
   probeProvider,
-} from "../../hosting/participant";
+} from "gambi-sdk/participant";
 import type { ParticipantCapabilities } from "../../types";
 
 interface EndpointTestResult {

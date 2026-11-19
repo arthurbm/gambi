@@ -1,5 +1,5 @@
+import { createHub, type HostedHub } from "gambi-sdk/hub";
 import { create } from "zustand";
-import { type HostedHub, hostHub } from "../hosting/hub";
 
 export type HubStatus =
   | "stopped"
@@ -66,7 +66,8 @@ export const useHubStore = create<HubState>((set, get) => ({
       mdns: options?.mdns ?? get().mdns,
     };
 
-    const thisStart = hostHub(config).then(
+    // The hub's log lines go nowhere: the terminal belongs to the TUI.
+    const thisStart = createHub(config).then(
       (hub) => {
         hubInstance = hub;
         set({
@@ -104,7 +105,7 @@ export const useHubStore = create<HubState>((set, get) => ({
     set({ status: "stopping" });
 
     try {
-      await hub.stop();
+      await hub.close();
       set({
         status: "stopped",
         url: null,
