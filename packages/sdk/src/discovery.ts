@@ -3,8 +3,11 @@
  * and the management plane. It is an entry of its own because mDNS opens UDP
  * sockets, which the default entry must not bring.
  */
+import { type ManagementClient, makeManagementClient } from "@gambi/protocol";
 import type { Service } from "bonjour-service";
 import BonjourDefault, { Bonjour as BonjourNamed } from "bonjour-service";
+import { Effect } from "effect";
+import { FetchHttpClient } from "effect/http";
 import type { RoomSummary } from "./types.ts";
 
 const DEFAULT_HUB_NAME = "Configured hub";
@@ -61,17 +64,6 @@ function browseMdns(
 type BrowseServicesLike = (
   callback: (service: DiscoveredService) => void
 ) => (() => void | Promise<void>) | void | Promise<void>;
-
-interface HealthResponse {
-  data: {
-    status: string;
-    timestamp: number;
-  };
-}
-
-interface ListRoomsResponse {
-  data: RoomSummary[];
-}
 
 export interface DiscoveredHub {
   addresses: string[];
@@ -175,38 +167,19 @@ function getHubCandidateUrls(service: DiscoveredService): string[] {
   );
 }
 
-async function fetchHubHealth(
+/** Probe candidates through the same validated contract used for management. */
+const probeHub = <A, E>(
   hubUrl: string,
-  fetchFn: FetchLike
-): Promise<HealthResponse | null> {
-  try {
-    const response = await fetchFn(`${hubUrl}/v1/health`);
-    if (!response.ok) {
-      return null;
-    }
-
-    return (await response.json()) as HealthResponse;
-  } catch {
-    return null;
-  }
-}
-
-async function fetchRoomsFromHub(
-  hubUrl: string,
-  fetchFn: FetchLike
-): Promise<RoomSummary[] | null> {
-  try {
-    const response = await fetchFn(`${hubUrl}/v1/rooms`);
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = (await response.json()) as ListRoomsResponse;
-    return Array.isArray(data.data) ? data.data : [];
-  } catch {
-    return null;
-  }
-}
+  fetchFn: FetchLike,
+  operation: (client: ManagementClient) => Effect.Effect<A, E>
+) =>
+  makeManagementClient(hubUrl).pipe(
+    Effect.flatMap(operation),
+    Effect.provide(FetchHttpClient.layer),
+    Effect.provideService(FetchHttpClient.Fetch, fetchFn as typeof fetch),
+    Effect.match({ onFailure: () => null, onSuccess: (value) => value }),
+    Effect.runPromise
+  );
 
 async function discoverRoomsFromHubs(
   hubs: DiscoveredHub[],
@@ -215,7 +188,9 @@ async function discoverRoomsFromHubs(
   const rooms = new Map<string, DiscoveredRoom>();
 
   for (const hub of hubs) {
-    const discoveredRooms = await fetchRoomsFromHub(hub.hubUrl, fetchFn);
+    const discoveredRooms = await probeHub(hub.hubUrl, fetchFn, (client) =>
+      client.rooms.list()
+    );
     if (!discoveredRooms) {
       continue;
     }
@@ -250,7 +225,9 @@ async function resolveHub(
   fetchFn: FetchLike
 ): Promise<DiscoveredHub | null> {
   for (const hubUrl of urls) {
-    const health = await fetchHubHealth(hubUrl, fetchFn);
+    const health = await probeHub(hubUrl, fetchFn, (client) =>
+      client.hub.health()
+    );
     if (!health) {
       continue;
     }

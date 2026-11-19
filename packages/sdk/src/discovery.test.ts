@@ -21,6 +21,7 @@ const alphaRoom = {
   code: "ABC123",
   name: "Alpha",
   hostId: "host-alpha",
+  passwordProtected: false,
   createdAt: 1,
   participantCount: 2,
 };
@@ -30,6 +31,7 @@ const betaRoom = {
   code: "XYZ999",
   name: "Beta",
   hostId: "host-beta",
+  passwordProtected: false,
   createdAt: 2,
   participantCount: 1,
 };
@@ -45,6 +47,25 @@ function createBrowseServices(services: DiscoveredService[]) {
 }
 
 describe("SDK discovery", () => {
+  test("a server returning unrelated JSON is omitted from discovered hubs", async () => {
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => Response.json({ healthy: true }),
+    });
+    try {
+      expect(
+        await discoverHubs({
+          hubUrl: server.url.href,
+          browseServices: () => {
+            throw new Error("no mDNS");
+          },
+        })
+      ).toEqual([]);
+    } finally {
+      await server.stop(true);
+    }
+  });
   test("does not wait for the mDNS timeout when browsing throws", async () => {
     const startedAt = performance.now();
 
