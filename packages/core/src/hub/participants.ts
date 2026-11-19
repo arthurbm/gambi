@@ -15,7 +15,9 @@
  * A participant belongs to one participant runtime (`runtimeId`): the one
  * whose tunnel is open, or, while none is open, the one that registered
  * last. Leaving is for that runtime alone, so that a removal that arrives
- * late never takes out another runtime that joined with the same id.
+ * late never takes out another runtime that joined with the same id. It
+ * changes hands inside `transition` and `register`, in the same step as the
+ * status, so there is no moment in which it is the wrong runtime's.
  *
  * The service does not know rooms: the caller answers for the room existing.
  * `Rooms` reads `count` for its summaries.
@@ -59,6 +61,8 @@ interface ParticipantState {
   readonly joinedAt: number;
   readonly model: string;
   readonly nickname: string;
+  /** The participant runtime that registered last. */
+  readonly registeredBy: string;
   /** The participant runtime the participant belongs to. */
   readonly runtimeId: string;
   readonly specs: NonNullable<ParticipantProfile["specs"]>;
@@ -123,6 +127,23 @@ const toSummary = (participant: ParticipantState): ParticipantSummary => ({
 // A room code never contains a space, so the pair is unambiguous.
 const keyOf = (roomCode: string, participantId: string) =>
   `${roomCode} ${participantId}`;
+
+/**
+ * The runtime a participant belongs to after `event`: the one whose tunnel
+ * opened, and, once the open tunnel drops, the one that registered last.
+ */
+const runtimeAfter = (
+  participant: ParticipantState,
+  event: StatusEvent,
+  runtimeId: string | undefined
+): string => {
+  if (event === "tunnelOpened") {
+    return runtimeId ?? participant.runtimeId;
+  }
+  return event === "tunnelDropped"
+    ? participant.registeredBy
+    : participant.runtimeId;
+};
 
 /** The room event of a change of status: one per row of the status table. */
 const eventOf = (
@@ -280,11 +301,7 @@ export class Participants extends Context.Service<
             : {
                 ...participant,
                 status: to,
-                // The runtime whose tunnel opened holds the participant now.
-                runtimeId:
-                  event === "tunnelOpened" && runtimeId !== undefined
-                    ? runtimeId
-                    : participant.runtimeId,
+                runtimeId: runtimeAfter(participant, event, runtimeId),
                 updatedAt: yield* Clock.currentTimeMillis,
               };
         if (after === undefined) {
@@ -350,6 +367,7 @@ export class Participants extends Context.Service<
           specs: profile.specs ?? {},
           capabilities: profile.capabilities ?? UNKNOWN_CAPABILITIES,
           status,
+          registeredBy: runtimeId,
           // While a tunnel is open the participant is that tunnel's runtime's.
           runtimeId:
             existing === undefined || existing.status === "offline"

@@ -395,6 +395,54 @@ it.effect(
     }).pipe(Effect.provide(TestHub))
 );
 
+// Taking a participant out of the room is for good: the hub closes its
+// tunnel with a code of its own, and the runtime does not take that for a
+// drop to come back from.
+it.effect(
+  "ends, and does not dial again, when its participant is taken out of the room",
+  () =>
+    Effect.gen(function* () {
+      const client = yield* managementClient;
+      const { roomCode, statuses } = yield* newRoom("Coco de roda");
+      const participant = yield* joinParticipant({
+        roomCode,
+        participantId: "arthur-1",
+        reconnect: true,
+      });
+      yield* participant.nextLifecycleEvent;
+
+      yield* client.participants.remove({
+        params: { code: roomCode, id: "arthur-1" },
+        query: { runtimeId: participant.runtime.runtimeId },
+      });
+
+      expect(yield* participant.nextLifecycleEvent).toEqual({
+        type: "left",
+        roomCode,
+        participantId: "arthur-1",
+        reason: "removed",
+      });
+      // For whoever hosts it, that is an end it did not ask for, with a name.
+      const removed = yield* Effect.flip(participant.runtime.ended);
+      expect(removed).toMatchObject({
+        _tag: "ParticipantRemoved",
+        roomCode,
+        participantId: "arthur-1",
+      });
+      expect(removed.message).toBe(
+        `Participant 'arthur-1' was taken out of room '${roomCode}'.`
+      );
+      // The longest wait of a reconnection passes: the runtime never asks
+      // the hub for anything again, and the room stays empty.
+      yield* TestClock.adjust("31 seconds");
+      expect(yield* registrations(participant)).toBe(1);
+      expect(
+        (yield* participant.lifecycleEvents).map((event) => event.type)
+      ).toEqual(["connected", "left"]);
+      expect(yield* statuses).toEqual([]);
+    }).pipe(Effect.provide(TestHub))
+);
+
 // A hub keeps its rooms in memory, so one that restarts comes back without
 // them, and a room code cannot be asked for again.
 it.effect(
@@ -517,6 +565,36 @@ layer(layerHub(), { excludeTestServices: true })(
           });
           expect((yield* Effect.flip(first.runtime.ended))._tag).toBe(
             "ParticipantReplaced"
+          );
+        })
+    );
+
+    it.effect(
+      "started with reconnect off, still tells its host that it was taken out of the room and not that its tunnel dropped",
+      () =>
+        Effect.gen(function* () {
+          const client = yield* managementClient;
+          const { roomCode } = yield* newRoom("Reisado");
+          const participant = yield* joinParticipant({
+            roomCode,
+            participantId: "arthur-1",
+            reconnect: false,
+          });
+          yield* participant.nextLifecycleEvent;
+
+          yield* client.participants.remove({
+            params: { code: roomCode, id: "arthur-1" },
+            query: { runtimeId: participant.runtime.runtimeId },
+          });
+
+          expect(yield* participant.nextLifecycleEvent).toEqual({
+            type: "left",
+            roomCode,
+            participantId: "arthur-1",
+            reason: "removed",
+          });
+          expect((yield* Effect.flip(participant.runtime.ended))._tag).toBe(
+            "ParticipantRemoved"
           );
         })
     );

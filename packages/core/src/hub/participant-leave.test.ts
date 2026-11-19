@@ -333,4 +333,45 @@ layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
         expect(left).toEqual({ participantId: "arthur-1" });
       })
   );
+
+  it.effect(
+    "when the open tunnel drops, the participant goes to the runtime that registered last, without a moment in which it is still the old one's",
+    () =>
+      Effect.gen(function* () {
+        const client = yield* managementClient;
+        const tunnels = yield* Tunnels;
+        const { room } = yield* client.rooms.create({
+          payload: { name: "Forró" },
+        });
+        const params = { code: room.code, id: "arthur-1" };
+        const online = yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+        });
+        yield* client.participants.register({
+          params,
+          payload: {
+            nickname: "Arthur",
+            model: "llama3.1:8b",
+            runtimeId: "another-runtime",
+            version: GAMBI_VERSION,
+          },
+        });
+
+        yield* online.kill;
+        yield* tunnels.awaitDrop(room.code, "arthur-1");
+
+        // A removal the first runtime asked for and that arrives now, while
+        // the other is on its way in, is already late.
+        const late = yield* client.participants
+          .remove({ params, query: { runtimeId: online.runtime.runtimeId } })
+          .pipe(Effect.flip);
+        expect(late).toBeInstanceOf(ParticipantOfAnotherRuntime);
+        expect(
+          yield* client.participants.list({ params: { code: room.code } })
+        ).toMatchObject([
+          { id: "arthur-1", status: "offline", runtimeId: "another-runtime" },
+        ]);
+      })
+  );
 });
