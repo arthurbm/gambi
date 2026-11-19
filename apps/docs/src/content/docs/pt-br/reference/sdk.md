@@ -61,7 +61,7 @@ await generateText({ model: gambi.participant("worker-1"), prompt: "..." });
 | `gambi.model(name)` | o primeiro participante disponível que expõe `name` | você precisa de um modelo específico, mas não de uma máquina específica |
 | `gambi.participant(id)` | o participante com esse id, quando ele está disponível | você quer uma máquina específica (afinidade, depuração, benchmark) |
 
-Um participante só está disponível quando está `online`: o túnel dele está aberto e ele não está atendendo outra requisição. `any()` e `model()` nunca selecionam participantes de harness. `gambi.participant(id)` envia o ID como seletor de modelo, então não é um alvo exato: quando esse participante está ocupado ou offline e outro participante disponível serve um modelo com o mesmo nome, esse outro recebe a requisição. Quando nenhum participante está disponível, a requisição falha com HTTP `404` e o código `model_not_found`; então uma rajada de chamadas `any()` concorrentes maior que o número de participantes livres recebe algumas respostas `404`. Veja [Roteamento de modelo](/pt-br/reference/api/#roteamento-de-modelo) e [Erros de inferência](/pt-br/reference/api/#erros-de-inferência).
+Um participante só está disponível quando está `online`: o túnel dele está aberto e ele não está atendendo outra requisição. `any()` e `model()` nunca selecionam participantes de harness. `gambi.participant(id)` envia o ID como seletor de modelo, então não é um alvo exato: quando esse participante está ocupado ou offline e outro participante disponível serve um modelo com o mesmo nome, esse outro recebe a requisição. Quando nenhum participante pode atender uma requisição de `any()` ou `model()`, ela falha com HTTP `404` e o código `model_not_found`; então uma rajada de chamadas `any()` concorrentes maior que o número de participantes livres recebe algumas respostas `404`. Uma requisição de `participant(id)` cujo participante está ocupado ou offline, sem outro participante servindo um modelo com esse nome, falha com `409 participant_busy` ou `503 participant_offline`. Veja [Roteamento de modelo](/pt-br/reference/api/#roteamento-de-modelo) e [Erros de inferência](/pt-br/reference/api/#erros-de-inferência).
 
 ### Seleção de protocolo
 
@@ -155,7 +155,7 @@ O padrão de `hubUrl` é `http://localhost:3000`. Os métodos retornam o própri
 | `client.events` | `watch` |
 | `client.harness` | `attach`, `openSession`, `send`, `closeSession` |
 
-`client.close()` encerra as observações abertas, cancela as chamadas em andamento e recusa chamadas novas; essas chamadas rejeitam com um `Error` simples (`The client is closed.`), não com um `ClientError`. Ele é opcional: um cliente que nunca é fechado não segura nada depois que as observações dele terminam. O cliente também funciona com `await using`.
+`client.close()` encerra as observações abertas, cancela as chamadas em andamento e recusa chamadas novas; esses métodos em `Promise` rejeitam com um `Error` simples (`The client is closed.`), não com um `ClientError`, e um novo `events.watch()` ou `harness.attach()` lança esse `Error` na hora. Ele é opcional: um cliente que nunca é fechado não segura nada depois que as observações dele terminam. O cliente também funciona com `await using`.
 
 ### `client.hub.health()`
 
@@ -250,9 +250,11 @@ const sessionId = "session-1"; // você escolhe
 
 await client.harness.openSession(room, participant, sessionId);
 
+let sent = false;
 for await (const event of client.harness.attach(room, participant)) {
   // O stream não repete nada: envie quando ele estiver aberto.
-  if (event.type === "harness.connected") {
+  if (event.type === "harness.connected" && !sent) {
+    sent = true;
     await client.harness.send(room, participant, sessionId, {
       jsonrpc: "2.0",
       id: 1,
@@ -264,10 +266,11 @@ for await (const event of client.harness.attach(room, participant)) {
     });
   }
   if (event.type === "harness.message" && event.sessionId === sessionId) {
-    if (event.message.id === 1) {
+    const { message } = event;
+    if (message.id === 1 && ("result" in message || "error" in message)) {
       break; // a resposta ao prompt: o turno acabou
     }
-    console.log(event.message); // atualizações enquanto o harness trabalha
+    console.log(message); // atualizações enquanto o harness trabalha
   }
   if (event.type === "harness.artifact") {
     console.log(event.version, event.files.length);
@@ -277,7 +280,7 @@ for await (const event of client.harness.attach(room, participant)) {
 await client.harness.closeSession(room, participant, sessionId);
 ```
 
-Todo cliente conectado a um participante lê todos os eventos desse participante, inclusive as respostas a outros clientes. Filtre `harness.message` por `sessionId` e associe as respostas às suas requisições pelo `id` do JSON-RPC. Sair do loop com `break` fecha o stream.
+Todo cliente conectado a um participante lê todos os eventos desse participante, inclusive as respostas a outros clientes. Filtre `harness.message` por `sessionId`, associe as respostas às suas requisições pelo `id` do JSON-RPC e dê a cada cliente o próprio ID de sessão: dois clientes que dividem uma sessão e usam os mesmos IDs de requisição não conseguem distinguir as respostas. Sair do loop com `break` fecha o stream.
 
 | Método | Resolve com | Descrição |
 | --- | --- | --- |

@@ -138,7 +138,7 @@ A participant has one status, derived from its tunnel alone. The table is `trans
 | `offline` | reconnection deadline passes (60 s) | removed |
 | any | the participant leaves | removed |
 
-Only `online` participants receive new inference requests (the routes about a stored Response reach their participant whatever its status). The reconnection deadline restarts at every registration while the participant is `offline`, and also applies to a participant that registered and never opened its tunnel.
+Only `online` participants receive new inference requests (the routes about a stored Response reach their participant when it is `busy` too, but still need its tunnel open: an `offline` one answers `participant_offline`). The reconnection deadline restarts at every registration while the participant is `offline`, and also applies to a participant that registered and never opened its tunnel.
 
 ## Inference plane endpoints
 
@@ -156,7 +156,7 @@ OpenAI-compatible, room-scoped, plain routes outside the management contract. Al
 
 The Responses API is preferred; Chat Completions remains for compatibility.
 
-- **What the hub reads.** The body must be a JSON object with a non-empty `model` string; `stream`, when present, must be a boolean or `null` (`null` is not a stream). Every other field goes to the provider as it came.
+- **What the hub reads.** The body must be a JSON object with a non-empty `model` string; `stream` may be absent, a boolean, or `null` (`null` is not a stream). Every other field goes to the provider as it came.
 - **Defaults.** Fields the app left out or sent as `null` are filled from the participant's config, then the room defaults (the participant wins). In the Responses API, `max_tokens` fills `max_output_tokens` and `stop` fills `stop_sequences`. The default instructions become a leading `system` message in Chat Completions, unless the app sent one, and fill `instructions` in the Responses API. `model` is replaced by the participant's model.
 - **Responses through Chat Completions.** When the participant's provider has no Responses API, the hub creates the Response through Chat Completions and translates the answer. A request that Chat Completions cannot carry fails with `request_not_translatable`, and such a Response cannot be read back, deleted, or cancelled (`response_not_stored`).
 - **Stored Responses.** The hub remembers which participant created each Response (10 000 per hub by default), so the routes about a stored Response reach that participant whatever it is doing. They change no status and emit no room event.
@@ -177,7 +177,7 @@ Inference errors use the OpenAI error format, never the management envelope:
 
 | `code` | Status | Meaning |
 |---|---|---|
-| `invalid_request` | 400 | The body is not a JSON object, `model` is missing or empty, or `stream` is not a boolean. |
+| `invalid_request` | 400 | The body is not a JSON object, `model` is not a non-empty string, or `stream` is neither absent, a boolean, nor `null`. |
 | `room_not_found` | 404 | The room does not exist. |
 | `model_not_found` | 404 | No participant can take a request for that model selector. |
 | `participant_busy` | 409 | The selector names a participant that is handling another request. |
@@ -185,7 +185,7 @@ Inference errors use the OpenAI error format, never the management envelope:
 | `participant_disconnected` | 502 | The tunnel dropped while the participant was answering. |
 | `inference_timeout` | 504 | Nothing arrived from the participant for the idle timeout. |
 | `provider_response_too_large` | 502 | An answer that is not a stream exceeded what the hub holds. |
-| `consumer_too_slow` | 408 | The app read a stream too slowly. Only sent inside a stream, after the `200`; the `408` is never the response status. |
+| `consumer_too_slow` | 408 | The app read a stream too slowly. Only sent as the last event of a stream, whose HTTP status (the provider's) was already sent; the `408` is never the response status. |
 | `request_not_translatable` | 400 | The provider is reached through Chat Completions, which cannot carry this request. |
 | `response_not_found` | 404 | The hub knows no Response with that id in the room. |
 | `response_not_stored` | 501 | The Response was answered through Chat Completions and is stored nowhere. |
@@ -264,7 +264,7 @@ The stream (`GET .../harness/events`) carries `HarnessAttachEvent` (`packages/pr
 - `POST .../harness/messages` takes `{ sessionId, message }`, where `message` is one ACP v1 JSON-RPC object. It answers `202` when the message is written to the harness, not when the harness answers; the answer arrives on the stream.
 - `PUT .../harness/sessions/:sessionId` opens a session under the id the client picked, with an optional `{ cwd }` inside the Workspace. Opening a session that is already open leaves it as it is.
 - `DELETE .../harness/sessions/:sessionId` closes it. A session that is not open is already closed.
-- Every client attached to a participant reads every event of that participant, including the answers to the other clients' requests. Filter `harness.message` by `sessionId` and match answers to requests by their JSON-RPC `id`. The participant runtime rewrites the JSON-RPC `id` of each request on its way to the harness and restores it on the answer, and maps each `sessionId` to the id the harness gave the session, so requests of two clients with the same `id` never get each other's answers. It does not interpret the rest of the ACP content.
+- Every client attached to a participant reads every event of that participant, including the answers to the other clients' requests. Filter `harness.message` by `sessionId` and match answers to requests by their JSON-RPC `id`. The participant runtime rewrites the JSON-RPC `id` of each request on its way to the harness and restores it on the answer, and maps each `sessionId` to the id the harness gave the session, so requests of two clients with the same `id` in different sessions never get each other's answers. Within one shared session the restored ids can collide: give each client its own session id, or coordinate request ids among the clients of a session. It does not interpret the rest of the ACP content.
 
 ### Artifacts
 
@@ -376,7 +376,7 @@ Sensitive config is not exposed raw in public management responses. Provider aut
 
 ## SDK management client
 
-`createClient()` from `gambi-sdk` derives from the contract and returns plain values, without the envelope. Every failure of a call to the hub is a `ClientError` (a call refused or interrupted because the client was closed rejects with a plain `Error`) with `code`, `status?`, `hint?`, `details`, `requestId?`, and `cause`. `code` is one of the management codes above except `TUNNEL_TOKEN_INVALID` and `ROUTE_NOT_FOUND`, plus two the client finds on its own:
+`createClient()` from `gambi-sdk` derives from the contract and returns plain values, without the envelope. Every failure of a call to the hub is a `ClientError` (after `client.close()`, a `Promise` method rejects with a plain `Error`, and `events.watch()` or `harness.attach()` throws one at once) with `code`, `status?`, `hint?`, `details`, `requestId?`, and `cause`. `code` is one of the management codes above except `TUNNEL_TOKEN_INVALID` and `ROUTE_NOT_FOUND`, plus two the client finds on its own:
 
 - `HUB_UNREACHABLE`: nothing answered at the hub URL.
 - `NOT_A_HUB`: something answered outside the contract: another server, a proxy, or a hub of another version. A `ROUTE_NOT_FOUND` arrives as `NOT_A_HUB` with `status: 404`.

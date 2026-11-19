@@ -333,7 +333,7 @@ Um cliente de gerenciamento controla um participante de harness com um stream de
 
 - O cliente escolhe o ID da sessão. Abrir uma sessão que já está aberta a deixa como está. `cwd` precisa ser uma pasta dentro do workspace do participante; o padrão é o próprio workspace.
 - `message` é um objeto JSON-RPC do ACP v1, passado ao harness como está. O `202` significa que o harness o recebeu; a resposta dele chega pelo stream de eventos.
-- Todo cliente conectado lê todos os eventos do participante, inclusive as respostas a outros clientes. Filtre `harness.message` por `sessionId` e associe as respostas às suas requisições pelo `id` do JSON-RPC.
+- Todo cliente conectado lê todos os eventos do participante, inclusive as respostas a outros clientes. Filtre `harness.message` por `sessionId` e associe as respostas às suas requisições pelo `id` do JSON-RPC. Dê a cada cliente o próprio ID de sessão: dois clientes que dividem uma sessão e usam os mesmos IDs de requisição não conseguem distinguir as respostas.
 - Estas rotas respondem `NOT_A_HARNESS_PARTICIPANT` para um participante de modelo, e as três requisições respondem `PARTICIPANT_UNREACHABLE` enquanto o túnel do participante está fora do ar.
 
 ```bash
@@ -376,7 +376,7 @@ O campo `model` controla o roteamento:
 | `model:<name>` | o primeiro participante disponível cujo modelo é `<name>` |
 | qualquer outro valor | o participante disponível com esse ID; senão, o primeiro participante disponível cujo modelo tem esse nome; senão, `participant_busy` ou `participant_offline` quando existe um participante com esse ID, mas ele não está disponível |
 
-Então `"model": "llama3"` se comporta como `model:llama3`, a menos que um participante disponível tenha o ID `llama3`, e um ID de participante não é um alvo exato: quando esse participante está ocupado ou offline, outro que sirva um modelo com o mesmo nome pode receber a requisição.
+Com `model:<name>`, nenhum ID de participante entra em jogo: quando ninguém serve o modelo, a resposta é `model_not_found`. Um valor puro também pode responder `participant_busy` ou `participant_offline`, quando existe um participante com esse ID. Então `"model": "llama3"` se comporta como `model:llama3`, a menos que um participante tenha o ID `llama3`, e um ID de participante não é um alvo exato: quando esse participante está ocupado ou offline, outro que sirva um modelo com o mesmo nome pode receber a requisição.
 
 Um participante só está disponível quando está `online`: o túnel dele está aberto e ele não está atendendo outra requisição. Participantes de harness nunca são escolhidos por `*`, `any` ou um nome de modelo.
 
@@ -406,13 +406,13 @@ As rotas de inferência não usam o envelope da API de gerenciamento. Os erros u
 
 | Status | `code` | Condição |
 | --- | --- | --- |
-| `400` | `invalid_request` | o corpo não é um objeto JSON, `model` está ausente ou vazio, ou `stream` não é booleano |
+| `400` | `invalid_request` | o corpo não é um objeto JSON, `model` não é uma string não vazia, ou `stream` não é ausente, booleano nem `null` |
 | `400` | `inference_not_supported` | o seletor aponta para um participante de harness |
 | `400` | `request_not_translatable` | o provedor não tem Responses API e a requisição usa algo que Chat Completions não consegue levar |
 | `404` | `room_not_found` | o código da sala não existe |
 | `404` | `model_not_found` | nenhum participante disponível corresponde ao seletor |
 | `404` | `response_not_found` | o hub não conhece nenhuma Response com esse ID na sala |
-| `408` | `consumer_too_slow` | o app leu um stream devagar demais. Só é enviado como o último evento de um stream, cujo status HTTP já foi `200` |
+| `408` | `consumer_too_slow` | o app leu um stream devagar demais. Só é enviado como o último evento de um stream, cujo status HTTP já foi enviado |
 | `409` | `participant_busy` | o seletor aponta para um participante ocupado |
 | `501` | `response_not_stored` | a Response foi respondida via Chat Completions e não pode ser lida de volta, apagada nem cancelada |
 | `501` | `responses_not_supported` | o provedor não fala nem a Responses API nem Chat Completions |
@@ -472,7 +472,7 @@ Endpoints adicionais de ciclo de vida:
 - `POST /rooms/:code/v1/responses/:id/cancel`
 - `GET /rooms/:code/v1/responses/:id/input_items`
 
-Eles chegam ao participante cujo provedor criou a Response. O hub lembra até 10 000 Responses; além disso, ele esquece a usada há mais tempo, e as rotas de ciclo de vida dela respondem `response_not_found`.
+Eles chegam ao participante cujo provedor criou a Response, mesmo enquanto ele está ocupado; enquanto ele está offline, respondem `participant_offline`. O hub lembra até 10 000 Responses; além disso, ele esquece a usada há mais tempo, e as rotas de ciclo de vida dela respondem `response_not_found`.
 
 ### POST /rooms/:code/v1/chat/completions
 

@@ -333,7 +333,7 @@ A management client controls a harness participant with one event stream and thr
 
 - The client picks the session ID. Opening a session that is already open leaves it as it is. `cwd` must be a folder inside the participant's workspace; it defaults to the workspace itself.
 - `message` is one ACP v1 JSON-RPC object, passed to the harness as it is. The `202` means the harness received it; its answer arrives on the event stream.
-- Every attached client reads every event of the participant, including answers to other clients. Filter `harness.message` by `sessionId` and match answers to your requests by JSON-RPC `id`.
+- Every attached client reads every event of the participant, including answers to other clients. Filter `harness.message` by `sessionId` and match answers to your requests by JSON-RPC `id`. Give each client its own session ID: two clients that share a session and use the same request IDs cannot tell their answers apart.
 - These routes answer `NOT_A_HARNESS_PARTICIPANT` for a model participant, and the three requests answer `PARTICIPANT_UNREACHABLE` while the participant's tunnel is down.
 
 ```bash
@@ -376,7 +376,7 @@ The `model` field controls routing:
 | `model:<name>` | the first available participant whose model is `<name>` |
 | anything else | the available participant with that ID; otherwise the first available participant whose model is that name; otherwise `participant_busy` or `participant_offline` when a participant with that ID exists but is not available |
 
-So `"model": "llama3"` behaves like `model:llama3` unless an available participant has the ID `llama3`, and a participant ID is not an exact target: when that participant is busy or offline, another one serving a model with the same name can take the request.
+With `model:<name>`, no participant ID is involved: when nobody serves the model, the answer is `model_not_found`. A bare value can also answer `participant_busy` or `participant_offline`, when a participant with that ID exists. So `"model": "llama3"` behaves like `model:llama3` unless a participant has the ID `llama3`, and a participant ID is not an exact target: when that participant is busy or offline, another one serving a model with the same name can take the request.
 
 A participant is available only when it is `online`: its tunnel is open and it is not handling another request. Harness participants are never picked by `*`, `any`, or a model name.
 
@@ -406,13 +406,13 @@ Inference routes do not use the management envelope. Errors use the OpenAI error
 
 | Status | `code` | Condition |
 | --- | --- | --- |
-| `400` | `invalid_request` | the body is not a JSON object, `model` is missing or empty, or `stream` is not a boolean |
+| `400` | `invalid_request` | the body is not a JSON object, `model` is not a non-empty string, or `stream` is neither absent, a boolean, nor `null` |
 | `400` | `inference_not_supported` | the selector names a harness participant |
 | `400` | `request_not_translatable` | the provider has no Responses API and the request uses something Chat Completions cannot carry |
 | `404` | `room_not_found` | the room code does not exist |
 | `404` | `model_not_found` | no available participant matches the selector |
 | `404` | `response_not_found` | the hub knows no Response with that ID in the room |
-| `408` | `consumer_too_slow` | the app read a stream too slowly. Only sent as the last event of a stream, whose HTTP status was already `200` |
+| `408` | `consumer_too_slow` | the app read a stream too slowly. Only sent as the last event of a stream, whose HTTP status was already sent |
 | `409` | `participant_busy` | the selector names a participant that is busy |
 | `501` | `response_not_stored` | the Response was answered through Chat Completions and cannot be read back, deleted, or cancelled |
 | `501` | `responses_not_supported` | the provider speaks neither the Responses API nor Chat Completions |
@@ -472,7 +472,7 @@ Additional lifecycle endpoints:
 - `POST /rooms/:code/v1/responses/:id/cancel`
 - `GET /rooms/:code/v1/responses/:id/input_items`
 
-They reach the participant whose provider created the Response. The hub remembers up to 10 000 Responses; past that it forgets the one used longest ago, and its lifecycle routes answer `response_not_found`.
+They reach the participant whose provider created the Response, even while it is busy; while it is offline they answer `participant_offline`. The hub remembers up to 10 000 Responses; past that it forgets the one used longest ago, and its lifecycle routes answer `response_not_found`.
 
 ### POST /rooms/:code/v1/chat/completions
 

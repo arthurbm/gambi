@@ -166,7 +166,7 @@ Preview the registration flow:
 gambi participant join \
   --room ABC123 \
   --participant-id worker-1 \
-  --model llama3 \
+  --model llama3:latest \
   --dry-run \
   --format json
 ```
@@ -334,9 +334,11 @@ Harness clients can attach to a harness participant without exposing that harnes
 ```ts
 await client.harness.openSession("ABC123", "harness-1", "session-1");
 
+let sent = false;
 for await (const event of client.harness.attach("ABC123", "harness-1")) {
-  if (event.type === "harness.connected") {
+  if (event.type === "harness.connected" && !sent) {
     // The stream replays nothing, so send once it is open.
+    sent = true;
     await client.harness.send("ABC123", "harness-1", "session-1", {
       jsonrpc: "2.0",
       id: 1,
@@ -344,8 +346,15 @@ for await (const event of client.harness.attach("ABC123", "harness-1")) {
       params: { sessionId: "session-1", prompt: [{ type: "text", text: "Hi" }] },
     });
   }
-  console.log(event.type);
+  if (event.type === "harness.message" && event.sessionId === "session-1") {
+    const { message } = event;
+    if (message.id === 1 && ("result" in message || "error" in message)) {
+      break; // the answer to the prompt
+    }
+  }
 }
+
+await client.harness.closeSession("ABC123", "harness-1", "session-1");
 ```
 
 Host a hub or a participant inside your own program (Bun only):

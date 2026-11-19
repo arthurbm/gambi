@@ -61,7 +61,7 @@ await generateText({ model: gambi.participant("worker-1"), prompt: "..." });
 | `gambi.model(name)` | the first available participant exposing `name` | you need a specific model but not a specific machine |
 | `gambi.participant(id)` | the participant with that id, when it is available | you want a specific machine (affinity, debugging, benchmarking) |
 
-A participant is available only when it is `online`: its tunnel is open and it is not already handling another request. Harness participants are never selected by `any()` or `model()`. `gambi.participant(id)` sends the ID as the model selector, so it is not an exact target: when that participant is busy or offline and another available participant serves a model with the same name, that one takes the request. When no participant is available, the request fails with HTTP `404` and the code `model_not_found`, so a burst of concurrent `any()` calls larger than the number of free participants gets some `404` responses. See [Model routing](/reference/api/#model-routing) and [Inference errors](/reference/api/#inference-errors).
+A participant is available only when it is `online`: its tunnel is open and it is not already handling another request. Harness participants are never selected by `any()` or `model()`. `gambi.participant(id)` sends the ID as the model selector, so it is not an exact target: when that participant is busy or offline and another available participant serves a model with the same name, that one takes the request. When no participant can take an `any()` or `model()` request, it fails with HTTP `404` and the code `model_not_found`, so a burst of concurrent `any()` calls larger than the number of free participants gets some `404` responses. A `participant(id)` request whose participant is busy or offline, with no other participant serving a model of that name, fails with `409 participant_busy` or `503 participant_offline`. See [Model routing](/reference/api/#model-routing) and [Inference errors](/reference/api/#inference-errors).
 
 ### Protocol selection
 
@@ -155,7 +155,7 @@ const client = createClient({
 | `client.events` | `watch` |
 | `client.harness` | `attach`, `openSession`, `send`, `closeSession` |
 
-`client.close()` ends the watches that are open, cancels the calls in flight, and refuses new ones; those calls reject with a plain `Error` (`The client is closed.`), not a `ClientError`. It is optional: a client that is never closed holds nothing once its watches end. The client also works with `await using`.
+`client.close()` ends the watches that are open, cancels the calls in flight, and refuses new ones; those `Promise` methods reject with a plain `Error` (`The client is closed.`), not a `ClientError`, and a new `events.watch()` or `harness.attach()` throws that `Error` at once. It is optional: a client that is never closed holds nothing once its watches end. The client also works with `await using`.
 
 ### `client.hub.health()`
 
@@ -250,9 +250,11 @@ const sessionId = "session-1"; // you pick it
 
 await client.harness.openSession(room, participant, sessionId);
 
+let sent = false;
 for await (const event of client.harness.attach(room, participant)) {
   // The stream replays nothing: send once it is open.
-  if (event.type === "harness.connected") {
+  if (event.type === "harness.connected" && !sent) {
+    sent = true;
     await client.harness.send(room, participant, sessionId, {
       jsonrpc: "2.0",
       id: 1,
@@ -264,10 +266,11 @@ for await (const event of client.harness.attach(room, participant)) {
     });
   }
   if (event.type === "harness.message" && event.sessionId === sessionId) {
-    if (event.message.id === 1) {
+    const { message } = event;
+    if (message.id === 1 && ("result" in message || "error" in message)) {
       break; // the answer to the prompt: the turn is over
     }
-    console.log(event.message); // updates while the harness works
+    console.log(message); // updates while the harness works
   }
   if (event.type === "harness.artifact") {
     console.log(event.version, event.files.length);
@@ -277,7 +280,7 @@ for await (const event of client.harness.attach(room, participant)) {
 await client.harness.closeSession(room, participant, sessionId);
 ```
 
-Every client attached to a participant reads every event of that participant, including the answers to other clients. Filter `harness.message` by `sessionId`, and match answers to your requests by their JSON-RPC `id`. Leaving the loop with `break` closes the stream.
+Every client attached to a participant reads every event of that participant, including the answers to other clients. Filter `harness.message` by `sessionId`, match answers to your requests by their JSON-RPC `id`, and give each client its own session ID: two clients that share a session and use the same request IDs cannot tell their answers apart. Leaving the loop with `break` closes the stream.
 
 | Method | Resolves with | Description |
 | --- | --- | --- |

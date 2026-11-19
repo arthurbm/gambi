@@ -190,7 +190,7 @@ for await (const event of client.harness.attach(room, participant)) {
 }
 ```
 
-The first event of the stream says whether the hub is receiving your harness: `harness.connected`, or `harness.disconnected` while your tunnel is down. Nothing that happened before the application attached is replayed, which is why the example sends the prompt only after `harness.connected`. Every attached application reads every event of your harness, so filter by `sessionId` and match answers by JSON-RPC `id`. If the participant leaves the room, the stream ends with `harness.detached`.
+The first event of the stream says whether the hub is receiving your harness: `harness.connected`, or `harness.disconnected` while your tunnel is down. Nothing that happened before the application attached is replayed, which is why the example sends the prompt only after `harness.connected`. Every attached application reads every event of your harness, so filter by `sessionId`, match answers by JSON-RPC `id`, and give each application its own session ID. If the participant leaves the room, the stream ends with `harness.detached`.
 
 The `message` payload is plain ACP v1, so every update type in the [ACP schema](https://agentclientprotocol.com/protocol/schema) can arrive here. The SDK reference also shows how an application can [host harness participants itself](/reference/sdk/#createharnessparticipantsessionoptions-gambi-sdkparticipant-bun-only).
 
