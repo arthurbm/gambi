@@ -72,6 +72,10 @@ export const DEFAULT_HARNESS_REQUEST_TIMEOUT: Duration.Input = "10 seconds";
 /** How many events wait for the hub while the tunnel is down. */
 export const DEFAULT_HARNESS_OUTBOX = 4096;
 
+// Leave room for the RPC envelope below the hub's 16 MiB WebSocket limit.
+const MAX_BATCH_BYTES = 8 * 1024 * 1024;
+const encoder = new TextEncoder();
+
 const STDERR_TAIL_LENGTH = 4000;
 /** How long an exited harness has to finish what it was writing. */
 const OUTPUT_DRAIN_TIMEOUT = Duration.seconds(1);
@@ -118,6 +122,27 @@ interface Outgoing {
 }
 
 const isArtifact = (entry: Outgoing) => entry.event.type === "harness.artifact";
+
+/** How many queued events fit in the next RPC chunk. A single event is indivisible. */
+const batchLength = (outbox: readonly Outgoing[]): number => {
+  if (outbox.length <= 1) {
+    return outbox.length;
+  }
+  let bytes = 2; // JSON array brackets.
+  let count = 0;
+  for (const entry of outbox) {
+    if (isArtifact(entry)) {
+      break;
+    }
+    bytes +=
+      encoder.encode(JSON.stringify(entry.event)).length + (count > 0 ? 1 : 0);
+    if (bytes > MAX_BATCH_BYTES) {
+      break;
+    }
+    count++;
+  }
+  return Math.max(count, 1);
+};
 
 /**
  * Every request the runtime writes to the harness carries an id the runtime
@@ -319,23 +344,16 @@ export class Harness extends Context.Service<
         // (`effect/rpc` waits for the `Ack` of each chunk). So a reader that
         // asks for more has delivered everything it took.
         //
-        // A batch is what the tunnel writes as one message, and a message
-        // has a size the hub accepts. An artifact is the one large event,
-        // and is kept under that size by whoever publishes it
-        // (`MAX_ARTIFACT_BYTES`), so it always goes in a batch of its own.
+        // Each batch is one tunnel message. Artifacts and individual ACP
+        // events larger than the batching budget travel alone.
         //
         // Delivery is at most once: a batch the reader took when its tunnel
         // dropped is gone, whether or not the hub got it.
         const events: Stream.Stream<HarnessEvent> = Stream.suspend(() => {
           let taken = 0;
           readers++;
-          // The events up to the next artifact, or that artifact alone.
           const nextBatch = (): Arr.NonEmptyArray<HarnessEvent> | undefined => {
-            const artifactAt = outbox.findIndex(isArtifact);
-            const [first, ...others] = outbox.splice(
-              0,
-              artifactAt === -1 ? outbox.length : Math.max(artifactAt, 1)
-            );
+            const [first, ...others] = outbox.splice(0, batchLength(outbox));
             if (first === undefined) {
               return;
             }

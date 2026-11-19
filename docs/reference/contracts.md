@@ -284,7 +284,7 @@ Known limits:
 
 - An artifact is sent only when its JSON is at most 8 MiB (`MAX_ARTIFACT_BYTES`). A Workspace that does not fit sends no artifact at all, and whoever hosts the runtime is told (`artifact_skipped` in the CLI, `onArtifact` in the SDK).
 - Artifacts are delivered at most once. `artifact_sent` (CLI) and `artifactSent` (SDK) mean the artifact entered the queue to the hub, not that it arrived: an artifact queued when the tunnel drops is lost.
-- One tunnel message above 16 MiB drops the tunnel. That covers a single batch of ACP messages from the harness above 16 MiB.
+- The runtime groups queued ACP events into batches of up to 8 MiB of UTF-8 JSON. A larger individual event travels alone. An event whose tunnel message exceeds the 16 MiB WebSocket limit still drops the tunnel.
 
 The tunnel has no call that writes files on the participant's machine.
 

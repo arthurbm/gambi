@@ -228,8 +228,7 @@ export const joinRoom = async <A, R>(options: {
     leave: leaveOnce,
     stop: () => {
       stopping = true;
-      left ??= boundary.close();
-      return left;
+      return left ?? boundary.close();
     },
     [Symbol.asyncDispose]: leaveOnce,
   };

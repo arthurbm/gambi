@@ -329,7 +329,7 @@ layer(layerHub(), { excludeTestServices: true })(
     );
 
     it.effect(
-      "stopping leaves the participant in the room, offline, for the hub to remove",
+      "stopping leaves the participant offline until the stopped session leaves",
       () =>
         Effect.gen(function* () {
           const room = yield* frevo;
@@ -351,6 +351,13 @@ layer(layerHub(), { excludeTestServices: true })(
           expect(participants.map((participant) => participant.id)).toEqual([
             "arthur-1",
           ]);
+
+          yield* Effect.promise(() => session.leave());
+          expect(
+            yield* Effect.promise(() =>
+              room.client.participants.list(room.roomCode)
+            )
+          ).toEqual([]);
         })
     );
 

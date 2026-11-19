@@ -334,6 +334,40 @@ it.effect(
 );
 
 it.effect(
+  "a reconnect drains buffered ACP events in order across bounded tunnel messages",
+  () =>
+    Effect.gen(function* () {
+      const { harness } = yield* start({ reader: "nobody" });
+      const text = "界".repeat(2 * 1024 * 1024);
+      for (const id of [1, 2, 3]) {
+        yield* harness.publish({
+          type: "harness.message",
+          sessionId: "main",
+          message: { id, text },
+        });
+      }
+
+      const ids: unknown[] = [];
+      yield* harness.events.pipe(
+        Stream.take(4), // The session opening and the three buffered messages.
+        Stream.runForEachArray((batch) =>
+          Effect.sync(() => {
+            expect(
+              new TextEncoder().encode(JSON.stringify(batch)).length
+            ).toBeLessThan(16 * 1024 * 1024);
+            for (const event of batch) {
+              ids.push(
+                event.type === "harness.message" ? event.message.id : event.type
+              );
+            }
+          })
+        )
+      );
+      expect(ids).toEqual(["harness.session", 1, 2, 3]);
+    })
+);
+
+it.effect(
   "while the tunnel is down only the newest artifact waits: the ones it replaced never go up",
   () =>
     Effect.gen(function* () {
