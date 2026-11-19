@@ -180,7 +180,7 @@ Um participante de harness não tem `endpoint`. O objeto `harness` dele contém 
 
 Cria ou atualiza o registro de um participante. Os runtimes de participante (a CLI, a entrada `gambi-sdk/participant` do SDK) chamam esta rota por você; raramente você a chama à mão.
 
-Quando o registro dá certo, o hub responde `200`. Registrar o mesmo ID de participante atualiza o perfil e mantém o status. Se o participante está `offline`, ele passa a pertencer ao runtime que o registrou. Se o túnel está aberto, o participante só muda de dono quando o novo runtime abre seu túnel. O hub guarda o `endpoint` do participante como metadado e nunca se conecta a ele.
+Quando o registro dá certo, o hub responde `200`. Registrar o mesmo ID de participante mantém o status. A resposta inclui o perfil enviado e o dono atual. Se o participante está `offline`, ele passa a pertencer ao runtime que o registrou. O runtime que atende pelo túnel atual pode atualizar seu perfil ativo registrando-se de novo. O perfil de outro runtime entra em vigor quando o túnel substituto abre. O hub guarda o `endpoint` do participante como metadado e nunca se conecta a ele.
 
 Corpo da requisição:
 

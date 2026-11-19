@@ -1,5 +1,6 @@
 import { expect } from "bun:test";
 import {
+  GAMBI_VERSION,
   type InferenceChunk,
   type ParticipantStatus,
   ProviderResponseInterrupted,
@@ -388,6 +389,51 @@ layer(layerHub(), { excludeTestServices: true })("inference plane", (it) => {
             },
           ],
         });
+      })
+  );
+
+  it.effect(
+    "a pending registration keeps the model of the connected runtime routable",
+    () =>
+      Effect.gen(function* () {
+        const room = yield* makeRoom("Troca");
+        const client = yield* managementClient;
+        const provider = yield* fakeProvider();
+        yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "one",
+          profile: { model: "original" },
+          provider: { endpoint: provider.url },
+        });
+        yield* client.participants.register({
+          params: { code: room.code, id: "one" },
+          payload: {
+            version: GAMBI_VERSION,
+            runtimeId: "pending",
+            nickname: "Outro",
+            model: "next",
+            harness: { id: "fake" },
+          },
+        });
+        const response = yield* post(room.url("/chat/completions"), {
+          model: "model:original",
+          messages,
+        });
+        expect(response.status).toBe(200);
+        expect((yield* provider.nextCall).body).toMatchObject({
+          model: "original",
+        });
+        yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "one",
+          profile: { model: "next", harness: { id: "fake" } },
+        });
+        const listed = yield* client.participants.list({
+          params: { code: room.code },
+        });
+        expect(listed).toMatchObject([
+          { model: "next", harness: { id: "fake" }, status: "online" },
+        ]);
       })
   );
 

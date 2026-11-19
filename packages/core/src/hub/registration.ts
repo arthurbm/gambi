@@ -54,7 +54,8 @@ export const registerParticipant = Effect.fn("Hub.registerParticipant")(
       room.code,
       participantId,
       runtimeId,
-      generation
+      generation,
+      profile
     );
     return { participant, tunnel } satisfies ParticipantRegistered;
   }

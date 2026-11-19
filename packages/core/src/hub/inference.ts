@@ -726,8 +726,7 @@ const infer = (operation: InferenceCreation) =>
       Effect.fnUntraced(function* (scopes) {
         const participant = yield* Effect.acquireRelease(
           participants.dispatch(roomCode, asked.model),
-          (dispatched) =>
-            participants.transition(roomCode, dispatched.id, "requestEnded")
+          (dispatched) => dispatched.finish
         );
         const participantId = participant.id;
         const call: Call = { ...scopes, roomCode, participantId };

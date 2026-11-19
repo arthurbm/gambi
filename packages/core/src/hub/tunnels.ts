@@ -59,7 +59,7 @@ import {
 } from "effect/rpc";
 import { Socket } from "effect/socket";
 import { HarnessClients } from "./harness-clients.ts";
-import { Participants } from "./participants.ts";
+import { type ParticipantProfile, Participants } from "./participants.ts";
 import { HubSettings } from "./settings.ts";
 
 /** How long a bootstrap token is valid for. */
@@ -93,6 +93,7 @@ export class TunnelNotOpen extends Schema.TaggedError<TunnelNotOpen>()(
  * in reads it to know that there is nobody to be online as.
  */
 export interface RedeemedToken {
+  readonly profile: ParticipantProfile;
   /**
    * The participant the token was issued for (`Participants.generation`):
    * another one with the same id is not it.
@@ -226,7 +227,8 @@ export class Tunnels extends Context.Service<
       roomCode: string,
       participantId: string,
       runtimeId: string,
-      generation: number
+      generation: number,
+      profile: ParticipantProfile
     ) => Effect.Effect<BootstrapToken>;
     /**
      * Spends a bootstrap token. It fails when the token was not issued for
@@ -275,7 +277,8 @@ export class Tunnels extends Context.Service<
         roomCode: string,
         participantId: string,
         runtimeId: string,
-        generation: number
+        generation: number,
+        profile: ParticipantProfile
       ) {
         const now = yield* Clock.currentTimeMillis;
         // Tokens that expired leave here, without a timer.
@@ -291,6 +294,7 @@ export class Tunnels extends Context.Service<
           participantId,
           runtimeId,
           generation,
+          profile,
           expiresAt,
           left: false,
           spent: false,
@@ -535,7 +539,8 @@ export class Tunnels extends Context.Service<
               roomCode,
               participantId,
               "tunnelOpened",
-              token.runtimeId
+              token.runtimeId,
+              { profile: token.profile }
             );
             if (opened === undefined) {
               // The participant is not this runtime's to be online as.

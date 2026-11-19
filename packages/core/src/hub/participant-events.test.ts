@@ -229,6 +229,54 @@ it.effect.each([
     }).pipe(Effect.provide(layerParticipants))
 );
 
+it.effect(
+  "a model request uses the available provider while the first tunnel is being replaced",
+  () =>
+    Effect.gen(function* () {
+      const participants = yield* Participants;
+      const first = yield* participants.register(
+        ROOM,
+        "first",
+        profile,
+        RUNTIME
+      );
+      yield* participants.transition(ROOM, "first", "tunnelOpened", RUNTIME);
+      yield* participants.register(ROOM, "other", profile, "other-runtime");
+      yield* participants.transition(
+        ROOM,
+        "other",
+        "tunnelOpened",
+        "other-runtime"
+      );
+      yield* participants.handOver(
+        ROOM,
+        "first",
+        "replacement",
+        first.generation
+      );
+      expect(
+        (yield* participants.dispatch(ROOM, `model:${profile.model}`)).id
+      ).toBe("other");
+    }).pipe(Effect.provide(layerParticipants))
+);
+
+it.effect(
+  "finishing a request from before reconnection preserves the new request's busy status",
+  () =>
+    Effect.gen(function* () {
+      const participants = yield* Participants;
+      yield* participantAfter("tunnelOpened");
+      const previous = yield* participants.dispatch(ROOM, "arthur-1");
+      yield* participants.transition(ROOM, "arthur-1", "tunnelDropped");
+      yield* participants.transition(ROOM, "arthur-1", "tunnelOpened", RUNTIME);
+      const current = yield* participants.dispatch(ROOM, "arthur-1");
+      yield* previous.finish;
+      expect(yield* participants.status(ROOM, "arthur-1")).toBe("busy");
+      yield* current.finish;
+      expect(yield* participants.status(ROOM, "arthur-1")).toBe("online");
+    }).pipe(Effect.provide(layerParticipants))
+);
+
 // A second runtime dialed with the participant's id: the hub hands the
 // participant to it before it closes the tunnel it replaces.
 it.effect(

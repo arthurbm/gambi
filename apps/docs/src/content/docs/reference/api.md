@@ -180,7 +180,7 @@ A harness participant has no `endpoint`. Its `harness` object contains `id` (`op
 
 Create or update a participant registration. Participant runtimes (the CLI, the SDK's `gambi-sdk/participant` entry) call it for you; you rarely call it by hand.
 
-A successful registration returns `200`. Registering the same participant ID updates its profile and keeps its status. If the participant is `offline`, the registering runtime becomes its owner. If the tunnel is open, ownership changes only when the new runtime opens its tunnel. The hub stores the participant `endpoint` as metadata and never connects to it.
+A successful registration returns `200`. Registering the same participant ID preserves its status. The reply includes the submitted profile and the current owner. If the participant is `offline`, the registering runtime becomes its owner. The runtime serving the current tunnel can update its active profile by registering again. A different runtime’s profile takes effect when its replacement tunnel opens. The hub stores the participant `endpoint` as metadata and never connects to it.
 
 Request body:
 
