@@ -4,9 +4,10 @@ import {
   ParticipantNotFound,
   ParticipantOfAnotherRuntime,
   RoomNotFound,
+  TUNNEL_REMOVED_CLOSE_CODE,
 } from "@gambi/protocol";
 import { layer } from "@gambi/testing/effect";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Queue } from "effect";
 import { HttpClient, HttpClientRequest } from "effect/http";
 import { Socket } from "effect/socket";
 import {
@@ -68,6 +69,7 @@ layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
         payload: {
           nickname: "Arthur",
           model: "llama3.1:8b",
+          runtimeId: "runtime-of-arthur",
           version: GAMBI_VERSION,
         },
       });
@@ -133,12 +135,13 @@ layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
         const { room } = yield* client.rooms.create({
           payload: { name: "Coco" },
         });
-        const options: ParticipantRuntimeOptions = {
+        const options = {
           hubUrl: hub.url,
           roomCode: room.code,
           participantId: "arthur-1",
+          runtimeId: "runtime-of-arthur",
           profile: { nickname: "Arthur", model: "llama3.1:8b" },
-        };
+        } satisfies ParticipantRuntimeOptions;
         const { participant, tunnel } = yield* register(options);
         yield* client.participants.remove({
           params: { code: room.code, id: "arthur-1" },
@@ -299,7 +302,7 @@ layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
   );
 
   it.effect(
-    "a participant with no open tunnel is the runtime's that registered last",
+    "a participant that is offline goes to the runtime that registers it",
     () =>
       Effect.gen(function* () {
         const client = yield* managementClient;
@@ -335,43 +338,105 @@ layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
   );
 
   it.effect(
-    "when the open tunnel drops, the participant goes to the runtime that registered last, without a moment in which it is still the old one's",
+    "a bootstrap token issued before the participant left opens no tunnel after another runtime registered its id either",
     () =>
       Effect.gen(function* () {
         const client = yield* managementClient;
-        const tunnels = yield* Tunnels;
+        const hub = yield* Hub;
         const { room } = yield* client.rooms.create({
-          payload: { name: "Forró" },
+          payload: { name: "Ciranda" },
         });
         const params = { code: room.code, id: "arthur-1" };
-        const online = yield* joinParticipant({
+        const options = {
+          hubUrl: hub.url,
           roomCode: room.code,
           participantId: "arthur-1",
-        });
-        yield* client.participants.register({
+          runtimeId: "runtime-of-arthur",
+          profile: { nickname: "Arthur", model: "llama3.1:8b" },
+        } satisfies ParticipantRuntimeOptions;
+        const { tunnel } = yield* register(options);
+        yield* client.participants.remove({
           params,
-          payload: {
-            nickname: "Arthur",
-            model: "llama3.1:8b",
-            runtimeId: "another-runtime",
-            version: GAMBI_VERSION,
-          },
+          query: { runtimeId: "runtime-of-arthur" },
         });
+        yield* register({ ...options, runtimeId: "another-runtime" });
 
-        yield* online.kill;
-        yield* tunnels.awaitDrop(room.code, "arthur-1");
+        // The runtime that left dials with the token it was handed before.
+        const error = yield* openTunnel(options, tunnel.token).pipe(
+          Effect.flip
+        );
 
-        // A removal the first runtime asked for and that arrives now, while
-        // the other is on its way in, is already late.
-        const late = yield* client.participants
-          .remove({ params, query: { runtimeId: online.runtime.runtimeId } })
-          .pipe(Effect.flip);
-        expect(late).toBeInstanceOf(ParticipantOfAnotherRuntime);
+        expect(error).toBeInstanceOf(TunnelOpenFailed);
         expect(
           yield* client.participants.list({ params: { code: room.code } })
         ).toMatchObject([
           { id: "arthur-1", status: "offline", runtimeId: "another-runtime" },
         ]);
-      })
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            defaultHandlers,
+            Socket.layerWebSocketConstructorGlobal
+          )
+        )
+      )
+  );
+
+  /**
+   * A WebSocket for the hub to serve a tunnel on, and what the other end of
+   * it sees: each message, and the code it closed with.
+   */
+  const tunnelSocket = Effect.gen(function* () {
+    const seen = yield* Queue.unbounded<
+      { readonly message: string } | { readonly closedWith: number }
+    >();
+    const server = yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        Bun.serve({
+          hostname: "127.0.0.1",
+          port: 0,
+          fetch: (request, running) =>
+            running.upgrade(request)
+              ? undefined
+              : new Response(null, { status: 400 }),
+          websocket: {
+            message: (_socket, message) => {
+              Queue.offerUnsafe(seen, { message: String(message) });
+            },
+            close: (_socket, code) => {
+              Queue.offerUnsafe(seen, { closedWith: code });
+            },
+          },
+        })
+      ),
+      (running) => Effect.promise(() => running.stop(true))
+    );
+    const socket = yield* Socket.makeWebSocket(`ws://127.0.0.1:${server.port}`);
+    return { socket, next: Queue.take(seen) };
+  });
+
+  it.effect(
+    "a tunnel that arrives for a participant taken out of the room meanwhile is closed as removed, and never welcomed",
+    () =>
+      Effect.gen(function* () {
+        const client = yield* managementClient;
+        const tunnels = yield* Tunnels;
+        const { room } = yield* client.rooms.create({
+          payload: { name: "Maracatu" },
+        });
+        const { socket, next } = yield* tunnelSocket;
+
+        // Its token was good, and it left before the tunnel was in place.
+        yield* tunnels
+          .serve(room.code, "arthur-1", socket, "runtime-of-arthur")
+          .pipe(Effect.forkScoped);
+
+        // The first thing the participant's end sees is the close, not a
+        // `Welcome`: it is not online, and it is told why.
+        expect(yield* next).toEqual({ closedWith: TUNNEL_REMOVED_CLOSE_CODE });
+        expect(
+          yield* tunnels.client(room.code, "arthur-1").pipe(Effect.flip)
+        ).toMatchObject({ _tag: "TunnelNotOpen" });
+      }).pipe(Effect.provide(Socket.layerWebSocketConstructorGlobal))
   );
 });

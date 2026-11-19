@@ -23,12 +23,13 @@ const participantIn = (roomName: string, participantId = "arthur-1") =>
     const { room } = yield* client.rooms.create({
       payload: { name: roomName },
     });
-    const options: ParticipantRuntimeOptions = {
+    const options = {
       hubUrl: hub.url,
       roomCode: room.code,
       participantId,
+      runtimeId: "runtime-of-arthur",
       profile: { nickname: "Arthur", model: "llama3.1:8b" },
-    };
+    } satisfies ParticipantRuntimeOptions;
     const statuses = client.participants
       .list({ params: { code: room.code } })
       .pipe(
@@ -121,7 +122,12 @@ layer(layerHub(), { excludeTestServices: true })("bootstrap token", (it) => {
         const { tunnel } = yield* register(options);
         yield* client.participants.register({
           params: { code: options.roomCode, id: "other" },
-          payload: { nickname: "Other", model: "m", version: GAMBI_VERSION },
+          payload: {
+            nickname: "Other",
+            model: "m",
+            runtimeId: "another-runtime",
+            version: GAMBI_VERSION,
+          },
         });
 
         const error = yield* openTunnel(

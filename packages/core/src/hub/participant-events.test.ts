@@ -229,6 +229,33 @@ it.effect.each([
     }).pipe(Effect.provide(layerParticipants))
 );
 
+// A second runtime dialed with the participant's id: the hub hands the
+// participant to it before it closes the tunnel it replaces.
+it.effect(
+  "a participant handed over to a runtime whose tunnel is on its way in is no longer the old runtime's to take out",
+  () =>
+    Effect.gen(function* () {
+      const participants = yield* Participants;
+      const participant = yield* participantAfter("tunnelOpened");
+
+      yield* participants.handOver(ROOM, "arthur-1", "runtime-2");
+
+      // A removal the old runtime asked for is late from this moment on.
+      expect(
+        yield* participants.transition(ROOM, "arthur-1", "left", RUNTIME)
+      ).toBeUndefined();
+      expect(yield* participants.get(ROOM, "arthur-1")).toMatchObject({
+        status: "online",
+        runtimeId: "runtime-2",
+      });
+      yield* participants.transition(ROOM, "arthur-1", "left", "runtime-2");
+      expect(yield* participant.nextEvent).toMatchObject({
+        type: "participant.removed",
+        participantId: "arthur-1",
+      });
+    }).pipe(Effect.provide(layerParticipants))
+);
+
 it.effect("what the status table does not list is not an event", () =>
   Effect.gen(function* () {
     const participant = yield* participantAfter();

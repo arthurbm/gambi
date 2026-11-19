@@ -28,6 +28,12 @@ export interface TestParticipantOptions<
   Handlers extends TunnelHandlers = TunnelHandlers,
 > extends Partial<Omit<ParticipantRuntimeOptions, "profile" | "roomCode">> {
   /**
+   * Where the participant dials, given the URL of the tunnel it was about to
+   * dial. For a test that stands another server where the hub's tunnel route
+   * would be. Default: that URL.
+   */
+  readonly dial?: ((url: string) => string) | undefined;
+  /**
    * Handlers of tunnel calls on this participant, to replace the default of
    * a call. The calls it leaves out keep their default: the diagnostics
    * every participant has (`TunnelDiagnostics`), "not supported" for the
@@ -122,6 +128,7 @@ export const joinParticipant = <Handlers extends TunnelHandlers = never>(
   Effect.gen(function* () {
     const hub = yield* Hub;
     const {
+      dial = (url: string) => url,
       handlers,
       loggers = [],
       onLifecycle,
@@ -166,7 +173,7 @@ export const joinParticipant = <Handlers extends TunnelHandlers = never>(
       Socket.WebSocketConstructor,
       (url, options) => {
         const socket = new WebSocket(
-          url,
+          dial(url),
           options as ConstructorParameters<typeof WebSocket>[1]
         );
         record(`DIAL ${url} ${JSON.stringify(options ?? null)}`);

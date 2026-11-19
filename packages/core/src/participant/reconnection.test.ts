@@ -2,6 +2,7 @@ import { expect } from "bun:test";
 import {
   GAMBI_VERSION,
   RoomNotFound,
+  TUNNEL_REMOVED_CLOSE_CODE,
   TunnelRpcs,
   VersionMismatch,
 } from "@gambi/protocol";
@@ -386,6 +387,10 @@ it.effect(
       yield* TestClock.adjust("31 seconds");
       expect(yield* registrations(first)).toBe(1);
       expect(yield* registrations(second)).toBe(1);
+      // The participant is the second runtime's, and it says so itself.
+      expect(second.runtime.participant.runtimeId).toBe(
+        second.runtime.runtimeId
+      );
       expect(yield* second.lifecycleEvents).toMatchObject([
         { type: "connected", attempt: 0 },
       ]);
@@ -440,6 +445,66 @@ it.effect(
         (yield* participant.lifecycleEvents).map((event) => event.type)
       ).toEqual(["connected", "left"]);
       expect(yield* statuses).toEqual([]);
+    }).pipe(Effect.provide(TestHub))
+);
+
+/**
+ * A server that accepts a WebSocket and closes it at once with `code`, the
+ * way the hub closes a tunnel it will not welcome.
+ */
+const serverThatClosesWith = (code: number) =>
+  Effect.acquireRelease(
+    Effect.sync(() =>
+      Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch: (request, running) =>
+          running.upgrade(request)
+            ? undefined
+            : new Response(null, { status: 400 }),
+        websocket: {
+          open: (socket) => socket.close(code, "the participant left the room"),
+          message: () => undefined,
+        },
+      })
+    ),
+    (running) => Effect.promise(() => running.stop(true))
+  ).pipe(Effect.map((running) => `ws://127.0.0.1:${running.port}`));
+
+// The participant was taken out of the room between the registration of a
+// runtime that was coming back and its tunnel: the hub says so on the tunnel
+// it does not welcome.
+it.effect(
+  "ends, and does not register again, when the hub closes the tunnel it comes back with as removed, before welcoming it",
+  () =>
+    Effect.gen(function* () {
+      const { roomCode } = yield* newRoom("Samba de coco");
+      const closing = yield* serverThatClosesWith(TUNNEL_REMOVED_CLOSE_CODE);
+      let dials = 0;
+      const participant = yield* joinParticipant({
+        roomCode,
+        participantId: "arthur-1",
+        reconnect: true,
+        // The join dials the hub; the way back finds the tunnel closed.
+        dial: (url) => (dials++ === 0 ? url : closing),
+      });
+      yield* participant.nextLifecycleEvent;
+
+      yield* participant.kill;
+      expect((yield* participant.nextLifecycleEvent).type).toBe("reconnecting");
+      yield* TestClock.adjust("1 second");
+
+      expect(yield* participant.nextLifecycleEvent).toEqual({
+        type: "left",
+        roomCode,
+        participantId: "arthur-1",
+        reason: "removed",
+      });
+      expect((yield* Effect.flip(participant.runtime.ended))._tag).toBe(
+        "ParticipantRemoved"
+      );
+      yield* TestClock.adjust("31 seconds");
+      expect(yield* registrations(participant)).toBe(2);
     }).pipe(Effect.provide(TestHub))
 );
 

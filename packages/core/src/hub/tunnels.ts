@@ -28,6 +28,7 @@ import {
   type BootstrapToken,
   type CallNotSupported,
   type HarnessDisconnected,
+  TUNNEL_REMOVED_CLOSE_CODE,
   TUNNEL_REPLACED_CLOSE_CODE,
   TunnelRpcs,
   TunnelTokenInvalid,
@@ -166,10 +167,12 @@ export class Tunnels extends Context.Service<
     ) => Effect.Effect<TunnelClient, TunnelNotOpen, Scope.Scope>;
     /**
      * Closes the participant's tunnel from the hub's side and waits until it
-     * is gone. Its calls in flight fail with `RpcClientError`, whose message
-     * carries `reason`. With a `closeCode`, the WebSocket closes with it, for
-     * a participant runtime that has to tell this end from a drop. Does
-     * nothing when the participant has no tunnel.
+     * is gone, for a participant that left the room. Its calls in flight
+     * fail with `RpcClientError`, whose message carries `reason`. With a
+     * `closeCode`, the WebSocket closes with it, for a participant runtime
+     * that has to tell this end from a drop. The bootstrap tokens issued for
+     * the participant are spent too: one handed out before it left opens no
+     * tunnel after another runtime registered its id.
      */
     readonly close: (
       roomCode: string,
@@ -401,6 +404,9 @@ export class Tunnels extends Context.Service<
             // the old tunnel is alive instead, it belongs to another runtime
             // with the same id, and the close code tells that one it was
             // replaced, so it does not dial again and take the tunnel back.
+            // The participant is the new runtime's first: while the old
+            // tunnel closes, a removal its runtime asked for is already late.
+            yield* participants.handOver(roomCode, participantId, runtimeId);
             for (
               let previous = open.get(key);
               previous !== undefined;
@@ -437,12 +443,23 @@ export class Tunnels extends Context.Service<
               ),
             };
             open.set(key, tunnel);
-            yield* participants.transition(
+            const opened = yield* participants.transition(
               roomCode,
               participantId,
-              "tunnelOpened",
-              runtimeId
+              "tunnelOpened"
             );
+            if (opened === undefined) {
+              // It was taken out of the room after its token was spent and
+              // before this: there is nobody to be online. The tunnel is not
+              // welcomed, and closes saying why, as any tunnel of a
+              // participant that left.
+              const reason = "the participant left the room";
+              closeFrame = new Socket.CloseEvent(
+                TUNNEL_REMOVED_CLOSE_CODE,
+                reason
+              );
+              return yield* end(closedByHub(reason));
+            }
             yield* Effect.logInfo("tunnel opened");
             // The participant runtime waits for this call to know it is
             // online. What the hub starts on every new tunnel goes here,
@@ -508,12 +525,21 @@ export class Tunnels extends Context.Service<
             () => open.get(keyOf(roomCode, participantId))?.gone ?? Effect.void
           ),
         close: (roomCode, participantId, reason, closeCode) =>
-          Effect.suspend(
-            () =>
+          Effect.suspend(() => {
+            for (const [token, issued] of tokens) {
+              if (
+                issued.roomCode === roomCode &&
+                issued.participantId === participantId
+              ) {
+                tokens.delete(token);
+              }
+            }
+            return (
               open
                 .get(keyOf(roomCode, participantId))
                 ?.close(reason, closeCode) ?? Effect.void
-          ),
+            );
+          }),
         closeAll,
         client: (roomCode, participantId) =>
           Effect.suspend(() => {

@@ -164,6 +164,7 @@ layer(layerHub(), { excludeTestServices: true })("management client", (it) => {
         client.participants.register(room.code, "arthur-1", {
           nickname: "Arthur",
           model: "llama3",
+          runtimeId: "a-runtime",
           endpoint: undefined,
           password: undefined,
           specs: { gpu: undefined, ram: 32 },
@@ -236,6 +237,7 @@ layer(layerHub(), { excludeTestServices: true })(
           client.participants.register(room.code, "lia-1", {
             nickname: "Lia",
             model: "llama3",
+            runtimeId: "a-runtime",
             endpoint: "http://localhost:11434",
             config: { instructions: "Só entre nós.", temperature: 0.2 },
           })
@@ -383,6 +385,7 @@ layer(layerHub(), { excludeTestServices: true })(
           client.participants.register(room.code, "lia-1", {
             nickname: "Lia",
             model: "llama3",
+            runtimeId: "a-runtime",
           })
         );
 
@@ -408,6 +411,7 @@ layer(layerHub(), { excludeTestServices: true })(
             client.participants.register(room.code, "lia-1", {
               nickname: "Lia",
               model: "llama3",
+              runtimeId: "a-runtime",
             })
           );
           const watch = client.events.watch(room.code)[Symbol.asyncIterator]();
@@ -464,6 +468,7 @@ layer(layerHub(), { excludeTestServices: true })(
           client.participants.register(room.code, "lia-1", {
             nickname: "Lia",
             model: "llama3",
+            runtimeId: "a-runtime",
           })
         );
         const joined = yield* Effect.promise(() => second);
@@ -707,6 +712,7 @@ describe("management client and the version of the hub", () => {
         client.participants.register(room.code, "lia-1", {
           nickname: "Lia",
           model: "llama3",
+          runtimeId: "a-runtime",
           version: "0.7.9",
         })
       );

@@ -206,6 +206,10 @@ export class HubUnreachable extends Schema.TaggedError<HubUnreachable>()(
   }
 }
 
+/** Why the hub closed a tunnel for good: the runtime must not dial again. */
+const FinalDrop = Schema.Literals(["replaced", "removed"]);
+type FinalDrop = typeof FinalDrop.Type;
+
 /** The tunnel did not open: the dial failed, or the hub did not accept it in time. */
 export class TunnelOpenFailed extends Schema.TaggedError<TunnelOpenFailed>()(
   "TunnelOpenFailed",
@@ -213,6 +217,11 @@ export class TunnelOpenFailed extends Schema.TaggedError<TunnelOpenFailed>()(
     hubUrl: Schema.String,
     roomCode: Schema.String,
     participantId: Schema.String,
+    /**
+     * Set when the hub closed the tunnel for good instead of welcoming it:
+     * dialing again would not help.
+     */
+    closed: Schema.optionalKey(FinalDrop),
     cause: Schema.Defect(),
   }
 ) {
@@ -278,12 +287,13 @@ export type RegistrationError =
   | HubUnreachable;
 
 /**
- * Registers the participant in the room. Registering again with the same
- * `participantId` updates it, and every registration answers with a new
- * bootstrap token: that is how a runtime comes back after its tunnel drops.
+ * Registers the participant in the room, as the runtime `runtimeId`.
+ * Registering again with the same `participantId` updates it, and every
+ * registration answers with a new bootstrap token: that is how a runtime
+ * comes back after its tunnel drops.
  */
 export const register = Effect.fn("ParticipantRuntime.register")(function* (
-  options: ParticipantRuntimeOptions
+  options: ParticipantRuntimeOptions & { readonly runtimeId: string }
 ): Effect.fn.Return<
   ParticipantRegistered,
   RegistrationError,
@@ -298,9 +308,7 @@ export const register = Effect.fn("ParticipantRuntime.register")(function* (
         ...(options.password === undefined
           ? {}
           : { password: options.password }),
-        ...(options.runtimeId === undefined
-          ? {}
-          : { runtimeId: options.runtimeId }),
+        runtimeId: options.runtimeId,
         version: options.version ?? GAMBI_VERSION,
       },
     })
@@ -332,9 +340,6 @@ export const register = Effect.fn("ParticipantRuntime.register")(function* (
  * participant was taken out of the room.
  */
 export type TunnelDrop = "tunnelDropped" | "hubSilent" | FinalDrop;
-
-/** A tunnel the hub closed for good: the runtime must not dial again. */
-type FinalDrop = "replaced" | "removed";
 
 /** What the code a tunnel's WebSocket closed with says, when it says something. */
 const FINAL_CLOSE_CODES: Readonly<Record<number, FinalDrop>> = {
@@ -449,6 +454,7 @@ export const openTunnel = Effect.fn("ParticipantRuntime.openTunnel")(function* (
       hubUrl: options.hubUrl,
       roomCode: options.roomCode,
       participantId: options.participantId,
+      ...(closedForGood === undefined ? {} : { closed: closedForGood }),
       cause,
     });
   const welcome = yield* Effect.raceFirst(
@@ -565,7 +571,10 @@ export class ParticipantRuntime extends Context.Service<
       | ParticipantReplaced
       | ParticipantRemoved
     >;
-    /** The participant as the hub registered it when it joined. */
+    /**
+     * The participant as the hub registered it when it joined, and as this
+     * runtime's (`runtimeId`), which it is once its tunnel is open.
+     */
     readonly participant: ParticipantSummary;
     /**
      * The id of this runtime. Taking the participant out of the room
@@ -645,7 +654,12 @@ export class ParticipantRuntime extends Context.Service<
               attempt,
               hubVersion: tunnel.hubVersion,
             });
-            yield* Deferred.succeed(joined, registered.participant);
+            // The registration may have named the runtime of a tunnel this
+            // one replaced: by now the participant is this runtime's.
+            yield* Deferred.succeed(joined, {
+              ...registered.participant,
+              runtimeId,
+            });
             return yield* tunnel.dropped;
           }).pipe(Effect.scoped);
 
@@ -672,6 +686,13 @@ export class ParticipantRuntime extends Context.Service<
             const outcome = yield* Effect.result(connection(attempt));
             if (Result.isSuccess(outcome)) {
               return outcome.success;
+            }
+            // The hub closed the tunnel for good before it welcomed it.
+            if (
+              outcome.failure._tag === "TunnelOpenFailed" &&
+              outcome.failure.closed !== undefined
+            ) {
+              return outcome.failure.closed;
             }
             const retry = reasonToRetry(outcome.failure);
             if (retry === undefined) {

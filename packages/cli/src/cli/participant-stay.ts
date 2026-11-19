@@ -211,6 +211,8 @@ export const stayInRoom = <Hosted, E, R>(stay: Stay<Hosted, E, R>) =>
     // leave before the runtime exists.
     const runtimeId = yield* makeRuntimeId;
     const lifecycle = yield* Queue.unbounded<ParticipantLifecycleEvent>();
+    // Whether the tunnel is open, as far as the runtime said.
+    let online = false;
     const untilTheRuntimeLeaves = followLifecycle(output, identity, lifecycle);
 
     const leaving = (signal: TerminationSignal) =>
@@ -233,7 +235,10 @@ export const stayInRoom = <Hosted, E, R>(stay: Stay<Hosted, E, R>) =>
           Effect.map(
             Layer.build(
               stay.host({
-                onLifecycle: (event) => Queue.offer(lifecycle, event),
+                onLifecycle: (event) => {
+                  online = event.type === "connected";
+                  return Queue.offer(lifecycle, event);
+                },
                 runtimeId,
               })
             ),
@@ -307,8 +312,10 @@ export const stayInRoom = <Hosted, E, R>(stay: Stay<Hosted, E, R>) =>
         yield* leaving(how.signal);
         // A participant that shares a model endpoint tells the hub first, so
         // the room hears one thing: the participant left. Closing the tunnel
-        // first would show it offline in between.
-        return harness === undefined
+        // first would show it offline in between. One that is waiting to
+        // come back has no tunnel to close, and stops first: it would
+        // register again right after the hub took the participant out.
+        return harness === undefined && online
           ? {
               reason: "stopped" as const,
               leave: yield* leaveRoom(stay.hubUrl, identity, runtimeId),

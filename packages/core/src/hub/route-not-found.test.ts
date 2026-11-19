@@ -67,6 +67,7 @@ layer(layerHub(), { excludeTestServices: true })(
           payload: {
             nickname: "Arthur",
             model: "llama3.1:8b",
+            runtimeId: "runtime-of-arthur",
             version: GAMBI_VERSION,
           },
         });

@@ -230,6 +230,40 @@ it.effect(
     })
 );
 
+// A runtime that is waiting to come back would register again right after
+// the hub took the participant out, and the participant would be back.
+it.effect(
+  "told to leave while it waits to come back, it stops trying first: the participant it takes out does not come back",
+  () =>
+    Effect.gen(function* () {
+      const client = yield* managementClient;
+      const room = yield* newRoom;
+      const link = yield* linkToHub;
+      const joining = yield* joinRoom(link.url, room.code);
+      yield* link.cut;
+      expect((yield* joining.nextEvent).type).toBe("reconnecting");
+      yield* link.restore;
+
+      // The hub is slow to answer: whatever is sent now arrives later, in
+      // the order it was sent.
+      yield* link.freeze;
+      yield* joining.signal("SIGINT");
+      expect((yield* joining.nextEvent).type).toBe("leaving");
+      // The wait of the reconnection ends while the removal is on its way.
+      yield* TestClock.adjust("1 second");
+      yield* link.unfreeze;
+
+      expect(yield* joining.nextEvent).toMatchObject({
+        type: "left",
+        data: { reason: "stopped", removed: true },
+      });
+      expect((yield* joining.result).exitCode).toBe(0);
+      expect(
+        yield* client.participants.list({ params: { code: room.code } })
+      ).toEqual([]);
+    }).pipe(Effect.provide(TestHub))
+);
+
 it.effect(
   "told to leave while the hub is gone, it stops and says the hub did not confirm",
   () =>

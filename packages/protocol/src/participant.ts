@@ -58,9 +58,10 @@ export const ParticipantSummary = Schema.Struct({
   capabilities: ParticipantCapabilities,
   status: ParticipantStatus,
   /**
-   * The participant runtime this participant belongs to: the one whose tunnel
-   * is open, or, while no tunnel is open, the one that registered last. Only
-   * a removal that names it takes the participant out of the room.
+   * The participant runtime this participant belongs to: the one that
+   * registered it, until another registers it while it is `offline` or
+   * opens its tunnel. Only a removal that names it takes the participant
+   * out of the room.
    */
   runtimeId: RuntimeId,
   /** Milliseconds since the epoch. Kept across re-registrations. */
@@ -91,10 +92,9 @@ export const RegisterParticipant = Schema.Struct({
   capabilities: Schema.optionalKey(ParticipantCapabilities),
   /**
    * The id the participant runtime gave itself, the same in every
-   * registration of its life. A registration without one is taken for a
-   * runtime of its own, and the answer says the id the hub gave it.
+   * registration of its life.
    */
-  runtimeId: Schema.optionalKey(RuntimeId),
+  runtimeId: RuntimeId,
   /**
    * The Gambi version of the participant runtime (`GAMBI_VERSION`). The hub
    * refuses a minor different from its own.

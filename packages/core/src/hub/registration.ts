@@ -15,7 +15,6 @@ import {
   VersionMismatch,
 } from "@gambi/protocol";
 import { Effect } from "effect";
-import { SecureRandom } from "effect/crypto";
 import { Participants } from "./participants.ts";
 import { Rooms } from "./rooms.ts";
 import { HubSettings } from "./settings.ts";
@@ -46,19 +45,16 @@ export const registerParticipant = Effect.fn("Hub.registerParticipant")(
     }
     const { password, version, authHeaders, runtimeId, ...profile } =
       registration;
-    // A registration that names no runtime is a runtime of its own.
-    const registering =
-      runtimeId ?? (yield* (yield* SecureRandom.SecureRandom).uuidV4());
     const participant = yield* participants.register(
       room.code,
       participantId,
       profile,
-      registering
+      runtimeId
     );
     const tunnel = yield* tunnels.issueToken(
       room.code,
       participantId,
-      registering
+      runtimeId
     );
     return { participant, tunnel } satisfies ParticipantRegistered;
   }

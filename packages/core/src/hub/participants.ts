@@ -13,11 +13,10 @@
  * needs the participant to still be in the room.
  *
  * A participant belongs to one participant runtime (`runtimeId`): the one
- * whose tunnel is open, or, while none is open, the one that registered
- * last. Leaving is for that runtime alone, so that a removal that arrives
- * late never takes out another runtime that joined with the same id. It
- * changes hands inside `transition` and `register`, in the same step as the
- * status, so there is no moment in which it is the wrong runtime's.
+ * that registered it, until another takes it, by registering while it is
+ * `offline` or by dialing its tunnel (`handOver`). Leaving is for that
+ * runtime alone, so that a removal that arrives late never takes out
+ * another runtime that joined with the same id.
  *
  * The service does not know rooms: the caller answers for the room existing.
  * `Rooms` reads `count` for its summaries.
@@ -61,8 +60,6 @@ interface ParticipantState {
   readonly joinedAt: number;
   readonly model: string;
   readonly nickname: string;
-  /** The participant runtime that registered last. */
-  readonly registeredBy: string;
   /** The participant runtime the participant belongs to. */
   readonly runtimeId: string;
   readonly specs: NonNullable<ParticipantProfile["specs"]>;
@@ -128,23 +125,6 @@ const toSummary = (participant: ParticipantState): ParticipantSummary => ({
 const keyOf = (roomCode: string, participantId: string) =>
   `${roomCode} ${participantId}`;
 
-/**
- * The runtime a participant belongs to after `event`: the one whose tunnel
- * opened, and, once the open tunnel drops, the one that registered last.
- */
-const runtimeAfter = (
-  participant: ParticipantState,
-  event: StatusEvent,
-  runtimeId: string | undefined
-): string => {
-  if (event === "tunnelOpened") {
-    return runtimeId ?? participant.runtimeId;
-  }
-  return event === "tunnelDropped"
-    ? participant.registeredBy
-    : participant.runtimeId;
-};
-
 /** The room event of a change of status: one per row of the status table. */
 const eventOf = (
   change: StatusChange,
@@ -178,6 +158,17 @@ export class Participants extends Context.Service<
       roomCode: string,
       participantId: string
     ) => Effect.Effect<ParticipantSummary | undefined>;
+    /**
+     * Makes the participant the runtime `runtimeId`'s, whatever its status:
+     * that runtime dialed its tunnel, which replaces the one the participant
+     * has. From here on a removal the replaced runtime asked for is late.
+     * Does nothing when the participant is not in the room.
+     */
+    readonly handOver: (
+      roomCode: string,
+      participantId: string,
+      runtimeId: string
+    ) => Effect.Effect<void>;
     /**
      * Routes a request: picks the participant the model selector asks for
      * and marks it `busy`. Only an `online` participant is picked, so a
@@ -230,10 +221,12 @@ export class Participants extends Context.Service<
      * Applies `event` to the participant. Answers the change, or `undefined`
      * when the status table has no row for it (nothing changed).
      *
-     * `runtimeId` is the participant runtime behind the event, for the two
-     * events that have one. A tunnel that opens (`tunnelOpened`) makes the
-     * participant that runtime's. Leaving (`left`) changes nothing, and
-     * answers `undefined`, when the participant belongs to another runtime.
+     * Leaving (`left`) is for the participant runtime the participant
+     * belongs to: with another `runtimeId` it changes nothing and answers
+     * `undefined`.
+     *
+     * `tunnelOpened` answers `undefined` for a participant that is not in
+     * the room: it left while its tunnel was on its way in.
      */
     readonly transition: (
       roomCode: string,
@@ -301,7 +294,6 @@ export class Participants extends Context.Service<
             : {
                 ...participant,
                 status: to,
-                runtimeId: runtimeAfter(participant, event, runtimeId),
                 updatedAt: yield* Clock.currentTimeMillis,
               };
         if (after === undefined) {
@@ -367,7 +359,6 @@ export class Participants extends Context.Service<
           specs: profile.specs ?? {},
           capabilities: profile.capabilities ?? UNKNOWN_CAPABILITIES,
           status,
-          registeredBy: runtimeId,
           // While a tunnel is open the participant is that tunnel's runtime's.
           runtimeId:
             existing === undefined || existing.status === "offline"
@@ -484,6 +475,14 @@ export class Participants extends Context.Service<
             return participant === undefined
               ? undefined
               : toSummary(participant);
+          }),
+        handOver: (roomCode, participantId, runtimeId) =>
+          Effect.sync(() => {
+            const room = byRoom.get(roomCode);
+            const participant = room?.get(participantId);
+            if (participant !== undefined) {
+              room?.set(participantId, { ...participant, runtimeId });
+            }
           }),
         list: (roomCode) =>
           Effect.sync(() =>
