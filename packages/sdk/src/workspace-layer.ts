@@ -17,6 +17,9 @@ import {
   type WorkspaceContext,
 } from "./workspace.ts";
 
+/** How many changes wait for whoever takes the artifacts. */
+const NOTICED_CHANGES = 64;
+
 const messageOf = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause);
 
@@ -56,6 +59,47 @@ export const workspaceLayer = (
       const { path } = prepared;
       const failed = (operation: "collect" | "observe") => (cause: unknown) =>
         new WorkspaceFailed({ path, operation, cause });
+
+      // The Workspace is observed from here on, before anything runs in it,
+      // like the default one: a change is never missed for having come
+      // before the artifacts started to be taken. Each element only says
+      // "look again", so the newest ones are enough while nobody reads them.
+      // Being unable to observe does not fail the preparation: `changes`
+      // fails instead, and the Workspace can still be collected.
+      const noticed = yield* Queue.sliding<void, WorkspaceFailed | Cause.Done>(
+        NOTICED_CHANGES
+      );
+      yield* Effect.acquireRelease(
+        Effect.try({
+          try: () =>
+            prepared.watch(
+              () => {
+                Queue.offerUnsafe(noticed, undefined);
+              },
+              (cause) => {
+                Queue.failCauseUnsafe(
+                  noticed,
+                  Cause.fail(failed("observe")(cause))
+                );
+              }
+            ),
+          catch: failed("observe"),
+        }).pipe(
+          Effect.catch((error) =>
+            Effect.as(Queue.fail(noticed, error), () => undefined)
+          )
+        ),
+        (stop) =>
+          Effect.sync(stop).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning(
+                "Stopping the watch of the Workspace failed.",
+                cause
+              )
+            )
+          )
+      );
+
       return RuntimeWorkspace.of({
         path,
         collect: Effect.tryPromise({
@@ -72,29 +116,7 @@ export const workspaceLayer = (
                 })
               : failed("collect")(cause),
         }),
-        changes: Stream.callback<void, WorkspaceFailed>(
-          (queue) =>
-            Effect.acquireRelease(
-              Effect.try({
-                try: () =>
-                  prepared.watch(
-                    () => {
-                      Queue.offerUnsafe(queue, undefined);
-                    },
-                    (cause) => {
-                      Queue.failCauseUnsafe(
-                        queue,
-                        Cause.fail(failed("observe")(cause))
-                      );
-                    }
-                  ),
-                catch: failed("observe"),
-              }),
-              (stop) => Effect.sync(stop)
-            ),
-          // Each element only says "look again": the newest ones are enough.
-          { bufferSize: 64, strategy: "sliding" }
-        ),
+        changes: Stream.fromQueue(noticed),
       });
     })
   );

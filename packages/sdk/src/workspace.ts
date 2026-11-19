@@ -53,7 +53,8 @@ export interface PreparedWorkspace {
   /**
    * Calls `onChange` when something in the Workspace changed, and `onError`
    * when it can no longer be observed. It says "look again", not what
-   * changed. Returns the function that stops watching. Called once.
+   * changed. Returns the function that stops watching. Called once, as soon
+   * as the Workspace is prepared and before the harness starts.
    */
   readonly watch: (
     onChange: () => void,

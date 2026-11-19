@@ -67,17 +67,44 @@ export const joinRoom = async <A, R>(options: {
   let stopping = false;
   // Another runtime has this participant's id now: the room's is not ours.
   let replaced = false;
+  // How the runtime ended, once it did.
+  let end: ParticipantSessionEnd | undefined;
+  // Releases everything the session holds. Set once the join returned.
+  let release: (() => Promise<void>) | undefined;
   const ended = Promise.withResolvers<ParticipantSessionEnd>();
 
+  /**
+   * A runtime that ended holds nothing worth keeping: what it hosted (a
+   * harness, a Workspace) is released, and only then does `ended` settle.
+   */
+  const settle = (): void => {
+    if (end === undefined || release === undefined) {
+      return;
+    }
+    const how = end;
+    const resolve = () => ended.resolve(how);
+    release().then(resolve, resolve);
+  };
+
+  // Releasing waits for the runtime's fibers, and this runs inside one of
+  // them: whatever releases is started after the callback returned.
   const onLifecycle = (event: RuntimeLifecycleEvent) =>
     Effect.sync(() => {
       if (event.type === "left") {
         replaced = event.reason === "replaced";
-        ended.resolve({
+        end = {
           reason: event.reason,
           ...(event.error === undefined ? {} : { error: event.error }),
-        });
+        };
+        queueMicrotask(settle);
       } else if (stopping) {
+        // The hub closed the tunnel of the participant it took out. The
+        // runtime stops here, before it registers again as if that were a
+        // drop to come back from.
+        if (event.type === "reconnecting") {
+          // `leave` awaits the same release and hears how it went.
+          queueMicrotask(() => release?.().catch(() => undefined));
+        }
         return;
       }
       options.onLifecycle?.(event);
@@ -102,6 +129,10 @@ export const joinRoom = async <A, R>(options: {
     "The participant session",
     options.joined
   );
+
+  release = boundary.close;
+  // The runtime may have ended before the join returned.
+  settle();
 
   /**
    * Tells the hub that the participant left, with a client of its own, so
@@ -137,7 +168,11 @@ export const joinRoom = async <A, R>(options: {
       await boundary.close();
     } else {
       await boundary.close();
-      await tellHub();
+      // Closing takes a while (the last artifact), and the tunnel is open
+      // meanwhile: another runtime may have taken this participant's place.
+      if (!replaced) {
+        await tellHub();
+      }
     }
   };
 

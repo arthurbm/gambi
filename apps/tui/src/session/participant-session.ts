@@ -30,6 +30,11 @@ export interface JoinParticipantData {
   specs?: MachineSpecs | undefined;
 }
 
+const UNKNOWN_CAPABILITIES: ParticipantCapabilities = {
+  chatCompletions: "unknown",
+  openResponses: "unknown",
+};
+
 // The participant this process hosts - persists across navigation
 let activeSession: ParticipantSession | null = null;
 
@@ -77,7 +82,10 @@ export const joinAsParticipant = async (
       password: data.password,
       specs: data.specs,
       config: data.config,
-      capabilities: data.capabilities,
+      // What the join form found when it tested the endpoint. Without a
+      // result the participant registers as `unknown`, at once: the session
+      // would otherwise probe the endpoint itself before joining.
+      capabilities: data.capabilities ?? UNKNOWN_CAPABILITIES,
       authHeaders: data.authHeaders,
       onLifecycle,
     });

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hub } from "@gambi/core/hub/hub";
 import { layerHub } from "@gambi/core/testing/hub";
+import { linkToHub } from "@gambi/core/testing/hub-link";
 import { layer } from "@gambi/testing/effect";
 import { Effect } from "effect";
 import { createClient } from "./client.ts";
@@ -12,6 +13,7 @@ import {
   type ArtifactLifecycleEvent,
   createHarnessParticipantSession,
   createLocalDirectoryWorkspace,
+  createParticipantSession,
   type HarnessParticipantSessionOptions,
   type LogEntry,
   ParticipantError,
@@ -366,6 +368,152 @@ layer(layerHub(), { excludeTestServices: true })(
             ],
           });
           expect(detached.reason).toBe("left");
+        }),
+      20_000
+    );
+
+    it.effect(
+      "a Workspace of the host's own is watched before the harness starts, so nothing the harness writes comes too early",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* frevo;
+          const folder = yield* emptyFolder;
+          const order: string[] = [];
+          const workspace: Workspace = {
+            prepare: () =>
+              Promise.resolve({
+                path: folder,
+                collect: () => Promise.resolve([]),
+                watch: () => {
+                  order.push("watching");
+                  return () => undefined;
+                },
+              }),
+          };
+
+          yield* hosted({
+            hubUrl: room.hubUrl,
+            roomCode: room.roomCode,
+            participantId: "frevo-bot",
+            nickname: "Frevo bot",
+            harness: "fake",
+            workspace,
+            onLog: (entry) => {
+              if (entry.message === "harness started") {
+                order.push("harness started");
+              }
+            },
+          });
+
+          expect(order).toEqual(["watching", "harness started"]);
+        }),
+      20_000
+    );
+
+    it.effect(
+      "a session that ended by itself has stopped its harness and let go of its Workspace",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* frevo;
+          const folder = yield* emptyFolder;
+          const link = yield* linkToHub;
+          const local = createLocalDirectoryWorkspace({ path: folder });
+          let disposed = false;
+          const session = yield* hosted({
+            hubUrl: link.url,
+            roomCode: room.roomCode,
+            participantId: "frevo-bot",
+            nickname: "Frevo bot",
+            harness: "fake",
+            reconnect: false,
+            workspace: {
+              prepare: async (context) => {
+                const prepared = await local.prepare(context);
+                return {
+                  ...prepared,
+                  dispose: async () => {
+                    disposed = true;
+                    await prepared.dispose?.();
+                  },
+                };
+              },
+            },
+          });
+
+          yield* link.cut;
+          const end = yield* Effect.promise(() => session.ended);
+
+          expect(end).toEqual({ reason: "tunnelDropped" });
+          expect(isRunning(session.harness.pid)).toBe(false);
+          expect(disposed).toBe(true);
+        }),
+      20_000
+    );
+
+    it.effect(
+      "leaving a session that another runtime replaced while it was closing leaves the other in the room",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* frevo;
+          const folder = yield* emptyFolder;
+          const collecting = Promise.withResolvers<void>();
+          const collected = Promise.withResolvers<void>();
+          const session = yield* hosted({
+            hubUrl: room.hubUrl,
+            roomCode: room.roomCode,
+            participantId: "frevo-bot",
+            nickname: "Frevo bot",
+            harness: "fake",
+            // The last artifact is held: the session stays closing, with its
+            // tunnel still open, for as long as the test wants.
+            workspace: {
+              prepare: () =>
+                Promise.resolve({
+                  path: folder,
+                  collect: async () => {
+                    collecting.resolve();
+                    await collected.promise;
+                    return [];
+                  },
+                  watch: () => () => undefined,
+                }),
+            },
+          });
+
+          const leaving = session.leave();
+          yield* Effect.promise(() => collecting.promise);
+          const other = yield* Effect.acquireRelease(
+            Effect.promise(() =>
+              createParticipantSession({
+                hubUrl: room.hubUrl,
+                roomCode: room.roomCode,
+                participantId: "frevo-bot",
+                nickname: "Another frevo bot",
+                model: "llama3",
+                endpoint: "http://127.0.0.1:1",
+                capabilities: {
+                  chatCompletions: "unknown",
+                  openResponses: "unknown",
+                },
+              })
+            ),
+            (joined) => Effect.promise(() => joined.stop())
+          );
+          const end = yield* Effect.promise(() => session.ended);
+          collected.resolve();
+          yield* Effect.promise(() => leaving);
+
+          expect(end).toEqual({ reason: "replaced" });
+          expect(other.participant.nickname).toBe("Another frevo bot");
+          const participants = yield* Effect.promise(() =>
+            room.client.participants.list(room.roomCode)
+          );
+          expect(
+            participants.map((participant) => [
+              participant.nickname,
+              participant.status,
+            ])
+          ).toEqual([["Another frevo bot", "online"]]);
         }),
       20_000
     );

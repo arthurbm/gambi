@@ -99,6 +99,12 @@ import {
   createParticipantSession,
 } from "gambi-sdk/participant";
 
+// A step that never comes (an artifact that is not sent) must fail the check.
+setTimeout(() => {
+  console.error("The hosting program did not finish in 60 seconds.");
+  process.exit(1);
+}, 60_000).unref();
+
 const hub = await createHub({ hostname: "127.0.0.1", port: 0 });
 const portInUse = await createHub({ hostname: "127.0.0.1", port: hub.port }).catch((error) => error);
 const client = createClient({ hubUrl: hub.url });

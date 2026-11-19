@@ -83,10 +83,15 @@ const arthur = (room: { hubUrl: string; roomCode: string }) => ({
 });
 
 /**
- * A TCP relay in front of the hub of the block that can stop passing on
- * requests to leave a room, the way a hub that stopped answering does: the
- * `DELETE` is accepted and never answered. `abandoned` completes when the
- * client closes the connection of a request held like that.
+ * A TCP relay in front of the hub of the block that can get in the way of
+ * the requests to leave a room:
+ *
+ * - `stopAnsweringLeaves`: the `DELETE` is accepted and never reaches the
+ *   hub, the way a hub that stopped answering does. `abandoned` completes
+ *   when the client closes the connection of a request held like that.
+ * - `holdAnswersToLeaves`: the `DELETE` reaches the hub, which takes the
+ *   participant out, and the answer is held on its way back until
+ *   `releaseAnswers`.
  */
 const hubThatStopsAnsweringLeaves = Effect.gen(function* () {
   const hub = yield* Hub;
@@ -94,6 +99,8 @@ const hubThatStopsAnsweringLeaves = Effect.gen(function* () {
   const abandoned = Promise.withResolvers<void>();
   const sockets = new Set<Socket>();
   let holding = false;
+  let holdingAnswers = false;
+  const heldAnswers: (() => void)[] = [];
   const server = yield* Effect.acquireRelease(
     Effect.promise(
       () =>
@@ -101,16 +108,27 @@ const hubThatStopsAnsweringLeaves = Effect.gen(function* () {
           const relay = createServer((client) => {
             const upstream = connect(upstreamPort, "127.0.0.1");
             let held = false;
+            let answerHeld = false;
             sockets.add(client).add(upstream);
             client.on("data", (chunk) => {
-              if (holding && chunk.toString("latin1").startsWith("DELETE ")) {
+              const leaves = chunk.toString("latin1").startsWith("DELETE ");
+              if (holding && leaves) {
                 held = true;
+              }
+              if (holdingAnswers && leaves) {
+                answerHeld = true;
               }
               if (!held) {
                 upstream.write(chunk);
               }
             });
-            upstream.on("data", (chunk) => client.write(chunk));
+            upstream.on("data", (chunk) => {
+              if (answerHeld) {
+                heldAnswers.push(() => client.write(chunk));
+              } else {
+                client.write(chunk);
+              }
+            });
             client.on("close", () => {
               if (held) {
                 abandoned.resolve();
@@ -137,6 +155,14 @@ const hubThatStopsAnsweringLeaves = Effect.gen(function* () {
   return {
     /** Completes when the client gave up a request to leave it had sent. */
     abandoned: Effect.promise(() => abandoned.promise),
+    holdAnswersToLeaves: Effect.sync(() => {
+      holdingAnswers = true;
+    }),
+    releaseAnswers: Effect.sync(() => {
+      for (const answer of heldAnswers.splice(0)) {
+        answer();
+      }
+    }),
     stopAnsweringLeaves: Effect.sync(() => {
       holding = true;
     }),
@@ -294,6 +320,40 @@ layer(layerHub(), { excludeTestServices: true })(
             type: "participant.offline",
             participant: { id: "arthur-1" },
           });
+        })
+    );
+
+    it.effect(
+      "leaving does not come back to the room while the hub's answer is on its way",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* frevo;
+          const hub = yield* hubThatStopsAnsweringLeaves;
+          const session = yield* joined({
+            ...arthur(room),
+            hubUrl: hub.url,
+            // Longer than the test: only the hub's answer ends the wait.
+            leaveTimeoutMs: 600_000,
+          });
+          const watch = yield* watching(room.roomCode);
+
+          yield* hub.holdAnswersToLeaves;
+          const leaving = session.leave();
+          const removed = yield* watch.next;
+          // The hub closed the tunnel of the participant it took out. The
+          // runtime stops there, instead of taking that for a drop to come
+          // back from.
+          const end = yield* Effect.promise(() => session.ended);
+          yield* hub.releaseAnswers;
+          yield* Effect.promise(() => leaving);
+
+          expect(removed.type).toBe("participant.removed");
+          expect(end).toEqual({ reason: "stopped" });
+          expect(
+            yield* Effect.promise(() =>
+              room.client.participants.list(room.roomCode)
+            )
+          ).toEqual([]);
         })
     );
 
