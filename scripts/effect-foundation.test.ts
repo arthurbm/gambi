@@ -70,21 +70,29 @@ describe("effect dependency", () => {
   });
 });
 
-describe("@gambi/protocol has no platform dependency", () => {
+describe("the platform stays at the entrypoints", () => {
   const probe = join(ROOT, "packages/protocol/src/lint-probe.ts");
-  const coreProbe = join(ROOT, "packages/core/src/lint-probe.ts");
-  const hubProbe = join(ROOT, "packages/core/src/hub/lint-probe.ts");
-  const runtimeProbe = join(
+  const coreProbes = {
+    "the root of the core": join(ROOT, "packages/core/src/lint-probe.ts"),
+    "the hub": join(ROOT, "packages/core/src/hub/lint-probe.ts"),
+    "the participant runtime": join(
+      ROOT,
+      "packages/core/src/participant/lint-probe.ts"
+    ),
+    "the harness": join(ROOT, "packages/core/src/harness/lint-probe.ts"),
+  };
+  const coreTestingProbe = join(
     ROOT,
-    "packages/core/src/participant/lint-probe.ts"
+    "packages/core/src/testing/lint-probe.ts"
   );
   const cliProbe = join(ROOT, "packages/cli/src/cli/commands/lint-probe.ts");
 
   afterEach(async () => {
     await rm(probe, { force: true });
-    await rm(coreProbe, { force: true });
-    await rm(hubProbe, { force: true });
-    await rm(runtimeProbe, { force: true });
+    for (const coreProbe of Object.values(coreProbes)) {
+      await rm(coreProbe, { force: true });
+    }
+    await rm(coreTestingProbe, { force: true });
     await rm(cliProbe, { force: true });
   });
 
@@ -134,9 +142,37 @@ describe("@gambi/protocol has no platform dependency", () => {
     expect(await brokenRules(probe, source)).toEqual([]);
   });
 
-  test("the rule is scoped to the protocol package", async () => {
+  test("the rule on process and node:* is scoped to the protocol package", async () => {
+    const source =
+      'import { homedir } from "node:os";\nexport const home = process.env.HOME ?? homedir();\n';
+    expect(
+      await brokenRules(coreProbes["the root of the core"], source)
+    ).toEqual([]);
+  });
+
+  describe.each(Object.entries(coreProbes))("in %s", (_where, coreProbe) => {
+    test.each([
+      ["Bun.*", "export const version = Bun.version;\n", "noRestrictedGlobals"],
+      [
+        "the bun module",
+        'import { $ } from "bun";\nexport const shell = $;\n',
+        "noRestrictedImports",
+      ],
+      [
+        "@effect/platform-bun",
+        'import { BunRuntime } from "@effect/platform-bun";\nexport const run = BunRuntime.runMain;\n',
+        "noRestrictedImports",
+      ],
+    ])("lint rejects %s", async (_label, source, rule) => {
+      expect(await brokenRules(coreProbe, source)).toEqual([
+        `lint/style/${rule}`,
+      ]);
+    });
+  });
+
+  test("the test helpers of the core may use Bun.*: they never run outside a test", async () => {
     const source = "export const version = Bun.version;\n";
-    expect(await brokenRules(coreProbe, source)).toEqual([]);
+    expect(await brokenRules(coreTestingProbe, source)).toEqual([]);
   });
 
   test.each([
@@ -146,31 +182,7 @@ describe("@gambi/protocol has no platform dependency", () => {
       'import { BunRuntime } from "@effect/platform-bun";\nexport const run = BunRuntime.runMain;\n',
       "noRestrictedImports",
     ],
-  ])("lint rejects %s in the new hub", async (_label, source, rule) => {
-    expect(await brokenRules(hubProbe, source)).toEqual([`lint/style/${rule}`]);
-  });
-
-  test.each([
-    ["Bun.*", "export const version = Bun.version;\n", "noRestrictedGlobals"],
-    [
-      "@effect/platform-bun",
-      'import { BunRuntime } from "@effect/platform-bun";\nexport const run = BunRuntime.runMain;\n',
-      "noRestrictedImports",
-    ],
-  ])("lint rejects %s in the new participant runtime", async (_label, source, rule) => {
-    expect(await brokenRules(runtimeProbe, source)).toEqual([
-      `lint/style/${rule}`,
-    ]);
-  });
-
-  test.each([
-    ["Bun.*", "export const version = Bun.version;\n", "noRestrictedGlobals"],
-    [
-      "@effect/platform-bun",
-      'import { BunRuntime } from "@effect/platform-bun";\nexport const run = BunRuntime.runMain;\n',
-      "noRestrictedImports",
-    ],
-  ])("lint rejects %s in the commands of the new CLI", async (_label, source, rule) => {
+  ])("lint rejects %s in the commands of the CLI", async (_label, source, rule) => {
     expect(await brokenRules(cliProbe, source)).toEqual([`lint/style/${rule}`]);
   });
 
