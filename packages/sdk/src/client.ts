@@ -6,6 +6,7 @@
  */
 import { GAMBI_VERSION } from "@gambi/protocol";
 import { Effect, Stream } from "effect";
+import { ClientError } from "./client-error.ts";
 import {
   type ManagementFailure,
   ManagementPlane,
@@ -188,7 +189,12 @@ export const createClient = (options: ClientOptions = {}): GambiClient => {
   const hubUrl = options.hubUrl ?? DEFAULT_HUB_URL;
   const boundary = makePromiseBoundary(
     ManagementPlane.layer(hubUrl),
-    "The client"
+    "The client",
+    () =>
+      new ClientError({
+        code: "INVALID_REQUEST",
+        message: "The client is closed.",
+      })
   );
   const asClientError = translated(hubUrl);
 

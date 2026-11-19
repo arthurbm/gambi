@@ -387,7 +387,7 @@ Sensitive config is not exposed raw in public management responses. Provider aut
 
 ## SDK management client
 
-`createClient()` from `gambi-sdk` derives from the contract and returns plain values, without the envelope. Every failure of a call to the hub is a `ClientError` (after `client.close()`, a `Promise` method rejects with a plain `Error`, and `events.watch()` or `harness.attach()` throws one at once) with `code`, `status?`, `hint?`, `details`, `requestId?`, and `cause`. `code` is one of the management codes above except `TUNNEL_TOKEN_INVALID` and `ROUTE_NOT_FOUND`, plus two the client finds on its own:
+`createClient()` from `gambi-sdk` derives from the contract and returns plain values, without the envelope. Every failure of a call to the hub is a `ClientError` with `code`, `status?`, `hint?`, `details`, `requestId?`, and `cause`. `code` is one of the management codes above except `TUNNEL_TOKEN_INVALID` and `ROUTE_NOT_FOUND`, plus two the client finds on its own. Closing the client rejects interrupted and subsequent calls with `INVALID_REQUEST`. A new `events.watch()` or `harness.attach()` throws that error immediately.
 
 - `HUB_UNREACHABLE`: nothing answered at the hub URL.
 - `NOT_A_HUB`: something answered outside the contract: another server, a proxy, or a hub of another version. A `ROUTE_NOT_FOUND` arrives as `NOT_A_HUB` with `status: 404`.

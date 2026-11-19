@@ -155,7 +155,7 @@ O padrão de `hubUrl` é `http://localhost:3000`. Os métodos retornam o própri
 | `client.events` | `watch` |
 | `client.harness` | `attach`, `openSession`, `send`, `closeSession` |
 
-`client.close()` encerra as observações abertas, cancela as chamadas em andamento e recusa chamadas novas; esses métodos em `Promise` rejeitam com um `Error` simples (`The client is closed.`), não com um `ClientError`, e um novo `events.watch()` ou `harness.attach()` lança esse `Error` na hora. Ele é opcional: um cliente que nunca é fechado não segura nada depois que as observações dele terminam. O cliente também funciona com `await using`.
+`client.close()` encerra as observações abertas. Chamadas interrompidas e chamadas posteriores rejeitam com um `ClientError` de código `INVALID_REQUEST` e mensagem `The client is closed.`. Um novo `events.watch()` ou `harness.attach()` lança o mesmo erro imediatamente. O fechamento é opcional. O cliente libera seus recursos quando as observações terminam e aceita `await using`.
 
 ### `client.hub.health()`
 
