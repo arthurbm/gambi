@@ -42,6 +42,8 @@ import { Workspace } from "./workspace.ts";
 /** What a participant runtime may do with the Workspace: look at it. */
 const READS: ReadonlySet<string> = new Set([
   "exists",
+  "lstat",
+  "realPath",
   "readDirectory",
   "readDirectoryEntries",
   "readFile",

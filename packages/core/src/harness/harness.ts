@@ -42,6 +42,7 @@ import {
   Duration,
   Effect,
   Fiber,
+  FileSystem,
   Layer,
   Option,
   Path,
@@ -219,7 +220,7 @@ export class Harness extends Context.Service<
   ): Layer.Layer<
     Harness,
     HarnessStartFailed | HarnessFailed,
-    ChildProcessSpawner.ChildProcessSpawner | Path.Path
+    ChildProcessSpawner.ChildProcessSpawner | Path.Path | FileSystem.FileSystem
   > =>
     Layer.effect(
       Harness,
@@ -230,7 +231,17 @@ export class Harness extends Context.Service<
         const requestTimeout = Duration.fromInputUnsafe(
           options.requestTimeout ?? DEFAULT_HARNESS_REQUEST_TIMEOUT
         );
-        const workspaceRoot = path.resolve(workspacePath);
+        const fs = yield* FileSystem.FileSystem;
+        const workspaceRoot = yield* fs.realPath(workspacePath).pipe(
+          Effect.mapError(
+            (cause) =>
+              new HarnessStartFailed({
+                harness: command.harness,
+                command: command.command,
+                cause,
+              })
+          )
+        );
         const initialId =
           options.sessionId ??
           `session-${Math.abs(yield* Random.nextInt).toString(36)}${Math.abs(yield* Random.nextInt).toString(36)}`;
@@ -579,6 +590,51 @@ export class Harness extends Context.Service<
             Effect.flatMap(Fiber.join)
           );
 
+        const resolveDirectory = Effect.fnUntraced(function* (
+          sessionId: string,
+          cwd?: string
+        ) {
+          const requested = path.resolve(workspacePath, cwd ?? ".");
+          const outside = new HarnessSessionOutsideWorkspace({ sessionId });
+          const escapes = (value: string) =>
+            value === ".." ||
+            value.startsWith(`..${path.sep}`) ||
+            path.isAbsolute(value);
+          let relative = path.relative(workspacePath, requested);
+          if (escapes(relative)) {
+            relative = path.relative(workspaceRoot, requested);
+            if (escapes(relative)) {
+              return yield* outside;
+            }
+          }
+          // Resolve the nearest existing ancestor. The harness may create the
+          // missing suffix, but a dangling link cannot stand in for a directory.
+          const target = path.resolve(workspaceRoot, relative);
+          let ancestor = target;
+          while (
+            !(yield* fs.lstat(ancestor).pipe(
+              Effect.as(true),
+              Effect.catch((error) =>
+                error.reason._tag === "NotFound"
+                  ? Effect.succeed(false)
+                  : Effect.fail(outside)
+              )
+            ))
+          ) {
+            if (ancestor === workspaceRoot) {
+              return yield* outside;
+            }
+            ancestor = path.dirname(ancestor);
+          }
+          const canonical = yield* fs
+            .realPath(ancestor)
+            .pipe(Effect.mapError(() => outside));
+          if (escapes(path.relative(workspaceRoot, canonical))) {
+            return yield* outside;
+          }
+          return path.resolve(canonical, path.relative(ancestor, target));
+        });
+
         const openSession = Effect.fn("Harness.openSession")(function* (
           sessionId: string,
           cwd?: string
@@ -586,13 +642,7 @@ export class Harness extends Context.Service<
           if (innerOf.has(sessionId)) {
             return;
           }
-          const resolved = path.resolve(workspaceRoot, cwd ?? workspaceRoot);
-          if (
-            resolved !== workspaceRoot &&
-            !resolved.startsWith(`${workspaceRoot}${path.sep}`)
-          ) {
-            return yield* new HarnessSessionOutsideWorkspace({ sessionId });
-          }
+          const resolved = yield* resolveDirectory(sessionId, cwd);
           const opened = yield* request(NewSession, {
             cwd: resolved,
             mcpServers: [],

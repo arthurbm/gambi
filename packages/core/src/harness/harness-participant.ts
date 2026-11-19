@@ -18,7 +18,7 @@
  * Workspace of their own).
  */
 import type { HarnessFailed } from "@gambi/protocol";
-import { Effect, Layer, type Path } from "effect";
+import { Effect, type FileSystem, Layer, type Path } from "effect";
 import type { HttpClient } from "effect/http";
 import type { ChildProcessSpawner } from "effect/process";
 import type { Socket } from "effect/socket";
@@ -58,6 +58,7 @@ export const harnessParticipant = (
   ParticipantRuntime | Harness,
   RegistrationError | TunnelOpenFailed | HarnessStartFailed | HarnessFailed,
   | Workspace
+  | FileSystem.FileSystem
   | HttpClient.HttpClient
   | Socket.WebSocketConstructor
   | ChildProcessSpawner.ChildProcessSpawner
