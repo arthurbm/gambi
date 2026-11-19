@@ -70,6 +70,47 @@ const firstEvent = (stdout: ReadableStream<Uint8Array>) =>
     return JSON.parse(text.split("\n")[0] ?? "");
   });
 
+/** A process of the binary, with its stdout on a pipe. Killed when the scope closes. */
+const spawned = (cmd: string[]) =>
+  Effect.acquireRelease(
+    Effect.sync(() => Bun.spawn(cmd, { stdout: "pipe", stderr: "ignore" })),
+    (child) =>
+      Effect.promise(async () => {
+        child.kill("SIGKILL");
+        await child.exited;
+      })
+  );
+
+/** Reads `stream` line by line, without closing it between reads. */
+const linesOf = (stream: ReadableStream<Uint8Array>) => {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffered = "";
+  const fill = async () => {
+    const { done, value } = await reader.read();
+    buffered += done ? "" : decoder.decode(value, { stream: true });
+    return !done;
+  };
+  return {
+    /** The next line. Waits for it. */
+    next: Effect.promise(async () => {
+      while (!buffered.includes("\n") && (await fill())) {
+        // Keep reading until a whole line is buffered.
+      }
+      const [line = "", ...rest] = buffered.split("\n");
+      buffered = rest.join("\n");
+      return line;
+    }),
+    /** Everything from here to the end of the stream. */
+    rest: Effect.promise(async () => {
+      while (await fill()) {
+        // Keep reading until the stream ends.
+      }
+      return buffered;
+    }),
+  };
+};
+
 /** A release on a loopback port that serves `body` as every binary. */
 const releaseServing = (body: string) =>
   Effect.acquireRelease(
@@ -140,6 +181,47 @@ it.live(
       expect(busy.stderr).toContain(
         `Port ${started.data.port} is already in use`
       );
+
+      // A harness participant hosted by the same binary. Its fake harness
+      // is the binary itself, and the hub and the participant agree on the
+      // version the binary was built with.
+      const workspace = join(directory, "workspace");
+      const joining = yield* spawned([
+        binary,
+        "participant",
+        "join",
+        "--harness",
+        "fake",
+        "--workspace",
+        workspace,
+        "--room",
+        JSON.parse(created.stdout).data.room.code,
+        "--participant-id",
+        "arthur-1",
+        "--no-specs",
+        "--hub",
+        hubUrl,
+      ]);
+      const joiningEvents = linesOf(joining.stdout);
+      const harnessStarted = JSON.parse(yield* joiningEvents.next);
+      expect(harnessStarted).toMatchObject({
+        type: "harness_started",
+        data: { harness: "fake", workspace },
+      });
+      expect(JSON.parse(yield* joiningEvents.next).type).toBe("registered");
+      expect(JSON.parse(yield* joiningEvents.next)).toMatchObject({
+        type: "tunnel_connected",
+        data: { hubVersion: "9.9.9" },
+      });
+      joining.kill("SIGTERM");
+      expect(yield* Effect.promise(() => joining.exited)).toBe(0);
+      expect(
+        (yield* joiningEvents.rest)
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line).type)
+      ).toEqual(["leaving", "artifact_sent", "left"]);
+      expect(() => process.kill(harnessStarted.data.pid, 0)).toThrow();
 
       hub.kill("SIGTERM");
       expect(yield* Effect.promise(() => hub.exited)).toBe(0);

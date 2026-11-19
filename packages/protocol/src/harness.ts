@@ -8,15 +8,13 @@
 import { Schema } from "effect";
 
 /**
- * The harnesses a participant can contribute. `fake` is the deterministic
- * test harness, which calls no model. `pi` is accepted by the schema and has
- * no adapter yet (ADR-0006).
+ * The harnesses a participant can contribute: the ones that have an adapter.
+ * `fake` is the deterministic test harness, which calls no model.
  */
 export const HarnessId = Schema.Literals([
   "opencode",
   "claude-code",
   "codex",
-  "pi",
   "fake",
 ]);
 export type HarnessId = typeof HarnessId.Type;

@@ -1,6 +1,7 @@
-import { type RoomSummary, RuntimeConfig } from "@gambi/protocol";
+import type { RoomSummary } from "@gambi/protocol";
 import { DateTime, Effect, Option, Redacted, Schema } from "effect";
 import { Command, Flag, Prompt } from "effect/cli";
+import { runtimeConfigFlag } from "../flags.ts";
 import { hubFlag, withHub } from "../hub-client.ts";
 import { Output } from "../output.ts";
 
@@ -27,12 +28,8 @@ const create = Command.make(
       Flag.withDescription("Password participants must give to join"),
       Flag.optional
     ),
-    defaults: Flag.FileSchema("config", RuntimeConfig, { format: "json" }).pipe(
-      Flag.withMetavar("file"),
-      Flag.withDescription(
-        "JSON file with the runtime defaults of the room (temperature, instructions, ...)"
-      ),
-      Flag.optional
+    defaults: runtimeConfigFlag(
+      "Runtime defaults of the room (temperature, instructions, ...) as JSON: a file, or - for stdin"
     ),
     hub: hubFlag,
     dryRun: Flag.Boolean("dry-run").pipe(

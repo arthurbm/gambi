@@ -8,6 +8,7 @@ import { Context, Effect, Layer, Schema } from "effect";
 import { Command, Flag } from "effect/cli";
 import { Output } from "../output.ts";
 import { Termination } from "../termination.ts";
+import { CLI_VERSION } from "../version.ts";
 
 /**
  * How the hub opens its port. The commands have no platform dependency
@@ -60,7 +61,17 @@ const serve = Command.make(
     const signal = yield* Effect.scoped(
       Effect.gen(function* () {
         const hub = Context.get(
-          yield* Layer.build(Hub.layer({ hostname: host, port, mdns, listen })),
+          yield* Layer.build(
+            Hub.layer({
+              hostname: host,
+              port,
+              mdns,
+              listen,
+              // The version of this CLI, which is also what `participant
+              // join` registers with: one binary never refuses itself.
+              version: CLI_VERSION,
+            })
+          ),
           Hub
         );
         yield* output.event(
