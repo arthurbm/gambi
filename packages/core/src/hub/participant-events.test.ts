@@ -8,6 +8,8 @@ import { RoomEvents } from "./room-events.ts";
 import { HubSettings } from "./settings.ts";
 
 const ROOM = "FREVO1";
+// The participant runtime behind every event of these tests.
+const RUNTIME = "runtime-1";
 const profile = { nickname: "Arthur", model: "llama3.1:8b" };
 
 // `Participants` reads one setting of the hub, the reconnection deadline.
@@ -54,18 +56,20 @@ const watching = Effect.gen(function* () {
 const participantAfter = (...history: StatusEvent[]) =>
   Effect.gen(function* () {
     const participants = yield* Participants;
-    yield* participants.register(ROOM, "arthur-1", profile);
+    yield* participants.register(ROOM, "arthur-1", profile, RUNTIME);
     for (const event of history) {
-      yield* participants.transition(ROOM, "arthur-1", event);
+      yield* participants.transition(ROOM, "arthur-1", event, RUNTIME);
     }
     const nextEvent = yield* watching;
     return {
       happens: (event: StatusEvent) =>
-        participants.transition(ROOM, "arthur-1", event),
-      registersAgain: participants.register(ROOM, "arthur-1", {
-        ...profile,
-        nickname: "Arthur M.",
-      }),
+        participants.transition(ROOM, "arthur-1", event, RUNTIME),
+      registersAgain: participants.register(
+        ROOM,
+        "arthur-1",
+        { ...profile, nickname: "Arthur M." },
+        RUNTIME
+      ),
       nextEvent,
     };
   });
@@ -79,7 +83,12 @@ it.effect("a participant that registers in a room joins it", () =>
     const participants = yield* Participants;
     const nextEvent = yield* watching;
 
-    const participant = yield* participants.register(ROOM, "arthur-1", profile);
+    const { participant } = yield* participants.register(
+      ROOM,
+      "arthur-1",
+      profile,
+      RUNTIME
+    );
 
     expect(yield* nextEvent).toEqual({
       type: "participant.joined",
@@ -97,7 +106,7 @@ it.effect(
     Effect.gen(function* () {
       const participant = yield* participantAfter("tunnelOpened");
 
-      const updated = yield* participant.registersAgain;
+      const { participant: updated } = yield* participant.registersAgain;
 
       expect(yield* participant.nextEvent).toEqual({
         type: "participant.updated",
@@ -216,6 +225,38 @@ it.effect.each([
         timestamp: 0,
         participantId: "arthur-1",
         reason: "left",
+      });
+    }).pipe(Effect.provide(layerParticipants))
+);
+
+// A second runtime dialed with the participant's id: the hub hands the
+// participant to it before it closes the tunnel it replaces.
+it.effect(
+  "a participant handed over to a runtime whose tunnel is on its way in is no longer the old runtime's to take out",
+  () =>
+    Effect.gen(function* () {
+      const participants = yield* Participants;
+      const participant = yield* participantAfter("tunnelOpened");
+
+      yield* participants.handOver(
+        ROOM,
+        "arthur-1",
+        "runtime-2",
+        (yield* participants.generation(ROOM, "arthur-1")) ?? 0
+      );
+
+      // A removal the old runtime asked for is late from this moment on.
+      expect(
+        yield* participants.transition(ROOM, "arthur-1", "left", RUNTIME)
+      ).toBeUndefined();
+      expect(yield* participants.get(ROOM, "arthur-1")).toMatchObject({
+        status: "online",
+        runtimeId: "runtime-2",
+      });
+      yield* participants.transition(ROOM, "arthur-1", "left", "runtime-2");
+      expect(yield* participant.nextEvent).toMatchObject({
+        type: "participant.removed",
+        participantId: "arthur-1",
       });
     }).pipe(Effect.provide(layerParticipants))
 );

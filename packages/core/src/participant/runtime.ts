@@ -27,6 +27,7 @@ import {
   type ParticipantSummary,
   type RegisterParticipant,
   type RoomNotFound,
+  TUNNEL_REMOVED_CLOSE_CODE,
   TUNNEL_REPLACED_CLOSE_CODE,
   TunnelRpcs,
   tunnelUrl,
@@ -47,6 +48,7 @@ import {
   Schema,
   Scope,
 } from "effect";
+import { SecureRandom } from "effect/crypto";
 import type { HttpClient } from "effect/http";
 import { NetAddress } from "effect/net";
 import {
@@ -60,7 +62,7 @@ import { Socket, SocketServer } from "effect/socket";
 /** What the participant tells the room about itself. */
 export type ParticipantProfile = Omit<
   RegisterParticipant,
-  "authHeaders" | "password" | "version"
+  "authHeaders" | "password" | "runtimeId" | "version"
 >;
 
 /** Why a participant runtime is not connected and is about to try again. */
@@ -89,8 +91,10 @@ export type ReconnectReason =
  * - `left`: the runtime ended and tries no more. `stopped`: its host stopped
  *   it. `refused`: the hub refused it when it tried to come back, and
  *   `error` says why. `replaced`: another runtime joined the room with the
- *   same `participantId` and the hub kept that one. `tunnelDropped`: the
- *   tunnel dropped and the runtime was started with `reconnect: false`.
+ *   same `participantId` and the hub kept that one. `removed`: the
+ *   participant was taken out of the room (`participants.remove`), by its
+ *   host or by someone else. `tunnelDropped`: the tunnel dropped and the
+ *   runtime was started with `reconnect: false`.
  *
  * A runtime that never joined reports nothing: the join itself fails.
  */
@@ -115,7 +119,12 @@ export type ParticipantLifecycleEvent =
       readonly type: "left";
       readonly roomCode: string;
       readonly participantId: string;
-      readonly reason: "stopped" | "refused" | "replaced" | "tunnelDropped";
+      readonly reason:
+        | "stopped"
+        | "refused"
+        | "replaced"
+        | "removed"
+        | "tunnelDropped";
       /** The typed error behind `refused`: its name and its message. */
       readonly error?: { readonly name: string; readonly message: string };
     };
@@ -158,6 +167,13 @@ export interface ParticipantRuntimeOptions {
   readonly registrationTimeout?: Duration.Input | undefined;
   readonly roomCode: string;
   /**
+   * The id of this runtime, sent with every registration: the hub takes the
+   * participant out of the room only for the runtime it belongs to. Default:
+   * a new one. A host that may have to leave the room before the join
+   * returns makes its own and passes it here.
+   */
+  readonly runtimeId?: string | undefined;
+  /**
    * How long to wait for the hub to accept the tunnel, from the dial to its
    * `Welcome`. Default 10 seconds.
    */
@@ -189,6 +205,10 @@ export class HubUnreachable extends Schema.TaggedError<HubUnreachable>()(
   }
 }
 
+/** Why the hub closed a tunnel for good: the runtime must not dial again. */
+const FinalDrop = Schema.Literals(["replaced", "removed"]);
+type FinalDrop = typeof FinalDrop.Type;
+
 /** The tunnel did not open: the dial failed, or the hub did not accept it in time. */
 export class TunnelOpenFailed extends Schema.TaggedError<TunnelOpenFailed>()(
   "TunnelOpenFailed",
@@ -196,6 +216,11 @@ export class TunnelOpenFailed extends Schema.TaggedError<TunnelOpenFailed>()(
     hubUrl: Schema.String,
     roomCode: Schema.String,
     participantId: Schema.String,
+    /**
+     * Set when the hub closed the tunnel for good instead of welcoming it:
+     * dialing again would not help.
+     */
+    closed: Schema.optionalKey(FinalDrop),
     cause: Schema.Defect(),
   }
 ) {
@@ -223,6 +248,34 @@ export class ParticipantReplaced extends Schema.TaggedError<ParticipantReplaced>
   }
 }
 
+/**
+ * The participant was taken out of the room while this runtime held its
+ * tunnel: the runtime ended, and does not come back. For whoever hosts it
+ * and did not ask for it, that is a failure: nothing it shares is in the
+ * room any more.
+ */
+export class ParticipantRemoved extends Schema.TaggedError<ParticipantRemoved>()(
+  "ParticipantRemoved",
+  { roomCode: Schema.String, participantId: Schema.String }
+) {
+  override get message(): string {
+    return `Participant '${this.participantId}' was taken out of room '${this.roomCode}'.`;
+  }
+
+  get hint(): string {
+    return "Someone removed this participant through the hub. Join the room again to come back.";
+  }
+}
+
+/**
+ * A new id for a participant runtime (`ParticipantRuntimeOptions.runtimeId`).
+ * Random, so that no two runtimes share one, and not a secret.
+ */
+export const makeRuntimeId: Effect.Effect<string> = Effect.flatMap(
+  SecureRandom.SecureRandom,
+  (random) => random.uuidV4()
+).pipe(Effect.provide(SecureRandom.layerWebCrypto));
+
 /** Why a registration was refused, as the hub said it, or `HubUnreachable`. */
 export type RegistrationError =
   | RoomNotFound
@@ -233,12 +286,13 @@ export type RegistrationError =
   | HubUnreachable;
 
 /**
- * Registers the participant in the room. Registering again with the same
- * `participantId` updates it, and every registration answers with a new
- * bootstrap token: that is how a runtime comes back after its tunnel drops.
+ * Registers the participant in the room, as the runtime `runtimeId`.
+ * Registering again with the same `participantId` updates it, and every
+ * registration answers with a new bootstrap token: that is how a runtime
+ * comes back after its tunnel drops.
  */
 export const register = Effect.fn("ParticipantRuntime.register")(function* (
-  options: ParticipantRuntimeOptions
+  options: ParticipantRuntimeOptions & { readonly runtimeId: string }
 ): Effect.fn.Return<
   ParticipantRegistered,
   RegistrationError,
@@ -253,6 +307,7 @@ export const register = Effect.fn("ParticipantRuntime.register")(function* (
         ...(options.password === undefined
           ? {}
           : { password: options.password }),
+        runtimeId: options.runtimeId,
         version: options.version ?? GAMBI_VERSION,
       },
     })
@@ -278,11 +333,18 @@ export const register = Effect.fn("ParticipantRuntime.register")(function* (
 
 /**
  * Why an open tunnel is no more: `tunnelDropped` when it was closed or lost,
- * `hubSilent` when the runtime dropped it because the hub went silent, and
+ * `hubSilent` when the runtime dropped it because the hub went silent,
  * `replaced` when the hub closed it because another runtime opened a tunnel
- * as the same participant.
+ * as the same participant, and `removed` when the hub closed it because the
+ * participant was taken out of the room.
  */
-export type TunnelDrop = "tunnelDropped" | "hubSilent" | "replaced";
+export type TunnelDrop = "tunnelDropped" | "hubSilent" | FinalDrop;
+
+/** What the code a tunnel's WebSocket closed with says, when it says something. */
+const FINAL_CLOSE_CODES: Readonly<Record<number, FinalDrop>> = {
+  [TUNNEL_REPLACED_CLOSE_CODE]: "replaced",
+  [TUNNEL_REMOVED_CLOSE_CODE]: "removed",
+};
 
 /** An open tunnel, as the participant runtime sees it. */
 export interface OpenTunnel {
@@ -328,9 +390,9 @@ export const openTunnel = Effect.fn("ParticipantRuntime.openTunnel")(function* (
   );
   // Every frame of the hub passes here, its pings included: this is where
   // the runtime learns when it last heard from the hub, and, from the code
-  // the socket closed with, that the hub gave its place to another runtime.
+  // the socket closed with, that the hub closed the tunnel for good.
   let lastFrameAt = clock.currentTimeMillisUnsafe();
-  let replaced = false;
+  let closedForGood: FinalDrop | undefined;
   const watched = Socket.make({
     reader: Effect.map(dialed.reader, (reader) => ({
       ...reader,
@@ -342,9 +404,9 @@ export const openTunnel = Effect.fn("ParticipantRuntime.openTunnel")(function* (
         ),
         Effect.tapError((error) =>
           Effect.sync(() => {
-            replaced ||=
-              error.reason._tag === "SocketCloseError" &&
-              error.reason.code === TUNNEL_REPLACED_CLOSE_CODE;
+            if (error.reason._tag === "SocketCloseError") {
+              closedForGood ??= FINAL_CLOSE_CODES[error.reason.code];
+            }
           })
         )
       ),
@@ -364,10 +426,7 @@ export const openTunnel = Effect.fn("ParticipantRuntime.openTunnel")(function* (
           Effect.flatMap((exit) =>
             Deferred.succeed(closed, exit).pipe(
               Effect.andThen(
-                Deferred.succeed(
-                  dropped,
-                  replaced ? "replaced" : "tunnelDropped"
-                )
+                Deferred.succeed(dropped, closedForGood ?? "tunnelDropped")
               )
             )
           ),
@@ -394,6 +453,7 @@ export const openTunnel = Effect.fn("ParticipantRuntime.openTunnel")(function* (
       hubUrl: options.hubUrl,
       roomCode: options.roomCode,
       participantId: options.participantId,
+      ...(closedForGood === undefined ? {} : { closed: closedForGood }),
       cause,
     });
   const welcome = yield* Effect.raceFirst(
@@ -462,7 +522,7 @@ const reasonToRetry = (
 /** How an exit of the runtime reads as a `left` event. A defect is not one. */
 const howItLeft = (
   exit: Exit.Exit<
-    "replaced" | "tunnelDropped",
+    FinalDrop | "tunnelDropped",
     RegistrationError | TunnelOpenFailed
   >
 ):
@@ -498,16 +558,28 @@ export class ParticipantRuntime extends Context.Service<
     /**
      * Completes when the runtime has ended and tries no more: with the hub's
      * refusal as its error when the hub refused it on its way back, with
-     * `ParticipantReplaced` when another runtime took its place, and without
-     * an error when it was stopped or, with `reconnect: false`, when its
-     * tunnel dropped.
+     * `ParticipantReplaced` when another runtime took its place, with
+     * `ParticipantRemoved` when the participant was taken out of the room,
+     * and without an error when it was stopped or, with `reconnect: false`,
+     * when its tunnel dropped.
      */
     readonly ended: Effect.Effect<
       void,
-      RegistrationError | TunnelOpenFailed | ParticipantReplaced
+      | RegistrationError
+      | TunnelOpenFailed
+      | ParticipantReplaced
+      | ParticipantRemoved
     >;
-    /** The participant as the hub registered it when it joined. */
+    /**
+     * The participant as the hub registered it when it joined, and as this
+     * runtime's (`runtimeId`), which it is once its tunnel is open.
+     */
     readonly participant: ParticipantSummary;
+    /**
+     * The id of this runtime. Taking the participant out of the room
+     * (`participants.remove`) names it.
+     */
+    readonly runtimeId: string;
     /**
      * Completes when the tunnel that is open now drops; at once when none is
      * open. The runtime dials again unless it was started with
@@ -529,7 +601,9 @@ export class ParticipantRuntime extends Context.Service<
    * hub (another version, a room that is gone, a wrong password) ends the
    * runtime instead: see `ended`. So does a tunnel the hub closed because
    * another runtime joined with the same `participantId`: coming back would
-   * take the tunnel from that one, which would take it back, forever.
+   * take the tunnel from that one, which would take it back, forever. And so
+   * does a tunnel the hub closed because the participant was taken out of
+   * the room: coming back would undo the removal.
    *
    * The environment provides the platform (`HttpClient`, a
    * `Socket.WebSocketConstructor`) and the handlers (`TunnelHandlers`).
@@ -545,10 +619,11 @@ export class ParticipantRuntime extends Context.Service<
       ParticipantRuntime,
       Effect.gen(function* () {
         type Failure = RegistrationError | TunnelOpenFailed;
+        const runtimeId = options.runtimeId ?? (yield* makeRuntimeId);
         const joined = yield* Deferred.make<ParticipantSummary, Failure>();
         const ended = yield* Deferred.make<
           void,
-          Failure | ParticipantReplaced
+          Failure | ParticipantReplaced | ParticipantRemoved
         >();
         const identity = {
           roomCode: options.roomCode,
@@ -566,7 +641,7 @@ export class ParticipantRuntime extends Context.Service<
         // open, and returns when a tunnel that did open drops.
         const connection = (attempt: number) =>
           Effect.gen(function* () {
-            const registered = yield* register(options);
+            const registered = yield* register({ ...options, runtimeId });
             const tunnel = yield* openTunnel(options, registered.tunnel.token);
             tunnelDropped = tunnel.dropped;
             // The host hears `connected` before the join returns, and from
@@ -578,7 +653,12 @@ export class ParticipantRuntime extends Context.Service<
               attempt,
               hubVersion: tunnel.hubVersion,
             });
-            yield* Deferred.succeed(joined, registered.participant);
+            // The registration may have named the runtime of a tunnel this
+            // one replaced: by now the participant is this runtime's.
+            yield* Deferred.succeed(joined, {
+              ...registered.participant,
+              runtimeId,
+            });
             return yield* tunnel.dropped;
           }).pipe(Effect.scoped);
 
@@ -606,6 +686,13 @@ export class ParticipantRuntime extends Context.Service<
             if (Result.isSuccess(outcome)) {
               return outcome.success;
             }
+            // The hub closed the tunnel for good before it welcomed it.
+            if (
+              outcome.failure._tag === "TunnelOpenFailed" &&
+              outcome.failure.closed !== undefined
+            ) {
+              return outcome.failure.closed;
+            }
             const retry = reasonToRetry(outcome.failure);
             if (retry === undefined) {
               return yield* Effect.fail(outcome.failure);
@@ -615,33 +702,45 @@ export class ParticipantRuntime extends Context.Service<
         });
 
         // A join that fails is not retried: the host hears it at once. A
-        // runtime that was replaced does not come back.
+        // runtime that was replaced, or whose participant was taken out of
+        // the room, does not come back.
         const run = Effect.gen(function* () {
           let dropped = yield* connection(0);
-          while (dropped !== "replaced" && options.reconnect !== false) {
+          while (
+            dropped !== "replaced" &&
+            dropped !== "removed" &&
+            options.reconnect !== false
+          ) {
             dropped = yield* comeBack(dropped);
           }
-          return dropped === "replaced" ? dropped : "tunnelDropped";
+          return dropped === "hubSilent" ? "tunnelDropped" : dropped;
         });
 
-        // Being stopped is not a failure of the runtime. Being replaced is
-        // one, for its host.
+        // Being stopped is not a failure of the runtime. Being replaced, or
+        // taken out of the room, is one, for its host.
         const howItEnded = (
           reason: string | undefined,
           exit: Exit.Exit<unknown, Failure>
-        ): Exit.Exit<void, Failure | ParticipantReplaced> => {
-          if (reason === "stopped") {
-            return Exit.void;
+        ): Exit.Exit<
+          void,
+          Failure | ParticipantReplaced | ParticipantRemoved
+        > => {
+          switch (reason) {
+            case "stopped":
+              return Exit.void;
+            case "replaced":
+              return Exit.fail(new ParticipantReplaced(identity));
+            case "removed":
+              return Exit.fail(new ParticipantRemoved(identity));
+            default:
+              return Exit.asVoid(exit);
           }
-          return reason === "replaced"
-            ? Exit.fail(new ParticipantReplaced(identity))
-            : Exit.asVoid(exit);
         };
 
         // How the runtime ended, told to whoever waits for it: the build of
         // the layer when it never joined, the host afterwards.
         const conclude = (
-          exit: Exit.Exit<"replaced" | "tunnelDropped", Failure>
+          exit: Exit.Exit<FinalDrop | "tunnelDropped", Failure>
         ) =>
           Effect.gen(function* () {
             if (Exit.isFailure(exit)) {
@@ -661,6 +760,7 @@ export class ParticipantRuntime extends Context.Service<
         return ParticipantRuntime.of({
           ended: Deferred.await(ended),
           participant,
+          runtimeId,
           tunnelDropped: Effect.suspend(() => Effect.asVoid(tunnelDropped)),
         });
       })

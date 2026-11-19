@@ -44,6 +44,31 @@ export class ParticipantNotFound extends Schema.TaggedError<ParticipantNotFound>
 }
 
 /**
+ * The participant is in the room and belongs to another participant runtime
+ * than the one the removal names: another runtime joined with the same
+ * `participantId` since. The participant stays.
+ */
+export class ParticipantOfAnotherRuntime extends Schema.TaggedError<ParticipantOfAnotherRuntime>()(
+  "ParticipantOfAnotherRuntime",
+  {
+    roomCode: Schema.String,
+    participantId: Schema.String,
+    ...requestIdField,
+  }
+) {
+  static readonly code = "PARTICIPANT_OF_ANOTHER_RUNTIME";
+  static readonly status = 409;
+
+  override get message(): string {
+    return `Participant '${this.participantId}' of room '${this.roomCode}' belongs to another participant runtime.`;
+  }
+
+  get hint(): string {
+    return "Another runtime joined the room with this participant id. List the participants of the room: `runtimeId` names the runtime each one belongs to.";
+  }
+}
+
+/**
  * The participant is in the room and contributes a model endpoint, not a
  * harness: there is nothing to attach to and no harness session to open.
  */

@@ -644,6 +644,7 @@ layer(layerHub(), { excludeTestServices: true })(
             room.client.participants.register(room.roomCode, "arthur-1", {
               nickname: "Arthur",
               model: "llama3",
+              runtimeId: "a-runtime",
             })
           );
 

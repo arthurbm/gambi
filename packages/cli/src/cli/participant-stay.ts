@@ -13,10 +13,17 @@
  * | `harness_exited` | a harness participant only: the harness ended by itself |
  * | `leaving` | a signal asked the participant to leave |
  * | `left` | the stay is over, and `reason` says why |
+ *
+ * `left.reason` is `stopped` when a signal asked for it, and otherwise how
+ * the runtime ended by itself: `refused`, `replaced`, `removed` (someone took
+ * the participant out of the room, with `participant leave` for one), or
+ * `harnessExited`. `left.removed` says whether the participant is out of the
+ * room as far as the hub said.
  */
 import type { ArtifactLifecycleEvent } from "@gambi/core/harness/artifacts";
 import { Harness } from "@gambi/core/harness/harness";
 import {
+  makeRuntimeId,
   type ParticipantLifecycleEvent,
   ParticipantRuntime,
 } from "@gambi/core/participant/runtime";
@@ -40,8 +47,8 @@ export interface Identity {
  * - `unconfirmed`: the hub did not answer in time, or was not told. It
  *   removes an offline participant by itself once the reconnection deadline
  *   passes.
- * - `leftAlone`: the participant with that id is another runtime's, and was
- *   not removed.
+ * - `leftAlone`: the hub said the participant with that id is another
+ *   runtime's, and kept it.
  */
 type Leave = "removed" | "unconfirmed" | "leftAlone";
 
@@ -52,45 +59,41 @@ const LEAVE_TIMEOUT = Duration.seconds(3);
  * Tells the hub that the participant left the room, and answers how that
  * went (`Leave`).
  *
- * A participant that `neverCameOnline` is the one case in which the entry
- * with its id may not be its own: the signal came during the join, and the
- * registration may not have reached the hub. It then removes only an entry
- * that is offline, as its own would be, and leaves alone a participant that
- * is online with that id (`false`).
+ * The removal names this runtime, so the hub takes out only a participant
+ * that is this runtime's. That is what makes it safe to ask at any moment,
+ * even for a registration that may never have reached the hub: a participant
+ * another runtime holds with the same id stays.
  */
 const leaveRoom = (
   hubUrl: string,
   { participantId, roomCode }: Identity,
-  neverCameOnline = false
+  runtimeId: string
 ) =>
   withHub(hubUrl, (client) =>
-    Effect.gen(function* (): Effect.fn.Return<
-      Leave,
-      Effect.Error<ReturnType<typeof client.participants.remove>>
-    > {
-      const params = { code: roomCode, id: participantId };
-      if (neverCameOnline) {
-        const inTheRoom = (yield* client.participants.list({
-          params: { code: roomCode },
-        })).find((participant) => participant.id === participantId);
-        if (inTheRoom === undefined) {
-          return "removed";
-        }
-        if (inTheRoom.status !== "offline") {
-          return "leftAlone";
-        }
-      }
-      yield* client.participants.remove({ params });
-      return "removed";
+    client.participants.remove({
+      params: { code: roomCode, id: participantId },
+      query: { runtimeId },
     })
   ).pipe(
+    Effect.as<Leave>("removed"),
     Effect.catchTag(["ParticipantNotFound", "RoomNotFound"], () =>
-      Effect.succeed("removed" as const)
+      Effect.succeed<Leave>("removed")
+    ),
+    Effect.catchTag("ParticipantOfAnotherRuntime", () =>
+      Effect.succeed<Leave>("leftAlone")
     ),
     Effect.timeoutOption(LEAVE_TIMEOUT),
     Effect.map(Option.getOrElse((): Leave => "unconfirmed")),
     Effect.catch(() => Effect.succeed<Leave>("unconfirmed"))
   );
+
+/**
+ * What is known of the participant of a runtime that ended by itself: out of
+ * the room when the hub took it out, and otherwise not this runtime's to
+ * take out.
+ */
+const leaveOfARuntimeThatEnded = (reason: string): Leave =>
+  reason === "removed" ? "removed" : "unconfirmed";
 
 /** The last line a person reads: how the stay ended. */
 const leftText = (
@@ -105,7 +108,7 @@ const leftText = (
     case "removed":
       return `Left room ${roomCode}.`;
     case "leftAlone":
-      return `Stopped before joining. Another participant is online as ${participantId} in room ${roomCode}, and it stays there.`;
+      return `Stopped. Another participant runtime holds ${participantId} in room ${roomCode}, and it stays there.`;
     default:
       return `Stopped. The hub did not confirm: it takes the participant out of room ${roomCode} by itself in a minute.`;
   }
@@ -131,16 +134,19 @@ export const reportArtifact = (identity: Identity) =>
 export interface Stay<Hosted, E, R> {
   /**
    * The participant in the room, for as long as the layer lives. It hands
-   * `onLifecycle` to its participant runtime.
+   * `onLifecycle` and `runtimeId` to its participant runtime.
    *
    * When what is hosted has a `Harness`, it is a harness participant: the
    * stay then also ends when the harness ends by itself, and leaving tells
    * the hub last, so that the last artifact goes up while the tunnel is
    * still open.
    */
-  readonly host: (
-    onLifecycle: (event: ParticipantLifecycleEvent) => Effect.Effect<void>
-  ) => Layer.Layer<ParticipantRuntime | Hosted, E, R>;
+  readonly host: (runtime: {
+    readonly onLifecycle: (
+      event: ParticipantLifecycleEvent
+    ) => Effect.Effect<void>;
+    readonly runtimeId: string;
+  }) => Layer.Layer<ParticipantRuntime | Hosted, E, R>;
   readonly hubUrl: string;
   readonly identity: Identity;
   /** What the harness is called in its events. */
@@ -201,7 +207,12 @@ export const stayInRoom = <Hosted, E, R>(stay: Stay<Hosted, E, R>) =>
     const output = yield* Output;
     const termination = yield* Termination;
     const { identity } = stay;
+    // Made here, before the join: leaving names it, and a signal may ask to
+    // leave before the runtime exists.
+    const runtimeId = yield* makeRuntimeId;
     const lifecycle = yield* Queue.unbounded<ParticipantLifecycleEvent>();
+    // Whether the tunnel is open, as far as the runtime said.
+    let online = false;
     const untilTheRuntimeLeaves = followLifecycle(output, identity, lifecycle);
 
     const leaving = (signal: TerminationSignal) =>
@@ -222,7 +233,15 @@ export const stayInRoom = <Hosted, E, R>(stay: Stay<Hosted, E, R>) =>
         const joining = yield* Effect.raceFirst(
           Effect.map(termination.signal, (signal) => ({ signal })),
           Effect.map(
-            Layer.build(stay.host((event) => Queue.offer(lifecycle, event))),
+            Layer.build(
+              stay.host({
+                onLifecycle: (event) => {
+                  online = event.type === "connected";
+                  return Queue.offer(lifecycle, event);
+                },
+                runtimeId,
+              })
+            ),
             (hosted) => ({ hosted })
           )
         );
@@ -230,7 +249,7 @@ export const stayInRoom = <Hosted, E, R>(stay: Stay<Hosted, E, R>) =>
           yield* leaving(joining.signal);
           return {
             reason: "stopped" as const,
-            leave: "tellIfItRegistered" as const,
+            leave: "tell" as const,
             ended: Exit.void,
           };
         }
@@ -269,12 +288,12 @@ export const stayInRoom = <Hosted, E, R>(stay: Stay<Hosted, E, R>) =>
         );
         if ("left" in how) {
           // The runtime ended by itself: the hub refused it on its way back,
-          // or gave its place to another runtime. The hub is told nothing:
-          // the participant with this id in the room, if there is one, is not
-          // this runtime any more.
+          // gave its place to another runtime, or took the participant out
+          // of the room. The hub is told nothing: the participant with this
+          // id in the room, if there is one, is not this runtime any more.
           return {
             reason: how.left.reason,
-            leave: "unconfirmed" as const,
+            leave: leaveOfARuntimeThatEnded(how.left.reason),
             ended: yield* Effect.exit(runtime.ended),
           };
         }
@@ -293,11 +312,13 @@ export const stayInRoom = <Hosted, E, R>(stay: Stay<Hosted, E, R>) =>
         yield* leaving(how.signal);
         // A participant that shares a model endpoint tells the hub first, so
         // the room hears one thing: the participant left. Closing the tunnel
-        // first would show it offline in between.
-        return harness === undefined
+        // first would show it offline in between. One that is waiting to
+        // come back has no tunnel to close, and stops first: it would
+        // register again right after the hub took the participant out.
+        return harness === undefined && online
           ? {
               reason: "stopped" as const,
-              leave: yield* leaveRoom(stay.hubUrl, identity),
+              leave: yield* leaveRoom(stay.hubUrl, identity, runtimeId),
               ended: Exit.void,
             }
           : {
@@ -308,12 +329,8 @@ export const stayInRoom = <Hosted, E, R>(stay: Stay<Hosted, E, R>) =>
       })
     );
     const leave =
-      ending.leave === "tell" || ending.leave === "tellIfItRegistered"
-        ? yield* leaveRoom(
-            stay.hubUrl,
-            identity,
-            ending.leave === "tellIfItRegistered"
-          )
+      ending.leave === "tell"
+        ? yield* leaveRoom(stay.hubUrl, identity, runtimeId)
         : ending.leave;
     yield* output.event(
       "left",
