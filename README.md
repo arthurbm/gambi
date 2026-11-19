@@ -23,9 +23,9 @@
 
 Gambi is a local-first system for sharing OpenAI-compatible model endpoints and local coding harnesses across a trusted network. A central hub tracks rooms and participants, relays inference requests or ACP messages, and publishes real-time events over SSE.
 
-Participants now connect through a hub-managed tunnel. The hub never needs direct network reachability to the participant's provider endpoint, so `localhost` and provider credentials can remain local to the participant machine.
+Each participant opens a tunnel to the hub and the hub sends work back through it. The hub never needs direct network reachability to the participant's provider endpoint, so `localhost` and provider credentials can remain local to the participant machine. When the tunnel drops, the participant reconnects by itself with the same ID.
 
-A harness participant contributes OpenCode, Claude Code, or Codex from the participant's own machine and login. It does not serve OpenAI-compatible inference. Apps control it through the SDK harness attach channel.
+A harness participant contributes OpenCode, Claude Code, or Codex from the participant's own machine and login. It does not serve OpenAI-compatible inference. Apps control it through the harness attach of the SDK management client.
 
 The public name **Gambi** is the short form of **gambiarra**. Here it means the good kind: creative improvisation under constraints, turned into a practical tool.
 
@@ -70,6 +70,8 @@ Verify:
 gambi --version
 ```
 
+The hub and every participant must run the same minor version of Gambi (any `0.8.x` with any other `0.8.x`). A hub refuses a participant from another minor and names the version it expects.
+
 ### SDK
 
 ```bash
@@ -77,6 +79,8 @@ npm install gambi-sdk
 # or
 bun add gambi-sdk
 ```
+
+`gambi-sdk` has four entries: `gambi-sdk` (inference provider and management client) and `gambi-sdk/discovery` run in Node and Bun; `gambi-sdk/hub` and `gambi-sdk/participant` host a hub or a participant in your own process and run in Bun only.
 
 ### TUI
 
@@ -97,7 +101,7 @@ gambi hub serve
 Machine-readable dry run:
 
 ```bash
-gambi hub serve --dry-run --format ndjson
+gambi hub serve --dry-run --format json
 ```
 
 ### 2. Create a room
@@ -122,7 +126,7 @@ gambi participant join \
   --endpoint http://localhost:11434
 ```
 
-`gambi participant join` probes the local endpoint, registers the participant, opens a participant tunnel back to the hub, and keeps the session alive until interrupted. This works the same way for local hubs and remote hubs on the same trusted network: the endpoint can stay loopback-only on the participant machine.
+`gambi participant join` probes the local endpoint, registers the participant, opens a participant tunnel to the hub, and stays in the room until Ctrl+C, reconnecting by itself if the tunnel drops. This works the same way for local hubs and remote hubs on the same trusted network: the endpoint can stay loopback-only on the participant machine.
 
 To join with the OpenCode agent already installed and authenticated on your
 machine:
@@ -131,7 +135,7 @@ machine:
 gambi participant join \
   --room ABC123 \
   --participant-id arthur-opencode \
-  --name Arthur \
+  --nickname Arthur \
   --harness opencode
 ```
 
@@ -139,7 +143,7 @@ This creates an empty `~/.gambi/workspaces/ABC123/arthur-opencode/` (or uses
 the folder passed to `--workspace`), starts `opencode acp` there, and publishes
 workspace changes through the same outbound tunnel. OpenCode credentials stay on
 the participant machine. Applications can also host harness participants
-themselves with `createHarnessParticipantSession()` from `gambi-sdk`.
+themselves with `createHarnessParticipantSession()` from `gambi-sdk/participant`.
 
 Claude Code and Codex can join through their published ACP bridges as
 `--harness claude-code` and `--harness codex`. Install the matching bridge
@@ -162,7 +166,7 @@ gambi participant join \
   --participant-id worker-1 \
   --model llama3 \
   --dry-run \
-  --format ndjson
+  --format json
 ```
 
 ### 4. Watch room events
@@ -177,9 +181,9 @@ As NDJSON for scripts:
 gambi events watch --room ABC123 --format ndjson
 ```
 
-Room event streams include lifecycle signals such as `llm.request`, `llm.complete`, and `llm.error`.
+The stream starts with a `room.snapshot`, then carries every change of a participant's status (`participant.online`, `participant.busy`, `participant.offline`, ...) and the inference events `llm.request`, `llm.complete`, and `llm.error`.
 
-`llm.complete` includes baseline observability metrics when available:
+`llm.complete` includes baseline observability metrics (token counts only for answers that are not streamed):
 
 - `ttftMs`
 - `durationMs`
@@ -210,7 +214,8 @@ console.log(result.text);
 ### 6. Resolve a room dynamically with `resolveGambiTarget()`
 
 ```ts
-import { createGambi, resolveGambiTarget } from "gambi-sdk";
+import { createGambi } from "gambi-sdk";
+import { resolveGambiTarget } from "gambi-sdk/discovery";
 import { generateText } from "ai";
 
 const target = await resolveGambiTarget({
@@ -239,10 +244,10 @@ import { createClient } from "gambi-sdk";
 const client = createClient({ hubUrl: "http://localhost:3000" });
 
 const created = await client.rooms.create({ name: "Ops" });
-console.log(created.data.room.code);
+console.log(created.room.code);
 
-const participants = await client.participants.list(created.data.room.code);
-console.log(participants.data.length);
+const participants = await client.participants.list(created.room.code);
+console.log(participants.length);
 ```
 
 ## CLI overview
@@ -255,38 +260,20 @@ gambi room create
 gambi room list
 gambi room get
 gambi participant join
-gambi participant join
 gambi participant leave
-gambi participant heartbeat
 gambi events watch
 gambi self update
 ```
 
 Agent-first behavior:
 
-- `--format text|json|ndjson` on the operational commands
-- `--interactive` and `--no-interactive`
-- default `json` or `ndjson` when stdout is piped
-- XDG config at `~/.config/gambi/config.json`
+- `--format text|json|ndjson` on every command; `json` when stdout is not a terminal
+- one JSON line per step on long-running commands (`hub serve`, `participant join`)
+- errors on stderr as JSON, with a stable `name` and exit codes `2` (usage), `3` (connectivity), `4` (the hub refused)
+- prompts for missing flags only on a terminal; `--no-interactive` or `GAMBI_NO_INTERACTIVE=1` turns them off
+- `--hub` or `GAMBI_HUB` to point at a hub (named environments and `~/.config/gambi/config.json` are gone since 0.8)
 - `--config -` for stdin-driven JSON on commands that accept runtime config
-
-Example config:
-
-```json
-{
-  "defaultEnv": "local",
-  "envs": {
-    "local": {
-      "hubUrl": "http://localhost:3000",
-      "endpoint": "http://localhost:11434"
-    },
-    "staging": {
-      "hubUrl": "http://192.168.1.10:3000",
-      "endpoint": "http://localhost:11434"
-    }
-  }
-}
-```
+- `--completions <shell>` and `--help` on every command
 
 ## SDK overview
 
@@ -307,7 +294,8 @@ The top-level helpers default to `openResponses`. Use the `chatCompletions` name
 Use `resolveGambiTarget()` when the room or hub should be discovered from the local network first:
 
 ```ts
-import { createGambi, resolveGambiTarget } from "gambi-sdk";
+import { createGambi } from "gambi-sdk";
+import { resolveGambiTarget } from "gambi-sdk/discovery";
 
 const target = await resolveGambiTarget({
   roomCode: "ABC123",
@@ -316,7 +304,7 @@ const target = await resolveGambiTarget({
 const gambi = createGambi(target);
 ```
 
-The SDK also exposes `discoverHubs()` and `discoverRooms()` for lower-level discovery workflows.
+`gambi-sdk/discovery` also exposes `discoverHubs()` and `discoverRooms()` for lower-level discovery workflows.
 
 Use `createClient()` when your application needs operational control:
 
@@ -325,35 +313,53 @@ const client = createClient({ hubUrl: "http://localhost:3000" });
 
 await client.rooms.list();
 await client.rooms.get("ABC123");
-await client.participants.upsert("ABC123", "worker-1", {
-  nickname: "worker-1",
-  model: "llama3",
-  endpoint: "http://192.168.1.25:11434",
-});
-await client.participants.heartbeat("ABC123", "worker-1");
+await client.participants.list("ABC123");
 await client.participants.remove("ABC123", "worker-1");
 ```
+
+Methods return the value itself and reject with a `ClientError` whose `code` names the failure (`ROOM_NOT_FOUND`, `VERSION_MISMATCH`, `HUB_UNREACHABLE`, ...).
 
 Room event watching:
 
 ```ts
-for await (const event of client.events.watchRoom({ roomCode: "ABC123" })) {
-  console.log(event.type, event.data);
+for await (const event of client.events.watch("ABC123")) {
+  console.log(event.type);
 }
 ```
 
 Harness clients can attach to a harness participant without exposing that harness to inference routing:
 
 ```ts
-const channel = await client.harness.attach({
-  roomCode: "ABC123",
-  participantId: "harness-1",
+await client.harness.openSession("ABC123", "harness-1", "session-1");
+await client.harness.send("ABC123", "harness-1", "session-1", {
+  jsonrpc: "2.0",
+  id: 1,
+  method: "session/prompt",
+  params: { sessionId: "session-1", prompt: [{ type: "text", text: "Hi" }] },
 });
 
-channel.send({
-  type: "tunnel.harness.message",
-  sessionId: "session-1",
-  message: { jsonrpc: "2.0", id: 1, method: "session/prompt", params: {} },
+for await (const event of client.harness.attach("ABC123", "harness-1")) {
+  console.log(event.type);
+}
+```
+
+Host a hub or a participant inside your own program (Bun only):
+
+```ts
+import { createClient } from "gambi-sdk";
+import { createHub } from "gambi-sdk/hub";
+import { createParticipantSession } from "gambi-sdk/participant";
+
+const hub = await createHub({ port: 3000 });
+const { room } = await createClient({ hubUrl: hub.url }).rooms.create({ name: "Demo" });
+
+const session = await createParticipantSession({
+  hubUrl: hub.url,
+  roomCode: room.code,
+  participantId: "worker-1",
+  nickname: "worker-1",
+  model: "llama3",
+  endpoint: "http://localhost:11434",
 });
 ```
 
@@ -368,9 +374,12 @@ Management API:
 - `GET /v1/rooms/:code/participants`
 - `PUT /v1/rooms/:code/participants/:id`
 - `DELETE /v1/rooms/:code/participants/:id`
-- `POST /v1/rooms/:code/participants/:id/heartbeat`
-- `GET /v1/rooms/:code/participants/:id/harness` (WebSocket)
-- `GET /v1/rooms/:code/events`
+- `GET /v1/rooms/:code/events` (SSE)
+- `GET /v1/rooms/:code/participants/:id/harness/events` (SSE)
+- `POST /v1/rooms/:code/participants/:id/harness/messages`
+- `PUT /v1/rooms/:code/participants/:id/harness/sessions/:sessionId`
+- `DELETE /v1/rooms/:code/participants/:id/harness/sessions/:sessionId`
+- `GET /v1/openapi.json` (the OpenAPI document of the management API)
 
 Inference API:
 
@@ -402,8 +411,9 @@ Management errors are structured:
 {
   "error": {
     "code": "ROOM_NOT_FOUND",
-    "message": "Room 'ABC123' not found.",
-    "hint": "Create the room first or verify the code."
+    "message": "Room 'ABC123' was not found.",
+    "hint": "List the rooms of this hub to see the codes that exist.",
+    "details": { "roomCode": "ABC123" }
   },
   "meta": {
     "requestId": "req_456"
@@ -413,17 +423,13 @@ Management errors are structured:
 
 ## Runtime defaults
 
-Rooms and participants can both provide runtime defaults. The hub merges them at proxy time with this precedence:
-
-1. room defaults
-2. participant defaults
-3. request-time overrides
+Rooms and participants can both provide runtime defaults. For each field a request leaves out, the hub uses the participant's default, then the room's. Fields the request sets always win.
 
 Sensitive config is redacted from public management responses. Public room and participant payloads expose safe summaries instead of raw secrets or instructions.
 
-Participant registrations also expose tunnel connection state through `connection`, including whether the tunnel is currently connected and the timestamp of the last tunnel heartbeat seen by the hub.
+Each participant has one `status`, derived from its tunnel: `offline` (no open tunnel), `online` (ready), or `busy` (handling a request). Only `online` participants receive requests, and a participant that stays `offline` for 60 seconds is removed from the room.
 
-Streaming commands always emit NDJSON for machine-readable output. If you pass `--format json` to a streaming command, the CLI coerces it to `ndjson`.
+Rooms live in the hub's memory: a restarted hub has no rooms, and participants that try to come back to it stop with `RoomNotFound`.
 
 ## Development
 
@@ -433,7 +439,7 @@ bun run dev
 bun run dev:hub
 bun run dev:cli -- --help
 bun run dev:cli -- room list --format json
-bun run dev:cli -- hub serve --dry-run --format ndjson
+bun run dev:cli -- hub serve --dry-run --format json
 bun run build
 bun run check-types
 ```
@@ -451,6 +457,7 @@ The event board and the orchestration experiments built on Gambi live in
 Workspace-specific:
 
 ```bash
+bun run --cwd packages/protocol check-types
 bun run --cwd packages/core check-types
 bun run --cwd packages/cli check-types
 bun run --cwd packages/sdk check-types
