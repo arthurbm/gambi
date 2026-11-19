@@ -14,7 +14,7 @@ Kept in English (product names, domain terms with no good Portuguese word, and a
 | harness | "o harness", "os harnesses"; *harness participant* is "participante de harness" |
 | workspace | "o workspace" |
 | endpoint | "o endpoint"; *provider endpoint* is "endpoint do provedor" |
-| heartbeat, ping/pong, bootstrap token, tunnel-first | as is |
+| ping/pong, bootstrap token, tunnel-first, snapshot | as is |
 | SDK, CLI, API, SSE, WebSocket, mDNS, ACP, JSON, NDJSON, Responses API, Chat Completions, prompt, streaming, runtime | as is ("a CLI", "o SDK", "a API") |
 | Product names: Gambi, Claude Code, Codex, OpenCode, Ollama, LM Studio, vLLM, OpenRouter, AI SDK, Pele, Starlight | as is |
 
