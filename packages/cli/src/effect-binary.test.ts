@@ -24,20 +24,29 @@ const ENTRYPOINT = join(import.meta.dir, "cli", "main.ts");
 const COMPILE_TIMEOUT_MS = 120_000;
 
 const run = (cmd: string[], env: Record<string, string> = {}) =>
-  Effect.promise(async (signal) => {
-    const child = Bun.spawn(cmd, {
-      signal,
-      env: { ...process.env, ...env },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    return { exitCode, stderr, stdout };
-  });
+  Effect.acquireUseRelease(
+    Effect.sync(() =>
+      Bun.spawn(cmd, {
+        env: { ...process.env, ...env },
+        stdout: "pipe",
+        stderr: "pipe",
+      })
+    ),
+    (child) =>
+      Effect.promise(async () => {
+        const [stdout, stderr, exitCode] = await Promise.all([
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+          child.exited,
+        ]);
+        return { exitCode, stderr, stdout };
+      }),
+    (child) =>
+      Effect.promise(async () => {
+        child.kill("SIGKILL");
+        await child.exited;
+      })
+  );
 
 const temporaryDirectory = Effect.acquireRelease(
   Effect.promise(() => mkdtemp(join(tmpdir(), "gambi-effect-binary-"))),
