@@ -102,7 +102,10 @@ const releaseServing = (body: string) =>
       Bun.serve({
         hostname: "127.0.0.1",
         port: 0,
-        fetch: () => new Response(body),
+        fetch: (request) =>
+          new URL(request.url).pathname.startsWith("/gambi-")
+            ? new Response(body)
+            : new Response(null, { status: 404 }),
       })
     ),
     (server) => Effect.promise(() => server.stop(true))
@@ -383,7 +386,9 @@ it.live(
       expect(wrongServer.stdout).toBe("");
       expect(JSON.parse(wrongServer.stderr).error).toMatchObject({
         name: "NotAHub",
-        message: expect.stringContaining("did not answer like a Gambi hub"),
+        message: expect.stringContaining(
+          "did not answer like a Gambi hub (HTTP 404)"
+        ),
       });
 
       const installedAt = yield* Effect.promise(() => realpath(binary));
