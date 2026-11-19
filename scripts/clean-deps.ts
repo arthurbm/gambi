@@ -4,7 +4,13 @@ import { join, relative } from "node:path";
 const root = join(import.meta.dir, "..");
 const dryRun = process.argv.includes("--dry-run");
 const cleanBunGlobalCache = process.argv.includes("--bun-cache");
-const targets = new Set(["node_modules", ".turbo", ".cache", ".astro", ".vite"]);
+const targets = new Set([
+  "node_modules",
+  ".turbo",
+  ".cache",
+  ".astro",
+  ".vite",
+]);
 const skipped = new Set([".git"]);
 
 async function collectTargets(directory: string): Promise<string[]> {

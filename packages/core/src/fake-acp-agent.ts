@@ -9,8 +9,15 @@ interface JsonRpcRequest {
   params?: Record<string, unknown>;
 }
 
-const sessions = new Map<string, string>();
-let nextSession = 1;
+/**
+ * The sessions of one run of the agent: session id to the folder it runs in.
+ * It belongs to the run, not to the module, so two agents in one process
+ * (a test that calls `runFakeAcpAgent` twice) do not share sessions.
+ */
+interface AgentSessions {
+  readonly folders: Map<string, string>;
+  next: number;
+}
 
 function send(message: Record<string, unknown>): void {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -32,7 +39,10 @@ function textFromPrompt(prompt: unknown): string {
     .join("\n");
 }
 
-async function handleRequest(request: JsonRpcRequest): Promise<void> {
+async function handleRequest(
+  sessions: AgentSessions,
+  request: JsonRpcRequest
+): Promise<void> {
   if (request.method === "initialize") {
     send({
       jsonrpc: "2.0",
@@ -56,9 +66,9 @@ async function handleRequest(request: JsonRpcRequest): Promise<void> {
       });
       return;
     }
-    const sessionId = `fake-session-${nextSession}`;
-    nextSession += 1;
-    sessions.set(sessionId, cwd);
+    const sessionId = `fake-session-${sessions.next}`;
+    sessions.next += 1;
+    sessions.folders.set(sessionId, cwd);
     await mkdir(cwd, { recursive: true });
     send({ jsonrpc: "2.0", id: request.id, result: { sessionId } });
     return;
@@ -66,7 +76,8 @@ async function handleRequest(request: JsonRpcRequest): Promise<void> {
 
   if (request.method === "session/prompt") {
     const sessionId = request.params?.sessionId;
-    const cwd = typeof sessionId === "string" ? sessions.get(sessionId) : null;
+    const cwd =
+      typeof sessionId === "string" ? sessions.folders.get(sessionId) : null;
     if (!(typeof sessionId === "string" && cwd)) {
       send({
         jsonrpc: "2.0",
@@ -100,7 +111,7 @@ async function handleRequest(request: JsonRpcRequest): Promise<void> {
   if (request.method === "session/close") {
     const sessionId = request.params?.sessionId;
     if (typeof sessionId === "string") {
-      sessions.delete(sessionId);
+      sessions.folders.delete(sessionId);
     }
     send({ jsonrpc: "2.0", id: request.id, result: {} });
     return;
@@ -116,6 +127,7 @@ async function handleRequest(request: JsonRpcRequest): Promise<void> {
 }
 
 export async function runFakeAcpAgent(): Promise<void> {
+  const sessions: AgentSessions = { folders: new Map(), next: 1 };
   const lines = createInterface({
     input: process.stdin,
     crlfDelay: Number.POSITIVE_INFINITY,
@@ -125,7 +137,7 @@ export async function runFakeAcpAgent(): Promise<void> {
       continue;
     }
     try {
-      await handleRequest(JSON.parse(line) as JsonRpcRequest);
+      await handleRequest(sessions, JSON.parse(line) as JsonRpcRequest);
     } catch (error) {
       process.stderr.write(
         `fake ACP error: ${error instanceof Error ? error.message : String(error)}\n`

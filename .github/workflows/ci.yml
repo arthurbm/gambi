@@ -53,8 +53,9 @@ jobs:
         run: bun test packages/testing/src
 
       # The npm publish and verify loop used by the release workflow. Also the
-      # Effect foundation guards: one exact `effect` version, no platform API
-      # in `@gambi/protocol`.
+      # guards of the foundation: one exact `effect` version, no platform API
+      # in `@gambi/protocol` or `@gambi/core`, no real wait in a test, no zod
+      # and no module state in the core.
       - name: Release script tests
         run: bun test scripts
 
@@ -65,20 +66,10 @@ jobs:
           bun run --cwd packages/sdk build
           bun run --cwd packages/sdk check:packed-types
 
-      # Only the files this change touches: the repo predates the lint rules
-      # and still carries pre-existing errors elsewhere. `ultracite check`
-      # exits 0 on errors, so call Biome (same config) directly.
-      - name: Lint changed files
-        run: |
-          base="${{ github.event.pull_request.base.sha || github.event.before }}"
-          git diff --name-only -z --diff-filter=ACMR "$base"...HEAD -- \
-            '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs' '*.json' '*.jsonc' '*.css' '*.astro' \
-            > changed-files.txt
-          if [ -s changed-files.txt ]; then
-            xargs -0 bun x biome check --no-errors-on-unmatched --files-ignore-unknown=true < changed-files.txt
-          else
-            echo "No lintable files changed."
-          fi
+      # The whole repository. `ultracite check` exits 0 on errors, so call
+      # Biome (same config) directly.
+      - name: Lint
+        run: bun x biome check .
 
       - name: Docs translations in sync
         run: bun run --cwd apps/docs check:i18n
