@@ -56,6 +56,7 @@ layer(layerHub({ version: "0.8.3" }), { excludeTestServices: true })(
               chatCompletions: "unknown",
             },
             status: "offline",
+            runtimeId: expect.any(String),
             joinedAt: expect.any(Number),
             updatedAt: expect.any(Number),
           });
@@ -107,6 +108,7 @@ layer(layerHub({ version: "0.8.3" }), { excludeTestServices: true })(
                 chatCompletions: "unknown",
               },
               status: "offline",
+              runtimeId: expect.any(String),
               joinedAt: expect.any(Number),
               updatedAt: expect.any(Number),
             },

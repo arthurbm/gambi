@@ -227,6 +227,14 @@ export class TunnelRpcs extends RpcGroup.make(
  */
 export const TUNNEL_REPLACED_CLOSE_CODE = 4001;
 
+/**
+ * The WebSocket close code of a tunnel the hub closed because its participant
+ * was taken out of the room (`participants.remove`). A participant runtime
+ * that sees its tunnel close with it left the room for good, and must not
+ * dial again: registering would bring back the participant someone removed.
+ */
+export const TUNNEL_REMOVED_CLOSE_CODE = 4002;
+
 /** The path of the tunnel's WebSocket upgrade on the hub. */
 export const tunnelPath = (roomCode: string, participantId: string): string =>
   `/v1/rooms/${encodeURIComponent(roomCode)}/participants/${encodeURIComponent(participantId)}/tunnel`;

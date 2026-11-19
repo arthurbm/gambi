@@ -48,6 +48,7 @@ import {
   Schema,
   Scope,
 } from "effect";
+import { SecureRandom } from "effect/crypto";
 import type { HttpClient } from "effect/http";
 import { NetAddress } from "effect/net";
 import {
@@ -61,7 +62,7 @@ import { Socket, SocketServer } from "effect/socket";
 /** What the participant tells the room about itself. */
 export type ParticipantProfile = Omit<
   RegisterParticipant,
-  "authHeaders" | "password" | "version"
+  "authHeaders" | "password" | "runtimeId" | "version"
 >;
 
 /** Why a participant runtime is not connected and is about to try again. */
@@ -159,6 +160,13 @@ export interface ParticipantRuntimeOptions {
   readonly registrationTimeout?: Duration.Input | undefined;
   readonly roomCode: string;
   /**
+   * The id of this runtime, sent with every registration: the hub takes the
+   * participant out of the room only for the runtime it belongs to. Default:
+   * a new one. A host that may have to leave the room before the join
+   * returns makes its own and passes it here.
+   */
+  readonly runtimeId?: string | undefined;
+  /**
    * How long to wait for the hub to accept the tunnel, from the dial to its
    * `Welcome`. Default 10 seconds.
    */
@@ -224,6 +232,15 @@ export class ParticipantReplaced extends Schema.TaggedError<ParticipantReplaced>
   }
 }
 
+/**
+ * A new id for a participant runtime (`ParticipantRuntimeOptions.runtimeId`).
+ * Random, so that no two runtimes share one, and not a secret.
+ */
+export const makeRuntimeId: Effect.Effect<string> = Effect.flatMap(
+  SecureRandom.SecureRandom,
+  (random) => random.uuidV4()
+).pipe(Effect.provide(SecureRandom.layerWebCrypto));
+
 /** Why a registration was refused, as the hub said it, or `HubUnreachable`. */
 export type RegistrationError =
   | RoomNotFound
@@ -254,6 +271,9 @@ export const register = Effect.fn("ParticipantRuntime.register")(function* (
         ...(options.password === undefined
           ? {}
           : { password: options.password }),
+        ...(options.runtimeId === undefined
+          ? {}
+          : { runtimeId: options.runtimeId }),
         version: options.version ?? GAMBI_VERSION,
       },
     })
@@ -510,6 +530,11 @@ export class ParticipantRuntime extends Context.Service<
     /** The participant as the hub registered it when it joined. */
     readonly participant: ParticipantSummary;
     /**
+     * The id of this runtime. Taking the participant out of the room
+     * (`participants.remove`) names it.
+     */
+    readonly runtimeId: string;
+    /**
      * Completes when the tunnel that is open now drops; at once when none is
      * open. The runtime dials again unless it was started with
      * `reconnect: false`.
@@ -546,6 +571,7 @@ export class ParticipantRuntime extends Context.Service<
       ParticipantRuntime,
       Effect.gen(function* () {
         type Failure = RegistrationError | TunnelOpenFailed;
+        const runtimeId = options.runtimeId ?? (yield* makeRuntimeId);
         const joined = yield* Deferred.make<ParticipantSummary, Failure>();
         const ended = yield* Deferred.make<
           void,
@@ -567,7 +593,7 @@ export class ParticipantRuntime extends Context.Service<
         // open, and returns when a tunnel that did open drops.
         const connection = (attempt: number) =>
           Effect.gen(function* () {
-            const registered = yield* register(options);
+            const registered = yield* register({ ...options, runtimeId });
             const tunnel = yield* openTunnel(options, registered.tunnel.token);
             tunnelDropped = tunnel.dropped;
             // The host hears `connected` before the join returns, and from
@@ -662,6 +688,7 @@ export class ParticipantRuntime extends Context.Service<
         return ParticipantRuntime.of({
           ended: Deferred.await(ended),
           participant,
+          runtimeId,
           tunnelDropped: Effect.suspend(() => Effect.asVoid(tunnelDropped)),
         });
       })

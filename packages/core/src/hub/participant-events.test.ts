@@ -8,6 +8,8 @@ import { RoomEvents } from "./room-events.ts";
 import { HubSettings } from "./settings.ts";
 
 const ROOM = "FREVO1";
+// The participant runtime behind every event of these tests.
+const RUNTIME = "runtime-1";
 const profile = { nickname: "Arthur", model: "llama3.1:8b" };
 
 // `Participants` reads one setting of the hub, the reconnection deadline.
@@ -54,18 +56,20 @@ const watching = Effect.gen(function* () {
 const participantAfter = (...history: StatusEvent[]) =>
   Effect.gen(function* () {
     const participants = yield* Participants;
-    yield* participants.register(ROOM, "arthur-1", profile);
+    yield* participants.register(ROOM, "arthur-1", profile, RUNTIME);
     for (const event of history) {
-      yield* participants.transition(ROOM, "arthur-1", event);
+      yield* participants.transition(ROOM, "arthur-1", event, RUNTIME);
     }
     const nextEvent = yield* watching;
     return {
       happens: (event: StatusEvent) =>
-        participants.transition(ROOM, "arthur-1", event),
-      registersAgain: participants.register(ROOM, "arthur-1", {
-        ...profile,
-        nickname: "Arthur M.",
-      }),
+        participants.transition(ROOM, "arthur-1", event, RUNTIME),
+      registersAgain: participants.register(
+        ROOM,
+        "arthur-1",
+        { ...profile, nickname: "Arthur M." },
+        RUNTIME
+      ),
       nextEvent,
     };
   });
@@ -79,7 +83,12 @@ it.effect("a participant that registers in a room joins it", () =>
     const participants = yield* Participants;
     const nextEvent = yield* watching;
 
-    const participant = yield* participants.register(ROOM, "arthur-1", profile);
+    const participant = yield* participants.register(
+      ROOM,
+      "arthur-1",
+      profile,
+      RUNTIME
+    );
 
     expect(yield* nextEvent).toEqual({
       type: "participant.joined",

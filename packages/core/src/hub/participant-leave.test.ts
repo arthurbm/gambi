@@ -2,6 +2,7 @@ import { expect } from "bun:test";
 import {
   GAMBI_VERSION,
   ParticipantNotFound,
+  ParticipantOfAnotherRuntime,
   RoomNotFound,
 } from "@gambi/protocol";
 import { layer } from "@gambi/testing/effect";
@@ -17,6 +18,7 @@ import {
 import { layerHub, managementClient, watchRoom } from "../testing/hub.ts";
 import { defaultHandlers, joinParticipant } from "../testing/participant.ts";
 import { Hub } from "./hub.ts";
+import { Tunnels } from "./tunnels.ts";
 
 layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
   it.effect(
@@ -35,6 +37,7 @@ layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
 
         const left = yield* client.participants.remove({
           params: { code: room.code, id: "arthur-1" },
+          query: { runtimeId: participant.runtime.runtimeId },
         });
 
         expect(left).toEqual({ participantId: "arthur-1" });
@@ -60,7 +63,7 @@ layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
       const { room } = yield* client.rooms.create({
         payload: { name: "Maracatu" },
       });
-      yield* client.participants.register({
+      const registered = yield* client.participants.register({
         params: { code: room.code, id: "arthur-1" },
         payload: {
           nickname: "Arthur",
@@ -71,6 +74,7 @@ layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
 
       yield* client.participants.remove({
         params: { code: room.code, id: "arthur-1" },
+        query: { runtimeId: registered.participant.runtimeId },
       });
 
       expect(
@@ -89,15 +93,16 @@ layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
           payload: { name: "Ciranda" },
         });
 
+        const query = { runtimeId: "a-runtime" };
         const noRoom = yield* client.participants
-          .remove({ params: { code: "NOROOM", id: "arthur-1" } })
+          .remove({ params: { code: "NOROOM", id: "arthur-1" }, query })
           .pipe(Effect.flip);
         const noParticipant = yield* client.participants
-          .remove({ params: { code: room.code, id: "arthur-1" } })
+          .remove({ params: { code: room.code, id: "arthur-1" }, query })
           .pipe(Effect.flip);
         const response = yield* HttpClient.execute(
           HttpClientRequest.delete(
-            `${hub.url}/v1/rooms/${room.code}/participants/arthur-1`
+            `${hub.url}/v1/rooms/${room.code}/participants/arthur-1?runtimeId=a-runtime`
           )
         );
 
@@ -134,9 +139,10 @@ layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
           participantId: "arthur-1",
           profile: { nickname: "Arthur", model: "llama3.1:8b" },
         };
-        const { tunnel } = yield* register(options);
+        const { participant, tunnel } = yield* register(options);
         yield* client.participants.remove({
           params: { code: room.code, id: "arthur-1" },
+          query: { runtimeId: participant.runtimeId },
         });
 
         const error = yield* openTunnel(options, tunnel.token).pipe(
@@ -155,5 +161,176 @@ layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
           )
         )
       )
+  );
+
+  it.effect(
+    "a removal that names a runtime that no longer holds the participant id is refused, and who joined later with that id stays",
+    () =>
+      Effect.gen(function* () {
+        const client = yield* managementClient;
+        const hub = yield* Hub;
+        const tunnels = yield* Tunnels;
+        const { room } = yield* client.rooms.create({
+          payload: { name: "Caboclinho" },
+        });
+        const params = { code: room.code, id: "arthur-1" };
+        const first = yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+        });
+        yield* first.stop;
+        yield* tunnels.awaitDrop(room.code, "arthur-1");
+        const second = yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+        });
+        const watch = yield* watchRoom(room.code);
+
+        // The removal the first runtime asked for arrives only now.
+        const late = yield* client.participants
+          .remove({ params, query: { runtimeId: first.runtime.runtimeId } })
+          .pipe(Effect.flip);
+        const response = yield* HttpClient.execute(
+          HttpClientRequest.delete(
+            `${hub.url}/v1/rooms/${room.code}/participants/arthur-1?runtimeId=${first.runtime.runtimeId}`
+          )
+        );
+
+        expect(late).toBeInstanceOf(ParticipantOfAnotherRuntime);
+        expect(response.status).toBe(409);
+        expect(yield* response.json).toEqual({
+          error: {
+            code: "PARTICIPANT_OF_ANOTHER_RUNTIME",
+            message: `Participant 'arthur-1' of room '${room.code}' belongs to another participant runtime.`,
+            hint: "Another runtime joined the room with this participant id. List the participants of the room: `runtimeId` names the runtime each one belongs to.",
+            details: { roomCode: room.code, participantId: "arthur-1" },
+          },
+          meta: { requestId: expect.any(String) },
+        });
+        expect(second.runtime.runtimeId).not.toBe(first.runtime.runtimeId);
+        expect(watch.snapshot.participants).toMatchObject([
+          {
+            id: "arthur-1",
+            status: "online",
+            runtimeId: second.runtime.runtimeId,
+          },
+        ]);
+        // Nothing happened to the participant: the next thing the room
+        // hears is its own runtime taking it out.
+        yield* client.participants.remove({
+          params,
+          query: { runtimeId: second.runtime.runtimeId },
+        });
+        expect(yield* watch.next).toMatchObject({
+          type: "participant.removed",
+          participantId: "arthur-1",
+        });
+      })
+  );
+
+  it.effect("a removal that names no runtime is an invalid request", () =>
+    Effect.gen(function* () {
+      const client = yield* managementClient;
+      const hub = yield* Hub;
+      const { room } = yield* client.rooms.create({
+        payload: { name: "Cavalo-marinho" },
+      });
+      yield* joinParticipant({
+        roomCode: room.code,
+        participantId: "arthur-1",
+      });
+
+      const response = yield* HttpClient.execute(
+        HttpClientRequest.delete(
+          `${hub.url}/v1/rooms/${room.code}/participants/arthur-1`
+        )
+      );
+
+      expect(response.status).toBe(400);
+      expect(yield* response.json).toMatchObject({
+        error: { code: "INVALID_REQUEST" },
+      });
+      expect(
+        yield* client.participants.list({ params: { code: room.code } })
+      ).toMatchObject([{ id: "arthur-1", status: "online" }]);
+    })
+  );
+
+  it.effect(
+    "a participant whose tunnel is open stays its runtime's when another runtime registers its id: the removal that one asks for is refused",
+    () =>
+      Effect.gen(function* () {
+        const client = yield* managementClient;
+        const { room } = yield* client.rooms.create({
+          payload: { name: "Baião" },
+        });
+        const params = { code: room.code, id: "arthur-1" };
+        const online = yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+        });
+
+        // Another runtime registers the same id and gives up before it dials.
+        const registered = yield* client.participants.register({
+          params,
+          payload: {
+            nickname: "Arthur",
+            model: "llama3.1:8b",
+            runtimeId: "another-runtime",
+            version: GAMBI_VERSION,
+          },
+        });
+        const refused = yield* client.participants
+          .remove({ params, query: { runtimeId: "another-runtime" } })
+          .pipe(Effect.flip);
+
+        expect(registered.participant.runtimeId).toBe(online.runtime.runtimeId);
+        expect(refused).toBeInstanceOf(ParticipantOfAnotherRuntime);
+        expect(
+          yield* client.participants.list({ params: { code: room.code } })
+        ).toMatchObject([
+          {
+            id: "arthur-1",
+            status: "online",
+            runtimeId: online.runtime.runtimeId,
+          },
+        ]);
+      })
+  );
+
+  it.effect(
+    "a participant with no open tunnel is the runtime's that registered last",
+    () =>
+      Effect.gen(function* () {
+        const client = yield* managementClient;
+        const { room } = yield* client.rooms.create({
+          payload: { name: "Xaxado" },
+        });
+        const params = { code: room.code, id: "arthur-1" };
+        const registerAs = (runtimeId: string) =>
+          client.participants.register({
+            params,
+            payload: {
+              nickname: "Arthur",
+              model: "llama3.1:8b",
+              runtimeId,
+              version: GAMBI_VERSION,
+            },
+          });
+        yield* registerAs("first-runtime");
+        const second = yield* registerAs("second-runtime");
+
+        const refused = yield* client.participants
+          .remove({ params, query: { runtimeId: "first-runtime" } })
+          .pipe(Effect.flip);
+        const left = yield* client.participants.remove({
+          params,
+          query: { runtimeId: "second-runtime" },
+        });
+
+        expect(second.participant.runtimeId).toBe("second-runtime");
+        expect(refused).toBeInstanceOf(ParticipantOfAnotherRuntime);
+        expect(left).toEqual({ participantId: "arthur-1" });
+      })
   );
 });

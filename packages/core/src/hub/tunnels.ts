@@ -89,6 +89,8 @@ interface IssuedToken {
   readonly expiresAt: number;
   readonly participantId: string;
   readonly roomCode: string;
+  /** The participant runtime the token was issued to. */
+  readonly runtimeId: string;
 }
 
 interface OpenTunnel {
@@ -165,12 +167,15 @@ export class Tunnels extends Context.Service<
     /**
      * Closes the participant's tunnel from the hub's side and waits until it
      * is gone. Its calls in flight fail with `RpcClientError`, whose message
-     * carries `reason`. Does nothing when the participant has no tunnel.
+     * carries `reason`. With a `closeCode`, the WebSocket closes with it, for
+     * a participant runtime that has to tell this end from a drop. Does
+     * nothing when the participant has no tunnel.
      */
     readonly close: (
       roomCode: string,
       participantId: string,
-      reason: string
+      reason: string,
+      closeCode?: number
     ) => Effect.Effect<void>;
     /**
      * Closes every open tunnel and waits until they are gone. The calls in
@@ -182,32 +187,37 @@ export class Tunnels extends Context.Service<
      */
     readonly closeAll: Effect.Effect<void>;
     /**
-     * Issues the bootstrap token for one tunnel of one participant: single
-     * use, valid for `BOOTSTRAP_TOKEN_TTL`.
+     * Issues the bootstrap token for one tunnel of one participant, to the
+     * participant runtime that registered it: single use, valid for
+     * `BOOTSTRAP_TOKEN_TTL`.
      */
     readonly issueToken: (
       roomCode: string,
-      participantId: string
+      participantId: string,
+      runtimeId: string
     ) => Effect.Effect<BootstrapToken>;
     /**
-     * Spends a bootstrap token. It fails when the token was not issued for
-     * that participant of that room, has expired or was already spent, and
-     * when the participant is no longer in the room.
+     * Spends a bootstrap token and answers the participant runtime it was
+     * issued to. It fails when the token was not issued for that participant
+     * of that room, has expired or was already spent, and when the
+     * participant is no longer in the room.
      */
     readonly redeemToken: (
       roomCode: string,
       participantId: string,
       token: string | undefined
-    ) => Effect.Effect<void, TunnelTokenInvalid>;
+    ) => Effect.Effect<string, TunnelTokenInvalid>;
     /**
-     * Runs the participant's tunnel over the socket it dialed, and returns
-     * when the tunnel is gone. The participant is `online` while it runs. A
-     * tunnel the participant already had is closed first: the new one wins.
+     * Runs the participant's tunnel over the socket the runtime `runtimeId`
+     * dialed, and returns when the tunnel is gone. The participant is
+     * `online`, and that runtime's, while it runs. A tunnel the participant
+     * already had is closed first: the new one wins.
      */
     readonly serve: (
       roomCode: string,
       participantId: string,
-      socket: Socket.Socket
+      socket: Socket.Socket,
+      runtimeId: string
     ) => Effect.Effect<void>;
   }
 >()("gambi/core/Tunnels") {
@@ -225,7 +235,8 @@ export class Tunnels extends Context.Service<
 
       const issueToken = Effect.fn("Tunnels.issueToken")(function* (
         roomCode: string,
-        participantId: string
+        participantId: string,
+        runtimeId: string
       ) {
         const now = yield* Clock.currentTimeMillis;
         // Tokens that were never used leave here, without a timer.
@@ -236,7 +247,7 @@ export class Tunnels extends Context.Service<
         }
         const token = yield* random.uuidV4();
         const expiresAt = now + Duration.toMillis(BOOTSTRAP_TOKEN_TTL);
-        tokens.set(token, { roomCode, participantId, expiresAt });
+        tokens.set(token, { roomCode, participantId, runtimeId, expiresAt });
         return { token, expiresAt };
       });
 
@@ -259,13 +270,15 @@ export class Tunnels extends Context.Service<
           return yield* new TunnelTokenInvalid({ roomCode, participantId });
         }
         tokens.delete(token);
+        return issued.runtimeId;
       });
 
       const serve = Effect.fn("Tunnels.serve")(
         function* (
           roomCode: string,
           participantId: string,
-          socket: Socket.Socket
+          socket: Socket.Socket,
+          runtimeId: string
         ) {
           const key = keyOf(roomCode, participantId);
           const dropped = yield* Deferred.make<void>();
@@ -427,7 +440,8 @@ export class Tunnels extends Context.Service<
             yield* participants.transition(
               roomCode,
               participantId,
-              "tunnelOpened"
+              "tunnelOpened",
+              runtimeId
             );
             yield* Effect.logInfo("tunnel opened");
             // The participant runtime waits for this call to know it is
@@ -493,11 +507,12 @@ export class Tunnels extends Context.Service<
           Effect.suspend(
             () => open.get(keyOf(roomCode, participantId))?.gone ?? Effect.void
           ),
-        close: (roomCode, participantId, reason) =>
+        close: (roomCode, participantId, reason, closeCode) =>
           Effect.suspend(
             () =>
-              open.get(keyOf(roomCode, participantId))?.close(reason) ??
-              Effect.void
+              open
+                .get(keyOf(roomCode, participantId))
+                ?.close(reason, closeCode) ?? Effect.void
           ),
         closeAll,
         client: (roomCode, participantId) =>

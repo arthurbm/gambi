@@ -30,6 +30,7 @@ import {
   ParticipantRegistered,
   ParticipantSummary,
   RegisterParticipant,
+  RemoveParticipant,
 } from "../participant.ts";
 import { CreateRoom, RoomCode, RoomCreated, RoomSummary } from "../room.ts";
 import { RoomEvent } from "../room-event.ts";
@@ -45,6 +46,7 @@ import {
   InvalidRequest,
   NotAHarnessParticipant,
   ParticipantNotFound,
+  ParticipantOfAnotherRuntime,
   ParticipantUnreachable,
   RoomNotFound,
   VersionMismatch,
@@ -119,15 +121,20 @@ export class ParticipantsGroup extends HttpApiGroup.make("participants")
     }),
     HttpApiEndpoint.delete("remove", "/rooms/:code/participants/:id", {
       params: { code: RoomCode, id: ParticipantId },
+      query: RemoveParticipant,
       success: success(ParticipantLeft),
-      error: [failure(RoomNotFound), failure(ParticipantNotFound)],
+      error: [
+        failure(RoomNotFound),
+        failure(ParticipantNotFound),
+        failure(ParticipantOfAnotherRuntime),
+      ],
     })
   )
   .annotateMerge(
     OpenApi.annotations({
       title: "Participants",
       description:
-        "Register a participant, list the participants of a room, and take one out of it. Registration answers with the bootstrap token of the tunnel. A participant that leaves is removed at once and its tunnel closes; one that only loses its tunnel stays, offline, until it reconnects or the reconnection deadline passes.",
+        "Register a participant, list the participants of a room, and take one out of it. Registration answers with the bootstrap token of the tunnel. A removal names the participant runtime it takes out (`runtimeId`) and is refused when the participant belongs to another one by then. A participant that leaves is removed at once and its tunnel closes for good: its runtime does not come back. One that only loses its tunnel stays, offline, until it reconnects or the reconnection deadline passes.",
     })
   ) {}
 

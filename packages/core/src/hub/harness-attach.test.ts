@@ -329,13 +329,16 @@ layer(Layer.merge(layerHub(), BunServices.layer), {
       Effect.gen(function* () {
         const client = yield* managementClient;
         const roomCode = yield* makeRoom("Samba");
-        yield* joinHarness(roomCode);
+        const { participant } = yield* joinHarness(roomCode);
 
         // The hub answered; the client has not read one event yet.
         const events = yield* client.harness.events({
           params: params(roomCode),
         });
-        yield* client.participants.remove({ params: params(roomCode) });
+        yield* client.participants.remove({
+          params: params(roomCode),
+          query: { runtimeId: participant.runtime.runtimeId },
+        });
 
         expect(yield* Stream.runCollect(events)).toEqual([
           { type: "harness.connected" },
@@ -374,10 +377,13 @@ layer(Layer.merge(layerHub(), BunServices.layer), {
       Effect.gen(function* () {
         const client = yield* managementClient;
         const roomCode = yield* makeRoom("Xote");
-        yield* joinHarness(roomCode);
+        const { participant } = yield* joinHarness(roomCode);
         const attached = yield* attach(roomCode);
 
-        yield* client.participants.remove({ params: params(roomCode) });
+        yield* client.participants.remove({
+          params: params(roomCode),
+          query: { runtimeId: participant.runtime.runtimeId },
+        });
 
         expect(yield* attached.next).toEqual({
           type: "harness.detached",

@@ -7,12 +7,15 @@ import {
   InvalidPassword,
   type ParticipantLeft,
   ParticipantNotFound,
+  ParticipantOfAnotherRuntime,
   type ParticipantRegistered,
   type RegisterParticipant,
   sameMinor,
+  TUNNEL_REMOVED_CLOSE_CODE,
   VersionMismatch,
 } from "@gambi/protocol";
 import { Effect } from "effect";
+import { SecureRandom } from "effect/crypto";
 import { Participants } from "./participants.ts";
 import { Rooms } from "./rooms.ts";
 import { HubSettings } from "./settings.ts";
@@ -41,13 +44,22 @@ export const registerParticipant = Effect.fn("Hub.registerParticipant")(
     if (!(yield* rooms.checkPassword(room.code, registration.password))) {
       return yield* new InvalidPassword({ roomCode: room.code });
     }
-    const { password, version, authHeaders, ...profile } = registration;
+    const { password, version, authHeaders, runtimeId, ...profile } =
+      registration;
+    // A registration that names no runtime is a runtime of its own.
+    const registering =
+      runtimeId ?? (yield* (yield* SecureRandom.SecureRandom).uuidV4());
     const participant = yield* participants.register(
       room.code,
       participantId,
-      profile
+      profile,
+      registering
     );
-    const tunnel = yield* tunnels.issueToken(room.code, participantId);
+    const tunnel = yield* tunnels.issueToken(
+      room.code,
+      participantId,
+      registering
+    );
     return { participant, tunnel } satisfies ParticipantRegistered;
   }
 );
@@ -55,10 +67,16 @@ export const registerParticipant = Effect.fn("Hub.registerParticipant")(
 /**
  * Takes a participant out of a room at once, whatever its status, and closes
  * its tunnel. The room hears one event, `participant.removed`.
+ *
+ * Only for the participant runtime the participant belongs to (`runtimeId`):
+ * a removal that names another one arrived late, after another runtime
+ * joined with the same id, and is refused. The tunnel closes with a code of
+ * its own, which tells the runtime that it left for good.
  */
 export const leaveRoom = Effect.fn("Hub.leaveRoom")(function* (
   roomCode: string,
-  participantId: string
+  participantId: string,
+  runtimeId: string
 ) {
   const rooms = yield* Rooms;
   const participants = yield* Participants;
@@ -67,17 +85,24 @@ export const leaveRoom = Effect.fn("Hub.leaveRoom")(function* (
   const room = yield* rooms.get(roomCode);
   // Out of the room first: the tunnel then drops for a participant that is
   // no longer there, which is no change of status and no event.
-  const left = yield* participants.transition(room.code, participantId, "left");
+  const left = yield* participants.transition(
+    room.code,
+    participantId,
+    "left",
+    runtimeId
+  );
   if (left === undefined) {
-    return yield* new ParticipantNotFound({
-      roomCode: room.code,
-      participantId,
-    });
+    const identity = { roomCode: room.code, participantId };
+    // Nothing changed: it is not in the room, or it is another runtime's.
+    return (yield* participants.get(room.code, participantId)) === undefined
+      ? yield* new ParticipantNotFound(identity)
+      : yield* new ParticipantOfAnotherRuntime(identity);
   }
   yield* tunnels.close(
     room.code,
     participantId,
-    "the participant left the room"
+    "the participant left the room",
+    TUNNEL_REMOVED_CLOSE_CODE
   );
   return { participantId } satisfies ParticipantLeft;
 });

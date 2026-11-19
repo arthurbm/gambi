@@ -12,6 +12,11 @@
  * is the first step of coming back, and it issues a bootstrap token that
  * needs the participant to still be in the room.
  *
+ * A participant belongs to one participant runtime (`runtimeId`): the one
+ * whose tunnel is open, or, while none is open, the one that registered
+ * last. Leaving is for that runtime alone, so that a removal that arrives
+ * late never takes out another runtime that joined with the same id.
+ *
  * The service does not know rooms: the caller answers for the room existing.
  * `Rooms` reads `count` for its summaries.
  */
@@ -36,10 +41,13 @@ import { HarnessClients } from "./harness-clients.ts";
 import { RoomEvents } from "./room-events.ts";
 import { HubSettings } from "./settings.ts";
 
-/** What a registration says about the participant: everything but the password and the version. */
+/**
+ * What a registration says about the participant: everything but the
+ * password, the version and the runtime that registers.
+ */
 export type ParticipantProfile = Omit<
   RegisterParticipant,
-  "authHeaders" | "password" | "version"
+  "authHeaders" | "password" | "runtimeId" | "version"
 >;
 
 interface ParticipantState {
@@ -51,6 +59,8 @@ interface ParticipantState {
   readonly joinedAt: number;
   readonly model: string;
   readonly nickname: string;
+  /** The participant runtime the participant belongs to. */
+  readonly runtimeId: string;
   readonly specs: NonNullable<ParticipantProfile["specs"]>;
   readonly status: ParticipantStatus;
   readonly updatedAt: number;
@@ -105,6 +115,7 @@ const toSummary = (participant: ParticipantState): ParticipantSummary => ({
   specs: participant.specs,
   capabilities: participant.capabilities,
   status: participant.status,
+  runtimeId: participant.runtimeId,
   joinedAt: participant.joinedAt,
   updatedAt: participant.updatedAt,
 });
@@ -177,13 +188,17 @@ export class Participants extends Context.Service<
       roomCode: string
     ) => Effect.Effect<readonly ParticipantSummary[]>;
     /**
-     * Adds the participant to the room, `offline`. An id that is already in
-     * the room is updated instead and keeps its `joinedAt` and its status.
+     * Adds the participant to the room, `offline`, as the participant of the
+     * runtime `runtimeId`. An id that is already in the room is updated
+     * instead and keeps its `joinedAt` and its status. It becomes that
+     * runtime's only while it is `offline`: one whose tunnel is open stays
+     * with the runtime of that tunnel until another tunnel opens.
      */
     readonly register: (
       roomCode: string,
       participantId: string,
-      profile: ParticipantProfile
+      profile: ParticipantProfile,
+      runtimeId: string
     ) => Effect.Effect<ParticipantSummary>;
     /** The status of a participant; `undefined` when it is not in the room. */
     readonly status: (
@@ -193,11 +208,17 @@ export class Participants extends Context.Service<
     /**
      * Applies `event` to the participant. Answers the change, or `undefined`
      * when the status table has no row for it (nothing changed).
+     *
+     * `runtimeId` is the participant runtime behind the event, for the two
+     * events that have one. A tunnel that opens (`tunnelOpened`) makes the
+     * participant that runtime's. Leaving (`left`) changes nothing, and
+     * answers `undefined`, when the participant belongs to another runtime.
      */
     readonly transition: (
       roomCode: string,
       participantId: string,
-      event: StatusEvent
+      event: StatusEvent,
+      runtimeId?: string
     ) => Effect.Effect<StatusChange | undefined>;
   }
 >()("gambi/core/Participants") {
@@ -238,7 +259,8 @@ export class Participants extends Context.Service<
       )(function* (
         roomCode: string,
         participantId: string,
-        event: StatusEvent
+        event: StatusEvent,
+        runtimeId?: string
       ) {
         const room = roomOf(roomCode);
         const participant = room.get(participantId);
@@ -247,12 +269,22 @@ export class Participants extends Context.Service<
         if (to === undefined || participant === undefined) {
           return undefined;
         }
+        // Leaving is for the runtime the participant belongs to. Checked
+        // and removed in one step: nothing runs between this and the delete.
+        if (event === "left" && participant.runtimeId !== runtimeId) {
+          return undefined;
+        }
         const after: ParticipantState | undefined =
           to === "removed"
             ? undefined
             : {
                 ...participant,
                 status: to,
+                // The runtime whose tunnel opened holds the participant now.
+                runtimeId:
+                  event === "tunnelOpened" && runtimeId !== undefined
+                    ? runtimeId
+                    : participant.runtimeId,
                 updatedAt: yield* Clock.currentTimeMillis,
               };
         if (after === undefined) {
@@ -293,7 +325,8 @@ export class Participants extends Context.Service<
       const register = Effect.fn("Participants.register")(function* (
         roomCode: string,
         participantId: string,
-        profile: ParticipantProfile
+        profile: ParticipantProfile,
+        runtimeId: string
       ) {
         const room = roomOf(roomCode);
         const existing = room.get(participantId);
@@ -317,6 +350,11 @@ export class Participants extends Context.Service<
           specs: profile.specs ?? {},
           capabilities: profile.capabilities ?? UNKNOWN_CAPABILITIES,
           status,
+          // While a tunnel is open the participant is that tunnel's runtime's.
+          runtimeId:
+            existing === undefined || existing.status === "offline"
+              ? runtimeId
+              : existing.runtimeId,
           joinedAt: existing?.joinedAt ?? now,
           updatedAt: now,
         };

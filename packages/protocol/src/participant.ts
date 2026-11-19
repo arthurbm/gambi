@@ -8,6 +8,16 @@ import { RuntimeConfig, RuntimeConfigPublic } from "./room.ts";
 export const ParticipantId = Schema.NonEmptyString;
 export type ParticipantId = typeof ParticipantId.Type;
 
+/**
+ * The id of one participant runtime: of the process that registered the
+ * participant, for as long as it runs. It is not a secret, and it is not the
+ * participant: a runtime that starts again as the same participant has
+ * another one. The hub uses it to tell the runtime a participant belongs to
+ * from any other that used, or will use, the same `participantId`.
+ */
+export const RuntimeId = Schema.NonEmptyString;
+export type RuntimeId = typeof RuntimeId.Type;
+
 /** What the participant's machine has. Informational. */
 export const MachineSpecs = Schema.Struct({
   gpu: Schema.optionalKey(Schema.String),
@@ -47,6 +57,12 @@ export const ParticipantSummary = Schema.Struct({
   specs: MachineSpecs,
   capabilities: ParticipantCapabilities,
   status: ParticipantStatus,
+  /**
+   * The participant runtime this participant belongs to: the one whose tunnel
+   * is open, or, while no tunnel is open, the one that registered last. Only
+   * a removal that names it takes the participant out of the room.
+   */
+  runtimeId: RuntimeId,
   /** Milliseconds since the epoch. Kept across re-registrations. */
   joinedAt: Schema.Finite,
   /** Milliseconds since the epoch: the last registration or status change. */
@@ -73,6 +89,12 @@ export const RegisterParticipant = Schema.Struct({
   specs: Schema.optionalKey(MachineSpecs),
   config: Schema.optionalKey(RuntimeConfig),
   capabilities: Schema.optionalKey(ParticipantCapabilities),
+  /**
+   * The id the participant runtime gave itself, the same in every
+   * registration of its life. A registration without one is taken for a
+   * runtime of its own, and the answer says the id the hub gave it.
+   */
+  runtimeId: Schema.optionalKey(RuntimeId),
   /**
    * The Gambi version of the participant runtime (`GAMBI_VERSION`). The hub
    * refuses a minor different from its own.
@@ -103,6 +125,13 @@ export const ParticipantRegistered = Schema.Struct({
   tunnel: BootstrapToken,
 });
 export type ParticipantRegistered = typeof ParticipantRegistered.Type;
+
+/**
+ * What a removal says besides the participant: the participant runtime it
+ * means to take out of the room.
+ */
+export const RemoveParticipant = Schema.Struct({ runtimeId: RuntimeId });
+export type RemoveParticipant = typeof RemoveParticipant.Type;
 
 /** What leaving a room answers: who is no longer in it. */
 export const ParticipantLeft = Schema.Struct({ participantId: ParticipantId });
