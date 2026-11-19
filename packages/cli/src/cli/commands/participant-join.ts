@@ -162,17 +162,19 @@ const headerEnvFlag = Flag.KeyValuePair("header-env").pipe(
       const pairs = yield* withoutBlankParts("header-env", given);
       const headers: Record<string, string> = {};
       for (const [name, variable] of Object.entries(pairs)) {
-        headers[name] = yield* Config.NonEmptyString(variable).pipe(
-          Effect.mapError(
-            () =>
-              new CliError.InvalidValue({
-                option: "header-env",
-                value: `${name}=${variable}`,
-                expected: `the environment variable ${variable} to be set`,
-                kind: "flag",
-              })
-          )
+        const unset = new CliError.InvalidValue({
+          option: "header-env",
+          value: `${name}=${variable}`,
+          expected: `the environment variable ${variable} to be set`,
+          kind: "flag",
+        });
+        const value = yield* Config.NonEmptyString(variable).pipe(
+          Effect.mapError(() => unset)
         );
+        if (value.trim() === "") {
+          return yield* unset;
+        }
+        headers[name] = value;
       }
       return headers;
     })

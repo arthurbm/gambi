@@ -313,6 +313,7 @@ layer(layerHub(), { excludeTestServices: true })(
       { flag: "--header", value: " =valor" },
       { flag: "--header", value: "Authorization=   " },
       { flag: "--header-env", value: " =MINHA_CHAVE" },
+      { flag: "--header-env", value: "X-Api-Key=EM_BRANCO" },
     ])(
       "$flag with a blank name or value is invalid usage, and the provider is never called",
       ({ flag, value }) =>
@@ -323,7 +324,7 @@ layer(layerHub(), { excludeTestServices: true })(
 
           const result = yield* runCommand(
             joinWithEndpoint(hub.url, room.code, provider.url, flag, value),
-            { env: { MINHA_CHAVE: "segredo" } }
+            { env: { MINHA_CHAVE: "segredo", EM_BRANCO: "   " } }
           );
 
           // biome-ignore lint/suspicious/noMisplacedAssertion: the helper runs this inside a test

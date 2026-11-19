@@ -82,8 +82,8 @@
     },
     {
       "includes": [
-        "packages/core/src/**/*.ts",
-        "!packages/core/src/**/*.test.ts",
+        "packages/core/src/**",
+        "!packages/core/src/**/*.test.*",
         "!packages/core/src/testing/**"
       ],
       "linter": {

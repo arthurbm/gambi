@@ -57,6 +57,25 @@ describe("a real wait in a test", () => {
     expect(waitsOf(source)).toEqual(["Effect.sleep"]);
   });
 
+  test("a plain test beside it.effect holds the file to the real clock: it may run an Effect by any name", () => {
+    const source = [
+      "const { runPromise } = Effect;",
+      'it.effect("virtual", () => Effect.void);',
+      'test("waits", () => runPromise(Effect.sleep("20 millis")));',
+    ].join("\n");
+
+    expect(waitsOf(source)).toEqual(["Effect.sleep"]);
+  });
+
+  test("a comment does not decide which clock a file runs on", () => {
+    const source = [
+      "// Unlike a ManagedRuntime or it.live, this runs on the test clock.",
+      'it.effect("virtual", () => Effect.sleep("1 hour"));',
+    ].join("\n");
+
+    expect(waitsOf(source)).toEqual([]);
+  });
+
   test("a test helper may run under either clock, so a sleep of Effect in it is real", () => {
     const helper = 'export const settle = Effect.sleep("20 millis");\n';
 

@@ -99,7 +99,8 @@ function createNamespace(
  */
 export function createGambi(options: GambiOptions): GambiProvider {
   const hubUrl = options.hubUrl ?? DEFAULT_HUB_URL;
-  const baseURL = `${hubUrl}/rooms/${options.roomCode}/v1`;
+  const { roomCode } = options;
+  const baseURL = `${hubUrl}/rooms/${roomCode}/v1`;
   const defaultProtocol = options.defaultProtocol ?? DEFAULT_PROTOCOL;
 
   const openResponses = createNamespace("openResponses", baseURL);
@@ -119,11 +120,11 @@ export function createGambi(options: GambiOptions): GambiProvider {
 
     listParticipants() {
       management ??= createClient({ hubUrl });
-      return management.participants.list(options.roomCode);
+      return management.participants.list(roomCode);
     },
 
     async listModels(): Promise<GambiModel[]> {
-      const entries = await fetchRoomModels(hubUrl, options.roomCode);
+      const entries = await fetchRoomModels(hubUrl, roomCode);
       return entries.map((entry) => ({
         id: entry.id,
         nickname: entry.gambi?.nickname ?? entry.owned_by ?? entry.id,

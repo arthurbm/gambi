@@ -51,6 +51,11 @@ const TEST_CLOCK = /\bit\.effect\b/;
  */
 const REAL_CLOCK =
   /\bit\.live\b|excludeTestServices:\s*true|\bEffect\.run[A-Z]\w*|\bManagedRuntime\b/;
+/**
+ * A test that is not one of the helper's: `test(...)`, `it(...)`,
+ * `test.each(...)`. Whatever Effect it runs, it runs on the real clock.
+ */
+const PLAIN_TEST = /(?<![.\w])(?:test|it)(?:\.(?!effect\b|live\b)\w+)*\s*\(/;
 const COMMENT_LINE = /^\s*(?:\/\/|\/\*|\*)/;
 
 /** A file that only tests import: a `testing` or `__tests__` folder, or a `testing.ts`. */
@@ -65,18 +70,21 @@ const isTestHelper = (file: string): boolean => {
 
 /** The real waits written in `source`, the text of the test or test helper at `file`. */
 export const realWaits = (file: string, source: string): RealWait[] => {
+  const lines = source.split("\n");
+  const code = lines.filter((line) => !COMMENT_LINE.test(line)).join("\n");
   // A helper is imported by tests of both kinds, so it is held to the real
   // clock. So is a whole test file with one test on the real clock: the check
   // does not tell the tests of a file apart.
   const onRealClock =
     !TEST_FILE.test(file) ||
-    REAL_CLOCK.test(source) ||
-    !TEST_CLOCK.test(source);
+    REAL_CLOCK.test(code) ||
+    PLAIN_TEST.test(code) ||
+    !TEST_CLOCK.test(code);
   const waits = onRealClock
     ? [...PLATFORM_TIMERS, ...EFFECT_WAITS]
     : PLATFORM_TIMERS;
   const found: RealWait[] = [];
-  for (const [index, text] of source.split("\n").entries()) {
+  for (const [index, text] of lines.entries()) {
     if (COMMENT_LINE.test(text)) {
       continue;
     }
