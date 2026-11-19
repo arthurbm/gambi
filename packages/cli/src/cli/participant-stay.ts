@@ -20,6 +20,7 @@ import {
   type ParticipantLifecycleEvent,
   ParticipantRuntime,
 } from "@gambi/core/participant/runtime";
+import type { HarnessFailed } from "@gambi/protocol";
 import { Context, Duration, Effect, Exit, Layer, Option, Queue } from "effect";
 import { withHub } from "./hub-client.ts";
 import { Output } from "./output.ts";
@@ -106,6 +107,49 @@ export interface Stay<Hosted, E, R> {
 }
 
 /**
+ * Writes each step of the runtime's life as it arrives, and answers with the
+ * one that ends it.
+ */
+const followLifecycle = Effect.fnUntraced(function* (
+  output: Output["Service"],
+  identity: Identity,
+  lifecycle: Queue.Dequeue<ParticipantLifecycleEvent>
+) {
+  while (true) {
+    const event = yield* Queue.take(lifecycle);
+    if (event.type === "left") {
+      return event;
+    }
+    if (event.type === "connected") {
+      yield* output.event(
+        "tunnel_connected",
+        { ...identity, attempt: event.attempt, hubVersion: event.hubVersion },
+        event.attempt === 0
+          ? "Tunnel connected. Press Ctrl+C to leave."
+          : "Tunnel connected again."
+      );
+    } else {
+      yield* output.event(
+        "reconnecting",
+        {
+          ...identity,
+          attempt: event.attempt,
+          delayMillis: event.delayMillis,
+          reason: event.reason,
+        },
+        `Lost the hub (${event.reason}). Trying again in ${event.delayMillis / 1000} s (attempt ${event.attempt})...`
+      );
+    }
+  }
+});
+
+/** What `harness_exited` carries of the failure a harness ended with. */
+const exitOf = (failure: HarnessFailed) => ({
+  message: failure.message,
+  ...(failure.exitCode === undefined ? {} : { exitCode: failure.exitCode }),
+});
+
+/**
  * Joins the room and stays until a signal asks to leave, or until what is
  * hosted ends by itself. A stay that a signal ended is a success; one that
  * ended by itself fails with the name of why, after `left` is written.
@@ -117,40 +161,7 @@ export const stayInRoom = <Hosted, E, R>(stay: Stay<Hosted, E, R>) =>
     const termination = yield* Termination;
     const { identity } = stay;
     const lifecycle = yield* Queue.unbounded<ParticipantLifecycleEvent>();
-
-    /** Writes each step of the runtime's life, until the one that ends it. */
-    const untilTheRuntimeLeaves = Effect.gen(function* () {
-      while (true) {
-        const event = yield* Queue.take(lifecycle);
-        if (event.type === "left") {
-          return event;
-        }
-        if (event.type === "connected") {
-          yield* output.event(
-            "tunnel_connected",
-            {
-              ...identity,
-              attempt: event.attempt,
-              hubVersion: event.hubVersion,
-            },
-            event.attempt === 0
-              ? "Tunnel connected. Press Ctrl+C to leave."
-              : "Tunnel connected again."
-          );
-        } else {
-          yield* output.event(
-            "reconnecting",
-            {
-              ...identity,
-              attempt: event.attempt,
-              delayMillis: event.delayMillis,
-              reason: event.reason,
-            },
-            `Lost the hub (${event.reason}). Trying again in ${event.delayMillis / 1000} s (attempt ${event.attempt})...`
-          );
-        }
-      }
-    });
+    const untilTheRuntimeLeaves = followLifecycle(output, identity, lifecycle);
 
     const leaving = (signal: TerminationSignal) =>
       output.event(
@@ -231,14 +242,7 @@ export const stayInRoom = <Hosted, E, R>(stay: Stay<Hosted, E, R>) =>
         if ("failure" in how) {
           yield* output.event(
             "harness_exited",
-            {
-              ...identity,
-              harness: stay.label,
-              message: how.failure.message,
-              ...(how.failure.exitCode === undefined
-                ? {}
-                : { exitCode: how.failure.exitCode }),
-            },
+            { ...identity, harness: stay.label, ...exitOf(how.failure) },
             `${stay.label} ended by itself: ${how.failure.message}`
           );
           return {

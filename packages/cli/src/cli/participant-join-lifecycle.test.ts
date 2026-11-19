@@ -5,7 +5,7 @@ import { linkToHub } from "@gambi/core/testing/hub-link";
 import { joinParticipant } from "@gambi/core/testing/participant";
 import { FAKE_MODEL, fakeProvider } from "@gambi/core/testing/provider";
 import { it } from "@gambi/testing/effect";
-import { Context, Effect, Exit, Layer, Scope } from "effect";
+import { Context, Deferred, Effect, Exit, Layer, Scope } from "effect";
 import { TestClock } from "effect/testing";
 import { type RunningCommand, startCommand } from "./testing.ts";
 
@@ -199,6 +199,7 @@ it.effect(
 const hubThatHolds = (held: "the tunnel" | "everything") =>
   Effect.gen(function* () {
     const hub = yield* Hub;
+    const holding = Deferred.makeUnsafe<void>();
     const server = yield* Effect.acquireRelease(
       Effect.sync(() =>
         Bun.serve({
@@ -207,6 +208,7 @@ const hubThatHolds = (held: "the tunnel" | "everything") =>
           idleTimeout: 0,
           fetch: async (request) => {
             if (held === "everything" || request.headers.has("upgrade")) {
+              Deferred.doneUnsafe(holding, Effect.void);
               return new Promise<Response>(() => undefined);
             }
             const { pathname, search } = new URL(request.url);
@@ -220,7 +222,11 @@ const hubThatHolds = (held: "the tunnel" | "everything") =>
       ),
       (running) => Effect.promise(() => running.stop(true))
     );
-    return `http://127.0.0.1:${server.port}`;
+    return {
+      url: `http://127.0.0.1:${server.port}`,
+      /** Completes when the server is holding its first request. */
+      holding: Deferred.await(holding),
+    };
   });
 
 it.effect(
@@ -243,7 +249,7 @@ it.effect(
         provider.url,
         "--no-specs",
         "--hub",
-        yield* hubThatHolds("the tunnel"),
+        (yield* hubThatHolds("the tunnel")).url,
       ]);
       expect((yield* watch.next).type).toBe("participant.joined");
 
@@ -285,10 +291,10 @@ it.effect(
         provider.url,
         "--no-specs",
         "--hub",
-        frozen,
+        frozen.url,
       ]);
-      // The probe of the endpoint ran: the join is waiting for the hub.
-      yield* provider.nextCall;
+      // The registration reached the hub, which does not answer it.
+      yield* frozen.holding;
 
       yield* joining.signal("SIGTERM");
 
