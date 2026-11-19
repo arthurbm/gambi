@@ -91,7 +91,7 @@ Symptoms:
 Causes and solutions:
 
 1. `gambi.model("llama3")` routes to the first available participant with that model.
-   - Use `gambi.participant("worker-1")` for exact targeting.
+   - Use `gambi.participant("worker-1")` to ask for one participant. It is not an exact target: when `worker-1` is busy or offline, another available participant serving a model named `worker-1` would take the request. Give participants IDs that are not model names.
 
 2. The intended participant is offline or busy. Only `online` participants are picked.
 
@@ -106,7 +106,7 @@ Symptoms:
 
 Read the error name (`--format json` puts it in `error.name`) or the `code`:
 
-1. `VersionMismatch` / `VERSION_MISMATCH`: the participant runs another minor version of Gambi than the hub. The message names the version the hub expects. Install it with `gambi self update` or the installer, or update the hub, so both are on the same minor (any `0.8.x` with any other `0.8.x`).
+1. `VersionMismatch` / `VERSION_MISMATCH`: the participant runs another minor version of Gambi than the hub. The message names the version the hub expects. Install a release of that minor on the participant, or update both the hub and the participant to the latest release, so both are on the same minor (any `0.8.x` with any other `0.8.x`). `gambi self update` always installs the latest release.
 2. `RoomNotFound` / `ROOM_NOT_FOUND`: check the room code with `gambi room list`.
 3. `InvalidPassword` / `INVALID_PASSWORD`: pass the room password with `--password`.
 
@@ -138,7 +138,7 @@ Another runtime joined the same room with the same participant ID, and the hub k
 
 ## Streaming request ends with `consumer_too_slow`
 
-The app read a streamed answer too slowly, and more than 8 MiB of it piled up on the hub. The hub cancels the request on the participant and ends the stream with this error. Read the stream as it arrives, or ask for an answer that is not a stream.
+The app read a streamed answer too slowly, and more than 8 Mi characters of it piled up on the hub. The hub cancels the request on the participant and ends the stream with this error. Read the stream as it arrives, or ask for an answer that is not a stream.
 
 ## Request fails with `inference_timeout`
 

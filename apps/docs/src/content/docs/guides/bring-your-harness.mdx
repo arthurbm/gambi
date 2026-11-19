@@ -106,7 +106,7 @@ When startup succeeds, the CLI reports three milestones:
 2. participant registration completed
 3. the participant tunnel connected
 
-The process stays in the foreground. If the network drops for a moment, the participant reconnects by itself with the same ID, and attached applications keep their streams. Press Ctrl+C once to stop: the harness gets 2 seconds to exit before it is killed, the final workspace snapshot goes up, and the participant leaves the room.
+The process stays in the foreground. If the network drops for a moment, the participant reconnects by itself with the same ID, and attached applications keep their streams. Press Ctrl+C once to stop: the participant sends a final workspace snapshot while the harness and the tunnel are still running (best effort, up to 2 seconds), then the tunnel closes, the harness gets 2 seconds to exit before it is killed, and the participant leaves the room.
 
 For machine-readable lifecycle output, use NDJSON:
 
@@ -122,7 +122,7 @@ The startup events are `harness_started`, `registered`, and `tunnel_connected`. 
 
 ## Understand the workspace
 
-The workspace is the folder on your machine where the harness runs. By default Gambi creates an empty one:
+The workspace is the folder on your machine where the harness runs. By default Gambi uses this one, creating it empty the first time; a later join with the same room and participant ID reuses it with what it holds:
 
 ```text
 ~/.gambi/workspaces/<room>/<participant-id>/
@@ -190,7 +190,7 @@ for await (const event of client.harness.attach(room, participant)) {
 }
 ```
 
-The first event of the stream says whether the hub is receiving your harness: `harness.connected`, or `harness.disconnected` while your tunnel is down. Nothing that happened before the application attached is replayed, which is why the example sends the prompt only after `harness.connected`. If the participant leaves the room, the stream ends with `harness.detached`.
+The first event of the stream says whether the hub is receiving your harness: `harness.connected`, or `harness.disconnected` while your tunnel is down. Nothing that happened before the application attached is replayed, which is why the example sends the prompt only after `harness.connected`. Every attached application reads every event of your harness, so filter by `sessionId` and match answers by JSON-RPC `id`. If the participant leaves the room, the stream ends with `harness.detached`.
 
 The `message` payload is plain ACP v1, so every update type in the [ACP schema](https://agentclientprotocol.com/protocol/schema) can arrive here. The SDK reference also shows how an application can [host harness participants itself](/reference/sdk/#createharnessparticipantsessionoptions-gambi-sdkparticipant-bun-only).
 

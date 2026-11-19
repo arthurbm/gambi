@@ -120,7 +120,7 @@ Every participant has one `status`, derived from its tunnel:
 | Status | Meaning |
 | --- | --- |
 | `offline` | registered, but its tunnel is not open; receives no requests |
-| `online` | tunnel open and idle; the only status that receives requests |
+| `online` | tunnel open and idle; the only status that receives new inference requests |
 | `busy` | handling a request |
 
 Each change emits a `participant.online`, `participant.busy`, or `participant.offline` event, so a monitor can follow the room from the event stream alone.

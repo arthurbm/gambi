@@ -122,9 +122,11 @@ gambi room create --name "Demo" --config ./room-defaults.json
 gambi participant join \
   --room ABC123 \
   --participant-id worker-1 \
-  --model llama3 \
+  --model llama3:latest \
   --endpoint http://localhost:11434
 ```
+
+`--model` must match a name the provider lists exactly; Ollama names include a tag (`ollama list`).
 
 `gambi participant join` probes the local endpoint, registers the participant, opens a participant tunnel to the hub, and stays in the room until Ctrl+C, reconnecting by itself if the tunnel drops. This works the same way for local hubs and remote hubs on the same trusted network: the endpoint can stay loopback-only on the participant machine.
 
@@ -331,14 +333,17 @@ Harness clients can attach to a harness participant without exposing that harnes
 
 ```ts
 await client.harness.openSession("ABC123", "harness-1", "session-1");
-await client.harness.send("ABC123", "harness-1", "session-1", {
-  jsonrpc: "2.0",
-  id: 1,
-  method: "session/prompt",
-  params: { sessionId: "session-1", prompt: [{ type: "text", text: "Hi" }] },
-});
 
 for await (const event of client.harness.attach("ABC123", "harness-1")) {
+  if (event.type === "harness.connected") {
+    // The stream replays nothing, so send once it is open.
+    await client.harness.send("ABC123", "harness-1", "session-1", {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "session/prompt",
+      params: { sessionId: "session-1", prompt: [{ type: "text", text: "Hi" }] },
+    });
+  }
   console.log(event.type);
 }
 ```
@@ -423,11 +428,11 @@ Management errors are structured:
 
 ## Runtime defaults
 
-Rooms and participants can both provide runtime defaults. For each field a request leaves out, the hub uses the participant's default, then the room's. Fields the request sets always win.
+Rooms and participants can both provide runtime defaults. For each field a request leaves out or sends as `null`, the hub uses the participant's default, then the room's. Fields the request sets to a value always win.
 
 Sensitive config is redacted from public management responses. Public room and participant payloads expose safe summaries instead of raw secrets or instructions.
 
-Each participant has one `status`, derived from its tunnel: `offline` (no open tunnel), `online` (ready), or `busy` (handling a request). Only `online` participants receive requests, and a participant that stays `offline` for 60 seconds is removed from the room.
+Each participant has one `status`, derived from its tunnel: `offline` (no open tunnel), `online` (ready), or `busy` (handling a request). Only `online` participants receive new inference requests, and a participant that stays `offline` for 60 seconds is removed from the room.
 
 Rooms live in the hub's memory: a restarted hub has no rooms, and participants that try to come back to it stop with `RoomNotFound`.
 

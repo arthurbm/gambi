@@ -80,7 +80,7 @@ Error codes:
 | `TUNNEL_TOKEN_INVALID` | `401` | the tunnel upgrade came without a valid bootstrap token |
 | `NOT_A_HARNESS_PARTICIPANT` | `409` | the participant shares a model endpoint, not a harness |
 | `PARTICIPANT_UNREACHABLE` | `409` | the participant's tunnel is not open now |
-| `HARNESS_SESSION_NOT_OPEN` | `409` | the message or close named a harness session that is not open |
+| `HARNESS_SESSION_NOT_OPEN` | `409` | the message was sent to a harness session that is not open |
 | `HARNESS_SESSION_OUTSIDE_WORKSPACE` | `403` | the harness session was asked to run outside the participant's workspace |
 | `HARNESS_FAILED` | `502` | the harness did not answer, refused, or exited; `details.reason` says which |
 | `INVALID_REQUEST` | `400` | the request does not match the contract; `details.issues` lists each problem with its `path` |
@@ -167,7 +167,7 @@ Participant summaries include:
 | Status | Meaning |
 | --- | --- |
 | `offline` | registered, but its tunnel is not open; receives no requests |
-| `online` | tunnel open and idle; the only status that receives requests |
+| `online` | tunnel open and idle; the only status that receives new inference requests |
 | `busy` | handling a request |
 
 A participant that stays `offline` for 60 seconds is removed from the room.
@@ -209,14 +209,14 @@ Provider credentials are not part of participant registration. A body that carri
 | `ram` | `number` | system RAM in gigabytes |
 | `vram` | `number` | GPU VRAM in gigabytes |
 
-`ParticipantCapabilities` fields (each defaults to `"unknown"`):
+`ParticipantCapabilities` fields. Without `capabilities`, both are `"unknown"`; when you send it, give both:
 
 | Field | Values | Description |
 | --- | --- | --- |
 | `openResponses` | `"supported" \| "unsupported" \| "unknown"` | whether the participant endpoint speaks the OpenAI Responses API |
 | `chatCompletions` | `"supported" \| "unsupported" \| "unknown"` | whether the participant endpoint speaks OpenAI Chat Completions |
 
-`RuntimeConfig` fields (all optional): `temperature`, `top_p`, `max_tokens`, `stop`, `frequency_penalty`, `presence_penalty`, `seed`, `instructions`. These act as participant-level defaults: they win over the room defaults, and the request's own fields win over both. The `instructions` string stays in the hub. Management responses show only `hasInstructions`.
+`RuntimeConfig` fields (all optional): `temperature`, `top_p`, `max_tokens`, `stop`, `frequency_penalty`, `presence_penalty`, `seed`, `instructions`. These act as participant-level defaults: they win over the room defaults, and the request's own fields win over both. Management responses never show the `instructions` string, only `hasInstructions`; the hub sends the text to the provider when the default applies to a request.
 
 ```bash
 curl -X PUT http://localhost:3000/v1/rooms/ABC123/participants/worker-1 \
@@ -256,6 +256,8 @@ Example response:
 }
 ```
 
+Set `version` to the version of your hub (`gambi --version` on the hub machine): any other minor is refused.
+
 A participant registered this way stays `offline` until it opens its tunnel, and is removed after 60 seconds if it never does.
 
 ### GET /v1/rooms/:code/participants/:id/tunnel
@@ -274,7 +276,7 @@ Token lifecycle:
 - the token expires 60 seconds after issuance
 - re-registering via `PUT /v1/rooms/:code/participants/:id` returns a fresh token
 
-Every refusal (missing, unknown, expired, or spent token, wrong participant, unknown room) is `401 TUNNEL_TOKEN_INVALID`.
+A missing, unknown, expired, or spent token, a token of another participant, and an unknown room are all `401 TUNNEL_TOKEN_INVALID`. A request with a valid token and no WebSocket upgrade spends the token and gets `400 INVALID_REQUEST`.
 
 ### DELETE /v1/rooms/:code/participants/:id
 
@@ -331,6 +333,7 @@ A management client controls a harness participant with one event stream and thr
 
 - The client picks the session ID. Opening a session that is already open leaves it as it is. `cwd` must be a folder inside the participant's workspace; it defaults to the workspace itself.
 - `message` is one ACP v1 JSON-RPC object, passed to the harness as it is. The `202` means the harness received it; its answer arrives on the event stream.
+- Every attached client reads every event of the participant, including answers to other clients. Filter `harness.message` by `sessionId` and match answers to your requests by JSON-RPC `id`.
 - These routes answer `NOT_A_HARNESS_PARTICIPANT` for a model participant, and the three requests answer `PARTICIPANT_UNREACHABLE` while the participant's tunnel is down.
 
 ```bash
@@ -361,7 +364,7 @@ Base URL:
 http://localhost:3000/rooms/ABC123/v1/
 ```
 
-The hub reads only `model` and `stream` from the request body. Every other field goes to the participant's provider as it came, after the hub fills in what the request left out from the participant's config and the room defaults. The hub replaces `model` with the participant's model.
+The hub reads only `model` (a non-empty string) and `stream` (a boolean, or `null` for no stream) from the request body. Every other field goes to the participant's provider as it came, after the hub fills in what the request left out from the participant's config and the room defaults. The hub replaces `model` with the participant's model.
 
 ### Model routing
 
@@ -371,9 +374,9 @@ The `model` field controls routing:
 | --- | --- |
 | `*` or `any` | a random available participant |
 | `model:<name>` | the first available participant whose model is `<name>` |
-| `<participant-id>` | that participant, if it is available |
+| anything else | the available participant with that ID; otherwise the first available participant whose model is that name; otherwise `participant_busy` or `participant_offline` when a participant with that ID exists but is not available |
 
-If the value is not a `*`, `any`, or `model:` selector and no available participant has that ID, the hub treats the value as a model name and picks the first available participant serving it. So `"model": "llama3"` behaves like `model:llama3` unless a participant is registered with the ID `llama3`.
+So `"model": "llama3"` behaves like `model:llama3` unless an available participant has the ID `llama3`, and a participant ID is not an exact target: when that participant is busy or offline, another one serving a model with the same name can take the request.
 
 A participant is available only when it is `online`: its tunnel is open and it is not handling another request. Harness participants are never picked by `*`, `any`, or a model name.
 
@@ -381,8 +384,8 @@ A participant is available only when it is `online`: its tunnel is open and it i
 
 - Closing the HTTP request (aborting `fetch`, stopping the stream) cancels the request on the participant's provider, and the participant becomes available again.
 - If the participant sends nothing for 5 minutes, before the first chunk or between two, the hub cancels the request and answers `inference_timeout`.
-- If your app reads a stream so slowly that more than 8 MiB of it is waiting, the hub cancels the request and ends the stream with `consumer_too_slow`.
-- An answer that is not a stream is held by the hub until it is complete, up to 32 MiB.
+- If your app reads a stream so slowly that more than 8 Mi characters of it are waiting, the hub cancels the request and ends the stream with `consumer_too_slow`.
+- An answer that is not a stream is held by the hub until it is complete, up to 32 Mi characters.
 
 ### Inference errors
 
@@ -403,13 +406,13 @@ Inference routes do not use the management envelope. Errors use the OpenAI error
 
 | Status | `code` | Condition |
 | --- | --- | --- |
-| `400` | `invalid_request` | the body is not a JSON object, `model` is missing, or `stream` is not a boolean |
+| `400` | `invalid_request` | the body is not a JSON object, `model` is missing or empty, or `stream` is not a boolean |
 | `400` | `inference_not_supported` | the selector names a harness participant |
 | `400` | `request_not_translatable` | the provider has no Responses API and the request uses something Chat Completions cannot carry |
 | `404` | `room_not_found` | the room code does not exist |
 | `404` | `model_not_found` | no available participant matches the selector |
 | `404` | `response_not_found` | the hub knows no Response with that ID in the room |
-| `408` | `consumer_too_slow` | the app read a stream too slowly (only inside a stream) |
+| `408` | `consumer_too_slow` | the app read a stream too slowly. Only sent as the last event of a stream, whose HTTP status was already `200` |
 | `409` | `participant_busy` | the selector names a participant that is busy |
 | `501` | `response_not_stored` | the Response was answered through Chat Completions and cannot be read back, deleted, or cancelled |
 | `501` | `responses_not_supported` | the provider speaks neither the Responses API nor Chat Completions |
@@ -490,9 +493,9 @@ Use this when a tool requires Chat Completions. For new integrations, prefer `/r
 
 ## Runtime defaults
 
-For each field a request leaves out, the hub uses:
+For each field a request leaves out or sends as `null`, the hub uses:
 
 1. the participant's config, when it sets the field
 2. otherwise the room defaults
 
-The fields the request sets always win. The default `instructions` become a leading `system` message in Chat Completions (unless the request already has one) and fill `instructions` in the Responses API. Sensitive config is redacted from public management payloads.
+The fields the request sets to a value always win. In the Responses API, `max_tokens` fills `max_output_tokens` and `stop` fills `stop_sequences`. The default `instructions` become a leading `system` message in Chat Completions (unless the request already has one) and fill `instructions` in the Responses API. Sensitive config is redacted from public management payloads.

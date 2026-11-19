@@ -54,7 +54,7 @@ Each typed error class declares its `code` and its HTTP status (`packages/protoc
 | `TUNNEL_TOKEN_INVALID` | 401 | The tunnel upgrade came without a valid bootstrap token. | `roomCode`, `participantId` |
 | `NOT_A_HARNESS_PARTICIPANT` | 409 | The participant shares a model endpoint; there is no harness to attach to. | `roomCode`, `participantId` |
 | `PARTICIPANT_UNREACHABLE` | 409 | The participant's tunnel is not open now. | `roomCode`, `participantId` |
-| `HARNESS_SESSION_NOT_OPEN` | 409 | A message or a close named a harness session that is not open. | `sessionId` |
+| `HARNESS_SESSION_NOT_OPEN` | 409 | A message was sent to a harness session that is not open. | `sessionId` |
 | `HARNESS_SESSION_OUTSIDE_WORKSPACE` | 403 | A harness session was asked to run outside the participant's Workspace. | `sessionId` |
 | `HARNESS_FAILED` | 502 | The harness failed an ACP call the runtime made, or its process is gone. | `reason` (`timedOut`, `rejected`, `invalidAnswer`, `versionNotNegotiated`, `exited`), `method?`, `detail?`, `exitCode?` |
 | `INVALID_REQUEST` | 400 | The request does not match the contract (params, query, headers, or body). | `issues: [{ path, message }]` |
@@ -89,7 +89,7 @@ Notes:
 - `POST /v1/rooms` is not idempotent. The body is `{ name, password?, defaults? }`.
 - `PUT .../participants/:id` is an idempotent upsert and always answers `200`. Registering an id that is already in the room updates its profile and keeps its `joinedAt` and its status. The hub checks the version first, then the room, then the password, so a participant on another minor hears "update" even with a wrong password.
 - `DELETE .../participants/:id` takes the participant out at once and closes its tunnel. The room hears one `participant.removed` with `reason: "left"`.
-- The tunnel route is internal: only a participant runtime calls it, with the token its registration returned. Every refusal is `401 TUNNEL_TOKEN_INVALID`, including a room that does not exist. The token is spent before the upgrade, so a request without an upgrade burns it.
+- The tunnel route is internal: only a participant runtime calls it, with the token its registration returned. A missing, unknown, expired, or spent token, a token of another participant, and a room that does not exist are all `401 TUNNEL_TOKEN_INVALID`. The token is spent before the upgrade, so a request with a valid token and no WebSocket upgrade burns it and gets `400 INVALID_REQUEST`.
 - Any other path under `/v1` answers `404 ROUTE_NOT_FOUND` in the error envelope. The inference plane, outside `/v1`, answers in the OpenAI format.
 - Both planes answer CORS openly: `Access-Control-Allow-Origin: *`, and `204` to `OPTIONS`.
 - There is no heartbeat route and no WebSocket attach route.
@@ -101,7 +101,7 @@ Notes:
 - `id`, `code` (six characters of `0-9A-Z`), `name`, `hostId`, `createdAt` (milliseconds since the epoch)
 - `participantCount`
 - `passwordProtected`
-- `defaults?`: the room's runtime defaults without the instructions text, which never leaves the hub; `hasInstructions` says whether there is one.
+- `defaults?`: the room's runtime defaults without the instructions text, which management responses never show; `hasInstructions` says whether there is one. The hub sends the text to the provider when the default applies to a request.
 
 Runtime defaults (`RuntimeConfig`) accept `temperature` (0 to 2), `top_p` (0 to 1), `max_tokens`, `stop`, `frequency_penalty` and `presence_penalty` (-2 to 2), `seed`, and `instructions`.
 
@@ -138,7 +138,7 @@ A participant has one status, derived from its tunnel alone. The table is `trans
 | `offline` | reconnection deadline passes (60 s) | removed |
 | any | the participant leaves | removed |
 
-Only `online` receives routes. The reconnection deadline restarts at every registration while the participant is `offline`, and also applies to a participant that registered and never opened its tunnel.
+Only `online` participants receive new inference requests (the routes about a stored Response reach their participant whatever its status). The reconnection deadline restarts at every registration while the participant is `offline`, and also applies to a participant that registered and never opened its tunnel.
 
 ## Inference plane endpoints
 
@@ -156,8 +156,8 @@ OpenAI-compatible, room-scoped, plain routes outside the management contract. Al
 
 The Responses API is preferred; Chat Completions remains for compatibility.
 
-- **What the hub reads.** The body must be a JSON object with a `model` string; `stream`, when present, must be a boolean. Every other field goes to the provider as it came.
-- **Defaults.** Fields the app left out are filled from the room defaults, then the participant's config (the participant wins). The default instructions become a leading `system` message in Chat Completions, unless the app sent one, and fill `instructions` in the Responses API. `model` is replaced by the participant's model.
+- **What the hub reads.** The body must be a JSON object with a non-empty `model` string; `stream`, when present, must be a boolean or `null` (`null` is not a stream). Every other field goes to the provider as it came.
+- **Defaults.** Fields the app left out or sent as `null` are filled from the participant's config, then the room defaults (the participant wins). In the Responses API, `max_tokens` fills `max_output_tokens` and `stop` fills `stop_sequences`. The default instructions become a leading `system` message in Chat Completions, unless the app sent one, and fill `instructions` in the Responses API. `model` is replaced by the participant's model.
 - **Responses through Chat Completions.** When the participant's provider has no Responses API, the hub creates the Response through Chat Completions and translates the answer. A request that Chat Completions cannot carry fails with `request_not_translatable`, and such a Response cannot be read back, deleted, or cancelled (`response_not_stored`).
 - **Stored Responses.** The hub remembers which participant created each Response (10 000 per hub by default), so the routes about a stored Response reach that participant whatever it is doing. They change no status and emit no room event.
 - **Model list.** `GET .../models` lists the participants that share a model endpoint and are not `offline`. Each `id` is the participant id, which is a model selector, and `gambi` says what stands behind it: `{ nickname, model, endpoint, capabilities, status }`.
@@ -177,7 +177,7 @@ Inference errors use the OpenAI error format, never the management envelope:
 
 | `code` | Status | Meaning |
 |---|---|---|
-| `invalid_request` | 400 | The body is not a JSON object, `model` is missing, or `stream` is not a boolean. |
+| `invalid_request` | 400 | The body is not a JSON object, `model` is missing or empty, or `stream` is not a boolean. |
 | `room_not_found` | 404 | The room does not exist. |
 | `model_not_found` | 404 | No participant can take a request for that model selector. |
 | `participant_busy` | 409 | The selector names a participant that is handling another request. |
@@ -185,7 +185,7 @@ Inference errors use the OpenAI error format, never the management envelope:
 | `participant_disconnected` | 502 | The tunnel dropped while the participant was answering. |
 | `inference_timeout` | 504 | Nothing arrived from the participant for the idle timeout. |
 | `provider_response_too_large` | 502 | An answer that is not a stream exceeded what the hub holds. |
-| `consumer_too_slow` | 408 | The app read a stream too slowly. Only sent inside a stream. |
+| `consumer_too_slow` | 408 | The app read a stream too slowly. Only sent inside a stream, after the `200`; the `408` is never the response status. |
 | `request_not_translatable` | 400 | The provider is reached through Chat Completions, which cannot carry this request. |
 | `response_not_found` | 404 | The hub knows no Response with that id in the room. |
 | `response_not_stored` | 501 | The Response was answered through Chat Completions and is stored nowhere. |
@@ -210,10 +210,9 @@ The `model` field selects the participant. There are four forms:
 
 - `*` or `any`: any `online` participant, at random.
 - `model:<name>`: the first `online` participant that shares that model.
-- `<participantId>`: that participant.
-- `<name>`, when no `online` participant has that id: the same as `model:<name>`. This is what a plain OpenAI client sends.
+- `<participantId>` or `<name>`: the `online` participant with that id; otherwise the first `online` participant whose model is that name (this is what a plain OpenAI client sends); otherwise, when a participant with that id is `busy` or `offline`, `participant_busy` or `participant_offline`.
 
-Only `online` participants are picked, so a participant never takes two requests at once. A selector that names a participant that cannot take the request says why (`participant_busy`, `participant_offline`); every other miss is `model_not_found`. Harness participants are never picked by `*`, `any`, or a model name; naming one by id returns `400 inference_not_supported`. To talk to a harness, use the [harness attach](#harness-attach).
+So a participant id is not an exact target: when that participant cannot take the request, another one whose model has the same name can. Only `online` participants are picked, so a participant never takes two requests at once. A selector that names a participant that cannot take the request says why (`participant_busy`, `participant_offline`); every other miss is `model_not_found`. Harness participants are never picked by `*`, `any`, or a model name; naming one by id returns `400 inference_not_supported`. To talk to a harness, use the [harness attach](#harness-attach).
 
 ## SSE room events
 
@@ -265,7 +264,7 @@ The stream (`GET .../harness/events`) carries `HarnessAttachEvent` (`packages/pr
 - `POST .../harness/messages` takes `{ sessionId, message }`, where `message` is one ACP v1 JSON-RPC object. It answers `202` when the message is written to the harness, not when the harness answers; the answer arrives on the stream.
 - `PUT .../harness/sessions/:sessionId` opens a session under the id the client picked, with an optional `{ cwd }` inside the Workspace. Opening a session that is already open leaves it as it is.
 - `DELETE .../harness/sessions/:sessionId` closes it. A session that is not open is already closed.
-- The participant runtime rewrites the JSON-RPC `id` of each client's requests and maps each `sessionId` to the id the harness gave the session, so two clients never read each other's answers. It does not interpret the rest of the ACP content.
+- Every client attached to a participant reads every event of that participant, including the answers to the other clients' requests. Filter `harness.message` by `sessionId` and match answers to requests by their JSON-RPC `id`. The participant runtime rewrites the JSON-RPC `id` of each request on its way to the harness and restores it on the answer, and maps each `sessionId` to the id the harness gave the session, so requests of two clients with the same `id` never get each other's answers. It does not interpret the rest of the ACP content.
 
 ### Artifacts
 
@@ -275,7 +274,7 @@ A harness session runs in a **Workspace** on the participant's machine; the hub 
 ~/.gambi/workspaces/<room>/<participant-id>/
 ```
 
-The default Workspace starts empty except for `.gambi.json`, local metadata that never appears in an artifact. An artifact is a whole snapshot of the Workspace, never a difference: each one replaces the one before. The runtime takes one when the Workspace has changed and stayed still for one second (`reason: "watch"`) and a last one when it closes (`reason: "final"`). `version` counts the artifacts of one runtime from 1, and a client may see versions skip. Each file has its `path` inside the Workspace (with `/`), its `encoding` (`utf8` for valid UTF-8, otherwise `base64`), and its whole `content`. `.git`, `node_modules`, and symbolic links are left out.
+The default Workspace is created empty, except for `.gambi.json` (local metadata that never appears in an artifact), when it does not exist yet; a later join with the same room and participant id reuses it with whatever it holds. An artifact is a whole snapshot of the Workspace, never a difference: each one replaces the one before. The runtime takes one when the Workspace has changed and stayed still for one second (`reason: "watch"`) and a last one when it closes (`reason: "final"`). The final one is best effort: it gets up to 2 seconds while the harness and the tunnel are still running, and then the tunnel closes and the harness stops. `version` counts the artifacts of one runtime from 1, and a client may see versions skip. Each file has its `path` inside the Workspace (with `/`), its `encoding` (`utf8` for valid UTF-8, otherwise `base64`), and its whole `content`. `.git`, `node_modules`, and symbolic links are left out.
 
 Known limits:
 
@@ -377,7 +376,7 @@ Sensitive config is not exposed raw in public management responses. Provider aut
 
 ## SDK management client
 
-`createClient()` from `gambi-sdk` derives from the contract and returns plain values, without the envelope. Every failure is a `ClientError` with `code`, `status?`, `hint?`, `details`, `requestId?`, and `cause`. `code` is one of the management codes above except `TUNNEL_TOKEN_INVALID` and `ROUTE_NOT_FOUND`, plus two the client finds on its own:
+`createClient()` from `gambi-sdk` derives from the contract and returns plain values, without the envelope. Every failure of a call to the hub is a `ClientError` (a call refused or interrupted because the client was closed rejects with a plain `Error`) with `code`, `status?`, `hint?`, `details`, `requestId?`, and `cause`. `code` is one of the management codes above except `TUNNEL_TOKEN_INVALID` and `ROUTE_NOT_FOUND`, plus two the client finds on its own:
 
 - `HUB_UNREACHABLE`: nothing answered at the hub URL.
 - `NOT_A_HUB`: something answered outside the contract: another server, a proxy, or a hub of another version. A `ROUTE_NOT_FOUND` arrives as `NOT_A_HUB` with `status: 404`.
@@ -412,7 +411,7 @@ The table from typed error to exit code is `failureKinds` in `packages/cli/src/c
 - `--format text|json|ndjson`. Without it, `GAMBI_FORMAT`; without that, `text` when stdout is a terminal and `json` otherwise.
 - A one-shot command prints its result as `{ "data": ... }`, indented for `json` and on one line for `ndjson`.
 - A long command (`hub serve`, `participant join`) prints one JSON line per step, `{ "type", "timestamp", "data" }`, in both `json` and `ndjson`.
-- `events watch` prints each room event as it is, one JSON line per event, without a wrapper.
+- `events watch` prints each room event as it is, one JSON line per event, without a wrapper, in `json` and `ndjson`. In `text` it prints the time, the type, and a summary.
 - Errors go to stderr. Outside text mode they are one JSON line: `{ "error": { "name", "message", "hint"?, "details"?, "exitCode" } }`, where `name` is the typed error. In text mode: `Error (Name): message`, then `Hint: ...` and `request_id: ...` when present.
 - Log lines go to stderr too, as JSON outside text mode. `--log-level` sets the minimum level; `--log-level none` silences them.
 
@@ -452,12 +451,12 @@ With `--harness <id>` the participant shares a harness: `--model` is optional an
 
 The nickname defaults to `<model>@<the first six characters of the participant id>`. `--dry-run` runs every local check (probes the endpoint, or detects the harness), prints what would be registered with the password and headers redacted, and does not talk to the hub.
 
-Events, each with `roomCode` and `participantId` in `data`:
+Events, each with `roomCode` in `data`, and `participantId` in all of them but `registered`:
 
 | `type` | Own fields of `data` | When |
 |---|---|---|
 | `harness_started` | `harness`, `pid`, `sessionId`, `workspace` | Harness only: the harness is running and its first session is open. Comes before `registered`. |
-| `registered` | `participant` | The hub registered the participant (its `status` there is `offline`). |
+| `registered` | `participant` (no top-level `participantId`: use `participant.id`) | The hub registered the participant. Its `status` there is `offline` for a new participant; re-registering an id already in the room keeps that participant's status. |
 | `tunnel_connected` | `attempt`, `hubVersion` | The tunnel opened. `attempt` is `0` on the join. |
 | `reconnecting` | `attempt`, `delayMillis`, `reason` | The tunnel dropped and the runtime tries again. |
 | `artifact_sent` | `sessionId`, `version`, `reason`, `fileCount`, `bytes` | Harness only: an artifact entered the queue to the hub. |
@@ -468,7 +467,7 @@ Events, each with `roomCode` and `participantId` in `data`:
 
 `left.reason` is `stopped` (a signal; exit `0`), `refused` (the hub refused the way back; exit code of the hub's error), `replaced` (another runtime joined with the same id; exit `4`), or `harnessExited` (exit `3`). `left.removed` says whether the hub confirmed the removal: it is `false` when the hub did not answer in 3 seconds (the hub then removes the participant after 60), and always `false` after `refused` and `replaced`.
 
-On a signal, an endpoint participant leaves the room first and then stops; a harness participant stops first, so the final artifact goes up while the tunnel is still open, and then leaves. A harness that is not installed or not logged in fails the join with exit code `3` and a message that says what to do.
+On a signal, an endpoint participant leaves the room first and then stops. A harness participant first takes the final artifact while the harness and the tunnel are still running (best effort, up to 2 seconds), then closes the tunnel, stops the harness, and leaves the room. A harness that is not installed or not logged in fails the join with exit code `3` and a message that says what to do.
 
 Harness adapters and readiness checks, all local:
 
@@ -485,7 +484,7 @@ If neither OpenCode check gives a recognized answer, the join continues with a w
 
 - `participant leave` prints `{ "data": { "participantId" } }`. It removes the participant whoever hosts it. A runtime that is still running treats the closed tunnel as a drop and comes back about one second later, so use it for a participant whose runtime is gone; stop a live one with Ctrl+C in its own terminal.
 - `events watch` ends with `0` on Ctrl+C and also when the hub closes the stream. It does not reconnect.
-- `self update` updates with `bun`, with `npm`, or by replacing the standalone binary, depending on how gambi was installed. Outside a terminal it updates without asking. Answering no (or cancelling the question) exits `0`. A package manager failure exits `1` with its own exit code in `details.code`; a failed download exits `3`.
+- `self update` updates to the latest release (it cannot pick a version) with `bun`, with `npm`, or by replacing the standalone binary, depending on how gambi was installed. Outside a terminal it updates without asking. Answering no (or cancelling the question) exits `0`. A package manager failure exits `1` with its own exit code in `details.code`; a failed download exits `3`.
 
 ## CLI environment variables
 
