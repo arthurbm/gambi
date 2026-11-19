@@ -1,12 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import type { DiscoveredService } from "@gambi/core/mdns";
+import { Hub } from "@gambi/core/hub/hub";
+import { layerHub } from "@gambi/core/testing/hub";
+import { layer } from "@gambi/testing/effect";
+import { Effect } from "effect";
+import { createClient } from "./client.ts";
 import {
-  createGambi,
+  type DiscoveredService,
   type DiscoveryError,
   type DiscoveryOptions,
   discoverHubs,
+  discoverRooms,
   resolveGambiTarget,
-} from "./index.ts";
+} from "./discovery.ts";
+import { createGambi } from "./provider.ts";
 
 type FetchLike = NonNullable<DiscoveryOptions["fetchFn"]>;
 
@@ -15,6 +21,7 @@ const alphaRoom = {
   code: "ABC123",
   name: "Alpha",
   hostId: "host-alpha",
+  passwordProtected: false,
   createdAt: 1,
   participantCount: 2,
 };
@@ -24,6 +31,7 @@ const betaRoom = {
   code: "XYZ999",
   name: "Beta",
   hostId: "host-beta",
+  passwordProtected: false,
   createdAt: 2,
   participantCount: 1,
 };
@@ -39,6 +47,25 @@ function createBrowseServices(services: DiscoveredService[]) {
 }
 
 describe("SDK discovery", () => {
+  test("a server returning unrelated JSON is omitted from discovered hubs", async () => {
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => Response.json({ healthy: true }),
+    });
+    try {
+      expect(
+        await discoverHubs({
+          hubUrl: server.url.href,
+          browseServices: () => {
+            throw new Error("no mDNS");
+          },
+        })
+      ).toEqual([]);
+    } finally {
+      await server.stop(true);
+    }
+  });
   test("does not wait for the mDNS timeout when browsing throws", async () => {
     const startedAt = performance.now();
 
@@ -307,3 +334,34 @@ describe("SDK discovery", () => {
     });
   });
 });
+
+layer(layerHub(), { excludeTestServices: true })(
+  "SDK discovery against a hub",
+  (it) => {
+    it.effect("finds the rooms of the configured hub", () =>
+      Effect.gen(function* () {
+        const hub = yield* Hub;
+        const client = createClient({ hubUrl: hub.url });
+        const { room } = yield* Effect.promise(() =>
+          client.rooms.create({ name: "Frevo" })
+        );
+
+        const rooms = yield* Effect.promise(() =>
+          discoverRooms({
+            hubUrl: hub.url,
+            browseServices: () => {
+              throw new Error("no mDNS in this test");
+            },
+          })
+        );
+
+        expect(rooms).toContainEqual({
+          ...room,
+          hubName: "Configured hub",
+          hubSource: "configured",
+          hubUrl: hub.url,
+        });
+      })
+    );
+  }
+);

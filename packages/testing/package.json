@@ -1,0 +1,19 @@
+{
+  "name": "@gambi/testing",
+  "version": "0.7.2",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./effect": "./src/effect.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "effect": "4.1.4"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}

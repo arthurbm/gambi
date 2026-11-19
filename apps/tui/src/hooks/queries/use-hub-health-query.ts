@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { hubClient } from "../../hub-client";
 import { useHubStore } from "../../store/hub-store";
 
 const HEALTH_CHECK_INTERVAL = 30_000; // 30 seconds
@@ -9,15 +10,7 @@ interface HubHealthResult {
 }
 
 async function checkHubHealth(url: string): Promise<HubHealthResult> {
-  const response = await fetch(`${url}/v1/health`, {
-    method: "GET",
-    signal: AbortSignal.timeout(5000),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Health check failed: ${response.status}`);
-  }
-
+  await hubClient(url).hub.health();
   return { healthy: true };
 }
 

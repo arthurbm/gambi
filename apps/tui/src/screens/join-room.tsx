@@ -1,6 +1,6 @@
-import type { ParticipantAuthHeaders } from "@gambi/core/types";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useKeyboard } from "@opentui/react";
+import type { ParticipantAuthHeaders } from "gambi-sdk/participant";
 import { useCallback, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -49,7 +49,7 @@ function resolveAuthHeadersFromEnv(entries: AuthHeaderEnvEntry[]): {
   authHeaders: ParticipantAuthHeaders;
   error: string | null;
 } {
-  const authHeaders: ParticipantAuthHeaders = {};
+  const authHeaders: Record<string, string> = {};
 
   for (const entry of entries) {
     const name = entry.name.trim();
@@ -174,7 +174,7 @@ function EndpointStatusIndicator({
 }
 
 // Model suggestions
-function ModelSuggestions({ models }: { models: string[] }) {
+function ModelSuggestions({ models }: { models: readonly string[] }) {
   return (
     <box flexDirection="column" paddingLeft={1}>
       <text fg={colors.muted}>Press 1-5 to select:</text>
@@ -380,7 +380,9 @@ function JoinSuccessScreen({
             <span fg={colors.accent}>{model}</span>
           </text>
         </box>
-        <text fg={colors.muted}>Health checks running in background</text>
+        <text fg={colors.muted}>
+          Tunnel open. It reconnects by itself if it drops.
+        </text>
       </box>
       <Footer
         canGoBack={canGoBack}

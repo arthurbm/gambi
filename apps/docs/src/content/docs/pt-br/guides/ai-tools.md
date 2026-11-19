@@ -130,22 +130,17 @@ import { createClient } from "gambi-sdk";
 const client = createClient({ hubUrl: "http://localhost:3000" });
 
 const created = await client.rooms.create({ name: "My Room" });
-console.log(created.data.room.code);
+console.log(created.room.code);
 
-const participants = await client.participants.list(created.data.room.code);
-console.log(participants.data);
+const participants = await client.participants.list(created.room.code);
+console.log(participants.map((p) => `${p.id} ${p.status}`));
 ```
 
 Participantes harness são gerenciados separadamente da inferência compatível com OpenAI. Faça attach em um deles quando um app precisar do stream ACP ou dos artefatos dele:
 
 ```ts
-const channel = await client.harness.attach({
-  roomCode: created.data.room.code,
-  participantId: "harness-1",
-});
-
-for await (const frame of channel.messages) {
-  console.log(frame.type, frame.sessionId);
+for await (const event of client.harness.attach(created.room.code, "harness-1")) {
+  console.log(event.type);
 }
 ```
 

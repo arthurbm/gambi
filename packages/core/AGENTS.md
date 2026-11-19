@@ -1,53 +1,29 @@
 # @gambi/core
 
-Core do hub: servidor HTTP, estado de sala/participante, protocolo do túnel, SSE, mDNS e schemas Zod compartilhados. Este package é **consumido** pelo CLI, pela SDK e pela TUI; não importe nada de CLI/SDK/TUI de volta pra cá.
+O hub, o participant runtime e o harness, sobre Effect v4 ([ADR-0007](../../docs/adr/0007-effect-as-runtime-foundation.md)). Este package é **consumido** pelo CLI e pela SDK (e, pela SDK, pela TUI); não importe nada de CLI, SDK ou TUI de volta para cá. Os schemas, o contrato do management plane, as chamadas do túnel e os erros tipados vivem em `@gambi/protocol`.
 
-## Arquivos-chave
+Antes de mexer aqui, leia [`docs/reference/effect-conventions.md`](../../docs/reference/effect-conventions.md): as seções do túnel, do inference plane, dos eventos de sala, dos harness participants e dos testes dizem onde cada coisa mora e as regras de cada uma. Este arquivo só dá o mapa.
 
-- `src/hub.ts` — `Bun.serve()` do hub. Roteamento HTTP, upgrade do WebSocket do túnel, forward de requests, observabilidade baseline.
-- `src/room.ts` — estado de sala e participantes, routing (`<id>`, `model:<name>`, `*`/`any`), marcação de offline.
-- `src/participant.ts` — ciclo de vida de participante (join, leave, heartbeat, connection).
-- `src/types.ts` — schemas Zod **autoritativos** (`ParticipantInfo`, `ParticipantConnection`, `ParticipantCapabilities`, `RuntimeConfig`, etc.) e constantes `HEALTH_CHECK_INTERVAL` / `PARTICIPANT_TIMEOUT`.
-- `src/tunnel-protocol.ts` — mensagens do túnel: `tunnel.request`, `tunnel.response.start/chunk/end/error`, `tunnel.ping/pong`. Validação Zod usada nos dois lados.
-- `src/participant-session.ts` — runtime canônico de participante usado pelo CLI e reexportado pela SDK como `createParticipantSession()`.
-- `src/harness-participant-session.ts` — runtime de harness participant (relay ACP, túnel, artefatos), reexportado pela SDK. Roda em Node e Bun: processo e PATH ficam em `src/harness-process.ts` sobre APIs Node.
-- `src/harness-workspace.ts` — a costura `Workspace` (prepare, watch, collect) e o workspace padrão em pasta local. O core nunca semeia conteúdo inicial; isso é do consumidor.
-- `src/protocol.ts` / `src/protocol-adapters.ts` — adapter Responses ↔ Chat Completions.
-- `src/sse.ts` — publicação de eventos SSE.
-- `src/mdns.ts` / `src/discovery.ts` — anúncio mDNS do hub e helpers de descoberta usados pela SDK.
-- `src/endpoint-capabilities.ts` — probe de endpoint de provider para detectar modelos e capacidades.
+## Onde as coisas estão
 
-## Contratos que este package define
+- `src/hub/`: o hub. `hub.ts` sobe e fecha (`Hub.layer`), `settings.ts` tem os ajustes, `management.ts` os handlers do contrato, `inference.ts` as rotas compatíveis com OpenAI, `tunnels.ts` e `tunnel-route.ts` o túnel, `participants.ts` os participantes e o status, `rooms.ts` as salas, `room-events.ts` os eventos de sala, `harness-attach.ts` e `harness-clients.ts` o attach de clientes a um harness participant, `mdns.ts` o anúncio mDNS.
+- `src/participant/`: o participant runtime (`runtime.ts`), o handler que chama o provider local (`inference.ts`), a detecção de capacidades (`endpoint-capabilities.ts`) e os handlers padrão das chamadas que um tipo de participante não atende.
+- `src/harness/`: o subprocesso do harness e a sessão ACP (`harness.ts`, `acp.ts`), a detecção de harness instalado (`detection.ts`, `adapters.ts`), o Workspace e os artefatos (`workspace.ts`, `artifacts.ts`) e o harness participant inteiro (`harness-participant.ts`).
+- `src/fake-acp-agent.ts`: o harness `fake`, um agente ACP determinístico que roda como subprocesso e não chama modelo. O CLI o roda como `gambi __fake-acp-agent`.
+- `src/testing/`: os helpers de teste (`layerHub`, `joinParticipant`, `fakeProvider`, `linkToHub`, os harnesses de fixture). Só para testes; nunca é dependência de runtime.
 
-Qualquer mudança nesses contratos é breaking change pública e precisa atualizar `apps/docs/src/content/docs/reference/api.md`, `reference/sdk.md`, `reference/observability.md` e `docs/reference/architecture.md`:
-
-- Shape do envelope de management (`{ data, meta }`, `{ error, meta }`).
-- Shape de `ParticipantInfo` público (inclui `connection`, `capabilities`, `status`, `config` já redigido).
-- Códigos de erro: `ROOM_NOT_FOUND`, `PARTICIPANT_NOT_FOUND`, `INVALID_REQUEST`, `INVALID_PASSWORD`, `ENDPOINT_NOT_REACHABLE`, `PARTICIPANT_CONFLICT`, `PARTICIPANT_BUSY`, `PARTICIPANT_TUNNEL_NOT_CONNECTED`, `MODEL_NOT_FOUND`, `INTERNAL_ERROR`.
-- Tipos de evento SSE e campos.
-- Mensagens do túnel e seu discriminated union (`TunnelClientMessage`, `TunnelServerMessage`).
+O `package.json` exporta os arquivos `.ts` direto, sem build: quem embute o core é o `Bun.build` da SDK e o `bun build --compile` do CLI.
 
 ## Regras de design
 
-- **Tunnel-first**: o hub nunca origina conexão ao participante. Toda transferência de request passa pelo WebSocket aberto pelo próprio participante. Não adicionar fallback de HTTP direto ao endpoint do provider.
-- **Token de bootstrap single-use, TTL 60 s**: implementado em `hub.ts` via `tunnelBootstrapRegistry`. Não relaxar essas garantias sem pedido explícito.
-- **Management plane é fonte canônica para automação**: rotas em `/v1` devem ser suficientes para SDK/CLI/TUI operarem o hub. Não inventar rotas alternativas.
-- **Headers de auth do participante (`ParticipantAuthHeaders`) nunca chegam ao hub**: o hub jamais os armazena. São aplicados só no lado do participante via `createParticipantSession()`.
-- **Observabilidade baseline é parte do core**: eventos `llm.request`, `llm.complete`, `llm.error` e métricas `ttftMs`/`durationMs`/`*Tokens`/`tokensPerSecond` saem daqui.
+- **Tunnel-first**: o hub nunca origina conexão ao participante. Toda requisição passa pelo WebSocket que o próprio participante abriu. Não adicione fallback de HTTP direto ao endpoint do provider.
+- **`ParticipantAuthHeaders` nunca chegam ao hub**: são uma opção de `providerInference` e de `probeEndpoint`, na máquina do participante. Nada no hub nem em `@gambi/protocol` tem campo para eles.
+- **Estado mora em serviço, nunca em variável de módulo**: dois hubs no mesmo processo não enxergam as salas um do outro. `scripts/repo-guards.test.ts` reprova uma variável de módulo mutável aqui.
+- **Nenhuma API `Bun.*`, nem `@effect/platform-*`**: o core depende dos serviços abstratos do `effect`, e o entrypoint (CLI, entradas de hospedagem da SDK) fornece a plataforma. O lint reprova, fora dos testes e de `src/testing/`.
+- **Sem zod**: schema é `effect/Schema`, em `@gambi/protocol`.
+- **O management plane é o contrato**: uma rota nova entra em `@gambi/protocol` primeiro; os handlers daqui derivam dele.
 
-## Constantes expostas
-
-```ts
-HEALTH_CHECK_INTERVAL = 10_000          // ms entre heartbeats do management e pings do túnel
-PARTICIPANT_TIMEOUT   = 30_000          // ms sem heartbeat antes de marcar offline
-TUNNEL_TOKEN_TTL_MS   = 60_000          // TTL do token de bootstrap do túnel
-```
-
-Se for alterar qualquer uma, atualizar:
-- `apps/docs/src/content/docs/reference/api.md`
-- `apps/docs/src/content/docs/reference/sdk.md`
-- `apps/docs/src/content/docs/concepts/architecture.md`
-- `docs/reference/architecture.md`
+Mudança em contrato público (envelope, códigos de erro, eventos de sala, chamadas do túnel, ajustes do hub) pede a atualização listada em [`docs/reference/docs-update.md`](../../docs/reference/docs-update.md).
 
 ## Validação
 
@@ -56,13 +32,4 @@ bun test packages/core/src
 bun run --cwd packages/core check-types
 ```
 
-Observação: os testes sobem um hub real em portas fixas (ex.: 3998/3999). Se outra instância já estiver escutando, os testes falham — diagnosticar antes de acusar regressão.
-
-## Regras do Bun
-
-Este package roda em Bun; prefira as APIs nativas:
-- `Bun.serve()` com `websocket: { ... }` para HTTP + WebSocket (não usar `express` nem `ws`).
-- `WebSocket` nativo.
-- `bun test` para testes (`import { test, expect } from "bun:test"`).
-- `Bun.file` em vez de `node:fs/promises` quando possível.
-- Bun carrega `.env` automaticamente — não usar `dotenv`.
+Os testes sobem um hub de verdade em porta livre (`layerHub`, porta `0`), um participant runtime de verdade e um provider falso em loopback. Não precisam de rede e não usam espera real: tempo é `TestClock`, e teste `live` espera um evento.

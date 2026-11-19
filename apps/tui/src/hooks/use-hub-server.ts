@@ -13,8 +13,8 @@ export interface UseHubServerReturn {
   port: number;
   hostname: string;
   mdns: boolean;
-  start: (options?: HubOptions) => void;
-  stop: () => void;
+  start: (options?: HubOptions) => Promise<void>;
+  stop: () => Promise<void>;
   setConfig: (options: HubOptions) => void;
 }
 

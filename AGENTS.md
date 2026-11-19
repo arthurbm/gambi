@@ -13,6 +13,7 @@ When documentation diverges from code, implement against the code and note the d
 - **Tunnel-first.** The hub never originates a connection to a participant. The participant opens the WebSocket; the hub dispatches into it.
 - **`ParticipantAuthHeaders` stay in the participant runtime.** They are applied only when calling the local provider — never uploaded to the hub or surfaced through the management API.
 - **Conventional Commits** on every commit (`type(scope): subject`, e.g., `fix(cli): handle prompt cancellation`).
+- **Effect code follows [`docs/reference/effect-conventions.md`](docs/reference/effect-conventions.md).** Read it, and the `AGENTS.md` inside the installed `effect` package it points to, before writing any Effect code. Do not write Effect API from memory.
 - **Trusted local network only.** The hub has no native auth. Do not introduce public exposure without an external proxy / auth layer.
 
 ## Essential commands
@@ -39,6 +40,7 @@ For the per-area validation matrix and test gotchas, see [`docs/reference/valida
 |---|---|
 | Architecture concepts (planes, components, lifecycles, security model) | `docs/reference/architecture.md` |
 | Contract reference (envelope, error codes, endpoints, events, tunnel protocol, runtime constants, CLI flags / exit codes / env vars) | `docs/reference/contracts.md` |
+| Effect v4 conventions (installed-package docs to read, removed beta names, services, typed errors, test helper) | `docs/reference/effect-conventions.md` |
 | Observability detail (metrics, signals, phase 2 plan) | `docs/reference/observability.md` |
 | Release process and npm authentication | `docs/reference/release-architecture.md` |
 | Versioning policy | `docs/reference/versioning.md` |

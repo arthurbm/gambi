@@ -25,16 +25,17 @@
   "bugs": "https://github.com/arthurbm/gambi/issues",
   "type": "module",
   "scripts": {
-    "dev": "bun run src/cli.ts",
+    "dev": "bun run src/cli/main.ts",
     "build": "bun run build.ts",
     "check-types": "tsc --noEmit"
   },
   "devDependencies": {
-    "@clack/prompts": "^1.1.0",
+    "@effect/platform-bun": "4.1.4",
     "@gambi/core": "workspace:*",
+    "@gambi/protocol": "workspace:*",
+    "@gambi/testing": "workspace:*",
     "@types/bun": "latest",
-    "clipanion": "^4.0.0-rc.4",
-    "nanoid": "^5.1.5",
+    "effect": "4.1.4",
     "typescript": "^5"
   }
 }

@@ -1,21 +1,24 @@
-import { ParticipantInfo as ParticipantInfoSchema } from "@gambi/core/types";
+import type { ParticipantSummary } from "gambi-sdk";
 import { z } from "zod";
 
-// Re-export types from core
+// What a hub says about rooms and participants: the types of the management
+// client, which follow the contract. Never redeclare them here.
 export type {
   GenerationConfig,
-  LlmMetrics,
   MachineSpecs,
-  ParticipantInfo,
+  ParticipantCapabilities,
   ParticipantStatus,
-  RoomInfoPublic as RoomInfo,
+  ParticipantSummary,
+  RoomEvent,
+  RoomSummary,
   RuntimeConfig,
-} from "@gambi/core/types";
+} from "gambi-sdk";
 
 // TUI-specific types
 
 export const ActivityLogType = z.enum([
   "join",
+  "online",
   "leave",
   "offline",
   "request",
@@ -46,52 +49,11 @@ export type ActivityLogEntry = z.infer<typeof ActivityLogEntry>;
 export interface RoomState {
   code: string;
   name: string;
-  participants: Map<string, z.infer<typeof ParticipantInfoSchema>>;
+  participants: Map<string, ParticipantSummary>;
   logs: ActivityLogEntry[];
+  /** Whether the room's event stream is open and its snapshot arrived. */
   connected: boolean;
   processingRequests: Set<string>; // participantIds currently processing
-}
-
-// SSE Event schemas
-export const SSEConnectedEvent = z.object({
-  clientId: z.string(),
-});
-
-export const SSERoomCreatedEvent = z.object({
-  code: z.string(),
-  name: z.string(),
-});
-
-export const SSEParticipantJoinedEvent = ParticipantInfoSchema;
-
-export const SSEParticipantUpdatedEvent = ParticipantInfoSchema;
-
-export const SSEParticipantLeftEvent = z.object({
-  participantId: z.string(),
-});
-
-export const SSEParticipantOfflineEvent = z.object({
-  participantId: z.string(),
-});
-
-export const SSELlmRequestEvent = z.object({
-  participantId: z.string(),
-  model: z.string(),
-});
-
-export const SSELlmCompleteEvent = z.object({
-  participantId: z.string(),
-  metrics: LogMetrics.optional(),
-});
-
-export const SSELlmErrorEvent = z.object({
-  participantId: z.string(),
-  error: z.string(),
-});
-
-export interface SSEEvent {
-  event: string;
-  data: unknown;
 }
 
 // Design system colors tuned for both light and dark terminal backgrounds.

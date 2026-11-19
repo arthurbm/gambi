@@ -8,10 +8,10 @@ When you change a public contract or behavior, update the corresponding docs in 
 |---|---|
 | Management or inference HTTP endpoints | `docs/reference/contracts.md`, `docs/reference/architecture.md` (only if the conceptual model changes), `apps/docs/src/content/docs/reference/api.md`, `README.md` |
 | Error codes or envelope shape | `docs/reference/contracts.md`, `apps/docs/src/content/docs/reference/api.md` |
-| Tunnel protocol messages | `docs/reference/contracts.md`, `docs/reference/architecture.md`, `apps/docs/src/content/docs/concepts/architecture.md`, `apps/docs/src/content/docs/concepts/tunnel-first.mdx` |
-| Runtime constants (`HEALTH_CHECK_INTERVAL`, `PARTICIPANT_TIMEOUT`, etc.) | `docs/reference/contracts.md` |
+| Tunnel calls (`TunnelRpcs`) | `docs/reference/contracts.md`, `docs/reference/architecture.md`, `apps/docs/src/content/docs/concepts/architecture.md`, `apps/docs/src/content/docs/concepts/tunnel-first.mdx` |
+| Runtime constants (tunnel ping interval, reconnection deadline, inference idle timeout, `MAX_ARTIFACT_BYTES`, etc.) | `docs/reference/contracts.md`, and the public pages that state the value (`apps/docs/src/content/docs/reference/api.md`, `reference/cli.mdx`, `reference/sdk.md`) |
 | SSE event types or event metrics | `docs/reference/contracts.md`, `docs/reference/observability.md`, `apps/docs/src/content/docs/reference/observability.md` |
-| SDK surfaces (`createGambi`, `createClient`, `client.harness.attach`, `createParticipantSession`, discovery) | `apps/docs/src/content/docs/reference/sdk.md`, `apps/docs/src/content/docs/guides/ai-tools.md`, `README.md`, `docs/reference/architecture.md` |
+| SDK surfaces (`createGambi`, `createClient`, `client.harness`, `createHub`, `createParticipantSession`, `createHarnessParticipantSession`, discovery) or entries | `apps/docs/src/content/docs/reference/sdk.md`, `apps/docs/src/content/docs/guides/ai-tools.md`, `README.md`, `docs/reference/architecture.md` |
 | `createParticipantSession()` semantics | `apps/docs/src/content/docs/guides/custom-participant.mdx` |
 | Harness participant setup or adapter behavior | `apps/docs/src/content/docs/guides/bring-your-harness.mdx`, `apps/docs/src/content/docs/reference/cli.mdx`, `apps/docs/src/content/docs/concepts/tunnel-first.mdx`, `README.md` |
 | CLI commands or flags | `apps/docs/src/content/docs/reference/cli.mdx`, `docs/reference/validation.md`, `docs/reference/contracts.md` (exit codes, global flags, env vars) |

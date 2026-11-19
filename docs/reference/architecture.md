@@ -1,110 +1,105 @@
 # Gambi Architecture
 
-This document explains the conceptual architecture of Gambi after the agent-first redesign of the operational surface. For exact endpoints, error codes, event payloads, tunnel messages, and runtime constants, see [`docs/reference/contracts.md`](./contracts.md).
+This document explains the conceptual architecture of Gambi 0.8. For exact endpoints, error codes, event payloads, tunnel calls, and runtime constants, see [`docs/reference/contracts.md`](./contracts.md). For the Effect patterns the code follows, see [`docs/reference/effect-conventions.md`](./effect-conventions.md).
 
 ## Overview
 
 Gambi is a local-first hub for sharing OpenAI-compatible LLM endpoints across a trusted network. It has two explicit planes:
 
-- **Management plane** (`/v1/*`): Gambi-native operations for rooms, participants, heartbeats, and room events.
-- **Inference plane** (`/rooms/:code/v1/*`): OpenAI-compatible room-scoped endpoints for responses, chat completions, and model listing.
+- **Management plane** (`/v1/*`): Gambi-native operations for rooms, participants, room events, and the harness attach. Defined once as a typed contract.
+- **Inference plane** (`/rooms/:code/v1/*`): OpenAI-compatible room-scoped endpoints for responses, chat completions, and model listing. Plain routes that pass a provider's answer through.
 
-Participants connect to the hub through a participant tunnel. The public inference surface remains HTTP, but hub-to-participant forwarding is tunnel-backed instead of requiring the participant endpoint to be directly reachable from the hub.
+Participants reach the hub through a tunnel they open themselves. The public inference surface stays HTTP, and the hub forwards each request into the participant's tunnel, so the participant's provider never has to be reachable from the hub.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                            GAMBI HUB                                │
 │                                                                     │
 │   Management plane (/v1/*)        Inference plane (/rooms/.../v1)   │
-│   rooms · participants · events   OpenAI-compatible (Responses,     │
-│                                    Chat Completions, models)        │
+│   contract: rooms · participants  OpenAI-compatible (Responses,     │
+│   events · harness attach         Chat Completions, models)         │
 │                                                                     │
+│                     tunnels (effect/rpc over WebSocket)             │
 └─────────────────────────────────────────────────────────────────────┘
-             ▲                      ▲                      ▲
-             │ management           │ inference            │ live ops
-             │                      │                      │
-      ┌─────────────┐        ┌───────────────┐      ┌─────────────┐
-      │ CLI + SDK   │        │ createGambi() │      │ gambi-tui   │
-      └─────────────┘        └───────────────┘      └─────────────┘
+       ▲                     ▲                    ▲             ▲
+       │ management          │ inference          │ live ops    │ tunnel (dialed
+       │                     │                    │             │ by participant)
+ ┌────────────┐     ┌───────────────┐      ┌────────────┐  ┌──────────────────┐
+ │ CLI + SDK  │     │ createGambi() │      │ gambi-tui  │  │ participant      │
+ │ client     │     │ OpenAI SDKs   │      │            │  │ runtime          │
+ └────────────┘     └───────────────┘      └────────────┘  └──────────────────┘
 ```
 
-## Design goals
+## Foundation
 
-The redesign intentionally separates the operational and application contracts.
+Since 0.8 the core and the CLI are written on Effect v4 (ADR-0007):
 
-### Management plane goals
+- Schemas are `effect/Schema`. There is no zod in the core or the SDK.
+- The management plane is an `HttpApi` contract in `@gambi/protocol`. The hub implements it; the SDK client, the CLI, and the TUI call the client derived from it; the OpenAPI document is generated from it. Changing an operation in the contract makes the compiler point at every handler and caller that no longer fits.
+- The tunnel is `effect/rpc` over a WebSocket, with typed calls, cancellation, timeouts, and ping built in.
+- Resources (the port, the mDNS announcement, timers, sockets, subprocesses) are acquired in a scope and released when it closes. A hub that fails to start leaves nothing behind.
+- State lives in services, never in module variables, so two hubs in one process (a test, the TUI) never see each other's rooms.
+- `@effect/platform-bun` enters only at the entrypoints (the CLI's `main.ts`, the SDK's hosting entries, tests). The core depends on the abstract services, and a lint rule keeps `Bun.*`, `bun:*`, and `@effect/platform-*` out of it.
+- The public `gambi-sdk` API stays in `Promise`, with no Effect types in its signatures. The TUI stays in React.
 
-- predictable machine-readable responses
-- deterministic error envelopes
-- retry-safe participant registration
-- typed event streams
-- stateless operational control
-
-### Inference plane goals
-
-- OpenAI-compatible transport
-- compatibility with AI SDK and similar clients
-- room-scoped model routing
-- Responses-first semantics with explicit Chat Completions compatibility
+Because the tunnel's wire format is the one of `effect/rpc` and has no version field, a hub and its participants must run the same minor version of Gambi. Registration carries the participant's version, and the hub refuses another minor with `VERSION_MISMATCH`.
 
 ## Component roles
 
+### `packages/protocol`
+
+`@gambi/protocol`: the schemas, the management plane contract, the tunnel calls, the typed errors, and the status transition function. It has no server and no platform dependency, and runs unchanged in Bun, Node, and a browser. It is not published; it is bundled into what is.
+
+- `src/management/api.ts`: the `ManagementApi` contract
+- `src/management/errors.ts`, `src/tunnel/errors.ts`, `src/inference/errors.ts`: typed errors, each with its code and HTTP status
+- `src/management/envelope.ts`: the success and error envelopes
+- `src/management/event-stream.ts`: SSE in the contract; the only SSE parser in the repository
+- `src/room-event.ts`, `src/harness.ts`: room events and harness attach events
+- `src/participant-status.ts`: `transitionStatus`, the status table
+- `src/tunnel/rpcs.ts`: `TunnelRpcs`, the tunnel calls
+- `src/version.ts`: `GAMBI_VERSION` and the minor-version rule
+
 ### `packages/core`
 
-Source of truth for the hub runtime and HTTP contracts.
+The hub, the participant runtime, and the harness. Not published; bundled into the CLI and the SDK.
 
-Key responsibilities:
-
-- room and participant registry
-- management HTTP handlers
-- inference proxying
-- model and harness participant tunnel runtimes
-- SSE room events
-- mDNS discovery support
-- shared transport and domain schemas (Zod)
-
-Important files:
-
-- `packages/core/src/hub.ts` — HTTP server, tunnel upgrade, routing
-- `packages/core/src/room.ts` — room and participant state
-- `packages/core/src/participant-session.ts` — participant runtime
-- `packages/core/src/harness-participant-session.ts` — ACP relay, tunnel, and artifact runtime
-- `packages/core/src/harness-process.ts` — harness child process and PATH lookup on Node APIs, so the SDK runs under Node
-- `packages/core/src/harness-adapters.ts` — local harness command and readiness checks
-- `packages/core/src/harness-workspace.ts` — the `Workspace` seam (prepare, watch, collect) and the default local directory workspace
-- `packages/core/src/tunnel-protocol.ts` — tunnel messages
-- `packages/core/src/types.ts` — public Zod schemas and runtime constants
+- `src/hub/`: the hub. `hub.ts` (`Hub.layer`: port, mDNS, and the order resources are released in), `management.ts` (contract handlers, request id, `ROUTE_NOT_FOUND`), `inference.ts` (the inference plane), `participants.ts` (state, routing, the reconnection deadline), `tunnels.ts` (bootstrap tokens and open tunnels), `room-events.ts`, `harness-clients.ts` and `harness-attach.ts` (the attach fan-out), `stored-responses.ts`, `responses-translation.ts`
+- `src/participant/`: the participant runtime. `runtime.ts` (join, reconnection, watchdog, lifecycle events), `inference.ts` (the `Infer` handler that calls the local provider with the `ParticipantAuthHeaders`), `endpoint-capabilities.ts` (the provider probe)
+- `src/harness/`: the harness participant. `harness.ts` (subprocess and ACP relay), `acp.ts` (the three typed ACP calls), `detection.ts` (adapters and readiness checks), `workspace.ts` and `artifacts.ts` (the `Workspace` seam and snapshots)
+- `src/testing/`: hub, participant, provider, and network helpers for tests (`@gambi/core/testing/*`)
 
 ### `packages/cli`
 
-Operational CLI for both humans and agents. Workspace is `private`; the published `gambi` wrapper and `gambi-<os>-<arch>` binaries are generated under `packages/cli/dist`.
+The `gambi` binary, written on `effect/cli`. Workspace is `private`; the published `gambi` wrapper and the `gambi-<os>-<arch>` binaries are generated under `packages/cli/dist`. Its source is `packages/cli/src/cli/`: `main.ts` is the only file that touches the platform (Bun layers, signals, process exit code), and `run.ts` holds `runCli`, the CLI as a function that the command tests call.
 
 The CLI is resource-oriented:
 
 - `gambi hub serve`
 - `gambi room create|list|get`
-- `gambi participant join|leave|heartbeat`
-- `gambi participant join` as the canonical resource-oriented participant command
+- `gambi participant join|leave`
 - `gambi events watch`
 - `gambi self update`
 
-The CLI is a renderer over the management plane. Human mode uses compact text. Script mode uses JSON or NDJSON.
+It is a renderer over the management plane: text on a terminal, JSON or NDJSON otherwise, typed errors on stderr, and exit codes from one table (`exit-codes.ts`).
 
 ### `packages/sdk`
 
-Split by audience:
+`gambi-sdk`, published, in four entries. Each entry is one file with its own copy of `effect`, so importing one never loads another:
 
-- `createGambi()` — inference through the OpenAI-compatible room endpoints
-- `createClient()` — operational control over rooms, participants, and room events
-- `createParticipantSession()` — participant runtime with tunnel (re-exported from `packages/core`)
-- `createHarnessParticipantSession()` — harness participant runtime with a pluggable `Workspace`, plus the deterministic fake ACP agent (re-exported from `packages/core`)
-- discovery helpers (`discoverHubs`, `discoverRooms`, `resolveGambiTarget`) — explicit; never invoked implicitly inside `createGambi()` or `createClient()`
+- `gambi-sdk`: `createGambi()` (the inference provider for the AI SDK) and `createClient()` (the management client, including the harness attach). Runs in Node and Bun.
+- `gambi-sdk/discovery`: `discoverHubs()`, `discoverRooms()`, `resolveGambiTarget()`. Explicit; never invoked inside `createGambi()` or `createClient()`.
+- `gambi-sdk/hub`: `createHub()`, a hub in the current process. Bun only.
+- `gambi-sdk/participant`: `createParticipantSession()`, `createHarnessParticipantSession()`, the `Workspace` seam, the fake harness, and the provider probe. Bun only.
 
-The management client maps directly to `/v1` instead of inventing a parallel contract.
+Every function returns a `Promise` and rejects with one error class per entry (`ClientError`, `HubError`, `ParticipantError`). The SDK exports types, not schema values.
 
 ### `apps/tui`
 
-Human-first monitoring interface (OpenTUI + React). It consumes the management plane and the room event stream, but remains a separate package from `gambi`. Published as `gambi-tui` on npm.
+Human-first monitoring interface (OpenTUI + React). It reads the management plane through the SDK client, and hosts a hub and a participant in its own process through `gambi-sdk/hub` and `gambi-sdk/participant`. Published as `gambi-tui` on npm.
+
+### `packages/testing`
+
+`@gambi/testing/effect`: the Effect test helper over `bun test`. It mirrors the API of `@effect/vitest` (`it.effect` with the test clock, `it.live` for a real socket or subprocess, `layer` for a shared layer).
 
 ### Experiences above the hub
 
@@ -116,96 +111,100 @@ like any external client. Nothing in this repository imports from there
 
 ## Participant lifecycle
 
-Participant registration is an idempotent upsert:
+Registration is an idempotent upsert, `PUT /v1/rooms/:code/participants/:id`. The first registration creates the participant, `offline`; a later one with the same id updates its profile and keeps its status. The response carries a single-use bootstrap token, and the runtime dials the tunnel with it. Each runtime creates a public `runtimeId` and sends it on every registration. A runtime takes ownership when it registers an offline participant or opens a tunnel for that participant. Registering while another tunnel is open only updates the profile.
 
-- `PUT /v1/rooms/:code/participants/:id`
+A participant has one **status**, derived from its tunnel alone:
 
-Behavior:
+| From | Event | To |
+|---|---|---|
+| (not in the room) | registration | `offline` |
+| `offline` | tunnel opens | `online` |
+| `online` | the hub dispatches a request | `busy` |
+| `busy` | the request ends, is cancelled, or times out | `online` |
+| `online`, `busy` | tunnel drops | `offline` |
+| `offline` | 60 s without coming back | removed |
+| any | the participant leaves | removed |
 
-- create on first registration
-- return a stable `200` or `201` path for retries
-- update the existing participant when the payload changes
+Every transition goes through one pure function, `transitionStatus`, and emits the matching room event (`participant.joined`, `participant.online`, `participant.busy`, `participant.offline`, `participant.removed`). Only `online` participants receive routes. There is no heartbeat and no separate connection state.
 
-The registration response also returns the tunnel bootstrap data (`participant`, `roomId`, `tunnel`). Model participants include an `endpoint`; harness participants instead include `harness` metadata and may omit it. The participant then opens the bootstrap WebSocket route.
+The participant runtime joins once: register, open the tunnel, wait for the hub's `Welcome`. After that it reconnects by itself when the tunnel drops, waiting 1 second and doubling up to 30, with the same `participantId`, so whoever routes to it by id keeps the target. If it stays away for 60 seconds the hub removes it, and the next registration brings it back as a new participant with the same id. The hub pings every tunnel; the runtime watches what it receives and drops a tunnel whose hub went silent, which catches a frozen hub process. A refusal on the way back (`ROOM_NOT_FOUND`, `INVALID_PASSWORD`, `VERSION_MISMATCH`, `INVALID_REQUEST`) ends the runtime.
 
-In harness mode, the participant runtime creates a local workspace and starts an ACP process there. It negotiates only ACP v1. A one-second watcher publishes versioned workspace snapshots through the participant-opened tunnel. The hub sees ACP envelopes and artifact bytes, but it never sees the harness login or provider credentials.
+A host that leaves names its own `runtimeId`. The hub checks ownership before removing the participant. The removed runtime receives WebSocket close code `4002` and stops reconnecting. A runtime between retries can miss the close and register again.
 
-This idempotent shape is the foundation for retry-safe automation and the CLI's `participant join --participant-id`.
+Rooms live in the hub's memory. A hub that restarts comes back without its rooms, and runtimes trying to come back end with `ROOM_NOT_FOUND`. Recovering from that is issue #132.
 
-## Heartbeats and liveness
-
-Two independent liveness signals run in parallel:
-
-- **Management heartbeat** — `POST /v1/rooms/:code/participants/:id/heartbeat`. Drives the offline timeout.
-- **Tunnel ping/pong** — drives `participant.connection.connected`.
-
-`status` and `connection.connected` are orthogonal. A participant can be registered and heartbeating but have no active tunnel; routing requires *both* an online status and a connected tunnel.
-
-For exact constants and payload shapes, see `docs/reference/contracts.md`.
+In harness mode, the runtime starts the harness as a child process in a process group of its own, negotiates ACP v1, opens a first harness session in the participant's Workspace, and watches the Workspace for artifacts. The hub sees ACP messages and artifact contents, never the harness login or provider credentials.
 
 ## Tunnel transport
 
-The participant tunnel is the canonical (and only) hub↔participant transport. Properties:
+The tunnel is the only hub↔participant transport. It is `effect/rpc` over a WebSocket with the roles inverted: the participant dials and serves the calls; the hub accepts and calls. Properties:
 
 - the participant may keep its provider on `localhost`
-- provider auth headers stay local to the participant runtime — they are never uploaded to the hub
-- the hub dispatches inference operations across a WebSocket tunnel opened by the participant
-- the public client-facing API remains HTTP + SSE; tunnel is internal control path
-- harness participants carry opaque ACP v1 frames and artifacts over that same participant-opened tunnel
-- management clients initiate a separate attach WebSocket to the hub; the hub relays between it and the existing participant tunnel, and never connects back to the participant
+- provider auth headers stay in the participant runtime and are never uploaded to the hub
+- an inference request is one `Infer` stream call; interrupting it (the app went away, the idle timeout passed) aborts the request to the provider and frees the participant
+- what is born on a harness participant (ACP messages, session status, artifacts) goes up as chunks of one long-lived `HarnessEvents` call the hub opens with the tunnel
+- the public client-facing API remains HTTP + SSE; the tunnel is internal
+- management clients attach to a harness participant over SSE and plain requests to the hub; the hub relays into the existing participant tunnel and never connects back to the participant
 
-For the rationale and rejected alternatives behind this inversion of connection direction, see [`docs/adr/0003-tunnel-first-transport.md`](../adr/0003-tunnel-first-transport.md). For the tunnel message catalog, see [`docs/reference/contracts.md`](./contracts.md).
+The hub closes every open tunnel before it stops its HTTP server, so Ctrl+C on the hub returns in well under a second.
+
+For the rationale behind the inverted connection direction, see [ADR-0003](../adr/0003-tunnel-first-transport.md); for the move to `effect/rpc`, [ADR-0007](../adr/0007-effect-as-runtime-foundation.md). For the call catalog, see [`docs/reference/contracts.md`](./contracts.md#tunnel-calls).
 
 ## Model routing
 
-Routing happens on the `model` field at request time:
+Routing happens on the `model` field at request time. There are four forms of model selector:
 
-- `<participant-id>` routes to a specific participant
-- `model:<name>` routes to the first available participant matching that model
-- `*` or `any` routes to a random available participant
+- `*` or `any`: any `online` participant, at random
+- `model:<name>`: the first `online` participant sharing that model
+- `<participantId>`: that participant
+- `<name>` that is no `online` participant's id: the same as `model:<name>`, which is what a plain OpenAI client sends
 
-Specific participant targeting returns explicit errors when the participant is busy or its tunnel is disconnected. Routing only considers model participants whose tunnel is connected, whose status is not offline, and which are not already handling another request. Harness participants are visible through management but never selected by inference routing.
+Naming a participant that is `busy` or `offline` returns an explicit error. Harness participants are visible through management but never picked by `*`, `any`, or a model name; naming one by id is refused.
 
 ## Discovery
 
-Discovery is useful for local-network applications. The SDK helpers resolve hubs and rooms against the management plane under `/v1`. Discovery is always explicit — `createGambi()` and `createClient()` do not perform implicit discovery.
+Discovery is useful for local-network applications. The `gambi-sdk/discovery` helpers find hubs over mDNS and resolve rooms against the management plane under `/v1`. Discovery is always explicit: `createGambi()` and `createClient()` do not perform it.
 
 ## Operational surfaces
 
 ### CLI
 
-Optimized for human-readable text and machine-readable JSON / NDJSON. Flag-first, pipe-friendly, with `--interactive` / `--no-interactive`, XDG config support, and NDJSON on streaming commands when stdout is piped.
+Text on a terminal; JSON or NDJSON otherwise. Flag-first and pipe-friendly. On a terminal a missing required flag becomes a prompt; `--no-interactive` or `GAMBI_NO_INTERACTIVE=1` turns prompts off. Long-running commands (`hub serve`, `participant join`) report each step as a JSON line, and every failure is a typed error with a stable exit code.
 
 ### SDK management client
 
-Optimized for code-driven operational workflows. Namespaces:
+`createClient()` exposes the contract in `Promise`:
 
+- `client.hub.health()`
 - `client.rooms.*`
 - `client.participants.*`
-- `client.events.watchRoom()`
-- `client.harness.attach()`
+- `client.events.watch()`
+- `client.harness.attach()`, `send()`, `openSession()`, `closeSession()`
 
-`client.harness.attach()` opens one ACP harness session per channel and
-streams ACP updates, status, and versioned artifact frames. Orchestration
-policy (retries, deadlines per prompt, review) belongs to the consumer; the hub
-remains a relay.
+`client.harness.attach()` is an async iterable of the participant's ACP messages, session status, and artifacts. Orchestration policy (retries, deadlines per prompt, review) belongs to the consumer; the hub stays a relay.
 
 ### TUI
 
-Optimized for human monitoring. It is not the canonical operational contract — automation should target the management plane (`/v1`) directly via CLI or SDK.
+Optimized for human monitoring. It is not the canonical operational contract: automation should target the management plane (`/v1`) directly, through the CLI or the SDK.
+
+## Observability
+
+The hub writes structured log lines through Effect's logger, annotated with the room, the participant, and the request id, and names its operations as spans (`Hub.listModels`, `Participants.dispatch`, ...). No trace exporter is wired. The room event stream carries the `llm.*` events with hub-observed metrics; see [`docs/reference/observability.md`](./observability.md).
 
 ## Repository map
 
-- `packages/core` — hub runtime and contracts
-- `packages/cli` — operational CLI source
-- `packages/sdk` — inference provider and management client
-- `apps/tui` — monitoring interface
-- `apps/docs` — documentation site (Astro Starlight)
-- `packages/config` — shared TypeScript configs
+- `packages/protocol`: contract, schemas, tunnel calls, typed errors (internal)
+- `packages/core`: hub, participant runtime, harness (internal)
+- `packages/testing`: Effect test helper for `bun test` (internal)
+- `packages/cli`: the `gambi` CLI
+- `packages/sdk`: `gambi-sdk`
+- `apps/tui`: monitoring interface
+- `apps/docs`: documentation site (Astro Starlight)
+- `packages/config`: shared TypeScript configs
 
 ## Security model
 
-Gambi is designed for trusted local networks. The hub does not include native authentication. Do not expose it publicly without an external auth and proxy layer. Provider auth headers (`ParticipantAuthHeaders`) never leave the participant runtime — they are applied only when the runtime calls its local provider, never transmitted to the hub or surfaced through the management API.
+Gambi is designed for trusted local networks. The hub has no native authentication. Do not expose it publicly without an external auth and proxy layer. Provider auth headers (`ParticipantAuthHeaders`) never leave the participant runtime: registration refuses them, and the runtime applies them only when it calls its local provider. A harness session runs inside the participant's Workspace, and the tunnel has no call that writes files on the participant's machine.
 
 ## Forward path
 
@@ -214,7 +213,8 @@ above those contracts, outside this repository, in `gambiarra-lab`.
 
 Related internal docs:
 
-- [`docs/reference/contracts.md`](./contracts.md) — exact contract reference
-- [`docs/reference/observability.md`](./observability.md) — metrics and event detail
-- [`docs/reference/release-architecture.md`](./release-architecture.md) — distribution and publishing
-- [`docs/reference/versioning.md`](./versioning.md) — versioning policy
+- [`docs/reference/contracts.md`](./contracts.md): exact contract reference
+- [`docs/reference/effect-conventions.md`](./effect-conventions.md): how the code uses Effect
+- [`docs/reference/observability.md`](./observability.md): metrics and event detail
+- [`docs/reference/release-architecture.md`](./release-architecture.md): distribution and publishing
+- [`docs/reference/versioning.md`](./versioning.md): versioning policy

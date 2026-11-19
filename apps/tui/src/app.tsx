@@ -1,4 +1,4 @@
-import { useKeyboard, useRenderer } from "@opentui/react";
+import { useKeyboard } from "@opentui/react";
 import { useCallback, useState } from "react";
 import { AddRoomModal } from "./components/add-room-modal";
 import { ConfirmModal } from "./components/confirm-modal";
@@ -35,8 +35,12 @@ function WithSidebar({ children }: { children: React.ReactNode }) {
 
 type ConfirmAction = "quit" | "leave" | null;
 
-export function App() {
-  const renderer = useRenderer();
+interface AppProps {
+  /** Takes the TUI off the terminal, once the app has cleaned up after itself. */
+  onQuit: () => void;
+}
+
+export function App({ onQuit }: AppProps) {
   const hubStatus = useHubStore((s) => s.status);
   const session = useParticipantSession();
 
@@ -75,12 +79,16 @@ export function App() {
     const { status } = useSessionStore.getState();
     const currentlyActive =
       status === "joining" || status === "joined" || status === "leaving";
-    if (currentlyActive) {
-      await session.leave();
+    try {
+      if (currentlyActive) {
+        await session.leave();
+      }
+      await shutdownHub();
+    } finally {
+      // Whatever the cleanup did, the terminal goes back to the person.
+      onQuit();
     }
-    shutdownHub();
-    renderer.destroy();
-  }, [renderer, session, isQuitting]);
+  }, [onQuit, session, isQuitting]);
 
   const handleQuit = useCallback(() => {
     if (isQuitting) {
@@ -89,7 +97,7 @@ export function App() {
     if (needsQuitConfirmation) {
       setPendingConfirm("quit");
     } else {
-      void doQuit();
+      doQuit();
     }
   }, [needsQuitConfirmation, doQuit, isQuitting]);
 
@@ -98,9 +106,9 @@ export function App() {
       return;
     }
     if (pendingConfirm === "quit") {
-      void doQuit();
+      doQuit();
     } else if (pendingConfirm === "leave") {
-      void session.leave();
+      session.leave();
     }
     setPendingConfirm(null);
   }, [pendingConfirm, doQuit, session, isQuitting]);

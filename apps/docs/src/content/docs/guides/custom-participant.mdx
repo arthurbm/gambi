@@ -11,21 +11,22 @@ This guide shows the minimum runtime that behaves like the CLI, then the common 
 
 You need:
 
-- a Gambi hub you can reach (`gambi hub serve`)
+- a Gambi hub you can reach (`gambi hub serve`), on the same minor version as the `gambi-sdk` you install
 - an existing room code (`gambi room create --name "Demo"`)
 - a local OpenAI-compatible provider endpoint (Ollama, LM Studio, vLLM, or anything else that serves `/v1/models` and `/v1/chat/completions`)
+- [Bun](https://bun.sh): the `gambi-sdk/participant` entry runs only in Bun
 - `gambi-sdk` installed
 
 ```bash
 bun add gambi-sdk
 ```
 
-## Step 1: Open a session
+## Step 1: Join the room
 
-`createParticipantSession()` does four things in one call: it probes your endpoint, registers the participant, opens the tunnel, and starts the heartbeat and ping loops.
+`createParticipantSession()` does it all in one call: it probes your endpoint for the APIs it speaks, registers the participant, opens the tunnel, and resolves once the participant is `online`.
 
 ```ts
-import { createParticipantSession } from "gambi-sdk";
+import { createParticipantSession } from "gambi-sdk/participant";
 
 const session = await createParticipantSession({
   hubUrl: "http://localhost:3000",
@@ -36,45 +37,76 @@ const session = await createParticipantSession({
   model: "llama3",
 });
 
-console.log("registered as", session.participant.id);
+console.log("joined as", session.participant.id);
 ```
 
-If the endpoint does not expose the requested model, the call throws before anything is registered. Treat that as a configuration error and exit.
+If the join fails, the call rejects with a `ParticipantError` and nothing is left running. Its `code` says why: `ROOM_NOT_FOUND`, `INVALID_PASSWORD`, `VERSION_MISMATCH` (the hub runs another minor version), `HUB_UNREACHABLE`, `TUNNEL_OPEN_FAILED`, and a few more. Treat it as a configuration error and exit.
 
-## Step 2: Wait for the session to close
-
-`session.waitUntilClosed()` resolves with a close event the moment the runtime stops, whatever the reason.
+The session does not check that your provider serves `model`. To check before you join, probe it:
 
 ```ts
-const closeEvent = await session.waitUntilClosed();
-console.log("session ended:", closeEvent.reason);
+import { probeProvider } from "gambi-sdk/participant";
+
+const probe = await probeProvider("http://localhost:11434");
+if (!probe.models.includes("llama3")) {
+  throw new Error("Pull the model first.");
+}
 ```
 
-Three close reasons, each with a different meaning:
+## Step 2: Follow the session
+
+After the join, the runtime takes care of itself. When the tunnel drops (Wi-Fi blinks, the hub is unreachable for a moment, the hub froze), it waits 1 second, then 2, 4, and so on up to 30, and registers again with the same participant ID. Apps that route to it by ID keep their target.
+
+`onLifecycle` receives each step, in order:
+
+```ts
+const session = await createParticipantSession({
+  // ...
+  onLifecycle: (event) => {
+    if (event.type === "reconnecting") {
+      console.log(`tunnel lost (${event.reason}); retrying in ${event.delayMillis} ms`);
+    }
+  },
+});
+```
+
+| Event | When |
+| --- | --- |
+| `connected` | the tunnel is open; `attempt` is `0` for the join, then the attempt that brought it back |
+| `reconnecting` | the tunnel dropped and the runtime tries again in `delayMillis` |
+| `left` | the runtime ended and will not try again; always the last event |
+
+`session.ended` resolves with the reason of the `left` event. It never rejects:
+
+```ts
+const { reason, error } = await session.ended;
+```
 
 | Reason | Meaning | Suggested action |
 | --- | --- | --- |
-| `"closed"` | your code called `session.close()` | exit cleanly |
-| `"heartbeat_failed"` | a management heartbeat request failed; one failure closes the session | the hub is probably unreachable. Exit and let your supervisor restart the runtime |
-| `"tunnel_closed"` | the WebSocket tunnel closed or errored, from either side | often transient network trouble. Create a new session with the same participant ID |
+| `"stopped"` | your code called `leave()` or `stop()` | exit cleanly |
+| `"refused"` | the hub refused the way back; `error` has its `name` and `message` | usually the room is gone, because the hub restarted. Create the room again and start a new session |
+| `"replaced"` | another runtime joined the room with the same participant ID, and the hub kept that one | do not restart with the same ID; two runtimes cannot share it |
+| `"removed"` | someone removed the participant through the hub | the session has ended. Start a new one if you want to rejoin |
+| `"tunnelDropped"` | the tunnel dropped and you passed `reconnect: false` | start a new session if you want to come back |
 
-`closeEvent.error` holds the underlying `Error` when there is one. Log it.
-
-The session never reconnects by itself. On `"closed"` and `"heartbeat_failed"` it tries to remove the participant from the room before it resolves. On `"tunnel_closed"` it does not: the registration stays, and the hub marks the participant offline as soon as its tunnel closes. Calling `createParticipantSession()` again with the same participant ID updates that registration and opens a new tunnel.
+A participant that stays away for more than 60 seconds is removed from the room. The runtime does not give up after that: its next registration brings it back as a new participant with the same ID.
 
 ## Step 3: Shut down cleanly
 
-The SDK does not install signal handlers. Wire `session.close()` to `SIGINT` and `SIGTERM` yourself. `close()` closes the tunnel and removes the participant from the room before it returns.
+The SDK does not install signal handlers. Wire `session.leave()` to `SIGINT` and `SIGTERM` yourself. `leave()` takes the participant out of the room and stops the runtime. It never rejects, and gives up on a hub that does not answer within 3 seconds (`leaveTimeoutMs`).
 
 ```ts
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
-    void session.close();
+    void session.leave();
   });
 }
 ```
 
-If the session already ended with `"tunnel_closed"`, `close()` returns that close event and does not remove the registration. Call `client.participants.remove()` from the [management client](/reference/sdk/#clientparticipantsremoveroomcode-participantid) if you need it gone at once.
+`session.stop()` stops the runtime without telling the hub. The room shows the participant `offline` and removes it after 60 seconds, unless a runtime with the same ID joins before that. Use it when you are about to restart and want to come back as the same participant.
+
+The session also works with `await using`, which calls `leave()`.
 
 ## Step 4: Forward provider auth
 
@@ -113,9 +145,9 @@ await createParticipantSession({
 });
 ```
 
-### Override capabilities
+### Skip the probe
 
-The probe auto-detects which OpenAI-compatible surfaces your endpoint supports. Override when you want the hub to prefer a specific one:
+Without `capabilities`, the session probes your endpoint to find which OpenAI-compatible APIs it supports. Pass them to skip the probe:
 
 ```ts
 await createParticipantSession({
@@ -136,9 +168,20 @@ await createParticipantSession({
 });
 ```
 
+### Seeing the runtime's logs
+
+The runtime never writes to your stdout. Pass `onLog` to receive its log lines:
+
+```ts
+await createParticipantSession({
+  // ...
+  onLog: (entry) => console.error(entry.level, entry.message),
+});
+```
+
 ### Running more than one participant in one process
 
-Call `createParticipantSession()` once per participant. Each call returns an independent session with its own tunnel, heartbeat loop, and participant identity. Run their `waitUntilClosed()` promises in parallel.
+Call `createParticipantSession()` once per participant. Each call returns an independent session with its own tunnel and participant identity. Wait for their `ended` promises in parallel.
 
 ```ts
 const sessions = await Promise.all([
@@ -146,9 +189,7 @@ const sessions = await Promise.all([
   createParticipantSession({ /* worker-2 */ }),
 ]);
 
-await Promise.allSettled(
-  sessions.map((session) => session.waitUntilClosed())
-);
+await Promise.all(sessions.map((session) => session.ended));
 ```
 
 ## A complete runtime
@@ -156,7 +197,7 @@ await Promise.allSettled(
 Putting it all together:
 
 ```ts
-import { createParticipantSession } from "gambi-sdk";
+import { createParticipantSession } from "gambi-sdk/participant";
 
 const session = await createParticipantSession({
   hubUrl: process.env.GAMBI_HUB ?? "http://localhost:3000",
@@ -165,27 +206,28 @@ const session = await createParticipantSession({
   nickname: "worker-1",
   endpoint: "http://localhost:11434",
   model: "llama3",
-  authHeaders: process.env.PROVIDER_TOKEN
-    ? { Authorization: `Bearer ${process.env.PROVIDER_TOKEN}` }
-    : undefined,
+  ...(process.env.PROVIDER_TOKEN
+    ? { authHeaders: { Authorization: `Bearer ${process.env.PROVIDER_TOKEN}` } }
+    : {}),
+  onLifecycle: (event) => console.log("[gambi]", event.type),
 });
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
-    void session.close();
+    void session.leave();
   });
 }
 
-const { reason, error } = await session.waitUntilClosed();
+const { reason, error } = await session.ended;
 console.log("[gambi] session ended:", reason);
 if (error) {
-  console.error(error);
+  console.error(error.name, error.message);
 }
-process.exit(reason === "closed" ? 0 : 1);
+process.exit(reason === "stopped" ? 0 : 1);
 ```
 
 ## Further reading
 
-- [SDK reference: `createParticipantSession()`](/reference/sdk/#createparticipantsessionoptions): full option and return shape.
+- [SDK reference: `createParticipantSession()`](/reference/sdk/#createparticipantsessionoptions-gambi-sdkparticipant-bun-only): full option and return shape.
 - [How tunnels work](/concepts/tunnel-first/): why the runtime opens a WebSocket instead of exposing an HTTP endpoint.
 - [CLI reference: `gambi participant join`](/reference/cli/#gambi-participant-join): the CLI version of this runtime.

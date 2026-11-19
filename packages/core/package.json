@@ -3,35 +3,47 @@
   "version": "0.7.2",
   "type": "module",
   "exports": {
-    "./types": "./src/types.ts",
-    "./protocol": "./src/protocol.ts",
-    "./protocol-adapters": "./src/protocol-adapters.ts",
-    "./tunnel-protocol": "./src/tunnel-protocol.ts",
-    "./room": "./src/room.ts",
-    "./participant": "./src/participant.ts",
-    "./participant-session": "./src/participant-session.ts",
-    "./harness-participant-session": "./src/harness-participant-session.ts",
-    "./harness-adapters": "./src/harness-adapters.ts",
-    "./harness-workspace": "./src/harness-workspace.ts",
     "./fake-acp-agent": "./src/fake-acp-agent.ts",
-    "./endpoint": "./src/endpoint-capabilities.ts",
-    "./discovery": "./src/discovery.ts",
-    "./mdns": "./src/mdns.ts",
-    "./hub": "./src/hub.ts",
-    "./logo": "./src/logo.ts"
+    "./hub/hub": "./src/hub/hub.ts",
+    "./hub/mdns": "./src/hub/mdns.ts",
+    "./hub/rooms": "./src/hub/rooms.ts",
+    "./hub/participants": "./src/hub/participants.ts",
+    "./hub/room-events": "./src/hub/room-events.ts",
+    "./hub/open-streams": "./src/hub/open-streams.ts",
+    "./hub/tunnels": "./src/hub/tunnels.ts",
+    "./hub/harness-clients": "./src/hub/harness-clients.ts",
+    "./hub/harness-attach": "./src/hub/harness-attach.ts",
+    "./participant/runtime": "./src/participant/runtime.ts",
+    "./participant/diagnostics": "./src/participant/diagnostics.ts",
+    "./participant/harness-not-supported": "./src/participant/harness-not-supported.ts",
+    "./harness/harness": "./src/harness/harness.ts",
+    "./harness/adapters": "./src/harness/adapters.ts",
+    "./harness/tunnel-handlers": "./src/harness/tunnel-handlers.ts",
+    "./harness/detection": "./src/harness/detection.ts",
+    "./harness/workspace": "./src/harness/workspace.ts",
+    "./harness/artifacts": "./src/harness/artifacts.ts",
+    "./harness/harness-participant": "./src/harness/harness-participant.ts",
+    "./participant/inference": "./src/participant/inference.ts",
+    "./participant/endpoint-capabilities": "./src/participant/endpoint-capabilities.ts",
+    "./testing/hub": "./src/testing/hub.ts",
+    "./testing/harness-fixtures": "./src/testing/harness-fixtures.ts",
+    "./testing/hub-link": "./src/testing/hub-link.ts",
+    "./testing/participant": "./src/testing/participant.ts",
+    "./testing/provider": "./src/testing/provider.ts"
   },
   "scripts": {
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "1.4.0",
+    "@gambi/protocol": "workspace:*",
     "bonjour-service": "^1.3.0",
-    "nanoid": "^5.1.5",
-    "zod": "^4.1.13"
+    "effect": "4.1.4"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "openai": "^6.15.0"
+    "@effect/platform-bun": "4.1.4",
+    "@gambi/testing": "workspace:*",
+    "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^5"

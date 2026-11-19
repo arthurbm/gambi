@@ -15,6 +15,15 @@
     "verbatimModuleSyntax": true,
     "noEmit": true,
 
+    // The entries of `gambi-sdk` the TUI uses, from their source: the
+    // package's own `exports` point at `dist/`, which only exists after a
+    // build.
+    "paths": {
+      "gambi-sdk": ["../../packages/sdk/src/index.ts"],
+      "gambi-sdk/hub": ["../../packages/sdk/src/hub.ts"],
+      "gambi-sdk/participant": ["../../packages/sdk/src/participant.ts"]
+    },
+
     // Best practices
     "strict": true,
     "skipLibCheck": true,
@@ -26,5 +35,8 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
-  }
+  },
+  // The built bundle is JavaScript (`allowJs`), and it embeds Effect: the
+  // compiler overflows its stack on it.
+  "exclude": ["dist", "node_modules"]
 }

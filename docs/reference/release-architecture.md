@@ -53,7 +53,7 @@ Source of truth:
 - `scripts/npm-release.ts` (publish and verify loop, tested by `scripts/npm-release.test.ts`)
 - `scripts/cli-tarballs.ts` (packs and validates the CLI tarballs, tested by `scripts/cli-tarballs.test.ts`)
 
-The workflow has `concurrency: release`, so a second dispatch waits for the first one to finish instead of publishing or tagging at the same time. Both jobs that run Bun pin it (`bun-version: "1.4.4"`, also in `build-binaries.yml`), so a release compiles with the same Bun as the last one. v0.7.0 and v0.7.1 were built with 1.4.4; the root `packageManager` still says `bun@1.3.13`.
+The workflow has `concurrency: release`, so a second dispatch waits for the first one to finish instead of publishing or tagging at the same time. Both jobs that run Bun pin it (`bun-version: "1.4.4"`, also in `build-binaries.yml`), so a release compiles with the same Bun as the last one. Every release since v0.7.0 was built with 1.4.4, and the root `packageManager` pins the same version.
 
 ### Stages
 

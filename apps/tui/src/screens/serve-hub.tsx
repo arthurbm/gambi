@@ -100,7 +100,7 @@ export function ServeHub({ onBack, canGoBack }: ServeHubProps) {
             </text>
             <text>
               <span fg={colors.muted}>Health: </span>
-              <span fg={colors.accent}>{url}/health</span>
+              <span fg={colors.accent}>{url}/v1/health</span>
             </text>
             {mdnsName && (
               <text>

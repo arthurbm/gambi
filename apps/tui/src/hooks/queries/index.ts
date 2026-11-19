@@ -14,16 +14,8 @@ export {
   useMachineSpecsQuery,
 } from "./use-machine-specs-query";
 export {
-  type CreateRoomResponse,
-  type JoinParticipantData,
-  type JoinRoomResponse,
-  type ListRoomsResponse,
-  type ParticipantsResponse,
+  type CreateRoomData,
   roomKeys,
   useCreateRoom,
-  useHealthCheck,
-  useJoinRoom,
-  useLeaveRoom,
-  useParticipants,
   useRoomsList,
 } from "./use-rooms-query";

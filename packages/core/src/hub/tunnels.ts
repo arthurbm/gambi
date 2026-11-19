@@ -1,0 +1,660 @@
+/**
+ * The tunnels of one hub: the bootstrap tokens that authenticate a tunnel's
+ * WebSocket upgrade, and the open tunnels themselves.
+ *
+ * A tunnel is `effect/rpc` over the WebSocket a participant dialed, with the
+ * roles inverted: the hub accepted the socket and is the RPC *client*
+ * (ADR-0007). `serve` runs one tunnel; `client` hands the calls of an open
+ * one to whoever dispatches (`TunnelRpcs` in `@gambi/protocol`).
+ *
+ * The status of a participant derives from here and from nowhere else: a
+ * tunnel that opens reports `tunnelOpened`, one that drops `tunnelDropped`.
+ *
+ * Three things in `serve` are load-bearing; the measurements are in
+ * `docs/research/effect-v4-foundation.md`:
+ *
+ * 1. `retryPolicy: Schedule.recurs(0)`. The default policy redials forever,
+ *    and an accepted socket cannot be redialed.
+ * 2. The tunnel ends when the protocol reports `ClientProtocolError`, after
+ *    the calls in flight have received it. Ending it from a connection hook
+ *    would interrupt those calls instead of failing them with a typed error.
+ *    For the same reason, a tunnel the hub closes hands that error to its
+ *    calls before it closes the socket.
+ * 3. `closeAll` runs before the HTTP server stops; `Hub.layer` sees to it.
+ *    A server with an open WebSocket takes its whole graceful shutdown
+ *    timeout (20 s) to stop.
+ */
+import {
+  type BootstrapToken,
+  type CallNotSupported,
+  type HarnessDisconnected,
+  TUNNEL_REMOVED_CLOSE_CODE,
+  TUNNEL_REPLACED_CLOSE_CODE,
+  TunnelRpcs,
+  TunnelTokenInvalid,
+} from "@gambi/protocol";
+import {
+  Cause,
+  Clock,
+  Context,
+  Deferred,
+  Duration,
+  Effect,
+  Exit,
+  Fiber,
+  Latch,
+  Layer,
+  Option,
+  Schedule,
+  Schema,
+  Scope,
+  Stream,
+} from "effect";
+import { SecureRandom } from "effect/crypto";
+import {
+  RpcClient,
+  RpcClientError,
+  type RpcMessage,
+  RpcSerialization,
+} from "effect/rpc";
+import { Socket } from "effect/socket";
+import { HarnessClients } from "./harness-clients.ts";
+import { participantKey } from "./participant-key.ts";
+import { type ParticipantProfile, Participants } from "./participants.ts";
+import { HubSettings } from "./settings.ts";
+
+/** How long a bootstrap token is valid for. */
+export const BOOTSTRAP_TOKEN_TTL = Duration.seconds(60);
+
+/**
+ * The calls of one open tunnel, as the hub makes them. A unary call is an
+ * `Effect` and a stream call a `Stream`; interrupting either cancels the
+ * handler on the participant. When the tunnel drops, a call in flight fails
+ * with `RpcClientError`.
+ */
+export type TunnelClient = RpcClient.FromGroup<
+  typeof TunnelRpcs,
+  RpcClientError.RpcClientError
+>;
+
+/** The participant has no open tunnel: it is `offline`, or not in the room. */
+export class TunnelNotOpen extends Schema.TaggedError<TunnelNotOpen>()(
+  "TunnelNotOpen",
+  { roomCode: Schema.String, participantId: Schema.String }
+) {
+  override get message(): string {
+    return `Participant '${this.participantId}' of room '${this.roomCode}' has no open tunnel.`;
+  }
+}
+
+/**
+ * A bootstrap token the hub took, as the tunnel it opens sees it. `left`
+ * turns true when the runtime it was issued to leaves the room as that
+ * participant, even after the token was taken: the tunnel that is on its way
+ * in reads it to know that there is nobody to be online as.
+ */
+export interface RedeemedToken {
+  readonly profile: ParticipantProfile;
+  /**
+   * The participant the token was issued for (`Participants.generation`):
+   * another one with the same id is not it.
+   */
+  readonly generation: number;
+  readonly left: boolean;
+  /** The participant runtime the token was issued to. */
+  readonly runtimeId: string;
+}
+
+// Kept until it expires, also after it was spent: that is how a runtime that
+// left is told so on a tunnel it had already asked for.
+interface IssuedToken extends RedeemedToken {
+  readonly expiresAt: number;
+  left: boolean;
+  readonly participantId: string;
+  readonly roomCode: string;
+  spent: boolean;
+}
+
+interface OpenTunnel {
+  /**
+   * Ends the tunnel from the hub's side and waits until it is gone. With a
+   * `closeCode`, its WebSocket closes with that code and `reason`, for a
+   * participant runtime that has to tell this end from a drop.
+   */
+  readonly close: (reason: string, closeCode?: number) => Effect.Effect<void>;
+  /** Completes when the tunnel is gone and the participant is `offline`. */
+  readonly gone: Effect.Effect<void>;
+  /** The client, kept usable until the caller's scope closes. */
+  readonly hold: Effect.Effect<TunnelClient, never, Scope.Scope>;
+  /** The participant runtime that dialed it. */
+  readonly runtimeId: string;
+}
+
+const LEFT_THE_ROOM = "the participant left the room";
+
+/** The error of a call on a tunnel the hub itself closed. */
+const closedByHub = (reason: string) =>
+  new RpcClientError.RpcClientError({
+    reason: new Socket.SocketCloseError({ code: 1001, closeReason: reason }),
+  });
+
+/** How long a dropped tunnel waits for its harness stream to end by itself. */
+const HARNESS_STREAM_END_TIMEOUT = Duration.seconds(2);
+
+/**
+ * Why the hub stopped receiving a participant's harness events: the error the
+ * stream ended with. `undefined` when it ended without one of its own, which
+ * is what an interruption looks like; the tunnel's end then says why.
+ */
+const harnessStreamEnd = (
+  exit: Exit.Exit<void, RpcClientError.RpcClientError | CallNotSupported>
+): HarnessDisconnected | undefined => {
+  if (Exit.isSuccess(exit)) {
+    return { type: "harness.disconnected", reason: "StreamEnded" };
+  }
+  const error = Cause.findErrorOption(exit.cause);
+  return Option.isNone(error) ? undefined : disconnectedBy(error.value);
+};
+
+const disconnectedBy = (
+  error: RpcClientError.RpcClientError | CallNotSupported
+): HarnessDisconnected => ({
+  type: "harness.disconnected",
+  reason: error._tag === "RpcClientError" ? error.reason._tag : error._tag,
+  message: error.message,
+});
+
+export class Tunnels extends Context.Service<
+  Tunnels,
+  {
+    /**
+     * Completes when the participant has no open tunnel: at once when it has
+     * none, otherwise when the one it has drops and the participant is
+     * `offline`.
+     */
+    readonly awaitDrop: (
+      roomCode: string,
+      participantId: string
+    ) => Effect.Effect<void>;
+    /**
+     * The calls of the participant's open tunnel. The client stays usable
+     * until the caller's scope closes: if the tunnel drops meanwhile, its
+     * calls fail with `RpcClientError`. Do not keep it past that scope; a
+     * call on a client that was let go of is interrupted, not failed.
+     */
+    readonly client: (
+      roomCode: string,
+      participantId: string,
+      runtimeId?: string
+    ) => Effect.Effect<TunnelClient, TunnelNotOpen, Scope.Scope>;
+    /**
+     * Closes the participant's tunnel from the hub's side and waits until it
+     * is gone. Its calls in flight fail with `RpcClientError`, whose message
+     * carries `reason`. Does nothing when the participant has no tunnel.
+     *
+     * With `leaving`, the participant left the room as that participant
+     * runtime, and the runtime is told so, to end instead of coming back: a
+     * tunnel of its own closes with `TUNNEL_REMOVED_CLOSE_CODE`, and so
+     * does, without a welcome, one it dials with a token it was handed
+     * before.
+     */
+    readonly close: (
+      roomCode: string,
+      participantId: string,
+      reason: string,
+      leaving?: string
+    ) => Effect.Effect<void>;
+    /**
+     * Closes every open tunnel and waits until they are gone. The calls in
+     * flight fail with `RpcClientError`.
+     *
+     * A hub runs this before its HTTP server stops (`Hub.layer` does): each
+     * tunnel is a request the server is still answering, and a server waits
+     * its whole graceful shutdown timeout (20 s) for those.
+     */
+    readonly closeAll: Effect.Effect<void>;
+    /**
+     * Issues the bootstrap token for one tunnel of one participant, to the
+     * participant runtime that registered it: single use, valid for
+     * `BOOTSTRAP_TOKEN_TTL`. `generation` is the participant that
+     * registration wrote (`Participants.register`): the token is for that
+     * one and no other with the same id.
+     */
+    readonly issueToken: (
+      roomCode: string,
+      participantId: string,
+      runtimeId: string,
+      generation: number,
+      profile: ParticipantProfile
+    ) => Effect.Effect<BootstrapToken>;
+    /**
+     * Spends a bootstrap token. It fails when the token was not issued for
+     * that participant of that room, has expired or was already spent, and
+     * when the participant it was issued for is no longer in the room. The
+     * token of a runtime that left the room is taken all the same, so that
+     * `serve` can tell it so.
+     */
+    readonly redeemToken: (
+      roomCode: string,
+      participantId: string,
+      token: string | undefined
+    ) => Effect.Effect<RedeemedToken, TunnelTokenInvalid>;
+    /**
+     * Runs the participant's tunnel over the socket a runtime dialed with
+     * `token`, and returns when the tunnel is gone. The participant is that
+     * runtime's from here on, and `online` while the tunnel runs. A tunnel
+     * the participant already had is closed first: the new one wins.
+     *
+     * A tunnel whose runtime left the room meanwhile is not welcomed, and
+     * closes with `TUNNEL_REMOVED_CLOSE_CODE`. One whose participant is
+     * gone, or another runtime's by the time it would open, is not welcomed
+     * either, takes nothing from anyone, and just closes.
+     */
+    readonly serve: (
+      roomCode: string,
+      participantId: string,
+      socket: Socket.Socket,
+      token: RedeemedToken
+    ) => Effect.Effect<void>;
+  }
+>()("gambi/core/Tunnels") {
+  static readonly layer = Layer.effect(
+    Tunnels,
+    Effect.gen(function* () {
+      const participants = yield* Participants;
+      const harnessClients = yield* HarnessClients;
+      const random = yield* SecureRandom.SecureRandom;
+      const settings = yield* HubSettings;
+      const serialization = yield* RpcSerialization.RpcSerialization;
+      const layerScope = yield* Effect.scope;
+      const tokens = new Map<string, IssuedToken>();
+      const open = new Map<string, OpenTunnel>();
+
+      const issueToken = Effect.fn("Tunnels.issueToken")(function* (
+        roomCode: string,
+        participantId: string,
+        runtimeId: string,
+        generation: number,
+        profile: ParticipantProfile
+      ) {
+        const now = yield* Clock.currentTimeMillis;
+        // Tokens that expired leave here, without a timer.
+        for (const [token, issued] of tokens) {
+          if (issued.expiresAt <= now) {
+            tokens.delete(token);
+          }
+        }
+        const token = yield* random.uuidV4();
+        const expiresAt = now + Duration.toMillis(BOOTSTRAP_TOKEN_TTL);
+        tokens.set(token, {
+          roomCode,
+          participantId,
+          runtimeId,
+          generation,
+          profile,
+          expiresAt,
+          left: false,
+          spent: false,
+        });
+        return { token, expiresAt };
+      });
+
+      const redeemToken = Effect.fn("Tunnels.redeemToken")(function* (
+        roomCode: string,
+        participantId: string,
+        token: string | undefined
+      ) {
+        const now = yield* Clock.currentTimeMillis;
+        const issued = token === undefined ? undefined : tokens.get(token);
+        if (
+          issued === undefined ||
+          issued.spent ||
+          issued.roomCode !== roomCode ||
+          issued.participantId !== participantId ||
+          issued.expiresAt <= now ||
+          // The participant it was issued for is gone, and not because this
+          // runtime left: another runtime took it out, or its time to
+          // reconnect passed.
+          !(
+            issued.left ||
+            (yield* participants.generation(roomCode, participantId)) ===
+              issued.generation
+          )
+        ) {
+          return yield* new TunnelTokenInvalid({ roomCode, participantId });
+        }
+        issued.spent = true;
+        return issued;
+      });
+
+      const serve = Effect.fn("Tunnels.serve")(
+        function* (
+          roomCode: string,
+          participantId: string,
+          socket: Socket.Socket,
+          token: RedeemedToken
+        ) {
+          const key = participantKey(roomCode, participantId);
+          const dropped = yield* Deferred.make<void>();
+          const gone = yield* Deferred.make<void>();
+          // The socket lives in `socketScope`. The RPC client lives in
+          // `clientScope`, which stays open while someone holds the client:
+          // closing a client interrupts whoever calls it afterwards.
+          const socketScope = yield* Scope.make();
+          const clientScope = yield* Scope.make();
+          const unheld = Latch.makeUnsafe(true);
+          let holders = 0;
+          let ended: RpcClientError.RpcClientError | undefined;
+          let closeFrame: Socket.CloseEvent | undefined;
+          let toClient:
+            | ((message: RpcMessage.FromServerEncoded) => Effect.Effect<void>)
+            | undefined;
+          let tunnel: OpenTunnel | undefined;
+          let harnessStream: Fiber.Fiber<void> | undefined;
+          let saidDisconnected = false;
+
+          const end = (error: RpcClientError.RpcClientError) =>
+            Effect.suspend(() => {
+              ended ??= error;
+              return Deferred.succeed(dropped, undefined);
+            });
+
+          // Said once per tunnel: by the harness stream when it ends with an
+          // error of its own, otherwise by `teardown` with the tunnel's.
+          const harnessDisconnected = (event: HarnessDisconnected) =>
+            Effect.suspend(() => {
+              if (saidDisconnected) {
+                return Effect.void;
+              }
+              saidDisconnected = true;
+              return harnessClients.deliver(roomCode, participantId, event);
+            });
+
+          const teardown = Effect.gen(function* () {
+            ended ??= closedByHub("the hub stopped serving the tunnel");
+            // Calls still in flight fail with the typed error. When the
+            // socket itself failed they already have, and this finds none.
+            if (toClient !== undefined) {
+              yield* toClient({ _tag: "ClientProtocolError", error: ended });
+            }
+            // By now the harness stream has that error too and ends by
+            // itself. The tunnel is gone only after the attached clients
+            // heard of it, so a tunnel that replaces this one says
+            // `harness.connected` after this one said `harness.disconnected`.
+            if (harnessStream !== undefined) {
+              yield* Fiber.await(harnessStream).pipe(
+                Effect.timeoutOption(HARNESS_STREAM_END_TIMEOUT)
+              );
+              yield* harnessDisconnected(disconnectedBy(ended));
+            }
+            // Closing the scope closes the socket as any tunnel that ends.
+            // A tunnel closed with a code of its own says so first.
+            if (closeFrame !== undefined) {
+              const frame = closeFrame;
+              yield* socket.writer.pipe(
+                Effect.flatMap((writer) => writer.write(frame)),
+                Effect.scoped,
+                Effect.ignore
+              );
+            }
+            yield* Scope.close(socketScope, Exit.void);
+            if (tunnel !== undefined && open.get(key) === tunnel) {
+              open.delete(key);
+              yield* participants.transition(
+                roomCode,
+                participantId,
+                "tunnelDropped"
+              );
+              yield* Effect.logInfo("tunnel dropped").pipe(
+                Effect.annotateLogs({ reason: ended.message })
+              );
+            }
+            yield* Deferred.succeed(gone, undefined);
+            yield* unheld.await.pipe(
+              Effect.ensuring(Scope.close(clientScope, Exit.void)),
+              Effect.forkIn(layerScope)
+            );
+          }).pipe(Effect.uninterruptible);
+
+          yield* Effect.gen(function* () {
+            const base = yield* RpcClient.makeProtocolSocket({
+              pingInterval: settings.tunnelPingInterval,
+              retryPolicy: Schedule.recurs(0),
+            }).pipe(
+              Effect.provideService(Socket.Socket, socket),
+              Effect.provideService(
+                RpcSerialization.RpcSerialization,
+                serialization
+              ),
+              Scope.provide(socketScope)
+            );
+            // The protocol reports `ClientProtocolError` twice with
+            // `recurs(0)`; ending twice is harmless.
+            const protocol: typeof base = {
+              ...base,
+              run: (clientId, onMessage) => {
+                toClient = onMessage;
+                return base.run(clientId, (message) =>
+                  message._tag === "ClientProtocolError"
+                    ? Effect.ensuring(onMessage(message), end(message.error))
+                    : onMessage(message)
+                );
+              },
+              send: (clientId, request, transferables) =>
+                ended === undefined
+                  ? base.send(clientId, request, transferables)
+                  : Effect.fail(ended),
+            };
+            const client = yield* RpcClient.make(TunnelRpcs).pipe(
+              Effect.provideService(RpcClient.Protocol, protocol),
+              Scope.provide(clientScope)
+            );
+
+            // How a tunnel that is not welcomed ends. A runtime that left the
+            // room after its token was taken is told so. Any other was not
+            // taken out, and may register again: its participant is gone, or
+            // went to a tunnel that arrived after this one.
+            const turnedAway = Effect.suspend(() => {
+              if (!token.left) {
+                return end(
+                  closedByHub("the participant is not this tunnel's any more")
+                );
+              }
+              closeFrame = new Socket.CloseEvent(
+                TUNNEL_REMOVED_CLOSE_CODE,
+                LEFT_THE_ROOM
+              );
+              return end(closedByHub(LEFT_THE_ROOM));
+            });
+            const stillItsOwn = Effect.map(
+              participants.get(roomCode, participantId),
+              (participant) =>
+                !token.left && participant?.runtimeId === token.runtimeId
+            );
+            // The new tunnel wins: a participant that comes back before the
+            // hub noticed its old tunnel die must not be kept out by it. If
+            // the old tunnel is alive instead, it belongs to another runtime
+            // with the same id, and the close code tells that one it was
+            // replaced, so it does not dial again and take the tunnel back.
+            // The participant is the new runtime's first: while the old
+            // tunnel closes, a removal its runtime asked for is already
+            // late. A tunnel whose participant is gone replaces nothing.
+            if (
+              token.left ||
+              !(yield* participants.handOver(
+                roomCode,
+                participantId,
+                token.runtimeId,
+                token.generation
+              ))
+            ) {
+              return yield* turnedAway;
+            }
+            for (
+              let previous = open.get(key);
+              previous !== undefined;
+              previous = open.get(key)
+            ) {
+              yield* Effect.logInfo("tunnel superseded");
+              yield* previous.close(
+                "superseded by a new tunnel",
+                TUNNEL_REPLACED_CLOSE_CODE
+              );
+              // Meanwhile its runtime may have left, or a tunnel that arrived
+              // later may have taken the participant: that one stays.
+              if (!(yield* stillItsOwn)) {
+                return yield* turnedAway;
+              }
+            }
+            tunnel = {
+              runtimeId: token.runtimeId,
+              close: (reason, closeCode) =>
+                Effect.suspend(() => {
+                  if (closeCode !== undefined) {
+                    closeFrame ??= new Socket.CloseEvent(closeCode, reason);
+                  }
+                  return end(closedByHub(reason));
+                }).pipe(Effect.andThen(Deferred.await(gone))),
+              gone: Deferred.await(gone),
+              hold: Effect.acquireRelease(
+                Effect.sync(() => {
+                  holders++;
+                  unheld.closeUnsafe();
+                  return client;
+                }),
+                () =>
+                  Effect.sync(() => {
+                    holders--;
+                    if (holders === 0) {
+                      unheld.openUnsafe();
+                    }
+                  })
+              ),
+            };
+            open.set(key, tunnel);
+            const opened = yield* participants.transition(
+              roomCode,
+              participantId,
+              "tunnelOpened",
+              token.runtimeId,
+              { profile: token.profile }
+            );
+            if (opened === undefined) {
+              // The participant is not this runtime's to be online as.
+              return yield* turnedAway;
+            }
+            yield* Effect.logInfo("tunnel opened");
+            // The participant runtime waits for this call to know it is
+            // online. What the hub starts on every new tunnel goes here,
+            // forked in `socketScope` so it ends with the tunnel.
+            yield* client
+              .Welcome({
+                roomCode,
+                participantId,
+                hubVersion: settings.version,
+                pingIntervalMillis: Duration.toMillis(
+                  settings.tunnelPingInterval
+                ),
+              })
+              .pipe(Effect.ignore, Effect.forkIn(socketScope));
+            // The long-lived stream: everything that is born on the
+            // participant comes up through this one call, for as long as the
+            // tunnel lives. `deliver` never waits, so this never falls behind
+            // (see `harness-clients.ts` for why it must not). It ends with
+            // the error the tunnel ended with, or at once with
+            // `CallNotSupported` on a participant that has no harness.
+            yield* harnessClients.deliver(roomCode, participantId, {
+              type: "harness.connected",
+            });
+            harnessStream = yield* client.HarnessEvents().pipe(
+              // One event, then a turn for the clients: a burst from the
+              // participant (everything it kept while the tunnel was down)
+              // must not overflow the buffer of a client that is reading.
+              Stream.runForEach((event) =>
+                harnessClients
+                  .deliver(roomCode, participantId, event)
+                  .pipe(Effect.andThen(Effect.yieldNow))
+              ),
+              Effect.exit,
+              Effect.flatMap((exit) => {
+                const reason = harnessStreamEnd(exit);
+                return reason === undefined
+                  ? Effect.void
+                  : harnessDisconnected(reason);
+              }),
+              Effect.forkIn(socketScope)
+            );
+            yield* Deferred.await(dropped);
+          }).pipe(Effect.ensuring(teardown));
+        },
+        (effect, roomCode, participantId) =>
+          Effect.annotateLogs(effect, { roomCode, participantId })
+      );
+
+      // The participant left the room as the runtime `leaving`: a tunnel that
+      // runtime dials with a token of before is told so.
+      const markLeft = (
+        roomCode: string,
+        participantId: string,
+        leaving: string
+      ) => {
+        for (const issued of tokens.values()) {
+          if (
+            issued.roomCode === roomCode &&
+            issued.participantId === participantId &&
+            issued.runtimeId === leaving
+          ) {
+            issued.left = true;
+          }
+        }
+      };
+
+      const closeAll = Effect.suspend(() =>
+        Effect.forEach(
+          [...open.values()],
+          (tunnel) => tunnel.close("the hub is closing"),
+          { concurrency: "unbounded", discard: true }
+        )
+      );
+      // No tunnel outlives this layer. A hub must not rely on this alone:
+      // see `closeAll`.
+      yield* Effect.addFinalizer(() => closeAll);
+
+      return Tunnels.of({
+        awaitDrop: (roomCode, participantId) =>
+          Effect.suspend(
+            () =>
+              open.get(participantKey(roomCode, participantId))?.gone ??
+              Effect.void
+          ),
+        close: (roomCode, participantId, reason, leaving) =>
+          Effect.suspend(() => {
+            if (leaving !== undefined) {
+              markLeft(roomCode, participantId, leaving);
+            }
+            const tunnel = open.get(participantKey(roomCode, participantId));
+            return (
+              tunnel?.close(
+                reason,
+                tunnel.runtimeId === leaving
+                  ? TUNNEL_REMOVED_CLOSE_CODE
+                  : undefined
+              ) ?? Effect.void
+            );
+          }),
+        closeAll,
+        client: (roomCode, participantId, runtimeId) =>
+          Effect.suspend(() => {
+            const tunnel = open.get(participantKey(roomCode, participantId));
+            return tunnel === undefined ||
+              (runtimeId !== undefined && tunnel.runtimeId !== runtimeId)
+              ? Effect.fail(new TunnelNotOpen({ roomCode, participantId }))
+              : tunnel.hold;
+          }),
+        issueToken,
+        redeemToken,
+        serve,
+      });
+    })
+  ).pipe(Layer.provide(RpcSerialization.layerJson));
+}

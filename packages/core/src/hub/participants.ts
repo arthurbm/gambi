@@ -1,0 +1,611 @@
+/**
+ * The participants of the rooms of one hub, and their status.
+ *
+ * `transition` is the only place a status changes: it runs the event through
+ * `transitionStatus` (the table of the spec), stores the result and publishes
+ * the room event of the change. Whatever else must follow a change of status
+ * belongs there.
+ *
+ * A participant that is `offline` has a deadline to reconnect
+ * (`HubSettings.reconnectDeadline`); past it, the participant is removed.
+ * Going online cancels the deadline, and registering again restarts it: that
+ * is the first step of coming back, and it issues a bootstrap token that
+ * needs the participant to still be in the room.
+ *
+ * A participant belongs to one participant runtime (`runtimeId`): the one
+ * that registered it, until another takes it, by registering while it is
+ * `offline` or by dialing its tunnel (`handOver`). Leaving is for that
+ * runtime alone, so that a removal that arrives late never takes out
+ * another runtime that joined with the same id.
+ *
+ * A participant that is removed and whose id is registered again is another
+ * participant: it has another `generation`. That is what a bootstrap token
+ * is tied to, so that a tunnel never opens for a participant other than the
+ * one its runtime registered.
+ *
+ * The service does not know rooms: the caller answers for the room existing.
+ * `Rooms` reads `count` for its summaries.
+ */
+import {
+  type HarnessProfile,
+  NoParticipantAvailable,
+  type ParticipantCapabilities,
+  ParticipantIsBusy,
+  ParticipantIsOffline,
+  type ParticipantStatus,
+  type ParticipantSummary,
+  type RegisterParticipant,
+  type RoomEventBody,
+  type RuntimeConfig,
+  type StatusAfter,
+  type StatusEvent,
+  toRuntimeConfigPublic,
+  transitionStatus,
+} from "@gambi/protocol";
+import { Clock, Context, Effect, FiberMap, Layer, Random } from "effect";
+import { HarnessClients } from "./harness-clients.ts";
+import { participantKey } from "./participant-key.ts";
+import { RoomEvents } from "./room-events.ts";
+import { HubSettings } from "./settings.ts";
+
+/**
+ * What a registration says about the participant: everything but the
+ * password, the version and the runtime that registers.
+ */
+export type ParticipantProfile = Omit<
+  RegisterParticipant,
+  "authHeaders" | "password" | "runtimeId" | "version"
+>;
+
+interface TransitionOptions {
+  readonly profile?: ParticipantProfile;
+  readonly request?: symbol;
+}
+
+interface ParticipantState {
+  readonly activeRequest: symbol | undefined;
+  /** A replacement has claimed ownership and is waiting for the previous tunnel to close. */
+  readonly handingOver: boolean;
+  readonly capabilities: ParticipantCapabilities;
+  readonly config: RuntimeConfig;
+  readonly endpoint: string | undefined;
+  /** Which participant with this id this is, counting from the hub's start. */
+  readonly generation: number;
+  readonly harness: HarnessProfile | undefined;
+  readonly id: string;
+  readonly joinedAt: number;
+  readonly model: string;
+  readonly nickname: string;
+  /** The participant runtime the participant belongs to. */
+  readonly runtimeId: string;
+  readonly specs: NonNullable<ParticipantProfile["specs"]>;
+  readonly status: ParticipantStatus;
+  readonly updatedAt: number;
+}
+
+/**
+ * The participant a request was dispatched to, with what the inference plane
+ * needs to build the request. `config` carries the instructions text: it
+ * stays inside the hub.
+ */
+export interface DispatchedParticipant {
+  readonly finish: Effect.Effect<void>;
+  readonly runtimeId: string;
+  /** Which inference APIs its provider answers, as the participant registered them. */
+  readonly capabilities: ParticipantCapabilities;
+  readonly config: RuntimeConfig;
+  readonly id: string;
+  readonly model: string;
+  readonly nickname: string;
+}
+
+/** Why a model selector found no participant to take a request. */
+export type DispatchError =
+  | NoParticipantAvailable
+  | ParticipantIsBusy
+  | ParticipantIsOffline;
+
+/** A change of status that happened. */
+export interface StatusChange {
+  readonly event: StatusEvent;
+  readonly from: ParticipantStatus | undefined;
+  readonly participantId: string;
+  readonly roomCode: string;
+  readonly to: StatusAfter;
+}
+
+const UNKNOWN_CAPABILITIES: ParticipantCapabilities = {
+  openResponses: "unknown",
+  chatCompletions: "unknown",
+};
+
+const profileFields = (profile: ParticipantProfile) => ({
+  nickname: profile.nickname,
+  model: profile.model,
+  endpoint: profile.endpoint,
+  harness: profile.harness,
+  config: profile.config ?? {},
+  specs: profile.specs ?? {},
+  capabilities: profile.capabilities ?? UNKNOWN_CAPABILITIES,
+});
+
+// The instructions text never leaves the hub.
+const toSummary = (participant: ParticipantState): ParticipantSummary => ({
+  id: participant.id,
+  nickname: participant.nickname,
+  model: participant.model,
+  ...(participant.endpoint === undefined
+    ? {}
+    : { endpoint: participant.endpoint }),
+  ...(participant.harness === undefined
+    ? {}
+    : { harness: participant.harness }),
+  config: toRuntimeConfigPublic(participant.config),
+  specs: participant.specs,
+  capabilities: participant.capabilities,
+  status: participant.status,
+  runtimeId: participant.runtimeId,
+  joinedAt: participant.joinedAt,
+  updatedAt: participant.updatedAt,
+});
+
+/** Only the current runtime and the request that acquired busy may finish their work. */
+const acceptsTransition = (
+  participant: ParticipantState,
+  event: StatusEvent,
+  runtimeId?: string,
+  request?: symbol
+) => {
+  if (
+    (event === "left" || event === "tunnelOpened" || runtimeId !== undefined) &&
+    participant.runtimeId !== runtimeId
+  ) {
+    return false;
+  }
+  if (event === "requestDispatched") {
+    return !participant.handingOver;
+  }
+  return (
+    event !== "requestEnded" ||
+    request === undefined ||
+    participant.activeRequest === request
+  );
+};
+
+/** The room event of a change of status: one per row of the status table. */
+const eventOf = (
+  change: StatusChange,
+  before: ParticipantState,
+  after: ParticipantState | undefined
+): RoomEventBody => {
+  if (after === undefined) {
+    return {
+      type: "participant.removed",
+      participantId: change.participantId,
+      reason:
+        change.event === "reconnectDeadlinePassed"
+          ? "reconnectDeadlinePassed"
+          : "left",
+    };
+  }
+  return {
+    type: `participant.${after.status}`,
+    participant: toSummary(after),
+    previousStatus: before.status,
+  };
+};
+
+export class Participants extends Context.Service<
+  Participants,
+  {
+    /** How many participants the room has, whatever their status. */
+    readonly count: (roomCode: string) => Effect.Effect<number>;
+    /** One participant of the room; `undefined` when it is not there. */
+    readonly get: (
+      roomCode: string,
+      participantId: string
+    ) => Effect.Effect<ParticipantSummary | undefined>;
+    /**
+     * Which participant with that id is in the room: a number that changes
+     * when the participant is removed and its id is registered again.
+     * `undefined` when it is not in the room.
+     */
+    readonly generation: (
+      roomCode: string,
+      participantId: string
+    ) => Effect.Effect<number | undefined>;
+    /**
+     * Makes the participant the runtime `runtimeId`'s, whatever its status:
+     * that runtime dialed its tunnel, which replaces the one the participant
+     * has. From here on a removal the replaced runtime asked for is late.
+     *
+     * Only for the participant that runtime registered (`generation`):
+     * answers `false`, and changes nothing, when that one is not in the room
+     * any more, even if another with the same id is.
+     */
+    readonly handOver: (
+      roomCode: string,
+      participantId: string,
+      runtimeId: string,
+      generation: number
+    ) => Effect.Effect<boolean>;
+    /**
+     * Routes a request: picks the participant the model selector asks for
+     * and marks it `busy`. Only an `online` participant is picked, so a
+     * participant never takes two requests at once.
+     *
+     * The model selector has four forms:
+     *
+     * Only a participant that shares a model endpoint is picked by `*`, `any`
+     * or a model name; a harness participant is reached only by its id.
+     *
+     * - `*` or `any`: any `online` participant, at random;
+     * - `model:<name>`: the first `online` participant that shares that model;
+     * - `<participantId>`: that participant;
+     * - `<name>`, when no `online` participant has that id: the same as
+     *   `model:<name>`. It is what an OpenAI client sends.
+     *
+     * A selector that names a participant that cannot take the request says
+     * why (`ParticipantIsBusy`, `ParticipantIsOffline`); every other miss is
+     * `NoParticipantAvailable`.
+     *
+     * The caller runs the dispatched request’s `finish` effect when the request
+     * ends, however it ends.
+     */
+    readonly dispatch: (
+      roomCode: string,
+      modelSelector: string
+    ) => Effect.Effect<DispatchedParticipant, DispatchError>;
+    readonly list: (
+      roomCode: string
+    ) => Effect.Effect<readonly ParticipantSummary[]>;
+    /**
+     * Adds the participant to the room, `offline`, as the participant of the
+     * runtime `runtimeId`. An id that is already in the room is updated
+     * instead and keeps its `joinedAt` and its status. It becomes that
+     * runtime's only while it is `offline`: one whose tunnel is open stays
+     * with the runtime of that tunnel until another tunnel opens.
+     *
+     * Answers the participant and its `generation`, read in the same step
+     * as the registration wrote it: that is the one a bootstrap token of
+     * this registration is for.
+     */
+    readonly register: (
+      roomCode: string,
+      participantId: string,
+      profile: ParticipantProfile,
+      runtimeId: string
+    ) => Effect.Effect<{
+      readonly generation: number;
+      readonly participant: ParticipantSummary;
+    }>;
+    /** The status of a participant; `undefined` when it is not in the room. */
+    readonly status: (
+      roomCode: string,
+      participantId: string
+    ) => Effect.Effect<ParticipantStatus | undefined>;
+    /**
+     * Applies `event` to the participant. Answers the change, or `undefined`
+     * when the status table has no row for it (nothing changed).
+     *
+     * Leaving (`left`) and coming online (`tunnelOpened`) are for the
+     * participant runtime the participant belongs to: with another
+     * `runtimeId` they change nothing and answer `undefined`.
+     */
+    readonly transition: (
+      roomCode: string,
+      participantId: string,
+      event: StatusEvent,
+      runtimeId?: string,
+      options?: TransitionOptions
+    ) => Effect.Effect<StatusChange | undefined>;
+  }
+>()("gambi/core/Participants") {
+  static readonly layer = Layer.effect(
+    Participants,
+    Effect.gen(function* () {
+      const events = yield* RoomEvents;
+      const harnessClients = yield* HarnessClients;
+      const settings = yield* HubSettings;
+      // One fiber per offline participant, sleeping until its deadline.
+      const deadlines = yield* FiberMap.make<string>();
+      const byRoom = new Map<string, Map<string, ParticipantState>>();
+      let generations = 0;
+
+      const roomOf = (roomCode: string) => {
+        let room = byRoom.get(roomCode);
+        if (room === undefined) {
+          room = new Map();
+          byRoom.set(roomCode, room);
+        }
+        return room;
+      };
+
+      // (Re)starts the time an offline participant has to reconnect.
+      const startDeadline = (
+        roomCode: string,
+        participantId: string
+      ): Effect.Effect<void> =>
+        Effect.sleep(settings.reconnectDeadline).pipe(
+          Effect.andThen(
+            transition(roomCode, participantId, "reconnectDeadlinePassed")
+          ),
+          FiberMap.run(deadlines, participantKey(roomCode, participantId)),
+          Effect.asVoid
+        );
+
+      const transition: Participants["Service"]["transition"] = Effect.fn(
+        "Participants.transition"
+      )(function* (
+        roomCode: string,
+        participantId: string,
+        event: StatusEvent,
+        runtimeId?: string,
+        options?: TransitionOptions
+      ) {
+        const now = yield* Clock.currentTimeMillis;
+        const room = roomOf(roomCode);
+        const participant = room.get(participantId);
+        const to = transitionStatus(participant?.status, event);
+        // Only registration brings a participant in, with its profile.
+        if (
+          to === undefined ||
+          participant === undefined ||
+          !acceptsTransition(participant, event, runtimeId, options?.request)
+        ) {
+          return undefined;
+        }
+        const after: ParticipantState | undefined =
+          to === "removed"
+            ? undefined
+            : {
+                ...participant,
+                ...(options?.profile && profileFields(options.profile)),
+                activeRequest:
+                  event === "requestDispatched" ? options?.request : undefined,
+                handingOver:
+                  event !== "tunnelOpened" && participant.handingOver,
+                status: to,
+                updatedAt: now,
+              };
+        if (after === undefined) {
+          room.delete(participantId);
+        } else {
+          room.set(participantId, after);
+        }
+        const change: StatusChange = {
+          roomCode,
+          participantId,
+          event,
+          from: participant.status,
+          to,
+        };
+        yield* Effect.logInfo("participant status changed").pipe(
+          Effect.annotateLogs({ ...change })
+        );
+        yield* events.publish(roomCode, eventOf(change, participant, after));
+        if (after === undefined) {
+          // Nobody stays attached to a harness that is out of the room.
+          yield* harnessClients.detach(
+            roomCode,
+            participantId,
+            event === "reconnectDeadlinePassed"
+              ? "reconnectDeadlinePassed"
+              : "left"
+          );
+        }
+        if (to === "offline") {
+          yield* startDeadline(roomCode, participantId);
+        } else if (event !== "reconnectDeadlinePassed") {
+          // The deadline that passed is the fiber running this.
+          yield* FiberMap.remove(
+            deadlines,
+            participantKey(roomCode, participantId)
+          );
+        }
+        return change;
+      });
+
+      const register = Effect.fn("Participants.register")(function* (
+        roomCode: string,
+        participantId: string,
+        profile: ParticipantProfile,
+        runtimeId: string
+      ) {
+        const room = roomOf(roomCode);
+        const now = yield* Clock.currentTimeMillis;
+        const existing = room.get(participantId);
+        if (
+          existing &&
+          existing.status !== "offline" &&
+          (existing.handingOver || existing.runtimeId !== runtimeId)
+        ) {
+          // This registration's profile travels with its bootstrap token.
+          return {
+            participant: toSummary({
+              ...existing,
+              ...profileFields(profile),
+              updatedAt: now,
+            }),
+            generation: existing.generation,
+          };
+        }
+        // The table has one row for registration: a new participant starts
+        // offline. For one already in the room it changes no status.
+        const status =
+          existing?.status ?? transitionStatus(undefined, "registered");
+        if (status === undefined || status === "removed") {
+          return yield* Effect.die(
+            new Error("The status table must register a participant offline.")
+          );
+        }
+        const participant: ParticipantState = {
+          id: participantId,
+          ...profileFields(profile),
+          handingOver: existing?.handingOver ?? false,
+          activeRequest: existing?.activeRequest,
+          status,
+          generation: existing?.generation ?? ++generations,
+          runtimeId,
+          joinedAt: existing?.joinedAt ?? now,
+          updatedAt: now,
+        };
+        room.set(participantId, participant);
+        yield* Effect.logInfo(
+          existing === undefined
+            ? "participant registered"
+            : "participant updated"
+        ).pipe(Effect.annotateLogs({ roomCode, participantId }));
+        if (status === "offline") {
+          yield* startDeadline(roomCode, participantId);
+        }
+        const summary = toSummary(participant);
+        yield* events.publish(roomCode, {
+          type:
+            existing === undefined
+              ? "participant.joined"
+              : "participant.updated",
+          participant: summary,
+        });
+        return { participant: summary, generation: participant.generation };
+      });
+
+      const MODEL_PREFIX = "model:";
+
+      /**
+       * The participant the selector asks for, or why there is none. `chance`
+       * is a number in `[0, 1)` that picks among equals.
+       */
+      const pick = (
+        roomCode: string,
+        modelSelector: string,
+        chance: number
+      ): ParticipantState | DispatchError => {
+        const room = byRoom.get(roomCode);
+        // A harness participant serves no inference: a request reaches it
+        // only by its id, and then hears that from the participant itself.
+        const online = [...(room?.values() ?? [])].filter(
+          (participant) =>
+            participant.status === "online" &&
+            !participant.handingOver &&
+            participant.harness === undefined
+        );
+        const sharing = (model: string) =>
+          online.find((participant) => participant.model === model);
+        const none = new NoParticipantAvailable({
+          roomCode,
+          model: modelSelector,
+        });
+
+        if (modelSelector === "*" || modelSelector === "any") {
+          return online[Math.floor(chance * online.length)] ?? none;
+        }
+        if (modelSelector.startsWith(MODEL_PREFIX)) {
+          return sharing(modelSelector.slice(MODEL_PREFIX.length)) ?? none;
+        }
+        const named = room?.get(modelSelector);
+        if (named?.status === "online" && !named.handingOver) {
+          return named;
+        }
+        const byModel = sharing(modelSelector);
+        if (byModel !== undefined) {
+          return byModel;
+        }
+        if (named?.status === "busy") {
+          return new ParticipantIsBusy({ roomCode, participantId: named.id });
+        }
+        if (named?.status === "offline" || named?.handingOver) {
+          return new ParticipantIsOffline({
+            roomCode,
+            participantId: named.id,
+          });
+        }
+        return none;
+      };
+
+      const dispatch = Effect.fn("Participants.dispatch")(function* (
+        roomCode: string,
+        modelSelector: string
+      ) {
+        // Picking and marking busy are two steps, and another request may take
+        // the participant in between: then the table has no row for
+        // `requestDispatched`, and this one picks again.
+        while (true) {
+          const picked = pick(roomCode, modelSelector, yield* Random.next);
+          if (!("status" in picked)) {
+            return yield* picked;
+          }
+          const request = Symbol("inference request");
+          const change = yield* transition(
+            roomCode,
+            picked.id,
+            "requestDispatched",
+            picked.runtimeId,
+            { request }
+          );
+          if (change !== undefined) {
+            return {
+              finish: Effect.asVoid(
+                transition(
+                  roomCode,
+                  picked.id,
+                  "requestEnded",
+                  picked.runtimeId,
+                  { request }
+                )
+              ),
+              id: picked.id,
+              runtimeId: picked.runtimeId,
+              nickname: picked.nickname,
+              model: picked.model,
+              config: picked.config,
+              capabilities: picked.capabilities,
+            } satisfies DispatchedParticipant;
+          }
+        }
+      });
+
+      return Participants.of({
+        count: (roomCode) => Effect.sync(() => byRoom.get(roomCode)?.size ?? 0),
+        get: (roomCode, participantId) =>
+          Effect.sync(() => {
+            const participant = byRoom.get(roomCode)?.get(participantId);
+            return participant === undefined
+              ? undefined
+              : toSummary(participant);
+          }),
+        generation: (roomCode, participantId) =>
+          Effect.sync(
+            () => byRoom.get(roomCode)?.get(participantId)?.generation
+          ),
+        handOver: (roomCode, participantId, runtimeId, generation) =>
+          Effect.sync(() => {
+            const room = byRoom.get(roomCode);
+            const participant = room?.get(participantId);
+            if (
+              room === undefined ||
+              participant === undefined ||
+              participant.generation !== generation
+            ) {
+              return false;
+            }
+            room.set(participantId, {
+              ...participant,
+              runtimeId,
+              handingOver: true,
+            });
+            return true;
+          }),
+        list: (roomCode) =>
+          Effect.sync(() =>
+            [...(byRoom.get(roomCode)?.values() ?? [])].map(toSummary)
+          ),
+        dispatch,
+        register,
+        status: (roomCode, participantId) =>
+          Effect.sync(() => byRoom.get(roomCode)?.get(participantId)?.status),
+        transition,
+      });
+    })
+  );
+}

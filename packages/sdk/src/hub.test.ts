@@ -1,36 +1,190 @@
-import { describe, expect, test } from "bun:test";
-import { hub } from "./hub.ts";
+import { expect } from "bun:test";
+import { it } from "@gambi/testing/effect";
+import { Effect } from "effect";
+import { createClient } from "./client.ts";
+import { ClientError } from "./client-error.ts";
+import { createHub, HubError, type LogEntry } from "./hub.ts";
 
-function getRandomPort(): number {
-  return 30_000 + Math.floor(Math.random() * 20_000);
-}
+/** A hub on a free loopback port, closed when the test ends. */
+const hostedHub = Effect.acquireRelease(
+  Effect.promise(() => createHub({ hostname: "127.0.0.1", port: 0 })),
+  (hub) => Effect.promise(() => hub.close())
+);
 
-function createHubWithRetry() {
-  let lastError: unknown;
+it.live("a hosted hub answers a management client", () =>
+  Effect.gen(function* () {
+    const hub = yield* hostedHub;
+    const client = createClient({ hubUrl: hub.url });
 
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    try {
-      return hub.create({ port: getRandomPort(), hostname: "127.0.0.1" });
-    } catch (error) {
-      lastError = error;
-    }
-  }
+    const { room } = yield* Effect.promise(() =>
+      client.rooms.create({ name: "Frevo" })
+    );
+    // Only the hub of 0.8 starts a room's stream with its snapshot.
+    const first = yield* Effect.promise(() =>
+      client.events.watch(room.code)[Symbol.asyncIterator]().next()
+    );
 
-  throw lastError;
-}
+    expect(hub.port).toBeGreaterThan(0);
+    expect(hub.url).toBe(`http://127.0.0.1:${hub.port}`);
+    expect(hub.mdnsName).toBeUndefined();
+    expect(first.value?.type).toBe("room.snapshot");
+    yield* Effect.promise(() => client.close());
+  })
+);
 
-describe("SDK hub namespace", () => {
-  test("re-exports createHub", () => {
-    expect(hub.create).toBeDefined();
-  });
+it.live("a closed hub answers nobody and frees its port", () =>
+  Effect.gen(function* () {
+    const hub = yield* Effect.promise(() =>
+      createHub({ hostname: "127.0.0.1", port: 0 })
+    );
+    const client = createClient({ hubUrl: hub.url });
+    yield* Effect.promise(() => client.hub.health());
 
-  test("creates a hub", () => {
-    const myHub = createHubWithRetry();
+    yield* Effect.promise(() => hub.close());
+    const error = yield* Effect.promise(() =>
+      client.hub.health().catch((caught: unknown) => caught)
+    );
+    const next = yield* Effect.promise(() =>
+      createHub({ hostname: "127.0.0.1", port: hub.port })
+    );
 
-    expect(myHub.server).toBeDefined();
-    expect(myHub.url.startsWith("http://127.0.0.1:")).toBe(true);
-    expect(myHub.close).toBeDefined();
+    expect(error).toBeInstanceOf(ClientError);
+    expect((error as ClientError).code).toBe("HUB_UNREACHABLE");
+    expect(next.port).toBe(hub.port);
+    yield* Effect.promise(() => next.close());
+    yield* Effect.promise(() => client.close());
+  })
+);
 
-    myHub.close();
-  });
-});
+it.live("a port in use rejects with an error that names the port", () =>
+  Effect.gen(function* () {
+    const hub = yield* hostedHub;
+
+    const error = yield* Effect.promise(() =>
+      createHub({ hostname: "127.0.0.1", mdns: true, port: hub.port }).then(
+        () => {
+          throw new Error("Expected the second hub not to start.");
+        },
+        (caught: unknown) => caught
+      )
+    );
+
+    expect(error).toBeInstanceOf(HubError);
+    expect((error as HubError).code).toBe("PORT_IN_USE");
+    expect((error as HubError).details).toEqual({
+      hostname: "127.0.0.1",
+      port: hub.port,
+    });
+    expect((error as HubError).message).toBe(
+      `Port ${hub.port} is already in use on 127.0.0.1. Stop the process that holds it or choose another port.`
+    );
+  })
+);
+
+it.live("an option left undefined is an option not given", () =>
+  Effect.gen(function* () {
+    const hub = yield* Effect.promise(() =>
+      createHub({
+        hostname: "127.0.0.1",
+        inferenceIdleTimeoutMs: undefined,
+        mdns: undefined,
+        onLog: undefined,
+        port: 0,
+        reconnectDeadlineMs: undefined,
+      })
+    );
+
+    expect(hub.mdnsName).toBeUndefined();
+    yield* Effect.promise(() => hub.close());
+  })
+);
+
+it.live("the hub's log lines go to onLog", () =>
+  Effect.gen(function* () {
+    const lines: LogEntry[] = [];
+    const hub = yield* Effect.acquireRelease(
+      Effect.promise(() =>
+        createHub({
+          hostname: "127.0.0.1",
+          onLog: (entry) => lines.push(entry),
+          port: 0,
+        })
+      ),
+      (started) => Effect.promise(() => started.close())
+    );
+    const client = createClient({ hubUrl: hub.url });
+
+    const { room } = yield* Effect.promise(() =>
+      client.rooms.create({ name: "Frevo" })
+    );
+
+    const created = lines.find((line) => line.message === "room created");
+    expect(created?.level).toBe("INFO");
+    expect(created?.annotations.roomCode).toBe(room.code);
+    expect(Date.parse(created?.timestamp ?? "")).not.toBeNaN();
+    yield* Effect.promise(() => client.close());
+  })
+);
+
+it.live(
+  "removes a participant that stays offline for the deadline it was given",
+  () =>
+    Effect.gen(function* () {
+      const hub = yield* Effect.acquireRelease(
+        Effect.promise(() =>
+          createHub({ hostname: "127.0.0.1", port: 0, reconnectDeadlineMs: 50 })
+        ),
+        (started) => Effect.promise(() => started.close())
+      );
+      const client = createClient({ hubUrl: hub.url });
+      const { room } = yield* Effect.promise(() =>
+        client.rooms.create({ name: "Frevo" })
+      );
+      const events = client.events.watch(room.code)[Symbol.asyncIterator]();
+      yield* Effect.promise(() => events.next());
+
+      // Registered and never online: the deadline is all that removes it.
+      yield* Effect.promise(() =>
+        client.participants.register(room.code, "arthur-1", {
+          nickname: "Arthur",
+          model: "llama3",
+          runtimeId: "a-runtime",
+        })
+      );
+      const joined = yield* Effect.promise(() => events.next());
+      const removed = yield* Effect.promise(() => events.next());
+
+      expect(joined.value?.type).toBe("participant.joined");
+      expect(removed.value).toMatchObject({
+        type: "participant.removed",
+        reason: "reconnectDeadlinePassed",
+      });
+      yield* Effect.promise(() => client.close());
+    })
+);
+
+it.live("an onLog that throws does not take the hub down", () =>
+  Effect.gen(function* () {
+    const hub = yield* Effect.acquireRelease(
+      Effect.promise(() =>
+        createHub({
+          hostname: "127.0.0.1",
+          onLog: () => {
+            throw new Error("The log sink is broken.");
+          },
+          port: 0,
+        })
+      ),
+      (started) => Effect.promise(() => started.close())
+    );
+    const client = createClient({ hubUrl: hub.url });
+
+    const { room } = yield* Effect.promise(() =>
+      client.rooms.create({ name: "Frevo" })
+    );
+    const rooms = yield* Effect.promise(() => client.rooms.list());
+
+    expect(rooms.map((listed) => listed.code)).toContain(room.code);
+    yield* Effect.promise(() => client.close());
+  })
+);

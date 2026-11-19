@@ -1,11 +1,10 @@
-import type { RuntimeConfig } from "@gambi/core/types";
 import { useKeyboard } from "@opentui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Footer } from "../components/footer";
 import { useCreateRoom } from "../hooks/queries";
 import type { Screen } from "../hooks/use-navigation";
 import { useAppStore } from "../store/app-store";
-import { colors } from "../types";
+import { colors, type RuntimeConfig } from "../types";
 
 interface CreateRoomProps {
   onNavigate: (screen: Screen, params: Record<string, unknown>) => void;
@@ -43,7 +42,11 @@ function buildRuntimeConfig(options: {
   maxTokens: string;
   temperature: string;
 }): { config: RuntimeConfig; error: string | null } {
-  const config: RuntimeConfig = {};
+  const config: {
+    instructions?: string;
+    max_tokens?: number;
+    temperature?: number;
+  } = {};
 
   const instructions = options.instructions.trim();
   if (instructions) {

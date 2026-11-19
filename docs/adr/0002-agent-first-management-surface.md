@@ -4,6 +4,8 @@
 **Data:** 2026-04-14 (decidido) / 2026-05-17 (registrado como ADR)
 **Escopo:** `packages/cli`, `packages/core` (management plane), `packages/sdk`
 
+> **Nota (2026-11-18, Gambi 0.8):** a D4 lista `LOOPBACK_ENDPOINT_FOR_REMOTE_HUB` entre os error codes, mas esse código nunca entrou no enum do hub. No 0.8 os códigos vêm das classes de erro tipadas do contrato (`@gambi/protocol`, ADR-0007), e `ENDPOINT_NOT_REACHABLE`, `PARTICIPANT_CONFLICT` e `MODEL_NOT_FOUND` também saíram do management plane. A lista em vigor está em [`docs/reference/contracts.md`](../reference/contracts.md#management-error-codes). Os princípios desta ADR continuam valendo; a CLI passou para `effect/cli`, `--interactive`, `--verbose`, `--quiet` e `--env` saíram, e o heartbeat de participante não existe mais. O corpo desta ADR não foi alterado.
+
 ---
 
 ## 1. Contexto
