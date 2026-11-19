@@ -208,7 +208,7 @@ it.live(
       expect(JSON.parse(yield* lifecycle.next).type).toBe("registered");
       expect(JSON.parse(yield* lifecycle.next).type).toBe("tunnel_connected");
 
-      const statuses = yield* client.events
+      const inferenceEvents = yield* client.events
         .watch({ params: { code: roomCode } })
         .pipe(
           Stream.unwrap,
@@ -216,11 +216,12 @@ it.live(
             (event) =>
               event.type === "room.snapshot" ||
               event.type === "participant.busy" ||
+              event.type === "llm.error" ||
               event.type === "participant.online"
           ),
           Stream.toQueue({ capacity: 16 })
         );
-      expect(yield* Queue.take(statuses)).toMatchObject({
+      expect(yield* Queue.take(inferenceEvents)).toMatchObject({
         type: "room.snapshot",
         participants: [{ id: "endpoint-1", status: "online" }],
       });
@@ -243,8 +244,12 @@ it.live(
       const body = yield* Effect.promise(() => complete.text());
       expect(body).toContain('"content":"Recife!"');
       expect(body.endsWith("data: [DONE]\n\n")).toBe(true);
-      expect((yield* Queue.take(statuses)).type).toBe("participant.busy");
-      expect((yield* Queue.take(statuses)).type).toBe("participant.online");
+      expect((yield* Queue.take(inferenceEvents)).type).toBe(
+        "participant.busy"
+      );
+      expect((yield* Queue.take(inferenceEvents)).type).toBe(
+        "participant.online"
+      );
 
       answer = () => generating.response;
       yield* generating.send(sseEvent({ delta: "Olá" }));
@@ -255,14 +260,22 @@ it.live(
         throw new Error("Missing streaming body");
       }
       expect(yield* linesOf(partial.body).next).toBe('data: {"delta":"Olá"}');
-      expect((yield* Queue.take(statuses)).type).toBe("participant.busy");
+      expect((yield* Queue.take(inferenceEvents)).type).toBe(
+        "participant.busy"
+      );
       const call = (yield* provider.calls).at(-1);
       if (!call) {
         throw new Error("The provider did not receive the request");
       }
       consumer.abort();
       yield* call.aborted;
-      expect(yield* Queue.take(statuses)).toMatchObject({
+      expect(yield* Queue.take(inferenceEvents)).toMatchObject({
+        type: "llm.error",
+        participantId: "endpoint-1",
+        stage: "stream",
+        code: "request_cancelled",
+      });
+      expect(yield* Queue.take(inferenceEvents)).toMatchObject({
         type: "participant.online",
         participant: { id: "endpoint-1", status: "online" },
       });
