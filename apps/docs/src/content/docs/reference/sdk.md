@@ -346,7 +346,7 @@ const session = await createParticipantSession({
 const { reason } = await session.ended;
 ```
 
-The promise resolves once the participant is `online`, and rejects with a [`ParticipantError`](#errors) when the join fails; then nothing is left running.
+The promise resolves once the participant is `online`, and rejects with a [`ParticipantError`](#errors) when the join fails; then nothing is left running. If the tunnel closes with `4001` or `4002` before its first `Welcome`, the promise rejects with `TUNNEL_OPEN_FAILED`. `details.closed` is `replaced` or `removed`, respectively. No `left` event is emitted.
 
 What it does:
 
@@ -403,7 +403,7 @@ Callbacks are never awaited, and an error thrown or rejected by one never stops 
 | `stop()` | stop without telling the hub; the room shows the participant `offline` and removes it after 60 seconds |
 | `[Symbol.asyncDispose]` | the same as `leave()`, for `await using` |
 
-The session creates its own runtime ID. Its `leave()` names that ID and reports `stopped` in both `onLifecycle` and `ended`. After `removed` or `replaced`, `leave()` skips the request to the hub.
+The session creates its own runtime ID and names it when asking the hub to remove the participant. When `leave()` ends the session, both `onLifecycle` and `ended` report `stopped`. Calling `leave()` after `removed` or `replaced` preserves the original reason and sends no request to the hub.
 
 The SDK installs no signal handlers. To leave on Ctrl+C, call `leave()` from your own handler.
 

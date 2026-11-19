@@ -263,7 +263,7 @@ Example response:
 
 Set `version` to the version of your hub (`gambi --version` on the hub machine): any other minor is refused.
 
-A participant registered this way stays `offline` until it opens its tunnel, and is removed after 60 seconds if it never does.
+A newly created participant stays `offline` until it opens its tunnel. The hub removes it after 60 seconds if it never does.
 
 ### GET /v1/rooms/:code/participants/:id/tunnel
 
@@ -283,7 +283,7 @@ Token lifecycle:
 
 A missing, unknown, expired, or spent token, a token of another participant, and an unknown room are all `401 TUNNEL_TOKEN_INVALID`. A request with a valid token and no WebSocket upgrade spends the token and gets `400 INVALID_REQUEST`.
 
-If the owner was removed after registration, its still-valid token upgrades to a WebSocket that closes with `4002` before `Welcome`. A replacement tunnel closes the old tunnel with `4001`. A runtime reconnecting when it receives either code stops, even if it has yet to receive `Welcome`.
+If the owner was removed after registration, its still-valid token upgrades to a WebSocket that closes with `4002`. When a new tunnel replaces an old one, the hub closes the old tunnel with `4001`. Before the first `Welcome`, either code fails the join with `TunnelOpenFailed` and the runtime emits no `left` event. During reconnection, these codes end the runtime with `left`, even before the new tunnel receives `Welcome`.
 
 ### DELETE /v1/rooms/:code/participants/:id
 
@@ -293,7 +293,7 @@ Pass the owner's `runtimeId` from the participant listing in the query. This pub
 curl -X DELETE "http://localhost:3000/v1/rooms/ABC123/participants/worker-1?runtimeId=runtime-1"
 ```
 
-On success the hub returns `200` with `{ participantId }` inside the envelope. The room receives `participant.removed` with `reason: "left"`. The hub closes the owner's tunnel with code `4002`. The runtime that receives it emits `left` with `reason: "removed"` and stops reconnecting.
+On success the hub returns `200` with `{ participantId }` inside the envelope. The room receives `participant.removed` with `reason: "left"`. The hub closes the owner's tunnel with code `4002`. A runtime that has already joined emits `left` with `reason: "removed"` on receiving that code and stops reconnecting.
 
 ### GET /v1/rooms/:code/events
 

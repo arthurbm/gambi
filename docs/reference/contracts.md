@@ -331,7 +331,7 @@ Lifecycle events, reported in order from the join on (CLI events and the SDK's `
 | `reconnecting` | `attempt`, `delayMillis`, `reason` | Not connected; tries again in `delayMillis`. `reason`: `tunnelDropped`, `hubSilent`, `hubUnreachable`, `tunnelOpenFailed`, `hubError`. |
 | `left` | `reason`, `error?` | The runtime ended. `reason` is `stopped`, `refused` (with the hub's error), `replaced`, `removed`, or `tunnelDropped` (only with reconnection turned off). |
 
-A runtime that receives `4002` emits `left` with `reason: "removed"` and no `error`, even with `reconnect: false`. It never registers or dials again. Its `ParticipantRuntime.ended` fails with `ParticipantRemoved` (`roomCode`, `participantId`). On the initial join, a final close before `Welcome` fails the join with `TunnelOpenFailed` and sets its `closed` field to `removed` or `replaced`.
+After its first `Welcome`, a runtime that receives `4002` emits `left` with `reason: "removed"` and no `error`, even with `reconnect: false`. It never registers or dials again. Its `ParticipantRuntime.ended` fails with `ParticipantRemoved` (`roomCode`, `participantId`). Before the first `Welcome`, `4001` or `4002` fails the join with `TunnelOpenFailed` and no `left` event. Its `closed` field is `replaced` or `removed`, respectively.
 
 Stopping the runtime locally closes the tunnel. Its host sends `DELETE .../participants/:id?runtimeId=...` to leave the room immediately. Otherwise the participant stays `offline` until the 60-second deadline.
 

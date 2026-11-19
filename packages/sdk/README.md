@@ -90,7 +90,7 @@ await session.leave();
 await hub.close();
 ```
 
-The participant opens a tunnel to the hub and reconnects by itself when it drops. `createHarnessParticipantSession()` does the same for a local harness, running it in a workspace folder and sending snapshots of that folder to attached clients. When the hub removes a connected participant, `session.ended` resolves with `{ reason: "removed" }` and the runtime stops. Calling the session's own `leave()` reports `stopped`.
+The participant opens a tunnel to the hub and reconnects after a network drop. `createHarnessParticipantSession()` does the same for a local harness, running it in a workspace folder and sending snapshots to attached clients. When the hub removes a connected participant, `session.ended` resolves with `{ reason: "removed" }`. When the session's own `leave()` ends it, the reason is `stopped`. Calling `leave()` after `removed` or `replaced` preserves that reason.
 
 ## Discovery
 

@@ -59,7 +59,7 @@ Os eventos não têm ID e o hub não guarda histórico. Um assinante que fica ma
 | `participant` | `ParticipantSummary` | o participante depois da mudança |
 | `previousStatus` | `"offline" \| "online" \| "busy"` | o status dele antes da mudança |
 
-`participant.removed` traz `participantId` e `reason`: `left` quando ele saiu da sala, `reconnectDeadlinePassed` quando ficou offline por 60 segundos. Ao receber o aviso de remoção explícita, o runtime informa `left` com `reason: "removed"` a quem o hospeda. O snapshot e os eventos que carregam um resumo de participante incluem o `runtimeId` do dono.
+`participant.removed` traz `participantId` e `reason`: `left` na remoção explícita ou `reconnectDeadlinePassed` após 60 segundos offline. Ao receber o aviso de remoção, um runtime que já entrou na sala informa `left` com `reason: "removed"` a quem o hospeda. O snapshot e os eventos que carregam um resumo de participante incluem o `runtimeId` do dono.
 
 ### `llm.request`
 

@@ -263,7 +263,7 @@ Exemplo de resposta:
 
 Defina `version` como a versão do seu hub (`gambi --version` na máquina do hub): qualquer outra minor é recusada.
 
-Um participante registrado assim fica `offline` até abrir o túnel, e é removido depois de 60 segundos se nunca abrir.
+Um participante recém-criado fica `offline` até abrir seu túnel. Se ele nunca abrir o túnel, o hub o remove depois de 60 segundos.
 
 ### GET /v1/rooms/:code/participants/:id/tunnel
 
@@ -283,7 +283,7 @@ Ciclo de vida do token:
 
 Um token ausente, desconhecido, expirado ou já consumido, um token de outro participante e uma sala desconhecida são todos `401 TUNNEL_TOKEN_INVALID`. Uma requisição com token válido e sem upgrade de WebSocket consome o token e recebe `400 INVALID_REQUEST`.
 
-Se o participante saiu da sala depois do registro, um token ainda válido do runtime removido permite o upgrade para um WebSocket que fecha com `4002` antes de `Welcome`. Quando um novo túnel substitui o anterior, o hub fecha o antigo com `4001`. Um runtime que recebe qualquer um desses códigos durante a reconexão termina, mesmo que ainda esteja esperando o `Welcome`.
+Se o participante saiu da sala depois do registro, um token ainda válido do runtime removido permite o upgrade para um WebSocket que fecha com `4002`. Quando um novo túnel substitui o anterior, o hub fecha o antigo com `4001`. Antes do primeiro `Welcome`, qualquer um desses códigos faz a entrada falhar com `TunnelOpenFailed`, sem evento `left`. Durante a reconexão, esses códigos encerram o runtime com `left`, mesmo antes de o novo túnel receber `Welcome`.
 
 ### DELETE /v1/rooms/:code/participants/:id
 
@@ -293,7 +293,7 @@ Passe na query o `runtimeId` que aparece na listagem de participantes. Com esse 
 curl -X DELETE "http://localhost:3000/v1/rooms/ABC123/participants/worker-1?runtimeId=runtime-1"
 ```
 
-Quando a remoção dá certo, o hub responde `200` com `{ participantId }` dentro do envelope. A sala recebe `participant.removed` com `reason: "left"`. O hub fecha o túnel do dono com o código `4002`. O runtime que recebe esse código emite `left` com `reason: "removed"` e para de tentar reconectar.
+Quando a remoção dá certo, o hub responde `200` com `{ participantId }` dentro do envelope. A sala recebe `participant.removed` com `reason: "left"`. O hub fecha o túnel do dono com o código `4002`. Se o runtime já entrou na sala, ao receber esse código ele emite `left` com `reason: "removed"` e para de tentar reconectar.
 
 ### GET /v1/rooms/:code/events
 

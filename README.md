@@ -317,8 +317,11 @@ const client = createClient({ hubUrl: "http://localhost:3000" });
 
 await client.rooms.list();
 await client.rooms.get("ABC123");
-await client.participants.list("ABC123");
-await client.participants.remove("ABC123", "worker-1");
+const participants = await client.participants.list("ABC123");
+const worker = participants.find((participant) => participant.id === "worker-1");
+if (worker) {
+  await client.participants.remove("ABC123", worker.id, worker.runtimeId);
+}
 ```
 
 Methods return the value itself and reject with a `ClientError` whose `code` names the failure (`ROOM_NOT_FOUND`, `VERSION_MISMATCH`, `HUB_UNREACHABLE`, ...).

@@ -45,7 +45,7 @@ Current signals:
 
 `requestId` is the id of the HTTP request on the hub: the same in the three events of one request and in the hub's log lines about it.
 
-Participant summaries in the room snapshot and status events include the current owner’s `runtimeId`. An explicit removal emits `participant.removed` with `participantId` and `reason: "left"`. The runtime that receives close code `4002` reports `left` with `reason: "removed"` to its host.
+Participant summaries in the room snapshot and status events include the current owner's `runtimeId`. An explicit removal emits `participant.removed` with `participantId` and `reason: "left"`. A runtime that has already joined reports `left` with `reason: "removed"` to its host when it receives `4002`.
 
 Harness sessions and artifacts are not room events. A consumer that needs them attaches to the harness participant with `client.harness.attach()` (`GET /v1/rooms/:code/participants/:id/harness/events`).
 

@@ -346,7 +346,7 @@ const session = await createParticipantSession({
 const { reason } = await session.ended;
 ```
 
-A promise resolve assim que o participante está `online` e rejeita com um [`ParticipantError`](#erros) quando a entrada falha; nesse caso, nada fica rodando.
+A promise resolve assim que o participante está `online` e rejeita com um [`ParticipantError`](#erros) quando a entrada falha; nesse caso, nada fica rodando. Se o túnel fechar com `4001` ou `4002` antes do primeiro `Welcome`, a promessa rejeita com `TUNNEL_OPEN_FAILED`. O campo `details.closed` traz `replaced` ou `removed`, respectivamente. O runtime não emite `left`.
 
 O que ela faz:
 
@@ -403,7 +403,7 @@ Os callbacks nunca são aguardados, e um erro lançado ou rejeitado por um deles
 | `stop()` | para sem avisar o hub; a sala mostra o participante `offline` e o remove depois de 60 segundos |
 | `[Symbol.asyncDispose]` | o mesmo que `leave()`, para `await using` |
 
-A sessão cria o próprio ID de runtime. Seu `leave()` envia esse ID e informa `stopped` tanto em `onLifecycle` quanto em `ended`. Depois de `removed` ou `replaced`, `leave()` dispensa a requisição ao hub.
+A sessão cria o próprio ID de runtime e o envia ao pedir a remoção do participante. Quando `leave()` encerra a sessão, tanto `onLifecycle` quanto `ended` informam `stopped`. Chamar `leave()` depois de `removed` ou `replaced` preserva o motivo original e dispensa a requisição ao hub.
 
 O SDK não instala handlers de sinal. Para sair com Ctrl+C, chame `leave()` no seu próprio handler.
 
