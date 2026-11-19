@@ -295,7 +295,7 @@ The tests run the plain modules against a real hub on a free port (`layerHub` fr
 | `rooms/watch-rooms.test.ts` | Watched rooms against a real hub: statuses, requests, reconnection |
 | `rooms/room-state.test.ts` | `applyRoomEvent`, one event at a time |
 | `store/hub-store.test.ts` | The hub the TUI hosts: start, stop, a port in use |
-| `session/participant-session.test.ts` | Join, leave, a hub that goes away, a replaced session |
+| `session/participant-session.test.ts` | Join, leave, a hub that goes away, a replaced session, a participant taken out of the room |
 | `hub-client.test.ts` | The client per hub; a form with empty optional fields |
 | `components/participant-card.test.tsx` | What a participant card shows, rendered with `testRender` |
 | `store/session-store.test.ts`, `types.test.ts` | State transitions, local schemas |

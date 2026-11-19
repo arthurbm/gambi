@@ -299,5 +299,39 @@ layer(layerHub(), { excludeTestServices: true })(
           ).toEqual([["arthur-1", "online"]]);
         })
     );
+
+    it.effect(
+      "a session whose participant someone takes out of the room ends saying so",
+      () =>
+        Effect.gen(function* () {
+          const hub = yield* Hub;
+          const management = yield* managementClient;
+          const { room } = yield* management.rooms.create({
+            payload: { name: "Frevo" },
+          });
+          yield* Effect.promise(() =>
+            joinAsParticipant(hub.url, room.code, arthur("http://127.0.0.1:1"))
+          );
+          const [inTheRoom] = yield* management.participants.list({
+            params: { code: room.code },
+          });
+
+          // What `gambi participant leave` does, from another terminal.
+          yield* management.participants.remove({
+            params: { code: room.code, id: "arthur-1" },
+            query: { runtimeId: inTheRoom?.runtimeId ?? "" },
+          });
+          const ended = yield* shown((it) => it.status === "error");
+
+          expect(ended.error).toBe(
+            "This participant was taken out of the room."
+          );
+          expect(
+            yield* management.participants.list({
+              params: { code: room.code },
+            })
+          ).toEqual([]);
+        })
+    );
   }
 );
