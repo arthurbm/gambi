@@ -14,7 +14,7 @@
     },
     "apps/docs": {
       "name": "docs",
-      "version": "0.7.2",
+      "version": "0.8.0",
       "dependencies": {
         "@astrojs/markdown-satteri": "^0.4.7",
         "@astrojs/starlight": "^0.42.9",
@@ -33,7 +33,7 @@
     },
     "apps/tui": {
       "name": "gambi-tui",
-      "version": "0.7.2",
+      "version": "0.8.0",
       "bin": {
         "gambi-tui": "./bin/gambi-tui.js",
       },
@@ -61,7 +61,7 @@
     },
     "packages/cli": {
       "name": "gambi",
-      "version": "0.7.2",
+      "version": "0.8.0",
       "devDependencies": {
         "@effect/platform-bun": "4.1.4",
         "@gambi/core": "workspace:*",
@@ -74,11 +74,11 @@
     },
     "packages/config": {
       "name": "@gambi/config",
-      "version": "0.7.2",
+      "version": "0.8.0",
     },
     "packages/core": {
       "name": "@gambi/core",
-      "version": "0.7.2",
+      "version": "0.8.0",
       "dependencies": {
         "@agentclientprotocol/sdk": "1.4.0",
         "@gambi/protocol": "workspace:*",
@@ -96,7 +96,7 @@
     },
     "packages/protocol": {
       "name": "@gambi/protocol",
-      "version": "0.7.2",
+      "version": "0.8.0",
       "dependencies": {
         "effect": "4.1.4",
       },
@@ -106,7 +106,7 @@
     },
     "packages/sdk": {
       "name": "gambi-sdk",
-      "version": "0.7.2",
+      "version": "0.8.0",
       "dependencies": {
         "@ai-sdk/open-responses": "^1.0.6",
         "@ai-sdk/openai-compatible": "^2.0.2",
@@ -134,7 +134,7 @@
     },
     "packages/testing": {
       "name": "@gambi/testing",
-      "version": "0.7.2",
+      "version": "0.8.0",
       "dependencies": {
         "effect": "4.1.4",
       },
