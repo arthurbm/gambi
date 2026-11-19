@@ -2,8 +2,17 @@ import { expect } from "bun:test";
 import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  FAKE_MODEL,
+  fakeProvider,
+  openAiAnswer,
+  openStream,
+  sseEvent,
+} from "@gambi/core/testing/provider";
+import { makeManagementClient } from "@gambi/protocol";
 import { it } from "@gambi/testing/effect";
-import { Effect } from "effect";
+import { Effect, Queue, Stream } from "effect";
+import { FetchHttpClient } from "effect/http";
 
 /**
  * The CLI (`cli/main.ts`) survives `bun build --compile`: `effect`,
@@ -126,7 +135,7 @@ const releaseServing = (body: string) =>
 
 // Live: it compiles and spawns a real binary.
 it.live(
-  "the compiled CLI serves a hub, creates a room, reports errors and updates itself",
+  "the compiled CLI routes streams, cancels generation, hosts a fake harness and updates itself",
   () =>
     Effect.gen(function* () {
       const directory = yield* temporaryDirectory;
@@ -166,6 +175,9 @@ it.live(
       expect(created.exitCode).toBe(0);
       expect(JSON.parse(created.stdout).data.room.name).toBe("Compilada");
 
+      const roomCode: string = JSON.parse(created.stdout).data.room.code;
+      const client = yield* makeManagementClient(hubUrl);
+
       // A port that is already taken names the port and is invalid usage (#54).
       const busy = yield* run([
         binary,
@@ -187,6 +199,90 @@ it.live(
       });
       expect(busy.stderr).not.toContain("mDNS announcement published");
 
+      const generating = yield* openStream();
+      let answer = openAiAnswer;
+      const provider = yield* fakeProvider({ answer: (call) => answer(call) });
+      const endpoint = yield* spawned([
+        binary,
+        "participant",
+        "join",
+        "--room",
+        roomCode,
+        "--participant-id",
+        "endpoint-1",
+        "--model",
+        FAKE_MODEL,
+        "--endpoint",
+        provider.url,
+        "--no-specs",
+        "--hub",
+        hubUrl,
+      ]);
+      const lifecycle = linesOf(endpoint.stdout);
+      expect(JSON.parse(yield* lifecycle.next).type).toBe("registered");
+      expect(JSON.parse(yield* lifecycle.next).type).toBe("tunnel_connected");
+
+      const statuses = yield* client.events
+        .watch({ params: { code: roomCode } })
+        .pipe(
+          Stream.unwrap,
+          Stream.filter(
+            (event) =>
+              event.type === "room.snapshot" ||
+              event.type === "participant.busy" ||
+              event.type === "participant.online"
+          ),
+          Stream.toQueue({ capacity: 16 })
+        );
+      expect(yield* Queue.take(statuses)).toMatchObject({
+        type: "room.snapshot",
+        participants: [{ id: "endpoint-1", status: "online" }],
+      });
+      const chat = (signal?: AbortSignal) =>
+        Effect.promise(() =>
+          fetch(`${hubUrl}/rooms/${roomCode}/v1/chat/completions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: "endpoint-1",
+              stream: true,
+              messages: [{ role: "user", content: "Oi" }],
+            }),
+            signal,
+          })
+        );
+      const complete = yield* chat();
+      expect(complete.status).toBe(200);
+      expect(complete.headers.get("content-type")).toBe("text/event-stream");
+      const body = yield* Effect.promise(() => complete.text());
+      expect(body).toContain('"content":"Recife!"');
+      expect(body.endsWith("data: [DONE]\n\n")).toBe(true);
+      expect((yield* Queue.take(statuses)).type).toBe("participant.busy");
+      expect((yield* Queue.take(statuses)).type).toBe("participant.online");
+
+      answer = () => generating.response;
+      yield* generating.send(sseEvent({ delta: "Olá" }));
+      const consumer = new AbortController();
+      const partial = yield* chat(consumer.signal);
+      expect(partial.status).toBe(200);
+      if (!partial.body) {
+        throw new Error("Missing streaming body");
+      }
+      expect(yield* linesOf(partial.body).next).toBe('data: {"delta":"Olá"}');
+      expect((yield* Queue.take(statuses)).type).toBe("participant.busy");
+      const call = (yield* provider.calls).at(-1);
+      if (!call) {
+        throw new Error("The provider did not receive the request");
+      }
+      consumer.abort();
+      yield* call.aborted;
+      expect(yield* Queue.take(statuses)).toMatchObject({
+        type: "participant.online",
+        participant: { id: "endpoint-1", status: "online" },
+      });
+      endpoint.kill("SIGTERM");
+      expect(yield* Effect.promise(() => endpoint.exited)).toBe(0);
+
       // A harness participant hosted by the same binary. Its fake harness
       // is the binary itself, and the hub and the participant agree on the
       // version the binary was built with.
@@ -200,7 +296,7 @@ it.live(
         "--workspace",
         workspace,
         "--room",
-        JSON.parse(created.stdout).data.room.code,
+        roomCode,
         "--participant-id",
         "arthur-1",
         "--no-specs",
@@ -269,6 +365,9 @@ it.live(
       expect(yield* Effect.promise(() => readFile(binary, "utf8"))).toBe(
         "the next gambi"
       );
-    }),
+    }).pipe(
+      Effect.provide(FetchHttpClient.layer),
+      Effect.timeout("90 seconds")
+    ),
   COMPILE_TIMEOUT_MS
 );
