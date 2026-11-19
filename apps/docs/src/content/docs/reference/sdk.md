@@ -1,15 +1,18 @@
 ---
 title: SDK reference
-description: Reference for the Gambi SDK provider, management client, participant session runtime, and discovery helpers.
+description: Reference for the Gambi SDK provider, management client, hosting entries, and discovery helpers.
 ---
 
-The Gambi SDK has five entry points:
+The Gambi SDK (`gambi-sdk`) has four entries. Each one is a separate file, so importing one never loads another:
 
-- `createGambi()` for inference through the room-scoped OpenAI-compatible routes
-- `createClient()` for management operations against the native `/v1` API
-- `createParticipantSession()` for running a model participant over a tunnel
-- `createHarnessParticipantSession()` for running a harness participant over a tunnel
-- discovery helpers for finding hubs and rooms on the local network
+| Entry | Exports | Runs on |
+| --- | --- | --- |
+| `gambi-sdk` | `createGambi()`, `createClient()`, `ClientError` | Node and Bun |
+| `gambi-sdk/discovery` | `discoverHubs()`, `discoverRooms()`, `resolveGambiTarget()`, `DiscoveryError` | Node and Bun |
+| `gambi-sdk/hub` | `createHub()`, `HubError` | Bun only |
+| `gambi-sdk/participant` | `createParticipantSession()`, `createHarnessParticipantSession()`, `createLocalDirectoryWorkspace()`, `probeProvider()`, `runFakeAcpAgent()`, `MAX_ARTIFACT_BYTES`, `ParticipantError` | Bun only |
+
+Every function returns a `Promise` (or an async iterable) and every entry exports TypeScript types for what it returns. The two hosting entries run a hub or a participant inside your own process. They need Bun, and throw an error that says so when loaded in Node.
 
 ## Installation
 
@@ -19,15 +22,7 @@ npm install gambi-sdk
 bun add gambi-sdk
 ```
 
-## Entry points
-
-| Entry point | Primary use | Transport |
-| --- | --- | --- |
-| `createGambi()` | application inference | `/rooms/:code/v1/*` |
-| `createClient()` | operational control | `/v1/*` |
-| `createParticipantSession()` | participant runtime | management API + participant tunnel |
-| `createHarnessParticipantSession()` | harness participant runtime | management API + participant tunnel |
-| discovery helpers | local-network room and hub resolution | mDNS + management API |
+A participant hosted with `gambi-sdk/participant` and the hub it joins must run the same minor version of Gambi. A hub refuses a participant from another minor with `VERSION_MISMATCH`. Upgrade `gambi-sdk` and the hub together.
 
 ## `createGambi(options)`
 
@@ -66,7 +61,7 @@ await generateText({ model: gambi.participant("worker-1"), prompt: "..." });
 | `gambi.model(name)` | the first available participant exposing `name` | you need a specific model but not a specific machine |
 | `gambi.participant(id)` | the participant with that id | you need exact targeting (affinity, debugging, benchmarking) |
 
-A participant is available only when its tunnel is connected, it is not offline, and it is not already handling another request. Harness participants are never selected. When no participant is available, the request fails with HTTP `404`, so a burst of concurrent `any()` calls larger than the number of free participants gets some `404` responses. See [Model routing](/reference/api/#model-routing) and [Inference errors](/reference/api/#inference-errors).
+A participant is available only when it is `online`: its tunnel is open and it is not already handling another request. Harness participants are never selected by `any()` or `model()`. When no participant is available, the request fails with HTTP `404` and the code `model_not_found`, so a burst of concurrent `any()` calls larger than the number of free participants gets some `404` responses. See [Model routing](/reference/api/#model-routing) and [Inference errors](/reference/api/#inference-errors).
 
 ### Protocol selection
 
@@ -83,7 +78,7 @@ gambi.chatCompletions.any();
 
 Use `chatCompletions` only when you need explicit compatibility. New integrations should prefer the default Responses path.
 
-### Streaming
+### Streaming and cancellation
 
 Streaming works through the AI SDK like any other provider.
 
@@ -100,6 +95,8 @@ for await (const chunk of result.textStream) {
 }
 ```
 
+Aborting the request (the AI SDK's `abortSignal`, or leaving the stream) cancels the generation on the participant's machine, and the participant is free for the next request. A request that receives nothing from the participant for 5 minutes fails with `inference_timeout`.
+
 You can also call the inference API directly with `fetch` and `stream: true` against `${gambi.baseURL}/responses` or `${gambi.baseURL}/chat/completions`.
 
 ### `gambi.listModels()`
@@ -108,7 +105,7 @@ Fetch `GET /rooms/:code/v1/models` and return a flat array, one entry per availa
 
 ```ts
 const models = await gambi.listModels();
-// [{ id, nickname, model, endpoint, capabilities }, ...]
+// [{ id, nickname, model, endpoint, capabilities, status }, ...]
 
 for (const m of models) {
   console.log(m.id, m.model);
@@ -122,8 +119,9 @@ for (const m of models) {
 | `model` | model name the participant serves |
 | `endpoint` | participant-local provider endpoint (informational; the hub never calls it) |
 | `capabilities` | `openResponses` and `chatCompletions` support |
+| `status` | `online` or `busy` |
 
-The list leaves out harness participants and participants that are offline or have no connected tunnel. It does not exclude busy participants. On a non-2xx response it throws a plain `Error`. For tunnel state, use `gambi.listParticipants()`.
+The list leaves out harness participants and offline participants. It includes busy ones. On a non-2xx response it throws a plain `Error`.
 
 ### `gambi.listParticipants()`
 
@@ -145,16 +143,26 @@ const client = createClient({
 });
 ```
 
-All management methods return `{ data, meta }` envelopes.
+`hubUrl` defaults to `http://localhost:3000`. Methods return the value itself, without the `{ data, meta }` envelope of the HTTP API, and reject with a [`ClientError`](#errors).
 
 ### Namespaces
 
 | Namespace | Methods |
 | --- | --- |
+| `client.hub` | `health` |
 | `client.rooms` | `create`, `get`, `list` |
-| `client.participants` | `upsert`, `list`, `remove`, `heartbeat` |
-| `client.events` | `watchRoom` |
-| `client.harness` | `attach` |
+| `client.participants` | `register`, `list`, `remove` |
+| `client.events` | `watch` |
+| `client.harness` | `attach`, `openSession`, `send`, `closeSession` |
+
+`client.close()` ends the watches that are open, cancels the calls in flight, and refuses new ones. It is optional: a client that is never closed holds nothing once its watches end. The client also works with `await using`.
+
+### `client.hub.health()`
+
+```ts
+const health = await client.hub.health();
+// { status: "ok", timestamp }
+```
 
 ### `client.rooms.create(input)`
 
@@ -165,222 +173,237 @@ const created = await client.rooms.create({
   defaults: { temperature: 0.4 },
 });
 
-console.log(created.data.room.code);
-console.log(created.data.hostId);
+console.log(created.room.code);
+console.log(created.hostId);
 ```
 
 ### `client.rooms.get(roomCode)`
 
 ```ts
-const { data } = await client.rooms.get("ABC123");
-console.log(data.participantCount, data.passwordProtected);
+const room = await client.rooms.get("ABC123");
+console.log(room.participantCount, room.passwordProtected);
 ```
 
 ### `client.rooms.list()`
 
 ```ts
-const { data } = await client.rooms.list();
-for (const room of data) {
+const rooms = await client.rooms.list();
+for (const room of rooms) {
   console.log(room.code, room.name, room.participantCount);
 }
 ```
 
-### `client.participants.upsert(roomCode, participantId, input)`
-
-Create or update a participant registration.
-
-```ts
-const result = await client.participants.upsert("ABC123", "worker-1", {
-  nickname: "worker-1",
-  model: "llama3",
-  endpoint: "http://localhost:11434",
-  capabilities: {
-    openResponses: "supported",
-    chatCompletions: "supported",
-  },
-});
-
-console.log(result.data.tunnel.url);
-```
-
-Input fields:
-
-| Field | Type | Required | Description |
-| --- | --- | --- | --- |
-| `nickname` | `string` | yes | display name |
-| `model` | `string` | yes | model name |
-| `endpoint` | `string` | for model participants | participant-local endpoint URL |
-| `harness` | `object` | for harness participants | harness `id` plus optional `model` and `hosted` metadata |
-| `password` | `string` | no | room password |
-| `specs` | `object` | no | machine specs |
-| `config` | `RuntimeConfig` | no | participant runtime defaults |
-| `capabilities` | `object` | no | protocol capability summary |
-
-Return fields:
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `participant` | `ParticipantSummary` | public participant state |
-| `roomId` | `string` | internal room identifier |
-| `tunnel` | `TunnelBootstrap` | one-time tunnel bootstrap |
-
-This method is retry-safe because the underlying management route is idempotent. The tunnel bootstrap token is single-use and short-lived.
-
 ### `client.participants.list(roomCode)`
 
 ```ts
-const { data } = await client.participants.list("ABC123");
-for (const participant of data) {
-  console.log(participant.id, participant.status, participant.connection);
+const participants = await client.participants.list("ABC123");
+for (const participant of participants) {
+  console.log(participant.id, participant.status);
 }
 ```
 
-### `client.participants.heartbeat(roomCode, participantId)`
+`status` is `offline`, `online`, or `busy`, derived from the participant's tunnel.
 
-Send one heartbeat. Call this every ten seconds while your own participant runtime is alive. The hub marks a participant offline after thirty seconds without a heartbeat.
+### `client.participants.register(roomCode, participantId, input)`
 
-```ts
-setInterval(() => {
-  client.participants.heartbeat("ABC123", "worker-1").catch(console.error);
-}, 10_000);
-```
+Create or update a participant registration. It takes the same fields as the [registration route](/reference/api/#put-v1roomscodeparticipantsid) and fills `version` with the SDK's own version when you leave it out. It resolves with `{ participant, tunnel: { token, expiresAt } }`.
 
-Both cadence and timeout come from `HEALTH_CHECK_INTERVAL` and `PARTICIPANT_TIMEOUT` in `@gambi/core`. If you use `createParticipantSession()`, this loop is managed for you.
+Registration alone does not bring a participant online: that takes a tunnel, and a participant that never opens one is removed after 60 seconds. To run a participant, use [`createParticipantSession()`](#createparticipantsessionoptions-gambi-sdkparticipant-bun-only); `register` is for tests and automation.
 
 ### `client.participants.remove(roomCode, participantId)`
+
+Take a participant out of the room. Resolves with `{ participantId }`.
 
 ```ts
 await client.participants.remove("ABC123", "worker-1");
 ```
 
-### `client.events.watchRoom({ roomCode, signal? })`
+### `client.events.watch(roomCode, { signal? })`
 
 Watch room events as an async iterable.
 
 ```ts
 const controller = new AbortController();
 
-for await (const event of client.events.watchRoom({
-  roomCode: "ABC123",
+for await (const event of client.events.watch("ABC123", {
   signal: controller.signal,
 })) {
-  console.log(event.type, event.data);
+  console.log(event.type);
 }
 ```
 
-Event types:
+- Nothing is requested until the loop asks for the first event, which is always `room.snapshot`.
+- Events are pulled one at a time; a slow loop does not pile them up in your process.
+- The loop ends without an error when the hub closes the stream, when `signal` aborts, or when the client is closed. Leaving the loop with `break` cancels the request. To keep watching after a hub restart, call `watch` again.
+- The loop throws `ROOM_NOT_FOUND` on the first event for a room that does not exist, and `HUB_UNREACHABLE` or `NOT_A_HUB` when the connection breaks or the hub sends something that is not an event.
 
-- `connected`
-- `room.created`
-- `participant.joined`
-- `participant.updated`
-- `participant.left`
-- `participant.offline`
-- `llm.request`
-- `llm.complete`
-- `llm.error`
-- `harness.session.opened`
-- `harness.session.closed`
-- `harness.artifact`
+Event types: `room.snapshot`, `participant.joined`, `participant.updated`, `participant.online`, `participant.busy`, `participant.offline`, `participant.removed`, `llm.request`, `llm.complete`, `llm.error`. The `RoomEvent` type is a union on `type`. See [Observability](/reference/observability/) for the fields of each one.
 
-See [Observability](/reference/observability/) for the payload shapes of the `llm.*` events.
+### `client.harness`
 
-### `client.harness.attach({ roomCode, participantId, signal? })`
-
-Attach to a harness participant over the management WebSocket and receive its validated relay frames.
+Attach to a harness participant: read what its harness says, open and close harness sessions, and send ACP messages. These calls go to the hub, which relays them through the participant's tunnel; your program never connects to the participant.
 
 ```ts
-const channel = await client.harness.attach({
-  roomCode: "ABC123",
-  participantId: "harness-1",
-});
+const controller = new AbortController();
 
-channel.send({
-  type: "tunnel.harness.control",
-  sessionId: "session-1",
-  action: "open",
-  cwd: "/workspace",
-});
+await client.harness.openSession("ABC123", "arthur-opencode", "session-1");
 
-for await (const frame of channel.messages) {
-  if (frame.type === "tunnel.harness.message") {
-    console.log(frame.message);
-  }
-}
-
-channel.close();
-```
-
-`send()` accepts `tunnel.harness.message` and `tunnel.harness.control`. `messages` yields message, artifact, and status frames. Aborting `signal` or calling `close()` ends the channel. The hub treats the ACP `message` object as opaque.
-
-This channel is part of the management client. Harness participants do not appear in model routing and cannot receive `createGambi()` inference calls. See [Bring your harness](/guides/bring-your-harness/) for the participant setup.
-
-## `createParticipantSession(options)`
-
-Create and manage a tunnel-backed participant runtime.
-
-```ts
-import { createParticipantSession } from "gambi-sdk";
-
-const session = await createParticipantSession({
-  hubUrl: "http://localhost:3000",
-  roomCode: "ABC123",
-  participantId: "worker-1",
-  nickname: "worker-1",
-  endpoint: "http://localhost:11434",
-  model: "llama3",
-  authHeaders: {
-    Authorization: `Bearer ${process.env.PROVIDER_TOKEN}`,
+await client.harness.send("ABC123", "arthur-opencode", "session-1", {
+  jsonrpc: "2.0",
+  id: 1,
+  method: "session/prompt",
+  params: {
+    sessionId: "session-1",
+    prompt: [{ type: "text", text: "Write a README for this project." }],
   },
 });
 
-await session.waitUntilClosed();
+for await (const event of client.harness.attach("ABC123", "arthur-opencode", {
+  signal: controller.signal,
+})) {
+  if (event.type === "harness.message") {
+    console.log(event.message);
+  }
+  if (event.type === "harness.artifact") {
+    console.log(event.version, event.files.length);
+  }
+}
+
+await client.harness.closeSession("ABC123", "arthur-opencode", "session-1");
 ```
+
+| Method | Resolves with | Description |
+| --- | --- | --- |
+| `attach(roomCode, participantId, { signal? })` | `AsyncIterable<HarnessAttachEvent>` | the harness participant's events, with the same rules as `events.watch` |
+| `openSession(roomCode, participantId, sessionId, { cwd? }?)` | `{ sessionId }` | open a harness session under an ID you pick; `cwd` must be inside the participant's workspace |
+| `send(roomCode, participantId, sessionId, message)` | `{ sessionId }` | hand one ACP v1 JSON-RPC message to the harness; its answer arrives on `attach` |
+| `closeSession(roomCode, participantId, sessionId)` | `{ sessionId }` | close a harness session |
+
+Attach events: `harness.connected`, `harness.disconnected`, `harness.message`, `harness.session`, `harness.artifact`, `harness.dropped`, `harness.detached`. See [Harness attach](/reference/api/#harness-attach) for their fields. Nothing is replayed for a client that attaches late, and a client that reads too slowly gets `harness.dropped` with the number of events it lost. The hub treats the ACP `message` object as opaque.
+
+Harness participants do not appear in model routing and cannot receive `createGambi()` inference calls. See [Bring your harness](/guides/bring-your-harness/) for the participant setup.
+
+## `createHub(options)` (`gambi-sdk/hub`, Bun only)
+
+Start a hub in the current process: the same hub `gambi hub serve` runs.
+
+```ts
+import { createHub, HubError } from "gambi-sdk/hub";
+
+const hub = await createHub({ port: 0, hostname: "127.0.0.1" });
+console.log(hub.url); // "http://127.0.0.1:41233"
+
+await hub.close();
+```
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `hostname` | `0.0.0.0` | interface to listen on |
+| `port` | `3000` | port to listen on; `0` takes any free port |
+| `mdns` | `false` | announce the hub over mDNS |
+| `inferenceIdleTimeoutMs` | 5 minutes | how long a request may wait for the next piece of an answer |
+| `reconnectDeadlineMs` | 60 seconds | how long a participant may stay offline before it is removed |
+| `onLog` | none | receives each log line of the hub; without it, the hub logs nowhere |
+
+The hub has `url`, `port` (the real one), `mdnsName` (when `mdns` is on), and `close()`, which closes the tunnels and event streams, withdraws the mDNS announcement, and releases the port. The rooms end with it. It also works with `await using`.
+
+`createHub` rejects only with `HubError`, whose `code` is `PORT_IN_USE` (`details.port` and `details.hostname`), `LISTEN_FAILED`, or `MDNS_ANNOUNCE_FAILED`. When it rejects, nothing is left running.
+
+## `createParticipantSession(options)` (`gambi-sdk/participant`, Bun only)
+
+Join a room with a model endpoint of this machine and stay in it.
+
+```ts
+import { createParticipantSession } from "gambi-sdk/participant";
+
+const session = await createParticipantSession({
+  hubUrl: "http://192.168.1.10:3000",
+  roomCode: "ABC123",
+  participantId: "worker-1",
+  nickname: "worker-1",
+  model: "llama3",
+  endpoint: "http://localhost:11434",
+  authHeaders: {
+    Authorization: `Bearer ${process.env.PROVIDER_TOKEN}`,
+  },
+  onLifecycle: (event) => console.log(event.type),
+});
+
+const { reason } = await session.ended;
+```
+
+The promise resolves once the participant is `online`, and rejects with a [`ParticipantError`](#errors) when the join fails; then nothing is left running.
 
 What it does:
 
-1. Probe the local endpoint.
+1. Probe the endpoint for the APIs it speaks, unless you pass `capabilities`.
 2. Register the participant through the management API.
-3. Open the participant tunnel.
-4. Forward tunnel requests to the local provider endpoint.
-5. Keep sending management heartbeats every ten seconds and tunnel pings on the same cadence.
+3. Open the tunnel to the hub and wait for the hub to accept it.
+4. Answer each request the hub sends through the tunnel by calling the local provider with `authHeaders`.
+5. When the tunnel drops, come back by itself with the same `participantId`.
 
-`authHeaders` stay local to the participant runtime. They are applied only when the runtime talks to the provider endpoint.
+`authHeaders` stay in this process. They are applied only when the runtime calls the provider endpoint, and the hub never sees them.
 
-For a walkthrough, see [Custom participant runtime](/guides/custom-participant/).
+The session does not check that the provider serves `model`. Use `probeProvider(endpoint, authHeaders?)` first if you want to: it resolves with `{ reachable, models, capabilities }`.
 
-### Session return shape
+Options shared by both participant sessions:
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `hubUrl` | `http://localhost:3000` | hub URL |
+| `roomCode` | required | room code |
+| `participantId` | required | stable ID; reuse it to come back as the same participant |
+| `password` | none | room password |
+| `reconnect` | `true` | come back when the tunnel drops; with `false` the session ends on the first drop |
+| `leaveTimeoutMs` | `3000` | how long `leave()` waits for the hub |
+| `onLifecycle` | none | receives each lifecycle event, in order |
+| `onLog` | none | receives each log line; without it, the runtime logs nowhere |
+
+Options of the endpoint session: `nickname`, `model`, and `endpoint` (required), `authHeaders`, `capabilities`, `specs`, `config`.
+
+### Lifecycle events
+
+| `type` | Fields | When |
+| --- | --- | --- |
+| `connected` | `attempt`, `hubVersion` | the tunnel is open; `attempt` is `0` for the join |
+| `reconnecting` | `attempt`, `delayMillis`, `reason` | the tunnel dropped and the runtime tries again in `delayMillis` (1 second, doubling up to 30) |
+| `left` | `reason`, `error` | the runtime ended; always the last event |
+
+`reconnecting.reason` is `tunnelDropped`, `hubSilent` (the hub stopped answering pings), `hubUnreachable`, `tunnelOpenFailed`, or `hubError`. `left.reason` is:
+
+- `stopped`: your program called `leave()` or `stop()`
+- `refused`: the hub refused the way back, and `error` has its `name` and `message`. A hub that restarted has no rooms, so a session that tries to come back to it ends here with `RoomNotFound`.
+- `replaced`: another runtime joined the room with the same `participantId`, and the hub kept that one
+- `tunnelDropped`: the tunnel dropped and the session runs with `reconnect: false`
+
+Callbacks are never awaited, and an error thrown or rejected by one never stops the session.
+
+### Session shape
 
 | Field | Description |
 | --- | --- |
-| `participant` | registered participant summary |
-| `roomId` | room identifier |
-| `tunnel` | tunnel bootstrap details |
-| `close()` | stop the session and remove the registration (best effort) |
-| `waitUntilClosed()` | resolves with the close event |
+| `participant` | the participant as the hub registered it |
+| `ended` | resolves with `{ reason, error? }` when the runtime ended and will not try again. It never rejects |
+| `leave()` | take the participant out of the room and stop. Never rejects, and gives up on the hub after `leaveTimeoutMs` |
+| `stop()` | stop without telling the hub; the room shows the participant `offline` and removes it after 60 seconds |
+| `[Symbol.asyncDispose]` | the same as `leave()`, for `await using` |
 
-Close reasons:
+The SDK installs no signal handlers. To leave on Ctrl+C, call `leave()` from your own handler.
 
-- `"closed"`: `close()` was called. The SDK installs no signal handlers; wire them yourself.
-- `"heartbeat_failed"`: a management heartbeat request failed. One failure is enough to close the session.
-- `"tunnel_closed"`: the WebSocket tunnel closed or errored, from either side. The session does not reconnect and does not remove the registration; the hub marks the participant offline as soon as the tunnel closes.
+For a walkthrough, see [Custom participant runtime](/guides/custom-participant/).
 
-On `"closed"` and `"heartbeat_failed"`, the session tries to remove the participant from the room before it resolves.
-
-## `createHarnessParticipantSession(options)`
+## `createHarnessParticipantSession(options)` (`gambi-sdk/participant`, Bun only)
 
 Run a local harness as a room participant from your own application, for
 example to host harnesses for people who did not bring one. It is the same
-runtime `gambi participant join --harness` uses, and it runs under Node and Bun.
+runtime `gambi participant join --harness` uses.
 
 ```ts
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import {
   createHarnessParticipantSession,
   createLocalDirectoryWorkspace,
   type Workspace,
-} from "gambi-sdk";
+} from "gambi-sdk/participant";
 
 const local = createLocalDirectoryWorkspace();
 
@@ -388,7 +411,7 @@ const local = createLocalDirectoryWorkspace();
 const workspace: Workspace = {
   async prepare(context) {
     const prepared = await local.prepare(context);
-    await writeFile(join(prepared.path, "README.md"), "# Brief\n");
+    await Bun.write(`${prepared.path}/README.md`, "# Brief\n");
     return prepared;
   },
 };
@@ -398,70 +421,96 @@ const session = await createHarnessParticipantSession({
   roomCode: "ABC123",
   participantId: "hosted-opencode-1",
   nickname: "Hosted OpenCode",
-  harnessId: "opencode",
+  harness: "opencode",
   hosted: true,
   workspace,
+  onArtifact: (event) => console.log(event.type, event.sessionId),
 });
 
-console.log(session.workspacePath);
-await session.waitUntilClosed();
+console.log(session.harness.workspacePath);
+await session.ended;
 ```
 
-Options beyond the shared `hubUrl`, `roomCode`, `participantId`, `nickname`,
-`password`, `specs`, and `config`:
+Options beyond the shared ones:
 
-| Option | Description |
+| Option | Default | Description |
+| --- | --- | --- |
+| `nickname` | required | display name |
+| `harness` | required | `opencode`, `claude-code`, `codex`, or `fake` |
+| `model` | the harness ID | optional label for the model the harness runs on |
+| `hosted` | `false` | marks a harness the room host runs for others. Rejected for `claude-code` |
+| `workspace` | `createLocalDirectoryWorkspace()` | where the harness runs |
+| `onArtifact` | none | receives `artifactSent` and `artifactSkipped` events |
+| `artifacts` | | `{ settleTimeMs, finalTimeoutMs, maxBytes }`: how long the workspace must stay unchanged before a snapshot (1 second), how long the final snapshot may take on close, and the largest snapshot (8 MiB) |
+| `harnessStopTimeoutMs` | `2000` | how long the harness has to exit before it is killed |
+| `fakeAgentCommand` | | the command that runs the fake harness; see below |
+| `specs`, `config` | | as in the endpoint session |
+
+A harness that is not installed or not logged in rejects with `HARNESS_NOT_READY`, whose message says how to fix it, before anything is registered.
+
+The session adds `harness` to the session shape:
+
+| Field | Description |
 | --- | --- |
-| `harnessId` | `opencode`, `claude-code`, `codex`, or `fake` |
-| `model` | optional label shown with the participant |
-| `hosted` | marks a harness the room host runs for others. Rejected for `claude-code`. |
-| `workspace` | where the harness runs; defaults to `createLocalDirectoryWorkspace()` |
-| `gambiHome` | base directory of the default workspace (`~/.gambi`) |
-| `adapter` | replace the command and readiness check for `harnessId` |
-| `onEvent` | lifecycle events: `harness_spawned`, `session_opened`, `artifact_sent`, `harness_exited` |
-| `artifactDebounceMs` | wait after the last file change before sending an artifact (default `1000`) |
+| `harness.pid` | process ID of the harness |
+| `harness.sessionId` | the harness session the runtime opened at start; artifacts carry it |
+| `harness.workspacePath` | the folder the harness runs in |
+| `harness.notes` | messages for the person, such as the Claude Code terms warning |
+| `harness.warning` | set when a readiness check could not confirm something |
+| `harness.exited` | resolves with `{ message, exitCode?, detail? }` if the harness exits on its own. That does not end the session: deciding what to do is up to you |
 
-A missing binary or login throws `HarnessDependencyError` before anything is
-registered. The session adds `processPid`, `sessionId`, `workspacePath`, and
-`harnessExited` to the participant session shape, and the close reason
-`"harness_exited"`.
+`leave()` stops the harness first, so the final snapshot goes up through the tunnel, and then takes the participant out of the room.
+
+Known limits:
+
+- `artifactSent` means the snapshot entered the queue to the hub, not that it arrived. A snapshot queued when the tunnel drops is lost.
+- A snapshot larger than 8 MiB is not sent at all: `onArtifact` receives `artifactSkipped` with `cause: "tooLarge"`.
+- If your process is killed with `kill -9`, a harness that does not watch its standard input can keep running.
 
 ### Workspace
 
 A `Workspace` is the folder on the participant's machine where the harness
-runs. `prepare(context)` returns a prepared workspace with `path`,
-`watch(onChange, onError)`, and `collect()`; the runtime watches it and sends a
-full snapshot as each new artifact version. `createLocalDirectoryWorkspace({ path? })`
-uses `path`, or an empty folder under `~/.gambi/workspaces/<room>/<participant>/`.
-It writes only `.gambi.json`, which never appears in an artifact.
+runs. `prepare(context)` receives `{ roomCode, participantId, harness, model }`
+and returns a prepared workspace:
+
+| Field | Description |
+| --- | --- |
+| `path` | absolute path of a folder that exists |
+| `collect()` | resolves with the files of a snapshot: `{ path, encoding, content }` |
+| `watch(onChange, onError)` | calls `onChange` when something changed; returns the function that stops watching. Called once, before the harness starts |
+| `dispose()` | optional; called once when the session ends |
+
+The runtime sends a full snapshot as each new artifact version.
+`createLocalDirectoryWorkspace({ path? })` uses `path`, or an empty folder under
+`~/.gambi/workspaces/<room>/<participant>/`. It writes only `.gambi.json`, which
+never appears in an artifact, and leaves out `.git`, `node_modules`, and symbolic links.
+A custom `collect()` for a workspace that is too large should reject with
+`new ParticipantError({ code: "WORKSPACE_TOO_LARGE", message })`.
 
 ### Testing without a model
 
-`runFakeAcpAgent()` runs a deterministic harness process that calls no model. It answers each prompt with
+The `fake` harness is a deterministic process that calls no model. It answers each prompt with
 `Fake ACP response: <prompt>` and writes `fake-output.txt` in the workspace.
-Because a bundled SDK cannot locate its own script, wrap it in one of yours and
-point the adapter at it:
+With `gambi-sdk` installed, `harness: "fake"` works as it is.
+
+A program that bundles the SDK into its own file cannot run the fake harness from
+the package. Wrap `runFakeAcpAgent()` in a script of yours and pass its command:
 
 ```ts
 // scripts/fake-acp-agent.ts
-import { runFakeAcpAgent } from "gambi-sdk";
+import { runFakeAcpAgent } from "gambi-sdk/participant";
 await runFakeAcpAgent();
 ```
 
 ```ts
-import { createFakeHarnessAdapter } from "gambi-sdk";
-
 await createHarnessParticipantSession({
   // ...
-  harnessId: "fake",
-  adapter: createFakeHarnessAdapter({
-    command: process.execPath,
-    args: ["scripts/fake-acp-agent.ts"],
-  }),
+  harness: "fake",
+  fakeAgentCommand: { command: "bun", args: ["scripts/fake-acp-agent.ts"] },
 });
 ```
 
-## Discovery helpers
+## Discovery helpers (`gambi-sdk/discovery`)
 
 Discovery is optional. `createGambi()` and `createClient()` never discover anything on their own; pass them a hub URL.
 
@@ -485,7 +534,8 @@ Common options (`DiscoveryOptions`):
 ### Example
 
 ```ts
-import { createGambi, resolveGambiTarget } from "gambi-sdk";
+import { createGambi } from "gambi-sdk";
+import { resolveGambiTarget } from "gambi-sdk/discovery";
 
 const target = await resolveGambiTarget({
   roomCode: "ABC123",
@@ -509,29 +559,32 @@ Codes:
 - `ROOM_NOT_FOUND`
 - `AMBIGUOUS_ROOM_MATCH` (inspect `error.matches`)
 
-## Lower-level exports
-
-Most applications do not need these. They exist for tests, embedding, and custom runtimes.
-
-| Export | Description |
-| --- | --- |
-| `hub.create(options)` | start a hub in the current process, the same hub `gambi hub serve` runs. Options: `port` (default `3000`), `hostname` (default `0.0.0.0`), `mdns`. Returns `{ server, url, mdnsName?, close() }`. Requires Bun. |
-| `rooms` | direct access to the in-process room registry of a hub started with `hub.create()` in the same process. It does not talk to a remote hub; use `createClient()` for that. |
-| `participants` | helpers that build participant records and merge runtime config, used by the hub. |
-| `getHarnessAdapter(id)` | the built-in adapter for `opencode`, `claude-code`, `codex`, or `fake`: the command it runs and its readiness check. Use it as a base when you pass a custom `adapter`. |
-| `defaultWorkspacePath({ roomCode, participantId }, gambiHome?)` | the default workspace folder, `~/.gambi/workspaces/<room>/<participant>`. |
-
 ## Errors
 
-Management operations throw `ClientError`.
+Each entry rejects with its own error class, and `code` tells the cases apart.
 
-Fields:
+`ClientError` (from `gambi-sdk`) has:
 
-- `status`: HTTP status
-- `code`: Gambi error code, such as `ROOM_NOT_FOUND`
+- `code`: a hub error code, such as `ROOM_NOT_FOUND`, or one the client finds on its own
+- `status`: HTTP status, absent when nothing answered
 - `hint`: operator-readable next step
-- `details`: optional structured payload from the hub
-- `requestId`: correlates with hub logs and SSE events
+- `details`: the structured fields of the error, such as `roomCode` or `hubVersion`
+- `requestId`: correlates with the hub's log, set when the hub answered
+
+| `code` | Meaning |
+| --- | --- |
+| `ROOM_NOT_FOUND`, `PARTICIPANT_NOT_FOUND` | what the call named is not there |
+| `INVALID_PASSWORD` | the room has a password and the call brought none, or the wrong one |
+| `VERSION_MISMATCH` | the participant and the hub are on different minor versions |
+| `INVALID_REQUEST` | the call does not match the management API; checked before anything is sent when possible |
+| `INTERNAL_ERROR` | a bug in the hub |
+| `NOT_A_HARNESS_PARTICIPANT` | the participant shares a model endpoint, so there is no harness to attach to |
+| `PARTICIPANT_UNREACHABLE` | the participant's tunnel is not open now |
+| `HARNESS_FAILED` | the harness did not answer, refused, or exited; `details.reason` says which |
+| `HARNESS_SESSION_NOT_OPEN` | the message was for a harness session that is not open |
+| `HARNESS_SESSION_OUTSIDE_WORKSPACE` | the session was asked to run outside the participant's workspace |
+| `HUB_UNREACHABLE` | nothing answered at the hub URL |
+| `NOT_A_HUB` | something answered, but not like a Gambi hub of this version: another server, a proxy, or a hub of another version |
 
 ```ts
 import { ClientError } from "gambi-sdk";
@@ -546,3 +599,7 @@ try {
   throw error;
 }
 ```
+
+`HubError` (from `gambi-sdk/hub`) has `code` (`PORT_IN_USE`, `LISTEN_FAILED`, `MDNS_ANNOUNCE_FAILED`) and `details`.
+
+`ParticipantError` (from `gambi-sdk/participant`) has `code` and `details`. Its codes are `ROOM_NOT_FOUND`, `INVALID_PASSWORD`, `VERSION_MISMATCH`, `INVALID_REQUEST`, `INTERNAL_ERROR`, `HUB_UNREACHABLE`, and `TUNNEL_OPEN_FAILED` for any session, plus `HARNESS_NOT_READY`, `HARNESS_START_FAILED`, `HARNESS_FAILED`, `WORKSPACE_FAILED`, and `WORKSPACE_TOO_LARGE` for a harness session.
