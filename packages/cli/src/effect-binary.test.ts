@@ -175,12 +175,17 @@ it.live(
         "127.0.0.1",
         "--port",
         String(started.data.port),
+        "--mdns",
       ]);
       expect(busy.exitCode).toBe(2);
       expect(busy.stdout).toBe("");
-      expect(busy.stderr).toContain(
-        `Port ${started.data.port} is already in use`
-      );
+      expect(JSON.parse(busy.stderr).error).toMatchObject({
+        name: "PortInUse",
+        message: expect.stringContaining(
+          `Port ${started.data.port} is already in use`
+        ),
+      });
+      expect(busy.stderr).not.toContain("mDNS announcement published");
 
       // A harness participant hosted by the same binary. Its fake harness
       // is the binary itself, and the hub and the participant agree on the
@@ -226,7 +231,7 @@ it.live(
       hub.kill("SIGTERM");
       expect(yield* Effect.promise(() => hub.exited)).toBe(0);
 
-      // Nothing listens there any more: a named error, not "Error: undefined" (#55).
+      // Nothing listens there any more: a named connectivity error.
       const unreachable = yield* run([binary, "room", "list", "--hub", hubUrl]);
       expect(unreachable.exitCode).toBe(3);
       expect(unreachable.stdout).toBe("");
@@ -236,6 +241,21 @@ it.live(
       // package, it is a standalone install, and updates itself in place
       // from the release it is pointed at.
       const releaseUrl = yield* releaseServing("the next gambi");
+      // Another HTTP server answers, but its response is outside the hub contract (#55).
+      const wrongServer = yield* run([
+        binary,
+        "room",
+        "list",
+        "--hub",
+        releaseUrl,
+      ]);
+      expect(wrongServer.exitCode).toBe(3);
+      expect(wrongServer.stdout).toBe("");
+      expect(JSON.parse(wrongServer.stderr).error).toMatchObject({
+        name: "NotAHub",
+        message: expect.stringContaining("did not answer like a Gambi hub"),
+      });
+
       const installedAt = yield* Effect.promise(() => realpath(binary));
       const updated = yield* run([binary, "self", "update"], {
         GAMBI_UPDATE_BASE_URL: releaseUrl,
