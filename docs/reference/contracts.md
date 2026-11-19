@@ -445,7 +445,7 @@ Every command that talks to a hub accepts `--hub <url>` (`-H`). Its value comes 
 
 ### `participant join`
 
-Without `--harness` the participant shares a model endpoint; `--model` is required outside a terminal. `--header` and `--header-env` are the `ParticipantAuthHeaders`: they go to the endpoint probe and to the requests to the provider, and nowhere else. A variable named in `--header-env` that is missing or empty is invalid usage.
+Without `--harness` the participant shares a model endpoint; `--model` is required outside a terminal. `--header` and `--header-env` are the `ParticipantAuthHeaders`: they go to the endpoint probe and to the requests to the provider, and nowhere else. A blank header name or value in `--header`, and a variable named in `--header-env` that is missing, empty, or blank, are invalid usage (exit `2`).
 
 With `--harness <id>` the participant shares a harness: `--model` is optional and becomes `harness.model`, `--workspace` picks the folder (default `~/.gambi/workspaces/<room>/<participant-id>/`), and `--endpoint`, `--header`, and `--header-env` are refused with exit code `2` (`FlagsDoNotCombine`). `--workspace` without `--harness` is invalid usage too.
 

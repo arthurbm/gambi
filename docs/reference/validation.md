@@ -20,6 +20,7 @@ For the day-to-day command set (install, dev, build, check-types, lint), see the
 | Tunnel calls | `bun test packages/core/src/hub/ packages/core/src/participant/` (tunnel, reconnection, and cancellation tests); see `docs/reference/docs-update.md` |
 | Harness participant runtime | `bun test packages/core/src/harness/ packages/sdk/src/harness-participant.test.ts`, then the installed-adapter smokes below |
 | `apps/docs` (pages, landing, translations) | `bun run --cwd apps/docs check:i18n` and `bun run --cwd apps/docs build` (the build fails on a broken internal link or `#anchor`). For UI changes, look at the built site: see [Docs site checks](#docs-site-checks). Translations follow [`translation-pt-br.md`](translation-pt-br.md). |
+| Tests, test helpers, dependencies, module state | `bun test scripts`: besides the release scripts, it runs the repository guards (`scripts/real-waits.test.ts`, `scripts/repo-guards.test.ts`, `scripts/effect-foundation.test.ts`) |
 | Distribution / release | `bun test scripts` (publish and verify loop against a fake npm, CLI tarball validation), `bun run scripts/cli-tarballs.ts pack <version>` after a build with that version, `bun run --cwd packages/cli check-types`, `bun run --cwd packages/cli build`, `npm pack --dry-run --cache /tmp/npm-cache ./packages/cli/dist/npm/gambi`, `node ./packages/cli/dist/npm/gambi/bin/gambi --version` |
 
 ## Quick validation set
@@ -33,17 +34,16 @@ bun run --cwd apps/tui test
 
 - Tests start every hub on a random free port (`port: 0`), so a busy port on the machine does not fail them.
 - Run the suites with `CI=true` too (for example `CI=true bun test packages/core/src`): that is how GitHub Actions runs them, and `bun test` behaves differently under it (reading `test.only` throws).
-- `packages/core/src/endpoint-capabilities.test.ts` has a historically-flaky test (`probeEndpoint > does not detect protected endpoints without auth headers`). Pre-existing; not introduced by recent work.
 - No Docker, database, or external service is required — all state is in-memory.
 - Effect tests use `@gambi/testing/effect`, a helper over `bun test` that mirrors `@effect/vitest`, and follow [`effect-conventions.md`](effect-conventions.md#tests): `it.effect` with the test clock by default, `it.live` only for a real socket or subprocess, and no real wait. Timeouts, backoff, and the reconnection deadline are tested by moving the test clock.
 
 ## Docs site checks
 
-CI (`.github/workflows/ci.yml`) runs `check-types`, the CLI, core, SDK, TUI, and Effect test helper tests, the release script tests (`bun test scripts`), the packed `gambi-sdk` consumer check, Biome on the changed files, `check:i18n`, and the docs build on every PR.
+CI (`.github/workflows/ci.yml`) runs `check-types`, the CLI, core, SDK, TUI, and Effect test helper tests, the release script tests (`bun test scripts`), the packed `gambi-sdk` consumer check, Biome on the whole repository (`bun x biome check .`), `check:i18n`, and the docs build on every PR.
 
 - The build always prints `[WARN] [content] Entry docs → 404 was not found.` It is pre-existing and harmless.
 - `bun run build` rewrites `apps/docs/dist`, which stops a running `bun run preview`. Restart the preview after each build.
-- `bun x ultracite check` exits 0 even when it reports errors. To gate on lint, run `bun x biome check <files>`, which uses the same config.
+- `bun x ultracite check` exits 0 even when it reports errors. To gate on lint, run `bun x biome check .` (as CI does) or `bun x biome check <files>`, which use the same config.
 - Look at pages with headless Chrome rather than the T3 preview snapshot, which times out on a hidden tab. Run at most 3 at once:
   `google-chrome --headless=new --user-data-dir=$(mktemp -d) --disable-gpu --hide-scrollbars --virtual-time-budget=4000 --window-size=1440,7000 --screenshot=out.png http://localhost:4321/`
 - The head script `src/scripts/locale-redirect.js` redirects by device language. To view `/pt-br/` add `--lang=pt-BR --accept-lang=pt-BR`; to check where a URL lands without a screenshot, use `--dump-dom` and read `<html lang>`.

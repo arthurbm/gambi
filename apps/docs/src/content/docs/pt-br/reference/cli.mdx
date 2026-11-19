@@ -248,8 +248,8 @@ Opções:
 | `--participant-id` | identificador estável do participante |
 | `--model`, `-m` | modelo a compartilhar; com `--harness`, um rótulo opcional para o modelo em que o harness roda |
 | `--endpoint`, `-e` | onde o provedor escuta nesta máquina (padrão `http://localhost:11434`) |
-| `--header Name=Value` | header das requisições ao provedor, como `Authorization`; pode repetir |
-| `--header-env Name=VARIABLE` | header cujo valor é lido de uma variável de ambiente; pode repetir |
+| `--header Name=Value` | header das requisições ao provedor, como `Authorization`; pode repetir. Um nome ou valor em branco é uso inválido |
+| `--header-env Name=VARIABLE` | header cujo valor é lido de uma variável de ambiente; pode repetir. Uma variável ausente, vazia ou em branco é uso inválido |
 | `--harness <opencode\|claude-code\|codex\|fake>` | compartilha um harness ACP local em vez de um endpoint de modelo |
 | `--workspace <folder>` | só no modo harness: a pasta em que o harness roda |
 | `--nickname`, `-n` | nome de exibição (padrão `<model>@<seis primeiros caracteres do ID do participante>`) |

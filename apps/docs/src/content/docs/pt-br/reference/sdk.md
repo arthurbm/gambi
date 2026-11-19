@@ -121,11 +121,11 @@ for (const m of models) {
 | `capabilities` | suporte a `openResponses` e `chatCompletions` |
 | `status` | `online` ou `busy` |
 
-A lista deixa de fora participantes de harness e participantes offline. Ela inclui os ocupados. Em uma resposta fora da faixa 2xx, lança um `Error` simples.
+A lista deixa de fora participantes de harness e participantes offline. Ela inclui os ocupados. Ela rejeita com um `ClientError`: `ROOM_NOT_FOUND`, `HUB_UNREACHABLE` ou `NOT_A_HUB`.
 
 ### `gambi.listParticipants()`
 
-Retorna os resumos de participante do plano de gerenciamento (management plane) para a sala.
+Retorna os resumos de participante do plano de gerenciamento (management plane) para a sala. Rejeita com um `ClientError`, como o cliente de gerenciamento.
 
 ### `gambi.baseURL`
 

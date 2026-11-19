@@ -59,7 +59,7 @@ A name missing from this table is not thereby safe. Check it in the installed so
 | Package | Holds | Platform rule |
 |---|---|---|
 | `@gambi/protocol` | Schemas, the management plane contract, the tunnel calls, the typed errors, the status transition function | No platform at all. No `Bun.*`, no `process`, no `node:*`, no `bun:*`, no `@effect/platform-*`. Lint and its `tsconfig.json` (`types: []`) both reject them. |
-| `@gambi/core` | Hub, participant runtime, harness | Depends on the abstract services from `effect` (`FileSystem`, `ChildProcessSpawner`, `Socket`, `HttpServer`). No `Bun.*` in new code. |
+| `@gambi/core` | Hub, participant runtime, harness | Depends on the abstract services from `effect` (`FileSystem`, `ChildProcessSpawner`, `Socket`, `HttpServer`). No `Bun.*` and no `@effect/platform-*` anywhere in `src/`, outside the tests and `src/testing/` (lint). |
 | `packages/cli` entrypoint, SDK hosting entries | `BunRuntime.runMain` and the `@effect/platform-bun` layers | The only place `@effect/platform-bun` is imported. |
 | `gambi-sdk` default entry | The management client and the inference provider | Reaches a hub with `fetch` only. No built-in module of Node or Bun, checked on the packed package. |
 | `@gambi/testing` | The test helper | Test-only. Never a runtime dependency. |
@@ -310,6 +310,7 @@ Rules:
 - Under `it.effect` time does not move by itself. Fork the Effect that sleeps, then call `TestClock.adjust`; joining before adjusting hangs until the `bun test` timeout.
 - Every test body gets a `Scope`, closed when the test ends. `Effect.acquireRelease` and `Effect.addFinalizer` work without `Effect.scoped`.
 - Test behavior seen from outside: an HTTP response, a room event, a line of stdout, an exit code. Do not assert on which services or layers exist.
+- Two guards in `bun test scripts` hold these rules for the whole repository: `scripts/real-waits.test.ts` fails a test or a test helper that waits on a platform timer, or on an Effect wait in a file that runs on the real clock; `scripts/repo-guards.test.ts` fails zod in the core, the SDK and the protocol, and a mutable module variable in `packages/core/src` or `packages/protocol/src`.
 
 ### A hub in a test
 
@@ -538,7 +539,7 @@ Rules:
 
 ## The CLI
 
-The new CLI lives in `packages/cli/src/cli/`, beside the current one, on `effect/cli`. `main.ts` is its entrypoint and the only file that imports `@effect/platform-bun`; lint rejects it anywhere else outside the tests.
+The CLI lives in `packages/cli/src/cli/`, on `effect/cli`; `packages/cli/build.ts` compiles `main.ts` into the `gambi` binary. `main.ts` is its entrypoint and the only file that imports `@effect/platform-bun`; lint rejects it anywhere else outside the tests.
 
 A command:
 

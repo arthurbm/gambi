@@ -248,8 +248,8 @@ Options:
 | `--participant-id` | stable participant identifier |
 | `--model`, `-m` | model to share; with `--harness`, an optional label for the model the harness runs on |
 | `--endpoint`, `-e` | where the provider listens on this machine (default `http://localhost:11434`) |
-| `--header Name=Value` | header for the requests to the provider, such as `Authorization`; repeatable |
-| `--header-env Name=VARIABLE` | header whose value is read from an environment variable; repeatable |
+| `--header Name=Value` | header for the requests to the provider, such as `Authorization`; repeatable. A blank name or value is invalid usage |
+| `--header-env Name=VARIABLE` | header whose value is read from an environment variable; repeatable. A missing, empty, or blank variable is invalid usage |
 | `--harness <opencode\|claude-code\|codex\|fake>` | share a local ACP harness instead of a model endpoint |
 | `--workspace <folder>` | harness mode only: the folder the harness runs in |
 | `--nickname`, `-n` | display name (default `<model>@<first six characters of the participant id>`) |
