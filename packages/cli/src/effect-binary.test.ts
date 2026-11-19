@@ -24,8 +24,9 @@ const ENTRYPOINT = join(import.meta.dir, "cli", "main.ts");
 const COMPILE_TIMEOUT_MS = 120_000;
 
 const run = (cmd: string[], env: Record<string, string> = {}) =>
-  Effect.promise(async () => {
+  Effect.promise(async (signal) => {
     const child = Bun.spawn(cmd, {
+      signal,
       env: { ...process.env, ...env },
       stdout: "pipe",
       stderr: "pipe",
@@ -44,49 +45,23 @@ const temporaryDirectory = Effect.acquireRelease(
     Effect.promise(() => rm(directory, { force: true, recursive: true }))
 );
 
-/** `hub serve` from the binary, on a free port. Killed when the scope closes. */
-const servingHub = (binary: string) =>
-  Effect.acquireRelease(
-    Effect.sync(() =>
-      Bun.spawn(
-        [binary, "hub", "serve", "--host", "127.0.0.1", "--port", "0"],
-        {
-          stdout: "pipe",
-          stderr: "ignore",
-        }
-      )
-    ),
-    (child) =>
-      Effect.promise(async () => {
-        child.kill("SIGKILL");
-        await child.exited;
-      })
-  );
-
-const firstEvent = (stdout: ReadableStream<Uint8Array>) =>
-  Effect.promise(async () => {
-    const reader = stdout.getReader();
-    const decoder = new TextDecoder();
-    let text = "";
-    while (!text.includes("\n")) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      text += decoder.decode(value, { stream: true });
-    }
-    reader.releaseLock();
-    return JSON.parse(text.split("\n")[0] ?? "");
-  });
-
 /** A process of the binary, with its stdout on a pipe. Killed when the scope closes. */
 const spawned = (cmd: string[]) =>
   Effect.acquireRelease(
     Effect.sync(() => Bun.spawn(cmd, { stdout: "pipe", stderr: "ignore" })),
     (child) =>
-      Effect.promise(async () => {
-        child.kill("SIGKILL");
-        await child.exited;
+      Effect.gen(function* () {
+        child.kill("SIGTERM");
+        yield* Effect.promise(() => child.exited).pipe(
+          Effect.timeoutOrElse({
+            duration: "5 seconds",
+            orElse: () =>
+              Effect.promise(async () => {
+                child.kill("SIGKILL");
+                return await child.exited;
+              }),
+          })
+        );
       })
   );
 
@@ -158,8 +133,16 @@ it.live(
         stdout: "gambi v9.9.9\n",
       });
 
-      const hub = yield* servingHub(binary);
-      const started = yield* firstEvent(hub.stdout);
+      const hub = yield* spawned([
+        binary,
+        "hub",
+        "serve",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "0",
+      ]);
+      const started = JSON.parse(yield* linesOf(hub.stdout).next);
       expect(started.type).toBe("started");
       const hubUrl: string = started.data.hubUrl;
 
@@ -314,14 +297,65 @@ it.live(
         type: "tunnel_connected",
         data: { hubVersion: "9.9.9" },
       });
+      const params = { code: roomCode, id: "arthur-1" };
+      const attached = yield* client.harness.events({ params }).pipe(
+        Stream.unwrap,
+        Stream.filter(
+          (event) =>
+            event.type === "harness.connected" ||
+            event.type === "harness.message"
+        ),
+        Stream.toQueue({ capacity: 8 })
+      );
+      expect(yield* Queue.take(attached)).toEqual({
+        type: "harness.connected",
+      });
+      const sessionId: string = harnessStarted.data.sessionId;
+      yield* client.harness.send({
+        params,
+        payload: {
+          sessionId,
+          message: {
+            jsonrpc: "2.0",
+            id: 17,
+            method: "session/prompt",
+            params: {
+              sessionId,
+              prompt: [{ type: "text", text: "Oi, Gambi" }],
+            },
+          },
+        },
+      });
+      expect(yield* Queue.take(attached)).toMatchObject({
+        type: "harness.message",
+        sessionId,
+        message: {
+          method: "session/update",
+          params: {
+            sessionId,
+            update: {
+              content: { type: "text", text: "Fake ACP response: Oi, Gambi" },
+            },
+          },
+        },
+      });
+      expect(yield* Queue.take(attached)).toMatchObject({
+        type: "harness.message",
+        sessionId,
+        message: { jsonrpc: "2.0", id: 17, result: { stopReason: "end_turn" } },
+      });
       joining.kill("SIGTERM");
       expect(yield* Effect.promise(() => joining.exited)).toBe(0);
-      expect(
-        (yield* joiningEvents.rest)
-          .trim()
-          .split("\n")
-          .map((line) => JSON.parse(line).type)
-      ).toEqual(["leaving", "artifact_sent", "left"]);
+      const events = (yield* joiningEvents.rest)
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      // The prompt edits the Workspace. A settled artifact can precede shutdown.
+      expect(events.slice(-3)).toMatchObject([
+        { type: "leaving" },
+        { type: "artifact_sent", data: { reason: "final" } },
+        { type: "left" },
+      ]);
       expect(() => process.kill(harnessStarted.data.pid, 0)).toThrow();
 
       hub.kill("SIGTERM");
