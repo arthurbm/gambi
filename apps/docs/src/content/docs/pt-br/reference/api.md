@@ -479,7 +479,7 @@ Endpoints adicionais de ciclo de vida:
 - `POST /rooms/:code/v1/responses/:id/cancel`
 - `GET /rooms/:code/v1/responses/:id/input_items`
 
-Eles chegam ao participante cujo provedor criou a Response, mesmo enquanto ele está ocupado; enquanto ele está offline, respondem `participant_offline`. O hub lembra até 10 000 Responses; além disso, ele esquece a usada há mais tempo, e as rotas de ciclo de vida dela respondem `response_not_found`.
+Para uma Response armazenada pelo provedor, essas rotas chegam ao runtime que a criou, mesmo quando ele está ocupado. Enquanto o dono está offline, respondem `participant_offline`. Se outro runtime tomar seu lugar, o hub responde `404 response_not_found`. Para uma Response que o hub traduziu de Chat Completions e ainda mantém no registro, ele responde `501 response_not_stored`, inclusive após a substituição. O hub lembra até 10 000 Responses. Ao atingir o limite, ele descarta a entrada usada há mais tempo para dar lugar à próxima. Quando esquece uma entrada, essas rotas respondem `404 response_not_found`.
 
 ### POST /rooms/:code/v1/chat/completions
 

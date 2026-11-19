@@ -186,7 +186,8 @@ export class Tunnels extends Context.Service<
      */
     readonly client: (
       roomCode: string,
-      participantId: string
+      participantId: string,
+      runtimeId?: string
     ) => Effect.Effect<TunnelClient, TunnelNotOpen, Scope.Scope>;
     /**
      * Closes the participant's tunnel from the hub's side and waits until it
@@ -638,10 +639,11 @@ export class Tunnels extends Context.Service<
             );
           }),
         closeAll,
-        client: (roomCode, participantId) =>
+        client: (roomCode, participantId, runtimeId) =>
           Effect.suspend(() => {
             const tunnel = open.get(keyOf(roomCode, participantId));
-            return tunnel === undefined
+            return tunnel === undefined ||
+              (runtimeId !== undefined && tunnel.runtimeId !== runtimeId)
               ? Effect.fail(new TunnelNotOpen({ roomCode, participantId }))
               : tunnel.hold;
           }),

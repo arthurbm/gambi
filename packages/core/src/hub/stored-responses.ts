@@ -16,6 +16,7 @@ import { HubSettings } from "./settings.ts";
 export interface StoredResponse {
   /** The participant whose provider answered the request that created it. */
   readonly participantId: string;
+  readonly runtimeId: string;
   /**
    * Whether the hub built the Response itself, from a Chat Completions
    * answer. No provider stores such a Response: it cannot be read back.
@@ -48,7 +49,8 @@ export class StoredResponses extends Context.Service<
     /** Forgets the Response: its provider no longer has it. */
     readonly forget: (
       roomCode: string,
-      responseId: string
+      responseId: string,
+      owner: StoredResponse
     ) => Effect.Effect<void>;
     /** Remembers where the Response lives, forgetting the oldest one past the limit. */
     readonly remember: (
@@ -88,9 +90,12 @@ export class StoredResponses extends Context.Service<
             }
             return response;
           }),
-        forget: (roomCode, responseId) =>
+        forget: (roomCode, responseId, owner) =>
           Effect.sync(() => {
-            responses.delete(keyOf(roomCode, responseId));
+            const key = keyOf(roomCode, responseId);
+            if (responses.get(key) === owner) {
+              responses.delete(key);
+            }
           }),
         remember: (roomCode, responseId, response) =>
           Effect.sync(() => {

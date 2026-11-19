@@ -169,6 +169,36 @@ layer(layerHub(), { excludeTestServices: true })("Responses API", (it) => {
       })
   );
 
+  it.effect(
+    "a replacement runtime receives no operations on its predecessor's Response",
+    () =>
+      Effect.gen(function* () {
+        const { room, id } = yield* makeStoredResponse("Troca");
+        const replacement = yield* fakeProvider({
+          answer: () => jsonAnswer({}),
+        });
+        yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+          provider: { endpoint: replacement.url },
+        });
+        for (const [method, suffix] of [
+          ["GET", ""],
+          ["POST", "/cancel"],
+          ["GET", "/input_items"],
+          ["DELETE", ""],
+        ] as const) {
+          const response = yield* call(
+            method,
+            room.url(`/responses/${id}${suffix}`)
+          );
+          expect(response.status).toBe(404);
+          expect((yield* json(response)).error.code).toBe("response_not_found");
+        }
+        expect(yield* replacement.calls).toHaveLength(0);
+      })
+  );
+
   it.effect("a Response the hub does not know is a named 404", () =>
     Effect.gen(function* () {
       const { provider, id } = yield* makeStoredResponse("Xote");

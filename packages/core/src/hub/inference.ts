@@ -279,17 +279,34 @@ interface ProviderAnswer {
 const askProvider = Effect.fnUntraced(function* (
   roomCode: string,
   participantId: string,
+  runtimeId: string,
   request: InferenceRequest
 ): Effect.fn.Return<
   ProviderAnswer,
   InferenceError,
-  HubSettings | Tunnels | Scope.Scope
+  HubSettings | Tunnels | Participants | Scope.Scope
 > {
   const settings = yield* HubSettings;
   const tunnels = yield* Tunnels;
-  const tunnel = yield* tunnels.client(roomCode, participantId).pipe(
+  const tunnel = yield* tunnels.client(roomCode, participantId, runtimeId).pipe(
     // The tunnel dropped between the routing and here.
-    Effect.mapError(() => new ParticipantIsOffline({ roomCode, participantId }))
+    Effect.catch(
+      Effect.fnUntraced(function* () {
+        if ("responseId" in request) {
+          const participants = yield* Participants;
+          if (
+            (yield* participants.get(roomCode, participantId))?.runtimeId !==
+            runtimeId
+          ) {
+            return yield* new ResponseNotFound({
+              roomCode,
+              responseId: request.responseId,
+            });
+          }
+        }
+        return yield* new ParticipantIsOffline({ roomCode, participantId });
+      })
+    )
   );
   const chunks = yield* tunnel.Infer(request, { asQueue: true });
 
@@ -600,16 +617,22 @@ const createResponse = Effect.fnUntraced(function* (
 
   if (capabilities.openResponses !== "unsupported") {
     const attempt = yield* Scope.fork(yield* Effect.scope);
-    const answer = yield* askProvider(roomCode, participantId, {
-      operation: "responses.create",
-      body: JSON.stringify(body),
-    }).pipe(Scope.provide(attempt));
+    const answer = yield* askProvider(
+      roomCode,
+      participantId,
+      participant.runtimeId,
+      {
+        operation: "responses.create",
+        body: JSON.stringify(body),
+      }
+    ).pipe(Scope.provide(attempt));
     if (!saysNoResponsesApi(answer.status)) {
       // The provider keeps the Response it created. Whoever asks for it
       // later is sent to this participant.
       const remember = (responseId: string) =>
         stored.remember(roomCode, responseId, {
           participantId,
+          runtimeId: participant.runtimeId,
           translated: false,
         });
       return yield* respond(call, answer, {
@@ -629,10 +652,15 @@ const createResponse = Effect.fnUntraced(function* (
   }
 
   const chatBody = yield* toChatCompletionsRequest(body);
-  const answer = yield* askProvider(roomCode, participantId, {
-    operation: "chatCompletions.create",
-    body: JSON.stringify(chatBody),
-  });
+  const answer = yield* askProvider(
+    roomCode,
+    participantId,
+    participant.runtimeId,
+    {
+      operation: "chatCompletions.create",
+      body: JSON.stringify(chatBody),
+    }
+  );
   if (answer.status < 200 || answer.status >= 300) {
     // The provider refused the request. Its answer says why, in a format
     // the two APIs share, so the app gets it as it is.
@@ -648,6 +676,7 @@ const createResponse = Effect.fnUntraced(function* (
   // no provider behind it, to say so instead of "not found".
   const remember = stored.remember(roomCode, translation.responseId, {
     participantId,
+    runtimeId: participant.runtimeId,
     translated: true,
   });
   return yield* respond(call, answer, {
@@ -723,7 +752,7 @@ const infer = (operation: InferenceCreation) =>
         const answering =
           operation === "responses.create"
             ? createResponse(call, participant, body, report)
-            : askProvider(roomCode, participantId, {
+            : askProvider(roomCode, participantId, participant.runtimeId, {
                 operation,
                 body: JSON.stringify(body),
               }).pipe(
@@ -756,7 +785,6 @@ const storedResponse = (operation: StoredResponseOperation) =>
     request: HttpServerRequest.HttpServerRequest
   ) {
     const rooms = yield* Rooms;
-    const participants = yield* Participants;
     const stored = yield* StoredResponses;
     const params = yield* HttpRouter.params;
     const room = yield* rooms.get(params.code ?? "");
@@ -770,12 +798,6 @@ const storedResponse = (operation: StoredResponseOperation) =>
       return yield* new ResponseNotStored({ roomCode, responseId });
     }
     const { participantId } = known;
-    // Without its participant in the room nobody can reach the Response. The
-    // hub keeps what it knows: a participant that comes back under its id
-    // brings its provider, and the Response, back with it.
-    if ((yield* participants.status(roomCode, participantId)) === undefined) {
-      return yield* new ResponseNotFound({ roomCode, responseId });
-    }
     // Cancelling takes no parameters; the other operations take theirs in
     // the query, which goes to the provider as the app wrote it.
     const query = operation === "responses.cancel" ? "" : queryOf(request.url);
@@ -788,11 +810,16 @@ const storedResponse = (operation: StoredResponseOperation) =>
     return yield* withCall(
       Effect.fnUntraced(function* (scopes) {
         const call: Call = { ...scopes, roomCode, participantId };
-        const answer = yield* askProvider(roomCode, participantId, {
-          operation,
-          responseId,
-          ...(query === "" ? {} : { query }),
-        });
+        const answer = yield* askProvider(
+          roomCode,
+          participantId,
+          known.runtimeId,
+          {
+            operation,
+            responseId,
+            ...(query === "" ? {} : { query }),
+          }
+        );
         const succeeded = answer.status >= 200 && answer.status < 300;
         // The Response is gone from the provider: deleted now, or found
         // missing by an operation on the Response itself.
@@ -801,7 +828,7 @@ const storedResponse = (operation: StoredResponseOperation) =>
             ? succeeded || answer.status === 404
             : operation === "responses.retrieve" && answer.status === 404;
         if (gone) {
-          yield* stored.forget(roomCode, responseId);
+          yield* stored.forget(roomCode, responseId, known);
         }
         return yield* respond(call, answer, untouched);
       })

@@ -80,6 +80,7 @@ interface ParticipantState {
  * stays inside the hub.
  */
 export interface DispatchedParticipant {
+  readonly runtimeId: string;
   /** Which inference APIs its provider answers, as the participant registered them. */
   readonly capabilities: ParticipantCapabilities;
   readonly config: RuntimeConfig;
@@ -488,6 +489,7 @@ export class Participants extends Context.Service<
           if (change !== undefined) {
             return {
               id: picked.id,
+              runtimeId: picked.runtimeId,
               nickname: picked.nickname,
               model: picked.model,
               config: picked.config,
