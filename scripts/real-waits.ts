@@ -42,8 +42,15 @@ const EFFECT_WAITS: readonly (readonly [string, RegExp])[] = [
 
 const TEST_FILE = /\.test\.tsx?$/;
 const SOURCE_FILE = /\.tsx?$/;
-/** `it.live`, or a `layer` block that keeps the real clock. */
-const REAL_CLOCK = /\bit\.live\b|excludeTestServices:\s*true/;
+/** The form of the test helper that runs under the test clock. */
+const TEST_CLOCK = /\bit\.effect\b/;
+/**
+ * `it.live`, a `layer` block that keeps the real clock, or an Effect run by
+ * hand (`Effect.runPromise`, a `ManagedRuntime`), which the helper's clock
+ * never reaches.
+ */
+const REAL_CLOCK =
+  /\bit\.live\b|excludeTestServices:\s*true|\bEffect\.run[A-Z]\w*|\bManagedRuntime\b/;
 const COMMENT_LINE = /^\s*(?:\/\/|\/\*|\*)/;
 
 /** A file that only tests import: a `testing` or `__tests__` folder, or a `testing.ts`. */
@@ -58,8 +65,13 @@ const isTestHelper = (file: string): boolean => {
 
 /** The real waits written in `source`, the text of the test or test helper at `file`. */
 export const realWaits = (file: string, source: string): RealWait[] => {
-  // A helper is imported by tests of both kinds, so it is held to the real clock.
-  const onRealClock = !TEST_FILE.test(file) || REAL_CLOCK.test(source);
+  // A helper is imported by tests of both kinds, so it is held to the real
+  // clock. So is a whole test file with one test on the real clock: the check
+  // does not tell the tests of a file apart.
+  const onRealClock =
+    !TEST_FILE.test(file) ||
+    REAL_CLOCK.test(source) ||
+    !TEST_CLOCK.test(source);
   const waits = onRealClock
     ? [...PLATFORM_TIMERS, ...EFFECT_WAITS]
     : PLATFORM_TIMERS;

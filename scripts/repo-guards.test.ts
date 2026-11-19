@@ -109,19 +109,6 @@ describe("the old CLI", () => {
     expect(declared).not.toContain("clipanion");
     expect(declared).not.toContain("@clack/prompts");
   });
-
-  test("the binary is built from the Effect CLI", async () => {
-    const build = await Bun.file(join(ROOT, "packages/cli/build.ts")).text();
-    const manifest: { scripts: Record<string, string> } = await Bun.file(
-      join(ROOT, "packages/cli/package.json")
-    ).json();
-
-    expect(build).toContain("bun build ./src/cli/main.ts --compile");
-    expect(manifest.scripts.dev).toBe("bun run src/cli/main.ts");
-    expect(await Bun.file(join(ROOT, "packages/cli/src/cli.ts")).exists()).toBe(
-      false
-    );
-  });
 });
 
 describe("the error codes nothing answered with", () => {

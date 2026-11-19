@@ -50,6 +50,13 @@ describe("a real wait in a test", () => {
     expect(waitsOf(virtual)).toEqual([]);
   });
 
+  test("a sleep of Effect run by hand, outside the helper, is on the real clock", () => {
+    const source =
+      'test("waits", () => Effect.runPromise(Effect.sleep("20 millis")));\n';
+
+    expect(waitsOf(source)).toEqual(["Effect.sleep"]);
+  });
+
   test("a test helper may run under either clock, so a sleep of Effect in it is real", () => {
     const helper = 'export const settle = Effect.sleep("20 millis");\n';
 
