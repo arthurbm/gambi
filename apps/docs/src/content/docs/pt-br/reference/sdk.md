@@ -59,9 +59,9 @@ await generateText({ model: gambi.participant("worker-1"), prompt: "..." });
 | --- | --- | --- |
 | `gambi.any()` | um participante disponível aleatório | qualquer participante disponível serve |
 | `gambi.model(name)` | o primeiro participante disponível que expõe `name` | você precisa de um modelo específico, mas não de uma máquina específica |
-| `gambi.participant(id)` | o participante com esse id | você precisa de um alvo exato (afinidade, depuração, benchmark) |
+| `gambi.participant(id)` | o participante com esse id, quando ele está disponível | você quer uma máquina específica (afinidade, depuração, benchmark) |
 
-Um participante só está disponível quando está `online`: o túnel dele está aberto e ele não está atendendo outra requisição. `any()` e `model()` nunca selecionam participantes de harness. Quando nenhum participante está disponível, a requisição falha com HTTP `404` e o código `model_not_found`; então uma rajada de chamadas `any()` concorrentes maior que o número de participantes livres recebe algumas respostas `404`. Veja [Roteamento de modelo](/pt-br/reference/api/#roteamento-de-modelo) e [Erros de inferência](/pt-br/reference/api/#erros-de-inferência).
+Um participante só está disponível quando está `online`: o túnel dele está aberto e ele não está atendendo outra requisição. `any()` e `model()` nunca selecionam participantes de harness. `gambi.participant(id)` envia o ID como seletor de modelo, então não é um alvo exato: quando esse participante está ocupado ou offline e outro participante disponível serve um modelo com o mesmo nome, esse outro recebe a requisição. Quando nenhum participante está disponível, a requisição falha com HTTP `404` e o código `model_not_found`; então uma rajada de chamadas `any()` concorrentes maior que o número de participantes livres recebe algumas respostas `404`. Veja [Roteamento de modelo](/pt-br/reference/api/#roteamento-de-modelo) e [Erros de inferência](/pt-br/reference/api/#erros-de-inferência).
 
 ### Seleção de protocolo
 
@@ -143,7 +143,7 @@ const client = createClient({
 });
 ```
 
-O padrão de `hubUrl` é `http://localhost:3000`. Os métodos retornam o próprio valor, sem o envelope `{ data, meta }` da API HTTP, e rejeitam com um [`ClientError`](#erros).
+O padrão de `hubUrl` é `http://localhost:3000`. Os métodos retornam o próprio valor, sem o envelope `{ data, meta }` da API HTTP, e rejeitam com um [`ClientError`](#erros) quando a chamada ao hub falha.
 
 ### Namespaces
 
@@ -155,7 +155,7 @@ O padrão de `hubUrl` é `http://localhost:3000`. Os métodos retornam o própri
 | `client.events` | `watch` |
 | `client.harness` | `attach`, `openSession`, `send`, `closeSession` |
 
-`client.close()` encerra as observações abertas, cancela as chamadas em andamento e recusa chamadas novas. Ele é opcional: um cliente que nunca é fechado não segura nada depois que as observações dele terminam. O cliente também funciona com `await using`.
+`client.close()` encerra as observações abertas, cancela as chamadas em andamento e recusa chamadas novas; essas chamadas rejeitam com um `Error` simples (`The client is closed.`), não com um `ClientError`. Ele é opcional: um cliente que nunca é fechado não segura nada depois que as observações dele terminam. O cliente também funciona com `await using`.
 
 ### `client.hub.health()`
 
@@ -244,33 +244,40 @@ Tipos de evento: `room.snapshot`, `participant.joined`, `participant.updated`, `
 Faz attach a um participante de harness: lê o que o harness dele diz, abre e fecha sessões de harness e envia mensagens ACP. Essas chamadas vão para o hub, que as repassa pelo túnel do participante; o seu programa nunca se conecta ao participante.
 
 ```ts
-const controller = new AbortController();
+const room = "ABC123";
+const participant = "arthur-opencode";
+const sessionId = "session-1"; // você escolhe
 
-await client.harness.openSession("ABC123", "arthur-opencode", "session-1");
+await client.harness.openSession(room, participant, sessionId);
 
-await client.harness.send("ABC123", "arthur-opencode", "session-1", {
-  jsonrpc: "2.0",
-  id: 1,
-  method: "session/prompt",
-  params: {
-    sessionId: "session-1",
-    prompt: [{ type: "text", text: "Write a README for this project." }],
-  },
-});
-
-for await (const event of client.harness.attach("ABC123", "arthur-opencode", {
-  signal: controller.signal,
-})) {
-  if (event.type === "harness.message") {
-    console.log(event.message);
+for await (const event of client.harness.attach(room, participant)) {
+  // O stream não repete nada: envie quando ele estiver aberto.
+  if (event.type === "harness.connected") {
+    await client.harness.send(room, participant, sessionId, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "session/prompt",
+      params: {
+        sessionId,
+        prompt: [{ type: "text", text: "Write a README for this project." }],
+      },
+    });
+  }
+  if (event.type === "harness.message" && event.sessionId === sessionId) {
+    if (event.message.id === 1) {
+      break; // a resposta ao prompt: o turno acabou
+    }
+    console.log(event.message); // atualizações enquanto o harness trabalha
   }
   if (event.type === "harness.artifact") {
     console.log(event.version, event.files.length);
   }
 }
 
-await client.harness.closeSession("ABC123", "arthur-opencode", "session-1");
+await client.harness.closeSession(room, participant, sessionId);
 ```
+
+Todo cliente conectado a um participante lê todos os eventos desse participante, inclusive as respostas a outros clientes. Filtre `harness.message` por `sessionId` e associe as respostas às suas requisições pelo `id` do JSON-RPC. Sair do loop com `break` fecha o stream.
 
 | Método | Resolve com | Descrição |
 | --- | --- | --- |
@@ -459,7 +466,7 @@ A sessão adiciona `harness` ao formato da sessão:
 | `harness.warning` | definido quando uma verificação de prontidão não conseguiu confirmar algo |
 | `harness.exited` | resolve com `{ message, exitCode?, detail? }` se o harness sair por conta própria. Isso não encerra a sessão: decidir o que fazer cabe a você |
 
-`leave()` para o harness primeiro, para que o snapshot final suba pelo túnel, e depois tira o participante da sala.
+`leave()` primeiro tira um snapshot final enquanto o harness e o túnel ainda estão rodando (melhor esforço, até `artifacts.finalTimeoutMs`, 2 segundos por padrão), depois fecha o túnel, para o harness e tira o participante da sala.
 
 Limites conhecidos:
 
@@ -481,9 +488,9 @@ e retorna um workspace preparado:
 | `dispose()` | opcional; chamado uma vez quando a sessão termina |
 
 O runtime envia um snapshot completo como cada nova versão de artefato.
-`createLocalDirectoryWorkspace({ path? })` usa `path` ou uma pasta vazia em
-`~/.gambi/workspaces/<room>/<participant>/`. Ele escreve apenas `.gambi.json`, que
-nunca aparece em um artefato, e deixa de fora `.git`, `node_modules` e links simbólicos.
+`createLocalDirectoryWorkspace({ path? })` usa `path` ou uma pasta em
+`~/.gambi/workspaces/<room>/<participant>/`, criada vazia quando ainda não existe e
+reaproveitada como está nos outros casos. Ele escreve apenas `.gambi.json`, que nunca aparece em um artefato, e deixa de fora `.git`, `node_modules` e links simbólicos.
 Um `collect()` customizado para um workspace grande demais deve rejeitar com
 `new ParticipantError({ code: "WORKSPACE_TOO_LARGE", message })`.
 
@@ -524,7 +531,7 @@ Opções comuns (`DiscoveryOptions`):
 
 | Opção | Tipo | Descrição |
 | --- | --- | --- |
-| `hubUrl` | `string` | pula o mDNS e consulta este hub diretamente |
+| `hubUrl` | `string` | um hub para consultar além dos que o mDNS encontra (padrão `http://localhost:3000`) |
 | `timeoutMs` | `number` | quanto tempo esperar pelas respostas mDNS |
 | `fetchFn` | `typeof fetch` | fetch customizado (testes, proxies) |
 | `browseServices` | `BrowseServicesLike` | browser mDNS customizado |
@@ -581,7 +588,7 @@ Cada entrada rejeita com a própria classe de erro, e `code` distingue os casos.
 | `NOT_A_HARNESS_PARTICIPANT` | o participante compartilha um endpoint de modelo, então não há harness ao qual fazer attach |
 | `PARTICIPANT_UNREACHABLE` | o túnel do participante não está aberto agora |
 | `HARNESS_FAILED` | o harness não respondeu, recusou ou saiu; `details.reason` diz qual |
-| `HARNESS_SESSION_NOT_OPEN` | a mensagem era para uma sessão de harness que não está aberta |
+| `HARNESS_SESSION_NOT_OPEN` | a mensagem foi enviada a uma sessão de harness que não está aberta |
 | `HARNESS_SESSION_OUTSIDE_WORKSPACE` | a sessão foi pedida para rodar fora do workspace do participante |
 | `HUB_UNREACHABLE` | nada respondeu na URL do hub |
 | `NOT_A_HUB` | algo respondeu, mas não como um hub do Gambi desta versão: outro servidor, um proxy ou um hub de outra versão |
@@ -594,9 +601,9 @@ try {
 } catch (error) {
   if (error instanceof ClientError && error.code === "ROOM_NOT_FOUND") {
     console.warn(error.hint);
-    return;
+  } else {
+    throw error;
   }
-  throw error;
 }
 ```
 

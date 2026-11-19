@@ -106,7 +106,7 @@ Quando a inicialização dá certo, a CLI informa três marcos:
 2. registro do participante concluído
 3. túnel do participante conectado
 
-O processo fica em primeiro plano. Se a rede cair por um momento, o participante se reconecta sozinho com o mesmo ID, e as aplicações conectadas mantêm seus streams. Aperte Ctrl+C uma vez para parar: o harness tem 2 segundos para sair antes de ser morto, o snapshot final do workspace sobe e o participante sai da sala.
+O processo fica em primeiro plano. Se a rede cair por um momento, o participante se reconecta sozinho com o mesmo ID, e as aplicações conectadas mantêm seus streams. Aperte Ctrl+C uma vez para parar: o participante envia um snapshot final do workspace enquanto o harness e o túnel ainda estão rodando (melhor esforço, até 2 segundos), depois o túnel fecha, o harness tem 2 segundos para sair antes de ser morto e o participante sai da sala.
 
 Para uma saída do ciclo de vida legível por máquina, use NDJSON:
 
@@ -122,7 +122,7 @@ Os eventos de inicialização são `harness_started`, `registered` e `tunnel_con
 
 ## Entenda o workspace
 
-O workspace é a pasta na sua máquina onde o harness roda. Por padrão, o Gambi cria uma vazia:
+O workspace é a pasta na sua máquina onde o harness roda. Por padrão, o Gambi usa esta, criada vazia na primeira vez; um join posterior com a mesma sala e o mesmo ID de participante a reaproveita com o que ela tiver:
 
 ```text
 ~/.gambi/workspaces/<room>/<participant-id>/
@@ -190,7 +190,7 @@ for await (const event of client.harness.attach(room, participant)) {
 }
 ```
 
-O primeiro evento do stream diz se o hub está recebendo o seu harness: `harness.connected`, ou `harness.disconnected` enquanto o seu túnel está fora do ar. Nada do que aconteceu antes de a aplicação se conectar é repetido, e é por isso que o exemplo só envia o prompt depois de `harness.connected`. Se o participante sair da sala, o stream termina com `harness.detached`.
+O primeiro evento do stream diz se o hub está recebendo o seu harness: `harness.connected`, ou `harness.disconnected` enquanto o seu túnel está fora do ar. Nada do que aconteceu antes de a aplicação se conectar é repetido, e é por isso que o exemplo só envia o prompt depois de `harness.connected`. Toda aplicação conectada lê todos os eventos do seu harness, então filtre por `sessionId` e associe as respostas pelo `id` do JSON-RPC. Se o participante sair da sala, o stream termina com `harness.detached`.
 
 O payload `message` é ACP v1 puro, então qualquer tipo de update do [schema do ACP](https://agentclientprotocol.com/protocol/schema) pode chegar aqui. A referência do SDK também mostra como uma aplicação pode [hospedar ela mesma participantes de harness](/pt-br/reference/sdk/#createharnessparticipantsessionoptions-gambi-sdkparticipant-só-bun).
 

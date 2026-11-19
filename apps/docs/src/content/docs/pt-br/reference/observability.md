@@ -120,7 +120,7 @@ Todo participante tem um `status`, derivado do túnel dele:
 | Status | Significado |
 | --- | --- |
 | `offline` | registrado, mas com o túnel fechado; não recebe requisições |
-| `online` | túnel aberto e ocioso; o único status que recebe requisições |
+| `online` | túnel aberto e ocioso; o único status que recebe novas requisições de inferência |
 | `busy` | atendendo uma requisição |
 
 Cada mudança emite um evento `participant.online`, `participant.busy` ou `participant.offline`, então um monitor consegue acompanhar a sala só pelo stream de eventos.

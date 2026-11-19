@@ -80,7 +80,7 @@ Códigos de erro:
 | `TUNNEL_TOKEN_INVALID` | `401` | o upgrade do túnel chegou sem um bootstrap token válido |
 | `NOT_A_HARNESS_PARTICIPANT` | `409` | o participante compartilha um endpoint de modelo, não um harness |
 | `PARTICIPANT_UNREACHABLE` | `409` | o túnel do participante não está aberto agora |
-| `HARNESS_SESSION_NOT_OPEN` | `409` | a mensagem ou o fechamento citou uma sessão de harness que não está aberta |
+| `HARNESS_SESSION_NOT_OPEN` | `409` | a mensagem foi enviada a uma sessão de harness que não está aberta |
 | `HARNESS_SESSION_OUTSIDE_WORKSPACE` | `403` | pediram para a sessão de harness rodar fora do workspace do participante |
 | `HARNESS_FAILED` | `502` | o harness não respondeu, recusou ou encerrou; `details.reason` diz qual |
 | `INVALID_REQUEST` | `400` | a requisição não segue o contrato; `details.issues` lista cada problema com o `path` dele |
@@ -167,7 +167,7 @@ Os resumos de participante incluem:
 | Status | Significado |
 | --- | --- |
 | `offline` | registrado, mas com o túnel fechado; não recebe requisições |
-| `online` | túnel aberto e ocioso; o único status que recebe requisições |
+| `online` | túnel aberto e ocioso; o único status que recebe novas requisições de inferência |
 | `busy` | atendendo uma requisição |
 
 Um participante que fica `offline` por 60 segundos é removido da sala.
@@ -209,14 +209,14 @@ Campos de `MachineSpecs` (todos opcionais):
 | `ram` | `number` | RAM do sistema em gigabytes |
 | `vram` | `number` | VRAM da GPU em gigabytes |
 
-Campos de `ParticipantCapabilities` (cada um tem `"unknown"` como padrão):
+Campos de `ParticipantCapabilities`. Sem `capabilities`, os dois são `"unknown"`; quando você envia o objeto, informe os dois:
 
 | Campo | Valores | Descrição |
 | --- | --- | --- |
 | `openResponses` | `"supported" \| "unsupported" \| "unknown"` | se o endpoint do participante fala a OpenAI Responses API |
 | `chatCompletions` | `"supported" \| "unsupported" \| "unknown"` | se o endpoint do participante fala OpenAI Chat Completions |
 
-Campos de `RuntimeConfig` (todos opcionais): `temperature`, `top_p`, `max_tokens`, `stop`, `frequency_penalty`, `presence_penalty`, `seed`, `instructions`. Eles funcionam como padrões no nível do participante: vencem os padrões da sala, e os campos da própria requisição vencem os dois. A string `instructions` fica no hub. As respostas da API de gerenciamento mostram apenas `hasInstructions`.
+Campos de `RuntimeConfig` (todos opcionais): `temperature`, `top_p`, `max_tokens`, `stop`, `frequency_penalty`, `presence_penalty`, `seed`, `instructions`. Eles funcionam como padrões no nível do participante: vencem os padrões da sala, e os campos da própria requisição vencem os dois. As respostas da API de gerenciamento nunca mostram a string `instructions`, só `hasInstructions`; o hub envia o texto ao provedor quando o padrão se aplica a uma requisição.
 
 ```bash
 curl -X PUT http://localhost:3000/v1/rooms/ABC123/participants/worker-1 \
@@ -256,6 +256,8 @@ Exemplo de resposta:
 }
 ```
 
+Defina `version` como a versão do seu hub (`gambi --version` na máquina do hub): qualquer outra minor é recusada.
+
 Um participante registrado assim fica `offline` até abrir o túnel, e é removido depois de 60 segundos se nunca abrir.
 
 ### GET /v1/rooms/:code/participants/:id/tunnel
@@ -274,7 +276,7 @@ Ciclo de vida do token:
 - o token expira 60 segundos depois de emitido
 - registrar de novo via `PUT /v1/rooms/:code/participants/:id` retorna um token novo
 
-Toda recusa (token ausente, desconhecido, expirado ou já consumido, participante errado, sala desconhecida) é `401 TUNNEL_TOKEN_INVALID`.
+Um token ausente, desconhecido, expirado ou já consumido, um token de outro participante e uma sala desconhecida são todos `401 TUNNEL_TOKEN_INVALID`. Uma requisição com token válido e sem upgrade de WebSocket consome o token e recebe `400 INVALID_REQUEST`.
 
 ### DELETE /v1/rooms/:code/participants/:id
 
@@ -331,6 +333,7 @@ Um cliente de gerenciamento controla um participante de harness com um stream de
 
 - O cliente escolhe o ID da sessão. Abrir uma sessão que já está aberta a deixa como está. `cwd` precisa ser uma pasta dentro do workspace do participante; o padrão é o próprio workspace.
 - `message` é um objeto JSON-RPC do ACP v1, passado ao harness como está. O `202` significa que o harness o recebeu; a resposta dele chega pelo stream de eventos.
+- Todo cliente conectado lê todos os eventos do participante, inclusive as respostas a outros clientes. Filtre `harness.message` por `sessionId` e associe as respostas às suas requisições pelo `id` do JSON-RPC.
 - Estas rotas respondem `NOT_A_HARNESS_PARTICIPANT` para um participante de modelo, e as três requisições respondem `PARTICIPANT_UNREACHABLE` enquanto o túnel do participante está fora do ar.
 
 ```bash
@@ -361,7 +364,7 @@ URL base:
 http://localhost:3000/rooms/ABC123/v1/
 ```
 
-O hub lê só `model` e `stream` do corpo da requisição. Todo outro campo vai para o provedor do participante como chegou, depois que o hub preenche o que a requisição deixou de fora com a config do participante e os padrões da sala. O hub troca `model` pelo modelo do participante.
+O hub lê só `model` (uma string não vazia) e `stream` (um booleano, ou `null` para sem stream) do corpo da requisição. Todo outro campo vai para o provedor do participante como chegou, depois que o hub preenche o que a requisição deixou de fora com a config do participante e os padrões da sala. O hub troca `model` pelo modelo do participante.
 
 ### Roteamento de modelo
 
@@ -371,9 +374,9 @@ O campo `model` controla o roteamento:
 | --- | --- |
 | `*` ou `any` | um participante disponível aleatório |
 | `model:<name>` | o primeiro participante disponível cujo modelo é `<name>` |
-| `<participant-id>` | esse participante, se estiver disponível |
+| qualquer outro valor | o participante disponível com esse ID; senão, o primeiro participante disponível cujo modelo tem esse nome; senão, `participant_busy` ou `participant_offline` quando existe um participante com esse ID, mas ele não está disponível |
 
-Se o valor não for um seletor `*`, `any` ou `model:` e nenhum participante disponível tiver esse ID, o hub trata o valor como nome de modelo e escolhe o primeiro participante disponível que o sirva. Então `"model": "llama3"` se comporta como `model:llama3`, a menos que haja um participante registrado com o ID `llama3`.
+Então `"model": "llama3"` se comporta como `model:llama3`, a menos que um participante disponível tenha o ID `llama3`, e um ID de participante não é um alvo exato: quando esse participante está ocupado ou offline, outro que sirva um modelo com o mesmo nome pode receber a requisição.
 
 Um participante só está disponível quando está `online`: o túnel dele está aberto e ele não está atendendo outra requisição. Participantes de harness nunca são escolhidos por `*`, `any` ou um nome de modelo.
 
@@ -381,8 +384,8 @@ Um participante só está disponível quando está `online`: o túnel dele está
 
 - Fechar a requisição HTTP (abortar o `fetch`, parar o stream) cancela a requisição no provedor do participante, e o participante volta a ficar disponível.
 - Se o participante não enviar nada por 5 minutos, antes do primeiro chunk ou entre dois, o hub cancela a requisição e responde `inference_timeout`.
-- Se o seu app lê um stream tão devagar que mais de 8 MiB dele ficam esperando, o hub cancela a requisição e encerra o stream com `consumer_too_slow`.
-- Uma resposta que não é stream fica retida no hub até estar completa, até 32 MiB.
+- Se o seu app lê um stream tão devagar que mais de 8 Mi caracteres dele ficam esperando, o hub cancela a requisição e encerra o stream com `consumer_too_slow`.
+- Uma resposta que não é stream fica retida no hub até estar completa, até 32 Mi caracteres.
 
 ### Erros de inferência
 
@@ -403,13 +406,13 @@ As rotas de inferência não usam o envelope da API de gerenciamento. Os erros u
 
 | Status | `code` | Condição |
 | --- | --- | --- |
-| `400` | `invalid_request` | o corpo não é um objeto JSON, `model` está ausente ou `stream` não é booleano |
+| `400` | `invalid_request` | o corpo não é um objeto JSON, `model` está ausente ou vazio, ou `stream` não é booleano |
 | `400` | `inference_not_supported` | o seletor aponta para um participante de harness |
 | `400` | `request_not_translatable` | o provedor não tem Responses API e a requisição usa algo que Chat Completions não consegue levar |
 | `404` | `room_not_found` | o código da sala não existe |
 | `404` | `model_not_found` | nenhum participante disponível corresponde ao seletor |
 | `404` | `response_not_found` | o hub não conhece nenhuma Response com esse ID na sala |
-| `408` | `consumer_too_slow` | o app leu um stream devagar demais (só dentro de um stream) |
+| `408` | `consumer_too_slow` | o app leu um stream devagar demais. Só é enviado como o último evento de um stream, cujo status HTTP já foi `200` |
 | `409` | `participant_busy` | o seletor aponta para um participante ocupado |
 | `501` | `response_not_stored` | a Response foi respondida via Chat Completions e não pode ser lida de volta, apagada nem cancelada |
 | `501` | `responses_not_supported` | o provedor não fala nem a Responses API nem Chat Completions |
@@ -490,9 +493,9 @@ Use esta rota quando uma ferramenta exigir Chat Completions. Em integrações no
 
 ## Padrões de runtime
 
-Para cada campo que uma requisição deixa de fora, o hub usa:
+Para cada campo que uma requisição deixa de fora ou envia como `null`, o hub usa:
 
 1. a config do participante, quando ela define o campo
 2. senão, os padrões da sala
 
-Os campos que a requisição define sempre vencem. As `instructions` padrão viram uma mensagem `system` no início em Chat Completions (a menos que a requisição já tenha uma) e preenchem `instructions` na Responses API. Configurações sensíveis são ocultadas dos payloads públicos da API de gerenciamento.
+Os campos que a requisição define com um valor sempre vencem. Na Responses API, `max_tokens` preenche `max_output_tokens` e `stop` preenche `stop_sequences`. As `instructions` padrão viram uma mensagem `system` no início em Chat Completions (a menos que a requisição já tenha uma) e preenchem `instructions` na Responses API. Configurações sensíveis são ocultadas dos payloads públicos da API de gerenciamento.

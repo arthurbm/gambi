@@ -82,7 +82,7 @@ Sem `--format`, o formato é `GAMBI_FORMAT` e, sem essa variável, `text` quando
 
 - Um comando de execução única imprime o resultado como `{ "data": ... }`.
 - Um comando de longa duração (`hub serve`, `participant join`) imprime uma linha JSON por etapa, `{ "type", "timestamp", "data" }`, tanto em `json` quanto em `ndjson`.
-- `events watch` imprime cada evento da sala como uma linha JSON.
+- `events watch` imprime cada evento da sala como uma linha JSON em `json` e `ndjson`; em `text`, o horário, o tipo e um resumo.
 - Erros vão para o stderr. Fora de `text`, eles são uma linha JSON, `{ "error": { "name", "message", "hint", "details", "exitCode" } }`. Em `text`: `Error (Name): message`, depois uma linha `Hint:` e o `request_id` do hub quando houver.
 - Linhas de log também vão para o stderr, nunca para o stdout.
 
@@ -263,7 +263,7 @@ Observações:
 
 - `--participant-id` é obrigatório. Reusar o ID é o que permite a um participante voltar como o mesmo participante.
 - Num terminal, o comando pede a sala, o ID do participante e o modelo que faltarem. No modo modelo, ele lista os modelos encontrados no endpoint.
-- A CLI sonda o endpoint antes do registro: um endpoint que não responde falha com `EndpointUnreachable`, e um modelo que o endpoint não lista falha com `ModelNotOnEndpoint`, os dois com código de saída `3`.
+- A CLI sonda o endpoint antes do registro: um endpoint que não responde falha com `EndpointUnreachable`, e um modelo que o endpoint não lista falha com `ModelNotOnEndpoint`, os dois com código de saída `3`. `--model` precisa ser exatamente um nome listado: o Ollama lista os nomes com a tag, como `llama3:latest` (veja `ollama list`).
 - Todo participante entra por um túnel, então o endpoint do provedor pode ficar em `localhost` mesmo quando o hub roda em outra máquina. Os valores de `--header` e `--header-env` só são usados na sondagem e nas requisições ao provedor, nesta máquina. Veja [Como os túneis funcionam](/pt-br/concepts/tunnel-first/).
 - Quando o túnel cai, o participante reconecta sozinho, esperando 1 segundo e dobrando até 30, com o mesmo ID de participante. Se ele ficar fora por mais de 60 segundos, o hub o remove, e a tentativa seguinte o traz de volta como um novo participante com o mesmo ID.
 - O participante termina em vez de reconectar quando o hub o recusa na volta (por exemplo, um hub reiniciado não tem sala com aquele código) ou quando outro runtime entra com o mesmo ID de participante.
@@ -272,7 +272,7 @@ Observações:
 
 Modo harness:
 
-- O modo harness inicia o processo do harness numa pasta de workspace e envia um snapshot da pasta depois que ela fica um segundo sem mudar. Sem `--workspace`, a pasta é `~/.gambi/workspaces/<room>/<participant-id>/` e começa vazia, exceto por `.gambi.json`, que nunca é enviado. `.git`, `node_modules` e links simbólicos nunca são enviados. Passar `--workspace` sem `--harness` sai com código `2`.
+- O modo harness inicia o processo do harness numa pasta de workspace e envia um snapshot da pasta depois que ela fica um segundo sem mudar. Sem `--workspace`, a pasta é `~/.gambi/workspaces/<room>/<participant-id>/`: criada vazia na primeira vez, exceto por `.gambi.json` (que nunca é enviado), e reaproveitada com o que ela tiver por um join posterior com a mesma sala e o mesmo ID de participante. `.git`, `node_modules` e links simbólicos nunca são enviados. Passar `--workspace` sem `--harness` sai com código `2`.
 - Um workspace cujo snapshot passa de 8 MiB não é enviado: o comando imprime `artifact_skipped` no lugar.
 - `--endpoint`, `--header` e `--header-env` são inválidos com `--harness` (código de saída `2`). O harness usa o login que já existe na máquina do participante. O Gambi não lê nem envia essas credenciais.
 - O adaptador `opencode` roda `opencode acp`. Se o OpenCode não estiver instalado ou não tiver credenciais detectadas, o comando sai com código `3` e imprime o comando necessário para corrigir.
@@ -281,7 +281,7 @@ Modo harness:
 - O adaptador `codex` roda a bridge publicada `codex-acp`. Instale-a com `npm install -g @agentclientprotocol/codex-acp`, instale a Codex CLI com `npm install -g @openai/codex` e autentique localmente com `codex login`.
 - As verificações de prontidão do Claude Code e do Codex usam `claude auth status --json` e `codex login status`. O estado de autenticação e as credenciais ficam na máquina do participante e nunca entram no registro, nos eventos de ciclo de vida ou no túnel.
 - O adaptador `fake` é determinístico e não chama nenhum modelo. Ele serve para ensaios e testes automatizados.
-- No Ctrl+C, um participante de harness para o harness primeiro, para que o snapshot final suba, e depois sai da sala. O harness tem 2 segundos para parar antes de ser morto. Se a própria CLI for morta com `kill -9`, um harness que não observa a entrada padrão dele pode continuar rodando.
+- No Ctrl+C, um participante de harness primeiro tira um snapshot final enquanto o harness e o túnel ainda estão rodando (melhor esforço, até 2 segundos), depois fecha o túnel, para o harness e sai da sala. O harness tem 2 segundos para parar antes de ser morto. Se a própria CLI for morta com `kill -9`, um harness que não observa a entrada padrão dele pode continuar rodando.
 
 Para um passo a passo de configuração do OpenCode, do Claude Code e do Codex, veja [Traga seu harness](/pt-br/guides/bring-your-harness/).
 
@@ -337,12 +337,12 @@ gambi participant join \
   --model deterministic-fixture
 ```
 
-Eventos de ciclo de vida (`--format json|ndjson`). O `data` de todo evento tem `roomCode` e `participantId`:
+Eventos de ciclo de vida (`--format json|ndjson`). O `data` de todo evento tem `roomCode`, e todos menos `registered` têm `participantId`:
 
 | Evento | Outros campos de `data` | Significado |
 | --- | --- | --- |
 | `harness_started` | `harness`, `pid`, `sessionId`, `workspace` | modo harness: o harness está rodando e a primeira sessão dele está aberta. Vem antes de `registered` |
-| `registered` | `participant` | o hub registrou o participante |
+| `registered` | `participant` | o hub registrou o participante; o ID dele é `participant.id` |
 | `tunnel_connected` | `attempt`, `hubVersion` | o túnel está aberto e o participante está online; `attempt` é `0` na entrada |
 | `reconnecting` | `attempt`, `delayMillis`, `reason` | o túnel caiu e o participante tenta de novo em `delayMillis` |
 | `artifact_sent` | `sessionId`, `version`, `reason`, `fileCount`, `bytes` | modo harness: um snapshot do workspace entrou na fila para o hub. Ele ainda pode se perder se o túnel cair antes do envio |
@@ -408,7 +408,7 @@ gambi events watch --room ABC123
 gambi events watch --room ABC123 --format ndjson | jq .type
 ```
 
-Cada linha é um evento da sala, como o hub o enviou: `{ "type", "roomCode", "timestamp", ... }`. O primeiro é sempre `room.snapshot`, a sala e os participantes dela naquele momento. O comando sai com `0` quando o hub fecha o stream; ele não reconecta.
+Com `--format json` ou `ndjson`, cada linha é um evento da sala, como o hub o enviou: `{ "type", "roomCode", "timestamp", ... }`. O primeiro é sempre `room.snapshot`, a sala e os participantes dela naquele momento. Num terminal (`text`), cada linha é o horário, o tipo do evento e um resumo. O comando sai com `0` quando o hub fecha o stream; ele não reconecta.
 
 Tipos de evento:
 
@@ -449,7 +449,7 @@ gambi self update --yes
 gambi self update --dry-run --format json
 ```
 
-Fora de um terminal, o comando atualiza sem perguntar. Responder não sai com `0`. Um gerenciador de pacotes que falha sai com `1`, com o código de saída dele em `details.code`; um download que falha sai com `3`.
+Ele sempre instala a versão mais recente; não dá para escolher uma versão. Fora de um terminal, o comando atualiza sem perguntar. Responder não sai com `0`. Um gerenciador de pacotes que falha sai com `1`, com o código de saída dele em `details.code`; um download que falha sai com `3`.
 
 ## Veja também
 

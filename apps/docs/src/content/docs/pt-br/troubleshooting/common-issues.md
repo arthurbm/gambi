@@ -91,7 +91,7 @@ Sintomas:
 Causas e soluções:
 
 1. `gambi.model("llama3")` roteia para o primeiro participante disponível com esse modelo.
-   - Use `gambi.participant("worker-1")` para mirar num participante exato.
+   - Use `gambi.participant("worker-1")` para pedir um participante. Ele não é um alvo exato: quando `worker-1` está ocupado ou offline, outro participante disponível que sirva um modelo chamado `worker-1` receberia a requisição. Dê aos participantes IDs que não sejam nomes de modelo.
 
 2. O participante pretendido está offline ou ocupado. Só participantes `online` são escolhidos.
 
@@ -106,7 +106,7 @@ Sintomas:
 
 Leia o nome do erro (`--format json` o coloca em `error.name`) ou o `code`:
 
-1. `VersionMismatch` / `VERSION_MISMATCH`: o participante roda outra minor do Gambi, diferente da do hub. A mensagem indica a versão que o hub espera. Instale essa versão com `gambi self update` ou com o instalador, ou atualize o hub, para que os dois fiquem na mesma minor (qualquer `0.8.x` com qualquer outra `0.8.x`).
+1. `VersionMismatch` / `VERSION_MISMATCH`: o participante roda outra minor do Gambi, diferente da do hub. A mensagem indica a versão que o hub espera. Instale uma versão dessa minor no participante, ou atualize o hub e o participante para a versão mais recente, para que os dois fiquem na mesma minor (qualquer `0.8.x` com qualquer outra `0.8.x`). `gambi self update` sempre instala a versão mais recente.
 2. `RoomNotFound` / `ROOM_NOT_FOUND`: confira o código da sala com `gambi room list`.
 3. `InvalidPassword` / `INVALID_PASSWORD`: passe a senha da sala com `--password`.
 
@@ -138,7 +138,7 @@ Outro runtime entrou na mesma sala com o mesmo participant ID, e o hub ficou com
 
 ## Requisição de streaming termina com `consumer_too_slow`
 
-O app leu uma resposta em streaming devagar demais, e mais de 8 MiB dela se acumularam no hub. O hub cancela a requisição no participante e encerra o stream com esse erro. Leia o stream conforme ele chega, ou peça uma resposta que não seja stream.
+O app leu uma resposta em streaming devagar demais, e mais de 8 Mi caracteres dela se acumularam no hub. O hub cancela a requisição no participante e encerra o stream com esse erro. Leia o stream conforme ele chega, ou peça uma resposta que não seja stream.
 
 ## Requisição falha com `inference_timeout`
 

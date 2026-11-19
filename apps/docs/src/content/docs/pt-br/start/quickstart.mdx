@@ -74,7 +74,7 @@ Cada pessoa com um endpoint de modelo entra na sala:
 gambi participant join \
   --room ABC123 \
   --participant-id joao-1 \
-  --model llama3
+  --model llama3:latest
 ```
 
 Em qualquer máquina que não seja a do hub, adicione a URL do hub:
@@ -84,8 +84,10 @@ gambi participant join \
   --hub http://192.168.1.10:3000 \
   --room ABC123 \
   --participant-id joao-1 \
-  --model llama3
+  --model llama3:latest
 ```
+
+`--model` precisa ser exatamente o nome que o seu provedor lista. Os nomes do Ollama incluem uma tag: rode `ollama list` e use o que ele mostra, como `llama3:latest`.
 
 O endpoint padrão é `http://localhost:11434` (Ollama). Para outros provedores, use `--endpoint`:
 
@@ -143,13 +145,13 @@ Você também pode escolher um modelo ou um participante específico:
 
 ```typescript
 // Qualquer participante que sirva este modelo
-const result = await generateText({
-  model: gambi.model("llama3"),
+const explained = await generateText({
+  model: gambi.model("llama3:latest"),
   prompt: "Explain quantum computing",
 });
 
 // O participante que entrou como joao-1
-const result = await generateText({
+const haiku = await generateText({
   model: gambi.participant("joao-1"),
   prompt: "Write a haiku",
 });
