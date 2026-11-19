@@ -187,7 +187,7 @@ export class Participants extends Context.Service<
       roomCode: string,
       participantId: string,
       runtimeId: string,
-      generation: number | undefined
+      generation: number
     ) => Effect.Effect<boolean>;
     /**
      * Routes a request: picks the participant the model selector asks for
@@ -225,13 +225,20 @@ export class Participants extends Context.Service<
      * instead and keeps its `joinedAt` and its status. It becomes that
      * runtime's only while it is `offline`: one whose tunnel is open stays
      * with the runtime of that tunnel until another tunnel opens.
+     *
+     * Answers the participant and its `generation`, read in the same step
+     * as the registration wrote it: that is the one a bootstrap token of
+     * this registration is for.
      */
     readonly register: (
       roomCode: string,
       participantId: string,
       profile: ParticipantProfile,
       runtimeId: string
-    ) => Effect.Effect<ParticipantSummary>;
+    ) => Effect.Effect<{
+      readonly generation: number;
+      readonly participant: ParticipantSummary;
+    }>;
     /** The status of a participant; `undefined` when it is not in the room. */
     readonly status: (
       roomCode: string,
@@ -407,7 +414,7 @@ export class Participants extends Context.Service<
               : "participant.updated",
           participant: summary,
         });
-        return summary;
+        return { participant: summary, generation: participant.generation };
       });
 
       const MODEL_PREFIX = "model:";

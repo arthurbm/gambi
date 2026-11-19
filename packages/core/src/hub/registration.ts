@@ -44,7 +44,7 @@ export const registerParticipant = Effect.fn("Hub.registerParticipant")(
     }
     const { password, version, authHeaders, runtimeId, ...profile } =
       registration;
-    const participant = yield* participants.register(
+    const { generation, participant } = yield* participants.register(
       room.code,
       participantId,
       profile,
@@ -53,7 +53,8 @@ export const registerParticipant = Effect.fn("Hub.registerParticipant")(
     const tunnel = yield* tunnels.issueToken(
       room.code,
       participantId,
-      runtimeId
+      runtimeId,
+      generation
     );
     return { participant, tunnel } satisfies ParticipantRegistered;
   }

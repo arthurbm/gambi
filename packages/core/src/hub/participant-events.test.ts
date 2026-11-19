@@ -83,7 +83,7 @@ it.effect("a participant that registers in a room joins it", () =>
     const participants = yield* Participants;
     const nextEvent = yield* watching;
 
-    const participant = yield* participants.register(
+    const { participant } = yield* participants.register(
       ROOM,
       "arthur-1",
       profile,
@@ -106,7 +106,7 @@ it.effect(
     Effect.gen(function* () {
       const participant = yield* participantAfter("tunnelOpened");
 
-      const updated = yield* participant.registersAgain;
+      const { participant: updated } = yield* participant.registersAgain;
 
       expect(yield* participant.nextEvent).toEqual({
         type: "participant.updated",
@@ -242,7 +242,7 @@ it.effect(
         ROOM,
         "arthur-1",
         "runtime-2",
-        yield* participants.generation(ROOM, "arthur-1")
+        (yield* participants.generation(ROOM, "arthur-1")) ?? 0
       );
 
       // A removal the old runtime asked for is late from this moment on.
