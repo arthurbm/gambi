@@ -6,12 +6,34 @@ import {
   FAKE_COMPLETION_TEXT,
   fakeProvider,
 } from "@gambi/core/testing/provider";
-import { layer } from "@gambi/testing/effect";
+import { it, layer } from "@gambi/testing/effect";
 import { generateText, streamText } from "ai";
 import { Effect } from "effect";
 import { createClient } from "./client.ts";
 import { ClientError } from "./client-error.ts";
 import { createGambi } from "./provider.ts";
+
+const rejection = (call: () => Promise<unknown>) =>
+  Effect.promise(() =>
+    call().then(
+      (value): ClientError => {
+        throw new Error(`Expected a rejection, got ${JSON.stringify(value)}`);
+      },
+      (error: unknown): ClientError => {
+        if (error instanceof ClientError) {
+          return error;
+        }
+        throw error;
+      }
+    )
+  );
+
+/** A server on a free loopback port, stopped when the test ends. */
+const serving = (fetch: (request: Request) => Response | Promise<Response>) =>
+  Effect.acquireRelease(
+    Effect.sync(() => Bun.serve({ hostname: "127.0.0.1", port: 0, fetch })),
+    (server) => Effect.promise(() => server.stop(true))
+  ).pipe(Effect.map((server) => `http://127.0.0.1:${server.port}`));
 
 describe("inference provider", () => {
   test("defaults to OpenResponses", () => {
@@ -188,5 +210,88 @@ layer(layerHub(), { excludeTestServices: true })(
         ]);
       })
     );
+
+    it.effect(
+      "listing the models of a room that does not exist rejects with the hub's error",
+      () =>
+        Effect.gen(function* () {
+          const hub = yield* Hub;
+          const provider = createGambi({ hubUrl: hub.url, roomCode: "NOPE00" });
+
+          const error = yield* rejection(() => provider.listModels());
+
+          expect(error).toMatchObject({
+            code: "ROOM_NOT_FOUND",
+            status: 404,
+            message: "Room 'NOPE00' was not found.",
+            details: { roomCode: "NOPE00" },
+          });
+        })
+    );
   }
 );
+
+describe("inference provider away from a hub", () => {
+  it.live(
+    "listing the models where nothing listens is an unreachable hub",
+    () =>
+      Effect.gen(function* () {
+        const hubUrl = yield* Effect.scoped(
+          serving(() => new Response("gone"))
+        );
+        const provider = createGambi({ hubUrl, roomCode: "ABC123" });
+
+        const error = yield* rejection(() => provider.listModels());
+
+        expect(error.code).toBe("HUB_UNREACHABLE");
+        expect(error.message).toBe(`Could not reach a hub at ${hubUrl}.`);
+        expect(error.status).toBeUndefined();
+        expect(error.details).toEqual({ hubUrl });
+      })
+  );
+
+  it.live.each([
+    {
+      answer: "a web page",
+      response: () =>
+        new Response("<html></html>", {
+          headers: { "content-type": "text/html" },
+        }),
+      message: (hubUrl: string) =>
+        `The server at ${hubUrl} did not answer like a Gambi hub.`,
+      status: undefined,
+    },
+    {
+      answer: "a list that is not of models",
+      response: () => Response.json({ data: "nothing" }),
+      message: (hubUrl: string) =>
+        `The server at ${hubUrl} did not answer like a Gambi hub.`,
+      status: undefined,
+    },
+    {
+      answer: "a status of its own",
+      response: () => new Response("nope", { status: 404 }),
+      message: (hubUrl: string) =>
+        `The server at ${hubUrl} did not answer like a Gambi hub (HTTP 404).`,
+      status: 404,
+    },
+  ])(
+    "listing the models of a server that answers $answer is not a hub",
+    ({ response, message, status }) =>
+      Effect.gen(function* () {
+        const hubUrl = yield* serving(response);
+        const provider = createGambi({ hubUrl, roomCode: "ABC123" });
+
+        const error = yield* rejection(() => provider.listModels());
+
+        // biome-ignore lint/suspicious/noMisplacedAssertion: the helper runs this inside a test
+        expect(error.code).toBe("NOT_A_HUB");
+        // biome-ignore lint/suspicious/noMisplacedAssertion: the helper runs this inside a test
+        expect(error.message).toBe(message(hubUrl));
+        // biome-ignore lint/suspicious/noMisplacedAssertion: the helper runs this inside a test
+        expect(error.status).toBe(status);
+        // biome-ignore lint/suspicious/noMisplacedAssertion: the helper runs this inside a test
+        expect(error.details).toEqual({ hubUrl });
+      })
+  );
+});

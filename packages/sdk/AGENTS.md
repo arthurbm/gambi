@@ -23,6 +23,7 @@ A entrada padrão não exporta hub, estado de salas, sessão de participante nem
 - `src/contract.ts` — interno. A ponte com o contrato do management plane (`@gambi/protocol`): o cliente derivado, a tradução de erros e `ContractProofs`, que falha o check de tipos quando um tipo público diverge do schema.
 - `src/promise.ts` — interno. A fronteira em `Promise` sobre um `ManagedRuntime`.
 - `src/provider.ts` — `createGambi()`: `gambi.any()/model()/participant()`, `gambi.openResponses.*`, `gambi.chatCompletions.*`, `gambi.listModels()`, `gambi.listParticipants()`, `gambi.baseURL`.
+- `src/room-models.ts` — interno. A única rota do inference plane que a SDK chama por conta própria (`/rooms/:code/v1/models`), com as falhas traduzidas para `ClientError`.
 - `src/discovery.ts` — a entrada `gambi-sdk/discovery`.
 - `src/input.ts` — interno. `withoutUndefined`: o que toda fronteira em `Promise` tira da entrada.
 - `src/hub.ts` — a entrada `gambi-sdk/hub`: `createHub()` e `HubError`.
@@ -42,6 +43,7 @@ Mudança aqui é mudança pública. A documentação pública (`apps/docs/src/co
 
 - Os métodos de `GambiClient` devolvem o valor do contrato, sem o envelope `{ data, meta }`.
 - Toda falha do cliente é um `ClientError` (`code`, `status`, `hint`, `details`, `requestId`). `code` é uma união fechada: os códigos do contrato mais `HUB_UNREACHABLE` e `NOT_A_HUB`.
+- `gambi.listModels()` e `gambi.listParticipants()` rejeitam com o mesmo `ClientError`: `ROOM_NOT_FOUND`, `HUB_UNREACHABLE` ou `NOT_A_HUB`.
 - `events.watch()` devolve um `AsyncIterable<RoomEvent>` cujo primeiro evento é sempre `room.snapshot`. O laço termina sem erro quando o hub fecha, quando o `signal` aborta ou quando o cliente é fechado.
 - `harness.attach()` devolve um `AsyncIterable<HarnessAttachEvent>` com as mesmas regras de fim; `harness.send()`, `openSession()` e `closeSession()` são `Promise`. O attach é SSE e requisições comuns: a entrada padrão continua sem sockets.
 - Um campo com valor `undefined` é um campo não informado, no cliente e nas entradas de hospedagem.
