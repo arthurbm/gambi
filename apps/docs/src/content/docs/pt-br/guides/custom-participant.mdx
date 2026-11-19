@@ -11,21 +11,22 @@ Este guia mostra o runtime mínimo que se comporta como a CLI e, depois, as exte
 
 Você precisa de:
 
-- um hub do Gambi acessível (`gambi hub serve`)
+- um hub do Gambi acessível (`gambi hub serve`), na mesma minor do `gambi-sdk` que você instalar
 - um código de sala existente (`gambi room create --name "Demo"`)
 - um endpoint de provedor local compatível com OpenAI (Ollama, LM Studio, vLLM ou qualquer outro que sirva `/v1/models` e `/v1/chat/completions`)
+- [Bun](https://bun.sh): a entrada `gambi-sdk/participant` só roda no Bun
 - o `gambi-sdk` instalado
 
 ```bash
 bun add gambi-sdk
 ```
 
-## Passo 1: Abra uma sessão
+## Passo 1: Entre na sala
 
-`createParticipantSession()` faz quatro coisas numa única chamada: testa o seu endpoint, registra o participante, abre o túnel e inicia os loops de heartbeat e de ping.
+`createParticipantSession()` faz tudo numa única chamada: testa quais APIs o seu endpoint fala, registra o participante, abre o túnel e resolve assim que o participante fica `online`.
 
 ```ts
-import { createParticipantSession } from "gambi-sdk";
+import { createParticipantSession } from "gambi-sdk/participant";
 
 const session = await createParticipantSession({
   hubUrl: "http://localhost:3000",
@@ -36,45 +37,75 @@ const session = await createParticipantSession({
   model: "llama3",
 });
 
-console.log("registered as", session.participant.id);
+console.log("joined as", session.participant.id);
 ```
 
-Se o endpoint não expõe o modelo pedido, a chamada lança um erro antes de registrar qualquer coisa. Trate isso como erro de configuração e encerre.
+Se a entrada falhar, a chamada rejeita com um `ParticipantError` e nada fica rodando. O `code` dele diz o motivo: `ROOM_NOT_FOUND`, `INVALID_PASSWORD`, `VERSION_MISMATCH` (o hub roda outra minor), `HUB_UNREACHABLE`, `TUNNEL_OPEN_FAILED` e mais alguns. Trate isso como erro de configuração e encerre.
 
-## Passo 2: Espere a sessão fechar
-
-`session.waitUntilClosed()` resolve com um evento de fechamento no momento em que o runtime para, seja qual for o motivo.
+A sessão não confere se o seu provedor serve o `model`. Para conferir antes de entrar, teste o provedor:
 
 ```ts
-const closeEvent = await session.waitUntilClosed();
-console.log("session ended:", closeEvent.reason);
+import { probeProvider } from "gambi-sdk/participant";
+
+const probe = await probeProvider("http://localhost:11434");
+if (!probe.models.includes("llama3")) {
+  throw new Error("Pull the model first.");
+}
 ```
 
-São três motivos de fechamento, cada um com um significado diferente:
+## Passo 2: Acompanhe a sessão
+
+Depois da entrada, o runtime cuida de si mesmo. Quando o túnel cai (o Wi-Fi pisca, o hub fica inacessível por um momento, o hub travou), ele espera 1 segundo, depois 2, 4 e assim por diante até 30, e se registra de novo com o mesmo participant ID. Apps que roteiam para ele pelo ID continuam com o mesmo alvo.
+
+`onLifecycle` recebe cada etapa, em ordem:
+
+```ts
+const session = await createParticipantSession({
+  // ...
+  onLifecycle: (event) => {
+    if (event.type === "reconnecting") {
+      console.log(`tunnel lost (${event.reason}); retrying in ${event.delayMillis} ms`);
+    }
+  },
+});
+```
+
+| Evento | Quando |
+| --- | --- |
+| `connected` | o túnel está aberto; `attempt` é `0` na entrada e, depois, a tentativa que o trouxe de volta |
+| `reconnecting` | o túnel caiu e o runtime tenta de novo em `delayMillis` |
+| `left` | o runtime terminou e não vai tentar de novo; é sempre o último evento |
+
+`session.ended` resolve com o motivo do evento `left`. Ela nunca rejeita:
+
+```ts
+const { reason, error } = await session.ended;
+```
 
 | Motivo | Significado | Ação sugerida |
 | --- | --- | --- |
-| `"closed"` | seu código chamou `session.close()` | encerre normalmente |
-| `"heartbeat_failed"` | uma requisição de heartbeat de gerenciamento falhou; uma única falha fecha a sessão | provavelmente o hub está inacessível. Encerre e deixe seu supervisor reiniciar o runtime |
-| `"tunnel_closed"` | o túnel WebSocket fechou ou deu erro, de qualquer um dos lados | muitas vezes é instabilidade passageira na rede. Crie uma nova sessão com o mesmo participant ID |
+| `"stopped"` | seu código chamou `leave()` ou `stop()` | encerre normalmente |
+| `"refused"` | o hub recusou a volta; `error` traz o `name` e a `message` dele | em geral a sala sumiu, porque o hub reiniciou. Crie a sala de novo e inicie uma nova sessão |
+| `"replaced"` | outro runtime entrou na sala com o mesmo participant ID, e o hub ficou com ele | não reinicie com o mesmo ID; dois runtimes não podem compartilhá-lo |
+| `"tunnelDropped"` | o túnel caiu e você passou `reconnect: false` | inicie uma nova sessão se quiser voltar |
 
-`closeEvent.error` guarda o `Error` de origem quando existe um. Registre no log.
-
-A sessão nunca reconecta sozinha. Em `"closed"` e `"heartbeat_failed"`, ela tenta remover o participante da sala antes de resolver. Em `"tunnel_closed"`, não: o registro continua, e o hub marca o participante como offline assim que o túnel dele fecha. Chamar `createParticipantSession()` de novo com o mesmo participant ID atualiza esse registro e abre um novo túnel.
+Um participante que fica fora por mais de 60 segundos é removido da sala. O runtime não desiste depois disso: o próximo registro dele o traz de volta como um novo participante com o mesmo ID.
 
 ## Passo 3: Encerre de forma limpa
 
-O SDK não instala handlers de sinal. Ligue `session.close()` ao `SIGINT` e ao `SIGTERM` você mesmo. `close()` fecha o túnel e remove o participante da sala antes de retornar.
+O SDK não instala handlers de sinal. Ligue `session.leave()` ao `SIGINT` e ao `SIGTERM` você mesmo. `leave()` tira o participante da sala e para o runtime. Ele nunca rejeita e desiste de um hub que não responde em 3 segundos (`leaveTimeoutMs`).
 
 ```ts
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
-    void session.close();
+    void session.leave();
   });
 }
 ```
 
-Se a sessão já terminou com `"tunnel_closed"`, `close()` retorna esse evento de fechamento e não remove o registro. Chame `client.participants.remove()` do [cliente de gerenciamento](/pt-br/reference/sdk/#clientparticipantsremoveroomcode-participantid) se precisar que ele suma na hora.
+`session.stop()` para o runtime sem avisar o hub. A sala mostra o participante como `offline` e o remove depois de 60 segundos, a menos que um runtime com o mesmo ID entre antes disso. Use quando você está prestes a reiniciar e quer voltar como o mesmo participante.
+
+A sessão também funciona com `await using`, que chama `leave()`.
 
 ## Passo 4: Repasse a autenticação do provedor
 
@@ -113,9 +144,9 @@ await createParticipantSession({
 });
 ```
 
-### Sobrescreva as capacidades
+### Pule o probe
 
-O probe detecta automaticamente quais superfícies compatíveis com OpenAI o seu endpoint suporta. Sobrescreva quando quiser que o hub prefira uma específica:
+Sem `capabilities`, a sessão testa o seu endpoint para descobrir quais APIs compatíveis com OpenAI ele suporta. Passe-as para pular o probe:
 
 ```ts
 await createParticipantSession({
@@ -136,9 +167,20 @@ await createParticipantSession({
 });
 ```
 
+### Vendo os logs do runtime
+
+O runtime nunca escreve no seu stdout. Passe `onLog` para receber as linhas de log dele:
+
+```ts
+await createParticipantSession({
+  // ...
+  onLog: (entry) => console.error(entry.level, entry.message),
+});
+```
+
 ### Rodando mais de um participante num processo
 
-Chame `createParticipantSession()` uma vez por participante. Cada chamada retorna uma sessão independente, com túnel, loop de heartbeat e identidade de participante próprios. Rode as promises de `waitUntilClosed()` em paralelo.
+Chame `createParticipantSession()` uma vez por participante. Cada chamada retorna uma sessão independente, com túnel e identidade de participante próprios. Espere as promises `ended` delas em paralelo.
 
 ```ts
 const sessions = await Promise.all([
@@ -146,9 +188,7 @@ const sessions = await Promise.all([
   createParticipantSession({ /* worker-2 */ }),
 ]);
 
-await Promise.allSettled(
-  sessions.map((session) => session.waitUntilClosed())
-);
+await Promise.all(sessions.map((session) => session.ended));
 ```
 
 ## Um runtime completo
@@ -156,7 +196,7 @@ await Promise.allSettled(
 Juntando tudo:
 
 ```ts
-import { createParticipantSession } from "gambi-sdk";
+import { createParticipantSession } from "gambi-sdk/participant";
 
 const session = await createParticipantSession({
   hubUrl: process.env.GAMBI_HUB ?? "http://localhost:3000",
@@ -165,27 +205,28 @@ const session = await createParticipantSession({
   nickname: "worker-1",
   endpoint: "http://localhost:11434",
   model: "llama3",
-  authHeaders: process.env.PROVIDER_TOKEN
-    ? { Authorization: `Bearer ${process.env.PROVIDER_TOKEN}` }
-    : undefined,
+  ...(process.env.PROVIDER_TOKEN
+    ? { authHeaders: { Authorization: `Bearer ${process.env.PROVIDER_TOKEN}` } }
+    : {}),
+  onLifecycle: (event) => console.log("[gambi]", event.type),
 });
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
-    void session.close();
+    void session.leave();
   });
 }
 
-const { reason, error } = await session.waitUntilClosed();
+const { reason, error } = await session.ended;
 console.log("[gambi] session ended:", reason);
 if (error) {
-  console.error(error);
+  console.error(error.name, error.message);
 }
-process.exit(reason === "closed" ? 0 : 1);
+process.exit(reason === "stopped" ? 0 : 1);
 ```
 
 ## Leitura complementar
 
-- [Referência do SDK: `createParticipantSession()`](/pt-br/reference/sdk/#createparticipantsessionoptions): todas as opções e o formato do retorno.
+- [Referência do SDK: `createParticipantSession()`](/pt-br/reference/sdk/#createparticipantsessionoptions-gambi-sdkparticipant-só-bun): todas as opções e o formato do retorno.
 - [Como os túneis funcionam](/pt-br/concepts/tunnel-first/): por que o runtime abre um WebSocket em vez de expor um endpoint HTTP.
 - [Referência da CLI: `gambi participant join`](/pt-br/reference/cli/#gambi-participant-join): a versão em CLI deste runtime.

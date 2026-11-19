@@ -16,7 +16,6 @@ gambi room list
 gambi room get
 gambi participant join
 gambi participant leave
-gambi participant heartbeat
 gambi events watch
 gambi self update
 ```
@@ -51,47 +50,56 @@ Confira a instalação:
 gambi --version
 ```
 
+O hub e todos os participantes precisam rodar a mesma minor do Gambi (por exemplo, qualquer `0.8.x` com qualquer outra `0.8.x`). Um hub recusa um participante de outra minor com `VersionMismatch`, e a mensagem informa a versão que ele espera.
+
 ## Comportamento global
 
-Todo comando operacional aceita as mesmas flags globais. Variáveis de ambiente definem a maioria delas, o que ajuda em scripts e supervisores.
+Todo comando aceita as mesmas flags globais. Variáveis de ambiente definem algumas delas, o que ajuda em scripts e supervisores. Rode `gambi <command> --help` para ver as flags de um comando.
 
 ### Flags globais
 
 | Flag | Descrição |
 | --- | --- |
 | `--format <text\|json\|ndjson>` | escolhe o formato de saída |
-| `--env <name>` | escolhe um ambiente nomeado do arquivo de configuração da CLI |
-| `--interactive` | permite prompts para valores obrigatórios que faltam (exige um TTY) |
-| `--no-interactive` | desativa todos os prompts |
-| `--verbose` | inclui detalhes extras na saída |
-| `--quiet` | reduz o texto de saída não essencial |
+| `--no-interactive` | nunca pede um valor que falta, mesmo num terminal; falha no lugar |
+| `--log-level <all\|trace\|debug\|info\|warn\|warning\|error\|fatal\|none>` | nível mínimo das linhas de log escritas no stderr |
+| `--help`, `-h` | mostra a ajuda |
+| `--version`, `-v` | mostra a versão |
+| `--completions <bash\|zsh\|fish\|powershell\|sh\|pwsh>` | imprime um script de autocompletar do shell |
+| `--wizard` | monta um comando passo a passo |
+
+Todo comando que fala com um hub também aceita `--hub <url>` (`-H`). Sem ela, o hub é `GAMBI_HUB` e, sem essa variável, `http://localhost:3000`.
 
 ### Modos de saída
 
 | Modo | Significado |
 | --- | --- |
 | `text` | saída compacta e legível por pessoas |
-| `json` | um único objeto JSON estruturado |
-| `ndjson` | um objeto JSON por linha |
+| `json` | o resultado como um único objeto JSON indentado |
+| `ndjson` | o resultado numa única linha JSON |
 
-Padrões:
+Sem `--format`, o formato é `GAMBI_FORMAT` e, sem essa variável, `text` quando o stdout é um terminal e `json` nos outros casos.
 
-| Contexto | Padrão |
-| --- | --- |
-| TTY + comando de execução única | `text` |
-| stdout redirecionado + comando de execução única | `json` |
-| stdout redirecionado + comando de streaming | `ndjson` |
+- Um comando de execução única imprime o resultado como `{ "data": ... }`.
+- Um comando de longa duração (`hub serve`, `participant join`) imprime uma linha JSON por etapa, `{ "type", "timestamp", "data" }`, tanto em `json` quanto em `ndjson`.
+- `events watch` imprime cada evento da sala como uma linha JSON.
+- Erros vão para o stderr. Fora de `text`, eles são uma linha JSON, `{ "error": { "name", "message", "hint", "details", "exitCode" } }`. Em `text`: `Error (Name): message`, depois uma linha `Hint:` e o `request_id` do hub quando houver.
+- Linhas de log também vão para o stderr, nunca para o stdout.
 
-Comandos de streaming convertem `--format json` em `ndjson`, para que cada evento seja uma linha JSON independente.
+### Prompts
+
+Num terminal, uma flag obrigatória que falta vira um prompt. Prompts precisam de stdin e stdout num terminal e ficam desligados com `--no-interactive` ou `GAMBI_NO_INTERACTIVE=1`. Sem prompt, uma flag que falta falha com código de saída `2`. Senhas e apelidos nunca são pedidos: passe `--password` e `--nickname`.
 
 ### Variáveis de ambiente
 
 | Variável | Efeito |
 | --- | --- |
+| `GAMBI_HUB` | URL do hub quando `--hub` não é passada |
 | `GAMBI_FORMAT` | valor de fallback para `--format` |
-| `GAMBI_ENV` | valor de fallback para `--env` |
 | `GAMBI_NO_INTERACTIVE=1` | desativa os prompts em todo lugar |
-| `XDG_CONFIG_HOME` | sobrescreve o diretório base de `~/.config/gambi/config.json` |
+| `GAMBI_UPDATE_BASE_URL` | de onde o `self update` baixa os binários standalone |
+
+Os ambientes nomeados acabaram na 0.8: não existe mais `--env`, `GAMBI_ENV` nem `~/.config/gambi/config.json`. Use `GAMBI_HUB` no lugar.
 
 ### Códigos de saída
 
@@ -99,48 +107,16 @@ Comandos de streaming convertem `--format json` em `ndjson`, para que cada event
 | --- | --- |
 | `0` | sucesso |
 | `1` | falha interna ou inesperada |
-| `2` | uso inválido (flag faltando, valor ruim, `400`/`422` do hub) |
-| `3` | falha de conectividade ou de dependência (hub inacessível, `401`/`403`/`503`) |
-| `4` | rejeição remota ou conflito (`404`/`409` do hub) |
+| `2` | uso inválido (flag faltando, valor ruim, flags que não combinam, porta já em uso, requisição que o hub achou inválida) |
+| `3` | falha de conectividade ou de dependência (hub inacessível, um servidor que não é um hub, provedor inacessível, harness não instalado ou sem login, túnel que não abriu) |
+| `4` | o hub recusou (sala ou participante não encontrado, senha errada, versões incompatíveis, participante substituído) |
+| `130` | um sinal parou um comando que não estava esperando por um |
 
-Supervisores de automação podem decidir as novas tentativas com base nesses códigos. Não tente de novo no `2`. No `3`, tente de novo na maioria dos casos. O `4` indica que o hub rejeitou a operação por causa do estado atual dele.
-
-### Ambientes nomeados
-
-A CLI lê a configuração XDG de:
-
-```text
-~/.config/gambi/config.json
-```
-
-Exemplo:
-
-```json
-{
-  "defaultEnv": "local",
-  "envs": {
-    "local": {
-      "hubUrl": "http://localhost:3000",
-      "endpoint": "http://localhost:11434"
-    },
-    "lab": {
-      "hubUrl": "http://192.168.1.10:3000",
-      "endpoint": "http://localhost:11434",
-      "serve": {
-        "host": "0.0.0.0",
-        "port": 3000,
-        "mdns": true
-      }
-    }
-  }
-}
-```
-
-Escolha um ambiente por execução com `--env lab` ou globalmente com `GAMBI_ENV=lab`.
+Supervisores de automação podem decidir as novas tentativas com base nesses códigos. Não tente de novo no `2`. No `3`, tente de novo na maioria dos casos. O `4` indica que o hub recusou a operação por causa do estado atual dele. Em caso de erro, `name` no JSON (ou `Error (Name)` no texto) é o nome estável da falha, como `RoomNotFound` ou `HubUnreachable`.
 
 ## `gambi hub serve`
 
-Inicia o hub do Gambi.
+Inicia o hub do Gambi e o mantém rodando até o Ctrl+C.
 
 ```bash
 gambi hub serve [options]
@@ -150,27 +126,31 @@ Opções:
 
 | Opção | Descrição |
 | --- | --- |
-| `--host` | host onde escutar (padrão vem da configuração do ambiente ou `0.0.0.0`) |
-| `--port` | porta onde escutar (padrão vem da configuração do ambiente ou `3000`) |
-| `--mdns` | ativa a descoberta via mDNS para que outras máquinas encontrem o hub |
-| `--dry-run` | imprime o plano de inicialização resolvido e sai sem ocupar a porta |
+| `--host` | interface onde escutar (padrão `0.0.0.0`) |
+| `--port` | porta onde escutar (padrão `3000`; `0` pega qualquer porta livre) |
+| `--mdns` | anuncia o hub via mDNS para que outras máquinas o encontrem |
+| `--dry-run` | imprime o que seria iniciado, sem iniciar |
 
 Exemplos:
 
 ```bash
 gambi hub serve
 gambi hub serve --port 3000 --mdns
-gambi hub serve --dry-run --format ndjson
+gambi hub serve --dry-run --format json
 ```
 
-Eventos estruturados de ciclo de vida (`--format json|ndjson`):
+Uma porta que já está em uso falha com `PortInUse`, que informa a porta, e código de saída `2`. Uma inicialização que falha não deixa nenhum anúncio mDNS para trás.
 
-| Evento | Significado |
-| --- | --- |
-| `started` | o hub está escutando em `bindUrl` |
-| `mdns_registered` | o anúncio mDNS está ativo com o nome `name` |
-| `signal_received` | `SIGINT` ou `SIGTERM` recebido durante o desligamento |
-| `stopped` | o hub liberou a porta |
+Eventos de ciclo de vida (`--format json|ndjson`):
+
+| Evento | `data` | Significado |
+| --- | --- | --- |
+| `started` | `host`, `port`, `mdns`, `hubUrl` | o hub está escutando; `port` é a porta real quando você pediu `0` |
+| `mdns_registered` | `name` | o anúncio mDNS está ativo |
+| `signal_received` | `signal` | `SIGINT` ou `SIGTERM` recebido; o desligamento começou |
+| `stopped` | `signal` | o hub fechou os túneis e liberou a porta |
+
+As salas ficam na memória do hub. Parar o hub encerra as salas dele, e participantes que tentam voltar para um hub reiniciado terminam com `RoomNotFound`.
 
 ## `gambi room create`
 
@@ -186,9 +166,9 @@ Opções:
 | --- | --- |
 | `--name`, `-n` | nome de exibição da sala |
 | `--password`, `-p` | senha opcional da sala |
-| `--config <path\|->` | arquivo JSON de configuração de runtime ou `-` para stdin |
+| `--config <file\|->` | padrões de runtime da sala em JSON: um arquivo, ou `-` para stdin |
 | `--hub`, `-H` | URL do hub |
-| `--dry-run` | valida e imprime a requisição sem criar a sala |
+| `--dry-run` | imprime a requisição sem criar a sala |
 
 Exemplos:
 
@@ -201,6 +181,8 @@ cat ./room.json | gambi room create --name "Demo" --config -
 
 gambi room create --name "Demo" --dry-run --format json
 ```
+
+O resultado estruturado é `{ "data": { "room": { "code", ... }, "hostId" } }`, então `jq -r .data.room.code` lê o código da sala.
 
 ## `gambi room list`
 
@@ -217,8 +199,6 @@ Opções:
 | `--hub`, `-H` | URL do hub |
 | `--sort <participant-count\|created-at\|name>` | chave de ordenação (padrão `participant-count`) |
 | `--reverse` | inverte a ordem escolhida |
-
-A ordenação padrão é `participant-count` decrescente, com `created-at` decrescente como critério de desempate.
 
 Exemplos:
 
@@ -253,7 +233,7 @@ gambi room get --code ABC123 --format json
 
 ## `gambi participant join`
 
-Registra um endpoint de modelo ou um harness ACP local e mantém o túnel dele aberto.
+Entra numa sala com um endpoint de modelo ou um harness ACP local e fica até o Ctrl+C.
 
 ```bash
 gambi participant join --room <room> --participant-id <id> --model <model> [options]
@@ -266,35 +246,42 @@ Opções:
 | --- | --- |
 | `--room`, `-r` | código da sala |
 | `--participant-id` | identificador estável do participante |
-| `--nickname`, `-n`, `--name` | nome de exibição (`--name` é um alias) |
-| `--model`, `-m` | modelo a expor ou, no modo harness, um rótulo opcional |
-| `--harness <opencode\|claude-code\|codex\|fake>` | inicia um harness ACP local em vez de um endpoint de modelo |
-| `--workspace <folder>` | só no modo harness: roda o harness nesta pasta em vez do workspace padrão |
-| `--endpoint`, `-e` | endpoint local usado para sondagem e inferência (padrão `http://localhost:11434`) |
-| `--header` | header de autenticação no formato `Header=Value` |
-| `--header-env` | header de autenticação no formato `Header=ENV_VAR` |
+| `--model`, `-m` | modelo a compartilhar; com `--harness`, um rótulo opcional para o modelo em que o harness roda |
+| `--endpoint`, `-e` | onde o provedor escuta nesta máquina (padrão `http://localhost:11434`) |
+| `--header Name=Value` | header das requisições ao provedor, como `Authorization`; pode repetir |
+| `--header-env Name=VARIABLE` | header cujo valor é lido de uma variável de ambiente; pode repetir |
+| `--harness <opencode\|claude-code\|codex\|fake>` | compartilha um harness ACP local em vez de um endpoint de modelo |
+| `--workspace <folder>` | só no modo harness: a pasta em que o harness roda |
+| `--nickname`, `-n` | nome de exibição (padrão `<model>@<seis primeiros caracteres do ID do participante>`) |
 | `--password`, `-p` | senha da sala |
-| `--config <path\|->` | arquivo JSON de configuração de runtime ou stdin |
-| `--no-specs` | pula a coleta das especificações da máquina |
+| `--config <file\|->` | configuração de runtime do participante em JSON: um arquivo, ou `-` para stdin |
+| `--no-specs` | não envia as especificações desta máquina |
 | `--hub`, `-H` | URL do hub |
-| `--dry-run` | valida e mostra uma prévia da sessão |
+| `--dry-run` | roda as verificações locais e imprime o que seria registrado, sem entrar |
 
 Observações:
 
-- `--participant-id` é obrigatório para automação não interativa que precise ser segura para novas tentativas.
-- `--config -` lê do stdin o JSON de configuração de runtime do participante.
-- Num terminal, o comando pede a sala, o ID do participante, o modelo, o apelido e a senha que faltarem. No modo modelo, ele lista os modelos encontrados no endpoint.
-- A CLI sonda o endpoint antes do registro para validar o modelo e detectar capacidades.
-- Todo participante entra por um túnel, então o endpoint do provedor pode ficar em `localhost` mesmo quando o hub roda em outra máquina. Veja [Como os túneis funcionam](/pt-br/concepts/tunnel-first/).
-- O modo harness inicia o processo do harness numa pasta de workspace e publica os arquivos alterados depois de um debounce de um segundo. Sem `--workspace`, a pasta é `~/.gambi/workspaces/<room>/<participant-id>/` e começa vazia, exceto por `.gambi.json`, que nunca é publicado. `.git` e `node_modules` nunca são publicados. Passar `--workspace` sem `--harness` sai com código `2`.
-- `--endpoint`, `--header` e `--header-env` são inválidos com `--harness`. O harness usa o login que já existe na máquina do participante. O Gambi não lê nem envia essas credenciais.
+- `--participant-id` é obrigatório. Reusar o ID é o que permite a um participante voltar como o mesmo participante.
+- Num terminal, o comando pede a sala, o ID do participante e o modelo que faltarem. No modo modelo, ele lista os modelos encontrados no endpoint.
+- A CLI sonda o endpoint antes do registro: um endpoint que não responde falha com `EndpointUnreachable`, e um modelo que o endpoint não lista falha com `ModelNotOnEndpoint`, os dois com código de saída `3`.
+- Todo participante entra por um túnel, então o endpoint do provedor pode ficar em `localhost` mesmo quando o hub roda em outra máquina. Os valores de `--header` e `--header-env` só são usados na sondagem e nas requisições ao provedor, nesta máquina. Veja [Como os túneis funcionam](/pt-br/concepts/tunnel-first/).
+- Quando o túnel cai, o participante reconecta sozinho, esperando 1 segundo e dobrando até 30, com o mesmo ID de participante. Se ele ficar fora por mais de 60 segundos, o hub o remove, e a tentativa seguinte o traz de volta como um novo participante com o mesmo ID.
+- O participante termina em vez de reconectar quando o hub o recusa na volta (por exemplo, um hub reiniciado não tem sala com aquele código) ou quando outro runtime entra com o mesmo ID de participante.
+- No Ctrl+C, o comando tira o participante da sala e sai com `0`. Se o hub não responder em 3 segundos, o comando sai mesmo assim e o hub remove o participante depois de 60 segundos.
+- `--dry-run` sonda o endpoint, ou detecta o harness e verifica o login dele, e depois imprime o registro com a senha e os headers ocultos. Ele não fala com o hub.
+
+Modo harness:
+
+- O modo harness inicia o processo do harness numa pasta de workspace e envia um snapshot da pasta depois que ela fica um segundo sem mudar. Sem `--workspace`, a pasta é `~/.gambi/workspaces/<room>/<participant-id>/` e começa vazia, exceto por `.gambi.json`, que nunca é enviado. `.git`, `node_modules` e links simbólicos nunca são enviados. Passar `--workspace` sem `--harness` sai com código `2`.
+- Um workspace cujo snapshot passa de 8 MiB não é enviado: o comando imprime `artifact_skipped` no lugar.
+- `--endpoint`, `--header` e `--header-env` são inválidos com `--harness` (código de saída `2`). O harness usa o login que já existe na máquina do participante. O Gambi não lê nem envia essas credenciais.
 - O adaptador `opencode` roda `opencode acp`. Se o OpenCode não estiver instalado ou não tiver credenciais detectadas, o comando sai com código `3` e imprime o comando necessário para corrigir.
 - O adaptador `claude-code` roda a bridge publicada `claude-agent-acp`. Instale-a com `npm install -g @agentclientprotocol/claude-agent-acp`, instale o Claude Code com `npm install -g @anthropic-ai/claude-code` e autentique localmente com `claude auth login`.
 - Termos do Claude Code: cada usuário final precisa rodar o binário original da Anthropic, sem modificações, com a própria autenticação local. O Gambi nunca intermedeia o login de uma assinatura do Claude e nunca deve hospedar o Claude Code para terceiros. Leia os [termos legais e de conformidade](https://code.claude.com/docs/en/legal-and-compliance) da Anthropic antes de entrar.
 - O adaptador `codex` roda a bridge publicada `codex-acp`. Instale-a com `npm install -g @agentclientprotocol/codex-acp`, instale a Codex CLI com `npm install -g @openai/codex` e autentique localmente com `codex login`.
-- As verificações de prontidão do Claude Code e do Codex usam `claude auth status --json` e `codex login status`. O estado de autenticação e as credenciais ficam na máquina do participante e nunca entram no registro, nos eventos de ciclo de vida ou nos frames do túnel.
+- As verificações de prontidão do Claude Code e do Codex usam `claude auth status --json` e `codex login status`. O estado de autenticação e as credenciais ficam na máquina do participante e nunca entram no registro, nos eventos de ciclo de vida ou no túnel.
 - O adaptador `fake` é determinístico e não chama nenhum modelo. Ele serve para ensaios e testes automatizados.
-- `--dry-run` valida a entrada do comando e imprime a prévia do registro. Ele não inicia o processo ACP nem verifica o login do harness.
+- No Ctrl+C, um participante de harness para o harness primeiro, para que o snapshot final suba, e depois sai da sala. O harness tem 2 segundos para parar antes de ser morto. Se a própria CLI for morta com `kill -9`, um harness que não observa a entrada padrão dele pode continuar rodando.
 
 Para um passo a passo de configuração do OpenCode, do Claude Code e do Codex, veja [Traga seu harness](/pt-br/guides/bring-your-harness/).
 
@@ -323,24 +310,24 @@ gambi participant join \
   --participant-id worker-1 \
   --model llama3 \
   --dry-run \
-  --format ndjson
+  --format json
 
 gambi participant join \
   --room ABC123 \
   --participant-id arthur-opencode \
-  --name Arthur \
+  --nickname Arthur \
   --harness opencode
 
 gambi participant join \
   --room ABC123 \
   --participant-id bia-claude \
-  --name Bia \
+  --nickname Bia \
   --harness claude-code
 
 gambi participant join \
   --room ABC123 \
   --participant-id caio-codex \
-  --name Caio \
+  --nickname Caio \
   --harness codex
 
 gambi participant join \
@@ -350,25 +337,34 @@ gambi participant join \
   --model deterministic-fixture
 ```
 
-Eventos de ciclo de vida em NDJSON:
+Eventos de ciclo de vida (`--format json|ndjson`). O `data` de todo evento tem `roomCode` e `participantId`:
 
-| Evento | Significado |
-| --- | --- |
-| `prepared` | entradas resolvidas e payload montado (no modo modelo, o endpoint também já foi sondado) |
-| `registered` | o registro do participante deu certo |
-| `tunnel_connected` | o túnel do participante está aberto |
-| `harness_spawned` | o processo do harness iniciou |
-| `session_opened` | a negociação ACP v1 e o `session/new` deram certo |
-| `artifact_sent` | um snapshot versionado do workspace passou pelo túnel |
-| `harness_exited` | o processo do harness terminou |
-| `leaving` | o desligamento começou |
-| `left` | a remoção do participante terminou |
-| `heartbeat_failed` | uma requisição de heartbeat de gerenciamento falhou; o comando sai com código `3` |
-| `tunnel_failed` | o túnel fechou; o comando sai com código `3` |
+| Evento | Outros campos de `data` | Significado |
+| --- | --- | --- |
+| `harness_started` | `harness`, `pid`, `sessionId`, `workspace` | modo harness: o harness está rodando e a primeira sessão dele está aberta. Vem antes de `registered` |
+| `registered` | `participant` | o hub registrou o participante |
+| `tunnel_connected` | `attempt`, `hubVersion` | o túnel está aberto e o participante está online; `attempt` é `0` na entrada |
+| `reconnecting` | `attempt`, `delayMillis`, `reason` | o túnel caiu e o participante tenta de novo em `delayMillis` |
+| `artifact_sent` | `sessionId`, `version`, `reason`, `fileCount`, `bytes` | modo harness: um snapshot do workspace entrou na fila para o hub. Ele ainda pode se perder se o túnel cair antes do envio |
+| `artifact_skipped` | `sessionId`, `reason`, `cause`, `maxBytes` | modo harness: o snapshot não foi enviado (`tooLarge` ou `collectFailed`) |
+| `harness_exited` | `harness`, `message`, `exitCode` | modo harness: o harness terminou sozinho |
+| `leaving` | `signal` | `SIGINT` ou `SIGTERM` pediu que o participante saísse |
+| `left` | `reason`, `removed` | sempre o último evento |
+
+`left.reason` e o código de saída:
+
+| `reason` | Significado | Código de saída |
+| --- | --- | --- |
+| `stopped` | um sinal pediu que o participante saísse | `0` |
+| `refused` | o hub recusou o participante na volta; o erro está no stderr | o código do erro, em geral `4` |
+| `replaced` | outro runtime entrou na sala com o mesmo ID de participante | `4` |
+| `harnessExited` | o harness terminou sozinho | `3` |
+
+`left.removed` é `true` quando o hub confirmou que o participante saiu da sala.
 
 ## `gambi participant leave`
 
-Remove um participante de uma sala.
+Tira um participante de uma sala, seja quem for que o hospeda.
 
 ```bash
 gambi participant leave --room <room> --participant-id <id> [options]
@@ -388,31 +384,11 @@ Exemplo:
 gambi participant leave --room ABC123 --participant-id worker-1
 ```
 
-## `gambi participant heartbeat`
-
-Envia um único heartbeat de participante. Use em automações e em sondagens de liveness fora do comando de longa duração `participant join`.
-
-```bash
-gambi participant heartbeat --room <room> --participant-id <id> [options]
-```
-
-Opções:
-
-| Opção | Descrição |
-| --- | --- |
-| `--room`, `-r` | código da sala |
-| `--participant-id` | identificador do participante |
-| `--hub`, `-H` | URL do hub |
-
-Exemplo:
-
-```bash
-gambi participant heartbeat --room ABC123 --participant-id worker-1
-```
+O resultado estruturado é `{ "data": { "participantId" } }`. Use este comando para um participante cujo `participant join` não existe mais (uma máquina que travou, por exemplo). Um `participant join` que ainda está rodando reconecta cerca de um segundo depois; pare-o com Ctrl+C no terminal dele.
 
 ## `gambi events watch`
 
-Acompanha os eventos de uma sala pelo stream SSE de gerenciamento.
+Escreve os eventos de uma sala conforme acontecem, até o Ctrl+C ou até o hub fechar.
 
 ```bash
 gambi events watch --room <room> [options]
@@ -422,32 +398,32 @@ Opções:
 
 | Opção | Descrição |
 | --- | --- |
-| `--room`, `-r` | código da sala (obrigatório) |
+| `--room`, `-r` | código da sala |
 | `--hub`, `-H` | URL do hub |
 
 Exemplos:
 
 ```bash
 gambi events watch --room ABC123
-gambi events watch --room ABC123 --format ndjson
+gambi events watch --room ABC123 --format ndjson | jq .type
 ```
+
+Cada linha é um evento da sala, como o hub o enviou: `{ "type", "roomCode", "timestamp", ... }`. O primeiro é sempre `room.snapshot`, a sala e os participantes dela naquele momento. O comando sai com `0` quando o hub fecha o stream; ele não reconecta.
 
 Tipos de evento:
 
-- `connected`
-- `room.created`
+- `room.snapshot`
 - `participant.joined`
 - `participant.updated`
-- `participant.left`
+- `participant.online`
+- `participant.busy`
 - `participant.offline`
+- `participant.removed`
 - `llm.request`
 - `llm.complete`
 - `llm.error`
-- `harness.session.opened`
-- `harness.session.closed`
-- `harness.artifact`
 
-Veja [Observabilidade](/pt-br/reference/observability/) para o formato dos campos dos eventos `llm.*` e `harness.*`.
+Veja [Observabilidade](/pt-br/reference/observability/) para os campos de cada evento.
 
 ## `gambi self update`
 
@@ -472,6 +448,8 @@ gambi self update
 gambi self update --yes
 gambi self update --dry-run --format json
 ```
+
+Fora de um terminal, o comando atualiza sem perguntar. Responder não sai com `0`. Um gerenciador de pacotes que falha sai com `1`, com o código de saída dele em `details.code`; um download que falha sai com `3`.
 
 ## Veja também
 

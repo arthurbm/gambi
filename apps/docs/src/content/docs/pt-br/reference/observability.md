@@ -1,6 +1,6 @@
 ---
 title: Observabilidade
-description: Eventos SSE, métricas e estado de conexão dos participantes emitidos pelo hub do Gambi.
+description: Eventos SSE, métricas e status dos participantes emitidos pelo hub do Gambi.
 ---
 
 O hub informa a atividade de inferência e o estado dos participantes como eventos da sala. Esta página documenta esse contrato público.
@@ -14,48 +14,61 @@ GET /v1/rooms/:code/events
 Ou pelo SDK:
 
 ```ts
-for await (const event of client.events.watchRoom({ roomCode })) {
+for await (const event of client.events.watch(roomCode)) {
   // ...
 }
 ```
 
+Ou pela CLI, com uma linha JSON por evento:
+
+```bash
+gambi events watch --room ABC123 --format ndjson
+```
+
+Todo evento traz `type`, `roomCode` e `timestamp` (milissegundos desde a epoch, pelo relógio do hub) no nível de cima, ao lado dos próprios campos.
+
 ## Tipos de evento
 
-O hub emite três eventos de inferência depois que o roteamento escolhe um participante.
+O primeiro evento de toda conexão é um snapshot da sala. Depois dele, o stream traz cada mudança de um participante e cada requisição de inferência.
 
 | Evento | Quando é disparado |
 | --- | --- |
-| `llm.request` | o roteamento escolheu um participante e o hub está prestes a enviar a requisição pelo túnel |
-| `llm.complete` | o participante devolveu uma resposta final ou o stream terminou sem erro |
-| `llm.error` | o envio para o participante escolhido falhou, ou o stream de resposta dele quebrou |
+| `room.snapshot` | primeiro evento de toda conexão: `room` e os `participants` dela naquele momento |
+| `participant.joined` | um participante se registrou; ele começa `offline` |
+| `participant.updated` | um participante que já estava na sala se registrou de novo; o status dele não mudou |
+| `participant.online` | o túnel dele abriu, ou a requisição que ele atendia terminou |
+| `participant.busy` | o hub despachou uma requisição para ele |
+| `participant.offline` | o túnel dele caiu |
+| `participant.removed` | ele saiu da sala, ou ficou offline por 60 segundos |
+| `llm.request` | o roteamento escolheu um participante e o hub despachou a requisição pelo túnel dele |
+| `llm.complete` | a resposta do provedor terminou |
+| `llm.error` | a requisição terminou sem a resposta inteira do provedor |
 
-Uma requisição que falha no roteamento (nenhum participante disponível, participante ocupado, túnel fechado, participante harness) recebe um erro HTTP e não emite evento. Veja [Erros de inferência](/pt-br/reference/api/#erros-de-inferência).
+Uma requisição que falha no roteamento (nenhum participante disponível, participante ocupado ou offline, participante de harness) recebe um erro HTTP e não emite evento. Veja [Erros de inferência](/pt-br/reference/api/#erros-de-inferência).
 
-Os eventos de gerenciamento (`participant.joined`, `participant.updated`, `participant.left`, `participant.offline`, `room.created`) estão documentados na [referência da API](/pt-br/reference/api/) e na [referência do SDK](/pt-br/reference/sdk/#clienteventswatchroom-roomcode-signal-).
+Sessões e artefatos de harness não são eventos da sala. Para acompanhar um participante de harness, faça attach nele com `client.harness.attach()` ou `GET /v1/rooms/:code/participants/:id/harness/events`; veja [Attach de harness](/pt-br/reference/api/#attach-de-harness).
 
-Participantes harness acrescentam três sinais de ciclo de vida:
+Os eventos não têm ID e o hub não guarda histórico. Um assinante que fica mais de 256 eventos para trás perde os mais antigos; ao reconectar, ele recomeça de um `room.snapshot` novo. Uma aplicação que precisa de histórico guarda o próprio, por exemplo gravando os eventos num banco de dados. Isso não acrescenta armazenamento nem replay a `/v1/rooms/:code/events`.
 
-| Evento | Dados |
-| --- | --- |
-| `harness.session.opened` | `participantId`, `sessionId` |
-| `harness.session.closed` | `participantId`, `sessionId` |
-| `harness.artifact` | `participantId`, `sessionId`, `version` incremental |
+### Eventos de participante
 
-O conteúdo dos arquivos do artefato não vai pelo SSE. Consuma o canal de attach quando precisar do artefato em si.
+`participant.joined` e `participant.updated` trazem o resumo `participant`. Os três eventos de status trazem o `participant` depois da mudança e o `previousStatus` dele:
 
-Os eventos de sessão confirmam que a sessão ACP local abriu ou fechou. Eles não incluem prompts ACP, respostas, autenticação local nem arquivos do workspace. `harness.artifact` só informa que uma nova versão do artefato está disponível. Use `client.harness.attach()` para receber os arquivos.
+| Campo | Tipo | Descrição |
+| --- | --- | --- |
+| `participant` | `ParticipantSummary` | o participante depois da mudança |
+| `previousStatus` | `"offline" \| "online" \| "busy"` | o status dele antes da mudança |
 
-Streams de eventos locais de uma aplicação ficam fora deste contrato público do hub. Por
-exemplo, uma aplicação pode gravar a própria sequência de auditoria num banco de dados.
-Isso não acrescenta armazenamento nem replay a `/v1/rooms/:code/events`.
+`participant.removed` traz `participantId` e `reason`: `left` quando ele saiu da sala, `reconnectDeadlinePassed` quando ficou offline por 60 segundos.
 
 ### `llm.request`
 
 | Campo | Tipo | Descrição |
 | --- | --- | --- |
-| `requestId` | `string` | identificador de correlação compartilhado entre `llm.request`, `llm.complete` e `llm.error` |
+| `requestId` | `string` | ID da requisição HTTP no hub, compartilhado por `llm.request`, `llm.complete` e `llm.error`, e presente no log do hub |
 | `participantId` | `string` | participante escolhido pelo roteamento |
-| `model` | `string` | o valor de `model` do corpo da requisição, ou seja, o seletor (`*`, `model:llama3`, um ID de participante) |
+| `model` | `string` | o modelo do participante, que é o que foi pedido ao provedor dele |
+| `modelSelector` | `string` | o valor de `model` do corpo da requisição (`*`, `model:llama3`, um ID de participante, ...) |
 | `protocol` | `"openResponses" \| "chatCompletions"` | API que a requisição usou no hub |
 
 ### `llm.complete`
@@ -64,8 +77,9 @@ Isso não acrescenta armazenamento nem replay a `/v1/rooms/:code/events`.
 | --- | --- | --- |
 | `requestId` | `string` | o mesmo de `llm.request` |
 | `participantId` | `string` | participante que produziu a resposta |
-| `model` | `string` | nome do modelo que o participante serve |
+| `model` | `string` | o modelo do participante |
 | `protocol` | `"openResponses" \| "chatCompletions"` | API da requisição |
+| `status` | `number` | status HTTP com que o provedor respondeu; uma resposta de erro do provedor também completa |
 | `metrics` | `Metrics` | veja abaixo |
 
 ### `llm.error`
@@ -74,60 +88,48 @@ Isso não acrescenta armazenamento nem replay a `/v1/rooms/:code/events`.
 | --- | --- | --- |
 | `requestId` | `string` | identificador de correlação |
 | `participantId` | `string` | participante escolhido pelo roteamento |
-| `nickname` | `string` | apelido do participante |
-| `endpoint` | `string` | endpoint do provedor, local ao participante |
-| `model` | `string` | o valor de `model` da requisição em erros de `dispatch`; o nome do modelo do participante em erros de `stream` |
+| `model` | `string` | o modelo do participante |
 | `protocol` | `"openResponses" \| "chatCompletions"` | API da requisição |
-| `stage` | `"dispatch" \| "stream"` | `dispatch`: falhou o envio da requisição pelo túnel ou a leitura da resposta. `stream`: uma resposta em streaming quebrou depois de começar. |
+| `stage` | `"dispatch" \| "stream"` | `dispatch`: o app ainda não tinha recebido nada. `stream`: uma resposta em streaming quebrou depois de começar |
+| `code` | `string` | o `code` do erro de inferência que o app recebeu (como `participant_disconnected` ou `inference_timeout`), ou `request_cancelled` quando o próprio app desistiu da requisição |
 | `error` | `string` | mensagem de falha legível por pessoas |
 
 ## Métricas
 
-`llm.complete.metrics` traz seis campos:
+`llm.complete.metrics` traz até seis campos:
 
 | Campo | Unidade | Origem | Observações |
 | --- | --- | --- | --- |
-| `ttftMs` | milissegundos | medido pelo hub | tempo até o primeiro token (streaming) ou até o primeiro byte (sem streaming) |
-| `durationMs` | milissegundos | medido pelo hub | tempo total da requisição |
-| `inputTokens` | tokens | `usage` do provedor | pode faltar quando o provedor upstream não expõe a contagem de tokens |
-| `outputTokens` | tokens | `usage` do provedor | pode faltar em streaming sem relatório de uso |
-| `totalTokens` | tokens | `usage` do provedor ou derivado | cai para `inputTokens + outputTokens` quando um dos dois é conhecido |
+| `ttftMs` | milissegundos | medido pelo hub | tempo do despacho até o primeiro pedaço do corpo da resposta |
+| `durationMs` | milissegundos | medido pelo hub | tempo do despacho até o fim da resposta |
+| `inputTokens` | tokens | `usage` do provedor | só em respostas que não são stream |
+| `outputTokens` | tokens | `usage` do provedor | só em respostas que não são stream |
+| `totalTokens` | tokens | `usage` do provedor ou derivado | o total do provedor, ou `inputTokens + outputTokens` quando ele não informa nenhum |
 | `tokensPerSecond` | tokens/segundo | derivado | `outputTokens / durationMs * 1000`; só aparece quando `outputTokens` é conhecido e `durationMs` é maior que zero |
 
 ### Com o que você pode contar
 
-- `ttftMs` e `durationMs` sempre aparecem em requisições bem-sucedidas, porque o hub mede esses valores.
-- A contagem de tokens depende do provedor upstream. Endpoints de streaming que não incluem um objeto `usage` deixam esses campos vazios.
+- `ttftMs` e `durationMs` sempre aparecem, porque o hub mede esses valores.
+- A contagem de tokens vem só do `usage` de uma resposta que não é stream. Uma resposta em streaming não tem contagem de tokens.
 - O hub mede essas métricas do lado dele. Elas não incluem a latência sentida do lado do cliente da requisição HTTP e não substituem tracing distribuído de ponta a ponta.
 
-## Estado de conexão do participante
+## Status do participante
 
-Todo payload de gerenciamento que inclui um participante expõe um bloco `connection`:
+Todo participante tem um `status`, derivado do túnel dele:
 
-| Campo | Tipo | Descrição |
-| --- | --- | --- |
-| `kind` | `"tunnel"` | transporte em uso |
-| `connected` | `boolean` | se o túnel está aberto agora |
-| `lastTunnelSeenAt` | `number \| null` | epoch Unix em milissegundos do frame de túnel mais recente, ou `null` quando não há túnel aberto |
+| Status | Significado |
+| --- | --- |
+| `offline` | registrado, mas com o túnel fechado; não recebe requisições |
+| `online` | túnel aberto e ocioso; o único status que recebe requisições |
+| `busy` | atendendo uma requisição |
 
-Ele aparece em:
-
-- respostas de `PUT /v1/rooms/:code/participants/:id`
-- itens da lista de `GET /v1/rooms/:code/participants`
-- payloads SSE de `participant.joined` / `participant.updated`
-- `ParticipantSummary` retornado pelo SDK
-
-Combine `connection.connected` com o campo `status` do participante para distinguir "registrado, mas offline" de "ativo e pronto para atender uma requisição".
+Cada mudança emite um evento `participant.online`, `participant.busy` ou `participant.offline`, então um monitor consegue acompanhar a sala só pelo stream de eventos.
 
 ## Logs estruturados
 
-O hub também emite logs estruturados no console, em paralelo aos eventos SSE:
+O hub também escreve linhas de log estruturadas para quem o opera, como `tunnel opened`, `tunnel dropped`, `participant status changed` e `inference request failed`, com a sala, o participante e o ID da requisição anexados. O `gambi hub serve` escreve essas linhas no stderr, em JSON quando a saída dele não é um terminal; `--log-level` filtra as linhas. Um hub iniciado com `createHub()` entrega as linhas ao callback `onLog` dele.
 
-- `[gambi] llm.request`
-- `[gambi] llm.complete`
-- `[gambi] llm.error`
-
-Eles servem para quem opera o hub. Programas devem ler o stream SSE.
+Programas devem ler o stream SSE, não os logs.
 
 ## O que fica fora do escopo
 

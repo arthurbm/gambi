@@ -52,10 +52,10 @@ gambi participant join --room ABC123 \
 
 ## Entre pelo SDK
 
-Se você está construindo seu próprio runtime de participante, use `createParticipantSession()`:
+Se você está construindo seu próprio runtime de participante, use `createParticipantSession()` da entrada `gambi-sdk/participant`, que roda no Bun:
 
 ```ts
-import { createParticipantSession } from "gambi-sdk";
+import { createParticipantSession } from "gambi-sdk/participant";
 
 await createParticipantSession({
   hubUrl: "http://localhost:3000",
@@ -103,4 +103,4 @@ Escolha um modelo que você topa pagar, ou use modelos de plano gratuito para ex
 - Responses API: padrão preferido
 - Chat Completions: caminho de compatibilidade
 
-O hub consegue adaptar entre os dois protocolos quando necessário, mas integrações novas devem preferir a Responses API.
+Quando um provedor só fala Chat Completions, o hub ainda consegue atender uma requisição Responses traduzindo-a, mas integrações novas devem preferir a Responses API.

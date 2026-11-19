@@ -47,9 +47,13 @@ gambi --version
 
 Para atualizar depois, rode `gambi self update`.
 
+:::note[A mesma minor em todas as máquinas]
+O hub e todas as máquinas que entram nele precisam rodar a mesma minor do Gambi: qualquer `0.8.x` funciona com qualquer outra `0.8.x`, mas um participante `0.7.x` não consegue entrar em um hub `0.8.x`. O hub o recusa com `VersionMismatch` e informa a versão a instalar. Quando você atualizar o hub, atualize também todos os participantes.
+:::
+
 ## SDK
 
-O SDK é um provedor do [Vercel AI SDK](https://sdk.vercel.ai/) para usar modelos compartilhados em aplicações TypeScript e JavaScript. Ele usa a Responses API por padrão e também suporta Chat Completions. Ele inclui ainda o cliente de gerenciamento e o canal de attach de harness.
+O SDK é um provedor do [Vercel AI SDK](https://sdk.vercel.ai/) para usar modelos compartilhados em aplicações TypeScript e JavaScript. Ele usa a Responses API por padrão e também suporta Chat Completions. Ele inclui ainda o cliente de gerenciamento e o attach de harness, e roda em Node e Bun. Mais duas entradas, `gambi-sdk/hub` e `gambi-sdk/participant`, hospedam um hub ou um participante dentro do seu próprio programa. Essas precisam de Bun, e um participante hospedado assim segue a mesma regra de versão da CLI.
 
 ```bash
 npm install gambi-sdk

@@ -24,9 +24,9 @@ O mesmo prompt para todos os modelos da sala. Use para evals, comparações A/B 
 ```ts
 const prompt = "Explain TLS handshakes in one sentence.";
 
-// Participantes de modelo conectados e sem requisição em andamento
+// Participantes de modelo que podem atender uma requisição agora
 const participants = (await gambi.listParticipants()).filter(
-  (p) => !p.harness && p.connection.connected && p.status === "online"
+  (p) => !p.harness && p.status === "online"
 );
 
 const results = await Promise.all(
@@ -215,13 +215,11 @@ Depois o app distribui o mesmo prompt para todos e mostra as respostas lado a la
 import { createClient } from "gambi-sdk";
 
 const client = createClient({ hubUrl: "http://localhost:3000" });
-const { data } = await client.participants.list("ABC123");
+const all = await client.participants.list("ABC123");
 
 // A lista inclui participantes harness, ocupados (busy) e offline.
 // Fique só com os participantes de modelo que podem atender uma requisição agora.
-const participants = data.filter(
-  (p) => !p.harness && p.connection.connected && p.status === "online"
-);
+const participants = all.filter((p) => !p.harness && p.status === "online");
 
 const responses = await Promise.all(
   participants.map((p) =>

@@ -36,23 +36,27 @@ Os apps falam com o Gambi por HTTP padrão, então ferramentas e SDKs no estilo 
 
 Os participantes não publicam um endpoint de provedor acessível pela rede. O runtime do participante abre um túnel até o hub e encaminha as requisições de inferência para o seu provedor local ou remoto. Um participante de harness usa o mesmo túnel para repassar mensagens ACP v1 de um processo de harness na sua máquina.
 
+O hub e os participantes dele precisam rodar a mesma minor do Gambi. Um hub recusa no registro um participante de outra minor, com uma mensagem que informa a versão esperada.
+
 ## Fluxo de registro
 
 1. O runtime do participante testa localmente o endpoint do provedor. Um participante de harness, em vez disso, verifica se o harness está instalado e com login feito.
 2. Ele se registra com `PUT /v1/rooms/:code/participants/:id`.
-3. O hub retorna `{ participant, roomId, tunnel }`.
+3. O hub confere a versão do participante e a senha da sala, e retorna `{ participant, tunnel }` com um token de uso único.
 4. O runtime abre `GET /v1/rooms/:code/participants/:id/tunnel?token=...`.
-5. O hub faz o upgrade da conexão e começa a encaminhar as requisições pelo túnel.
-6. O runtime continua enviando heartbeats de gerenciamento.
+5. O hub aceita o túnel, marca o participante como `online` e envia a ele uma chamada de boas-vindas. A partir daí, o hub chama o participante pelo túnel.
+6. Quando o túnel cai, o runtime se registra de novo e abre um novo túnel com o mesmo ID de participante.
 
 ## Fluxo de requisição
 
 1. Um app envia `POST /rooms/:code/v1/responses` ou `POST /rooms/:code/v1/chat/completions`.
-2. O hub escolhe um participante por ID de participante, `model:<name>` ou `*`. Veja [Roteamento de modelo](/pt-br/reference/api/#roteamento-de-modelo).
+2. O hub escolhe um participante `online` por ID de participante, nome de modelo, `model:<name>` ou `*`. Veja [Roteamento de modelo](/pt-br/reference/api/#roteamento-de-modelo).
 3. O hub encaminha a requisição pelo túnel do participante.
 4. O runtime do participante a encaminha para o endpoint real do provedor.
 5. O runtime faz o streaming da resposta do provedor de volta pelo túnel.
 6. O hub devolve a resposta ao cliente do app.
+
+Se o app encerrar a requisição, ou se o participante não enviar nada por 5 minutos, o hub cancela a chamada no túnel e o runtime aborta a requisição ao provedor.
 
 ```mermaid title="Uma requisição de inferência. As credenciais do provedor são aplicadas na máquina do participante."
 sequenceDiagram
@@ -61,11 +65,11 @@ sequenceDiagram
   participant RT as Runtime do participante
   participant P as Provedor
   App->>Hub: POST /rooms/:code/v1/responses
-  Note over Hub: roteia por id do participante, model:<name> ou *
-  Hub->>RT: tunnel.request
+  Note over Hub: roteia por id do participante, nome do modelo ou *
+  Hub->>RT: chamada Infer
   RT->>P: requisição HTTP com os próprios headers de auth
   P-->>RT: stream da resposta
-  RT-->>Hub: tunnel.response.start / chunk / end
+  RT-->>Hub: status, depois chunks do corpo
   Hub-->>App: stream da resposta
 ```
 
@@ -84,6 +88,7 @@ sequenceDiagram
 - evita pedir que os participantes publiquem endpoints na rede só para entrar em uma sala
 - carrega mensagens ACP v1 opacas e artefatos para participantes de harness
 - permite que clientes de gerenciamento se conectem pelo hub sem que o hub inicie nenhuma conexão com o participante
+- cancela uma requisição e aplica timeout a ela de ponta a ponta
 
 ### SSE para observabilidade
 
@@ -98,52 +103,45 @@ API pública do hub.
 
 ## Regras de roteamento
 
-O campo `model` de uma requisição de inferência seleciona o participante: um ID de participante, `model:<name>` ou `*`. Um participante só está disponível quando o túnel dele está conectado, ele não está offline e não está atendendo outra requisição. Participantes de harness nunca são selecionados. A [referência da API](/pt-br/reference/api/#roteamento-de-modelo) traz as regras completas, incluindo o fallback para um ID de participante desconhecido.
+O campo `model` de uma requisição de inferência seleciona o participante: um ID de participante, um nome de modelo, `model:<name>` ou `*`. Um participante só está disponível quando está `online`: o túnel dele está aberto e ele não está atendendo outra requisição. Participantes de harness nunca são selecionados por `*` nem por um nome de modelo. A [referência da API](/pt-br/reference/api/#roteamento-de-modelo) traz as regras completas, incluindo o fallback para um ID de participante desconhecido.
 
 ## Protocolo do túnel
 
-O túnel é um WebSocket entre o hub e o runtime do participante. As mensagens são objetos JSON com um campo `type`.
+O túnel é um WebSocket que o runtime do participante abre até o hub. Por ele, os papéis se invertem: o participante atende chamadas tipadas e o hub as faz, usando a biblioteca de RPC do [Effect](https://effect.website). Toda chamada vai do hub para o participante:
 
-Do hub para o participante:
+- uma chamada de boas-vindas quando o túnel abre, que avisa ao runtime que ele está `online` e com que frequência o hub faz ping
+- uma chamada em streaming por requisição de inferência: o runtime envia a requisição ao provedor e devolve o status e o corpo em streaming. Interromper a chamada aborta a requisição ao provedor.
+- para um participante de harness, um stream de longa duração que o hub abre junto com o túnel. Tudo o que o harness produz (mensagens ACP, status da sessão, snapshots do workspace) sobe como partes desse stream.
+- para um participante de harness, chamadas para enviar uma mensagem ACP, abrir uma sessão de harness e fechar uma sessão
 
-- `tunnel.request`: uma requisição de inferência encaminhada. Inclui `requestId`, `operation`, o `method` HTTP, `path`, `headers`, `body`, uma flag `stream` e um `metadata` opcional.
-- `tunnel.pong`: resposta a um ping do participante.
-- `tunnel.harness.message`: JSON-RPC ACP opaco para um `sessionId`.
-- `tunnel.harness.control`: abre ou fecha uma sessão de harness.
+O hub faz ping no túnel a cada 5 segundos e o derruba depois de um ping perdido. O runtime derruba um túnel cujo hub ficou 15 segundos sem dizer nada, o que detecta um hub travado. Nos dois casos, o participante fica `offline` e o runtime se reconecta.
 
-Do participante para o hub:
+O formato dessas chamadas na rede pertence à biblioteca de RPC e não tem versão própria. Por isso o hub e os participantes dele precisam rodar a mesma minor do Gambi.
 
-- `tunnel.response.start`: headers da resposta e status HTTP para o `requestId`.
-- `tunnel.response.chunk`: um chunk do corpo em streaming para o `requestId`.
-- `tunnel.response.end`: o corpo da resposta está completo.
-- `tunnel.response.error`: o runtime do participante não conseguiu produzir uma resposta. Inclui um rótulo `stage` e uma `message` legível.
-- `tunnel.ping`: keepalive do participante.
-- `tunnel.harness.message`: resposta ou atualização JSON-RPC ACP opaca.
-- `tunnel.harness.artifact`: arquivos versionados do workspace.
-- `tunnel.harness.status`: estado de aberto, fechado ou erro.
-
-A rota de attach de gerenciamento envia a saída do harness para todo cliente conectado. O socket de um cliente conectado é independente do túnel do participante. Se o túnel fecha e o participante abre um novo, os clientes conectados mantêm seus sockets e não precisam se conectar de novo.
-
-Veja `packages/core/src/tunnel-protocol.ts` para os schemas oficiais.
+Clientes de gerenciamento fazem attach em um participante de harness pelo hub, com um stream de Server-Sent Events e requisições HTTP comuns. Um cliente conectado continua conectado enquanto o túnel do participante está fora do ar, e recebe `harness.connected` quando o participante volta.
 
 ## Adaptação de protocolo entre Responses e Chat Completions
 
 O protocolo padrão é o Responses. O Chat Completions continua disponível por compatibilidade.
 
-Quando o cliente e o participante não falam o mesmo protocolo, o hub faz a adaptação entre eles. Duas consequências:
+Quando um cliente usa Responses e o provedor do participante só fala Chat Completions, o hub cria a Response por meio do Chat Completions e traduz a resposta. Duas consequências:
 
-- um cliente usando Responses consegue alcançar um participante que só expõe Chat Completions, e vice-versa
-- o adaptador foca no contrato no nível das mensagens; recursos com estado do Responses, como `previous_response_id`, `store` e `background`, podem ser limitados ou não suportados quando o participante por trás é um endpoint Chat Completions
+- um cliente usando Responses consegue alcançar um participante que só expõe Chat Completions
+- a tradução carrega mensagens e function tools; uma requisição que precisa de uma conversa armazenada (`previous_response_id`, por exemplo) ou de uma tool que não é uma função falha com `request_not_translatable`, e uma Response traduzida não pode ser lida, apagada nem cancelada depois
+
+Um cliente usando Chat Completions alcança o Chat Completions do provedor sem mudanças.
 
 Integrações novas devem preferir o Responses. Recorra ao Chat Completions só quando precisar de compatibilidade explícita com uma ferramenta existente.
 
-## Intervalos de verificação de saúde
+## Status do participante
 
-Os runtimes de participante enviam um heartbeat de gerenciamento e um ping no túnel a cada 10 segundos. Depois de 30 segundos sem heartbeat, o hub marca o participante como offline, e depois de 30 segundos sem nenhum frame no túnel, ele fecha o túnel. A [referência da API](/pt-br/reference/api/#intervalos-de-verificação-de-saúde) lista as constantes.
+Um participante tem um único status, derivado do túnel dele: `offline` (registrado, sem túnel aberto), `online` (túnel aberto e ocioso) ou `busy` (atendendo uma requisição). Só participantes `online` recebem requisições. Um participante que fica `offline` por 60 segundos é removido da sala. Depois de uma queda curta, o runtime se reconecta bem antes disso: ele espera 1 segundo e dobra a espera até 30.
+
+As salas vivem na memória do hub. Se o hub reinicia, as salas dele somem, e os participantes que tentam voltar terminam com "room not found". Crie a sala de novo e entre outra vez.
 
 ## Observabilidade
 
-O hub emite `llm.request`, `llm.complete` e `llm.error` para inferência, e `harness.session.opened`, `harness.session.closed` e `harness.artifact` para participantes de harness. O `llm.complete` traz métricas de tempo e de tokens. Veja [Observabilidade](/pt-br/reference/observability/) para os campos.
+O hub emite um snapshot da sala quando você começa a acompanhá-la, um evento para cada mudança de status de um participante, e `llm.request`, `llm.complete` e `llm.error` para inferência. O `llm.complete` traz métricas de tempo e de tokens. Veja [Observabilidade](/pt-br/reference/observability/) para os campos.
 
 ## O que o Gambi não faz
 
