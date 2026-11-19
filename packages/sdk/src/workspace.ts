@@ -17,7 +17,7 @@ import { Effect, Layer, Stream } from "effect";
 import { failingWith, host } from "./hosting.ts";
 import { withoutUndefined } from "./input.ts";
 import { toParticipantError } from "./participant-failure.ts";
-import type { ArtifactFile } from "./types.ts";
+import type { ArtifactFile, HarnessId } from "./types.ts";
 
 /**
  * The largest artifact a participant sends, in bytes of the JSON text of its
@@ -26,12 +26,9 @@ import type { ArtifactFile } from "./types.ts";
  */
 export const MAX_ARTIFACT_BYTES: number = CONTRACT_MAX_ARTIFACT_BYTES;
 
-/** The harnesses a participant can host. `fake` is the deterministic test harness, which calls no model. */
-export type HostedHarnessId = "opencode" | "claude-code" | "codex" | "fake";
-
 /** Who a Workspace is prepared for. */
 export interface WorkspaceContext {
-  readonly harness: HostedHarnessId;
+  readonly harness: HarnessId;
   /** The model the participant registers with. */
   readonly model: string;
   readonly participantId: string;

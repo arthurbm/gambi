@@ -353,7 +353,7 @@ const badPort = createHub({ port: "3000" });
 const badHubErrorCode: HubErrorCode = "ROOM_NOT_FOUND";
 // @ts-expect-error a participant that shares an endpoint says which model
 const badSession = createParticipantSession({ roomCode: "ABC123", participantId: "a", nickname: "A", endpoint: "http://127.0.0.1:11434" });
-// @ts-expect-error pi has no adapter: it cannot be hosted
+// @ts-expect-error there is no such harness
 const badHarness = createHarnessParticipantSession({ roomCode: "ABC123", participantId: "a", nickname: "A", harness: "pi" });
 // @ts-expect-error a session has no Effect to wait on: \`ended\` is a Promise
 const badEnded = createParticipantSession({ roomCode: "ABC123", participantId: "a", nickname: "A", model: "m", endpoint: "e" }).then((session) => session.ended.pipe);

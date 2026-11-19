@@ -11,15 +11,12 @@ import { ParticipantError } from "./participant-error.ts";
 import { joinRoom } from "./session.ts";
 import type { SessionControls, SessionOptions } from "./session-types.ts";
 import type {
+  HarnessId,
   MachineSpecs,
   ParticipantSummary,
   RuntimeConfig,
 } from "./types.ts";
-import {
-  createLocalDirectoryWorkspace,
-  type HostedHarnessId,
-  type Workspace,
-} from "./workspace.ts";
+import { createLocalDirectoryWorkspace, type Workspace } from "./workspace.ts";
 import { workspaceLayer } from "./workspace-layer.ts";
 
 /** Why an artifact was taken: the Workspace changed and then stayed still, or the participant was closing. */
@@ -89,7 +86,7 @@ export interface HarnessParticipantSessionOptions extends SessionOptions {
    */
   readonly fakeAgentCommand?: FakeAgentCommand | undefined;
   /** The harness to run. It must be installed and logged in on this machine. */
-  readonly harness: HostedHarnessId;
+  readonly harness: HarnessId;
   /**
    * How long the harness has to exit after SIGTERM before it, and everything
    * it started, is killed, in milliseconds. Default 2 seconds.
@@ -129,7 +126,7 @@ export interface HostedHarness {
    * stays in the room when its harness exits: leaving is up to the host.
    */
   readonly exited: Promise<HarnessExit>;
-  readonly id: HostedHarnessId;
+  readonly id: HarnessId;
   /** What always applies to this harness, such as its terms of use. */
   readonly notes: readonly string[];
   /** The process id of the harness. */

@@ -86,7 +86,7 @@ export interface ParticipantCapabilities {
  * The harnesses a participant can contribute. `fake` is the deterministic
  * test harness, which calls no model.
  */
-export type HarnessId = "opencode" | "claude-code" | "codex" | "pi" | "fake";
+export type HarnessId = "opencode" | "claude-code" | "codex" | "fake";
 
 /** What a harness participant says about its harness when it registers. */
 export interface HarnessProfile {

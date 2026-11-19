@@ -68,7 +68,6 @@ export type {
 } from "./types.ts";
 export {
   createLocalDirectoryWorkspace,
-  type HostedHarnessId,
   type LocalDirectoryWorkspaceOptions,
   MAX_ARTIFACT_BYTES,
   type PreparedWorkspace,

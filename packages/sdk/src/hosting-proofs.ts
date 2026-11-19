@@ -15,13 +15,12 @@ import type { Assert, Same } from "./contract.ts";
 import type { ArtifactLifecycleEvent } from "./harness-participant-session.ts";
 import type { ProviderProbe } from "./participant-session.ts";
 import type { ParticipantLifecycleEvent } from "./session-types.ts";
-import type { ArtifactFile } from "./types.ts";
-import type { HostedHarnessId } from "./workspace.ts";
+import type { ArtifactFile, HarnessId } from "./types.ts";
 
 export type HostingProofs = [
   Assert<Same<ParticipantLifecycleEvent, RuntimeLifecycleEvent>>,
   Assert<Same<ArtifactLifecycleEvent, RuntimeArtifactEvent>>,
   Assert<Same<ArtifactFile, ContractArtifactFile>>,
-  Assert<Same<HostedHarnessId, SupportedHarnessId>>,
+  Assert<Same<HarnessId, SupportedHarnessId>>,
   Assert<Same<ProviderProbe, EndpointProbe>>,
 ];
