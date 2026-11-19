@@ -4,29 +4,25 @@ This document records the observability baseline implemented in the current hub,
 
 ## Current Baseline
 
-The hub now emits an operational baseline directly from the inference path.
+The hub emits an operational baseline directly from the inference path.
 
 Current signals:
 
-- SSE room events:
+- SSE room events (`GET /v1/rooms/:code/events`):
   - `llm.request`
   - `llm.complete`
   - `llm.error`
-  - `harness.session.opened`
-  - `harness.session.closed`
-  - `harness.artifact`
-- Structured console logs:
-  - `console.info("[gambi] llm.request", ...)`
-  - `console.info("[gambi] llm.complete", ...)`
-  - `console.error("[gambi] llm.error", ...)`
-- Participant tunnel connection state exposed in management payloads through `participant.connection`
+  - the participant status events (`participant.online`, `participant.busy`, `participant.offline`, ...)
+- Structured log lines through Effect's logger, annotated with the room, the participant, and the request id where there is one (for example `room created`, `tunnel opened`, `tunnel dropped`, `participant status changed`, `inference request refused`, `inference request failed`). The CLI writes them to stderr, as JSON when the output is structured; `--log-level` filters them. The SDK's hosting entries hand them to `onLog`.
+- Spans named after each operation (`Hub.listModels`, `Participants.dispatch`, ...). No trace exporter is wired; OTLP export stays off.
 
 `llm.request` includes:
 
 - `requestId`
 - `participantId`
-- `model`
+- `model` (the participant's model)
 - `protocol`
+- `modelSelector` (what the app asked for)
 
 `llm.complete` includes:
 
@@ -34,40 +30,39 @@ Current signals:
 - `participantId`
 - `model`
 - `protocol`
+- `status` (the HTTP status the provider answered with)
 - `metrics`
 
 `llm.error` includes:
 
 - `requestId`
 - `participantId`
-- `nickname`
-- `endpoint`
 - `model`
 - `protocol`
-- `stage`
-- `error`
+- `stage` (`dispatch` or `stream`)
+- `code` (the inference error code the app got, or `request_cancelled`)
+- `error` (the message)
 
-Harness lifecycle events use `participantId` and `sessionId`. `harness.artifact` adds the incremental `version`, but never includes artifact files or their contents. Consumers that need the artifact subscribe through `client.harness.attach()` instead of SSE.
+`requestId` is the id of the HTTP request on the hub: the same in the three events of one request and in the hub's log lines about it.
 
-Applications above the hub may keep their own event streams (the event board
-in `gambiarra-lab` keeps one backed by SQLite). That never makes hub room SSE
-persistent. Do not claim replay guarantees for `/v1/rooms/:code/events`.
+Participant summaries in the room snapshot and status events include the current owner's `runtimeId`. An explicit removal emits `participant.removed` with `participantId` and `reason: "left"`. A runtime that has already joined reports `left` with `reason: "removed"` to its host when it receives `4002`.
+
+Harness sessions and artifacts are not room events. A consumer that needs them attaches to the harness participant with `client.harness.attach()` (`GET /v1/rooms/:code/participants/:id/harness/events`).
+
+The room stream has no replay: events have no id, a subscriber more than 256 events behind loses the oldest, and each connection starts with a `room.snapshot`. Applications above the hub may keep their own event streams (the event board in `gambiarra-lab` keeps one backed by SQLite). That never makes the hub's room stream persistent.
 
 ## Metrics Model
 
 The hub currently computes and exposes:
 
-- `ttftMs`: time to first token or first byte observed by the hub
-- `durationMs`: total request duration observed by the hub
-- `inputTokens`: prompt or input tokens when returned by the provider or adapter
-- `outputTokens`: completion or output tokens when returned by the provider or adapter
-- `totalTokens`: provider total when available, otherwise derived from input + output
-- `tokensPerSecond`: derived from `outputTokens / durationMs`
+- `ttftMs`: milliseconds from the dispatch to the first piece of the answer's body, as the hub saw it
+- `durationMs`: milliseconds from the dispatch to the end of the answer
+- `inputTokens`, `outputTokens`, `totalTokens`: from the provider's `usage`
+- `tokensPerSecond`: derived from the output tokens and the duration
 
 Notes:
 
-- Non-streaming requests can usually recover token counts from provider `usage`.
-- Streaming requests always produce latency metrics, but token counts may be unavailable if the upstream provider does not expose them in the stream or final payload.
+- Token counts come only from the `usage` of an answer that is not a stream. A streamed answer has latency metrics and no token counts.
 - Metrics are hub-observed, not end-user UI-observed. They are the right baseline for room-level operations, but not a substitute for full client tracing.
 
 ## Product Positioning

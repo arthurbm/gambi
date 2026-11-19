@@ -36,23 +36,27 @@ Applications talk to Gambi over standard HTTP, so OpenAI-style tools and SDKs wo
 
 Participants do not publish a network-reachable provider endpoint. The participant runtime opens a tunnel to the hub and forwards inference requests to its local or remote provider. A harness participant uses the same tunnel to relay ACP v1 messages for a harness process on its machine.
 
+The hub and its participants must run the same minor version of Gambi. A hub refuses a participant from another minor at registration, with a message that names the version it expects.
+
 ## Registration flow
 
 1. The participant runtime probes its provider endpoint locally. A harness participant checks that the harness is installed and logged in instead.
-2. It registers with `PUT /v1/rooms/:code/participants/:id`.
-3. The hub returns `{ participant, roomId, tunnel }`.
+2. It creates a public `runtimeId` and sends it with every registration (`PUT /v1/rooms/:code/participants/:id`), including reconnections.
+3. The hub checks the participant's version and the room password, and returns `{ participant, tunnel }` with a single-use token.
 4. The runtime opens `GET /v1/rooms/:code/participants/:id/tunnel?token=...`.
-5. The hub upgrades the connection and starts forwarding tunnel requests.
-6. The runtime keeps sending management heartbeats.
+5. The hub accepts the tunnel, marks the participant `online`, and sends it a welcome call. From then on the hub calls the participant through the tunnel.
+6. When the tunnel drops, the runtime registers again and opens a new tunnel with the same participant ID. When someone explicitly removes the participant, the hub closes its tunnel with `4002` and the runtime stops.
 
 ## Request flow
 
 1. An application sends `POST /rooms/:code/v1/responses` or `POST /rooms/:code/v1/chat/completions`.
-2. The hub picks a participant by participant ID, `model:<name>`, or `*`. See [Model routing](/reference/api/#model-routing).
+2. The hub picks an `online` participant by participant ID, model name, `model:<name>`, or `*`. See [Model routing](/reference/api/#model-routing).
 3. The hub forwards the request through the participant tunnel.
 4. The participant runtime forwards it to the real provider endpoint.
 5. The runtime streams the provider response back through the tunnel.
 6. The hub returns the response to the application client.
+
+If the application closes the request, or the participant sends nothing for 5 minutes, the hub cancels the call in the tunnel and the runtime aborts the request to the provider.
 
 ```mermaid title="One inference request. Provider credentials are applied on the participant machine."
 sequenceDiagram
@@ -61,11 +65,11 @@ sequenceDiagram
   participant RT as Participant runtime
   participant P as Provider
   App->>Hub: POST /rooms/:code/v1/responses
-  Note over Hub: route by participant id, model:<name>, or *
-  Hub->>RT: tunnel.request
+  Note over Hub: route by participant id, model name, or *
+  Hub->>RT: Infer call
   RT->>P: HTTP request with its own auth headers
   P-->>RT: response stream
-  RT-->>Hub: tunnel.response.start / chunk / end
+  RT-->>Hub: status, then body chunks
   Hub-->>App: response stream
 ```
 
@@ -84,6 +88,7 @@ sequenceDiagram
 - avoids asking participants to publish network endpoints just to join a room
 - carries opaque ACP v1 messages and artifacts for harness participants
 - lets management clients attach through the hub without the hub initiating any connection to the participant
+- cancels and times out a request end to end
 
 ### SSE for observability
 
@@ -98,52 +103,45 @@ hub API.
 
 ## Routing rules
 
-The `model` field of an inference request selects the participant: a participant ID, `model:<name>`, or `*`. A participant is available only when its tunnel is connected, it is not offline, and it is not handling another request. Harness participants are never selected. The [API reference](/reference/api/#model-routing) has the full rules, including the fallback for an unknown participant ID.
+The `model` field of an inference request selects the participant: a participant ID, a model name, `model:<name>`, or `*`. A participant is available only when it is `online`: its tunnel is open and it is not handling another request. Harness participants are never selected by `*` or a model name. The [API reference](/reference/api/#model-routing) has the full rules, including the fallback for an unknown participant ID.
 
 ## Tunnel protocol
 
-The tunnel is a WebSocket between the hub and the participant runtime. Messages are JSON objects with a `type` field.
+The tunnel is a WebSocket the participant runtime opens to the hub. Over it, the roles are inverted: the participant serves typed calls and the hub makes them, using the RPC library of [Effect](https://effect.website). Every call goes from the hub to the participant:
 
-Hub to participant:
+- a welcome call when the tunnel opens, which tells the runtime it is `online` and how often the hub pings
+- one streamed call per inference request: the runtime sends the request to its provider and streams the status and the body back. Interrupting the call aborts the request to the provider.
+- for a harness participant, one long-lived stream the hub opens with the tunnel. Everything the harness produces (ACP messages, session status, workspace snapshots) goes up as pieces of that stream.
+- for a harness participant, calls to send an ACP message, open a harness session, and close one
 
-- `tunnel.request`: a forwarded inference request. Includes `requestId`, `operation`, HTTP `method`, `path`, `headers`, `body`, a `stream` flag, and optional `metadata`.
-- `tunnel.pong`: reply to a participant ping.
-- `tunnel.harness.message`: opaque ACP JSON-RPC for a `sessionId`.
-- `tunnel.harness.control`: open or close a harness session.
+The hub pings the tunnel every 5 seconds and drops it after a missed ping. The runtime drops a tunnel whose hub has said nothing for 15 seconds, which catches a frozen hub. Either way, the participant goes `offline` and the runtime reconnects.
 
-Participant to hub:
+The wire format of these calls belongs to the RPC library and has no version of its own, which is why the hub and its participants must run the same minor version of Gambi.
 
-- `tunnel.response.start`: response headers and HTTP status for `requestId`.
-- `tunnel.response.chunk`: one streamed body chunk for `requestId`.
-- `tunnel.response.end`: the response body is complete.
-- `tunnel.response.error`: the participant runtime failed to produce a response. Includes a `stage` label and a human-readable `message`.
-- `tunnel.ping`: keepalive from the participant.
-- `tunnel.harness.message`: opaque ACP JSON-RPC response or update.
-- `tunnel.harness.artifact`: versioned workspace files.
-- `tunnel.harness.status`: opened, closed, or error state.
-
-The management attach route sends harness output to every attached client. An attached client socket is independent of the participant tunnel. If the tunnel closes and the participant opens a new one, attached clients keep their sockets and do not need to reattach.
-
-See `packages/core/src/tunnel-protocol.ts` for the authoritative schemas.
+Management clients attach to a harness participant through the hub, with a Server-Sent Events stream and plain HTTP requests. An attached client stays attached while the participant's tunnel is down, and hears `harness.connected` when the participant comes back.
 
 ## Protocol adaptation between Responses and Chat Completions
 
 The default protocol is Responses. Chat Completions remains available for compatibility.
 
-When the client and the participant do not speak the same protocol, the hub adapts between them. Two consequences:
+When a client uses Responses and the participant's provider only speaks Chat Completions, the hub creates the Response through Chat Completions and translates the answer. Two consequences:
 
-- a client using Responses can reach a participant that only exposes Chat Completions, and vice versa
-- the adapter focuses on the message-level contract; stateful Responses features such as `previous_response_id`, `store`, and `background` may be limited or unsupported when the underlying participant is a Chat Completions endpoint
+- a client using Responses can reach a participant that only exposes Chat Completions
+- the translation carries messages and function tools; a request that needs a stored conversation (`previous_response_id`, for example) or a tool that is not a function fails with `request_not_translatable`, and a translated Response cannot be read back, deleted, or cancelled later
+
+A client using Chat Completions reaches the provider's Chat Completions as it is.
 
 New integrations should prefer Responses. Fall back to Chat Completions only when you need explicit compatibility with an existing tool.
 
-## Health timings
+## Participant status
 
-Participant runtimes send a management heartbeat and a tunnel ping every 10 seconds. After 30 seconds without a heartbeat the hub marks the participant offline, and after 30 seconds without a tunnel frame it closes the tunnel. The [API reference](/reference/api/#health-timings) lists the constants.
+A participant has one status, derived from its tunnel: `offline` (registered, no open tunnel), `online` (tunnel open and idle), or `busy` (handling a request). Only `online` participants receive requests. A participant that stays `offline` for 60 seconds is removed from the room; the runtime reconnects well before that after a short drop, waiting 1 second and doubling up to 30.
+
+Rooms live in the hub's memory. If the hub restarts, its rooms are gone, and participants that try to come back end with "room not found". Create the room again and rejoin.
 
 ## Observability
 
-The hub emits `llm.request`, `llm.complete`, and `llm.error` for inference, and `harness.session.opened`, `harness.session.closed`, and `harness.artifact` for harness participants. `llm.complete` carries timing and token metrics. See [Observability](/reference/observability/) for the fields.
+The hub emits a room snapshot when you start watching, an event for every change of a participant's status, and `llm.request`, `llm.complete`, and `llm.error` for inference. `llm.complete` carries timing and token metrics. See [Observability](/reference/observability/) for the fields.
 
 ## What Gambi does not do
 

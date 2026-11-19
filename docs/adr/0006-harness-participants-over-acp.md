@@ -6,6 +6,8 @@
 **Revisado:** 2026-10-24 (ver fim do documento)
 
 > **Nota (2026-10-24):** o Contexto cita Pi entre os harnesses como exemplo da época. O CLI só aceita `opencode`, `claude-code`, `codex` e `fake` (`packages/core/src/harness-adapters.ts`). O schema de registro (`HarnessParticipant` em `packages/core/src/types.ts`) ainda aceita `pi`, mas não existe adapter. Pi segue como candidato. O corpo desta ADR não foi alterado.
+>
+> **Nota (2026-11-18, Gambi 0.8):** desde o 0.8 o schema de registro (`HarnessId` em `packages/protocol/src/harness.ts`) também recusa `pi`. Com a [ADR-0007](0007-effect-as-runtime-foundation.md), o frame opaco virou chamadas tipadas do túnel (`HarnessEvents`, `HarnessSend`, `HarnessOpenSession`, `HarnessCloseSession`) e o attach de clientes saiu do WebSocket para um stream SSE com requisições comuns no management plane. ACP continua em v1, o hub continua sem interpretar as mensagens e o túnel continua sem chamada que grave arquivo na máquina do participante. Ver [`docs/reference/contracts.md`](../reference/contracts.md#harness-attach).
 
 ---
 

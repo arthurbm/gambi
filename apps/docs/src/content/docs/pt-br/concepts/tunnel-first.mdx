@@ -48,9 +48,9 @@ O que muda:
 - o hub nunca inicia uma conexão com o participante
 - o participante pode manter o endpoint do provedor em `localhost`
 - os headers de autenticação ficam no runtime do participante
-- o hub roteia por `participant-id`, `model:<name>` ou `*`, e encaminha a requisição pelo túnel que o participante já abriu
+- o hub roteia por `participant-id`, nome de modelo, `model:<name>` ou `*`, e encaminha a requisição pelo túnel que o participante já abriu
 
-Participantes de harness usam a mesma direção de conexão. O processo do harness fica local e envia mensagens e artefatos pelo túnel aberto pelo participante. Um cliente de harness abre o próprio WebSocket de gerenciamento até o hub e se conecta a esse participante. O hub só repassa dados entre conexões que ele não originou. Participantes de harness não são candidatos ao roteamento de inferência.
+Participantes de harness usam a mesma direção de conexão. O processo do harness fica local e envia mensagens e artefatos pelo túnel aberto pelo participante. Um cliente de harness faz attach nesse participante pelo hub, com um stream de eventos e requisições HTTP comuns. O hub só repassa dados entre conexões que ele não originou. Participantes de harness não são candidatos ao roteamento de inferência.
 
 ## O relay ACP opaco
 
@@ -62,16 +62,16 @@ flowchart LR
     rt["Runtime do participante"]
     acp["Harness<br/>processo ACP v1"]:::harness
   end
-  client ==>|WebSocket de gerenciamento| hub
+  client ==>|HTTP e SSE| hub
   rt ==>|túnel do participante| hub
   rt <-->|stdio| acp
   classDef hub stroke-width:1px
   classDef harness stroke-width:1.5px
 ```
 
-O frame do túnel tem um `sessionId` e um objeto `message`. O hub valida esse envelope e depois encaminha `message` sem ler o método nem os parâmetros do JSON-RPC ACP. Os comandos de abrir e fechar sessão usam o mesmo relay. Os artefatos do workspace passam em frames separados e versionados.
+Cada mensagem ACP viaja com um `sessionId`. O hub confere esse par e depois encaminha a mensagem sem ler o método nem os parâmetros do JSON-RPC ACP. Abrir e fechar uma sessão de harness passam pelo mesmo relay. Os artefatos do workspace sobem como snapshots separados e versionados.
 
-O login local do harness nunca entra no registro do participante, nos eventos de ciclo de vida nem nos frames do túnel. Isso é diferente dos artefatos do workspace, que o participante envia de propósito para que um app conectado possa usar a saída do harness.
+O login local do harness nunca entra no registro do participante, nos eventos de ciclo de vida nem no túnel. Isso é diferente dos artefatos do workspace, que o participante envia de propósito para que um app conectado possa usar a saída do harness.
 
 ## O que você ganha
 
@@ -79,26 +79,31 @@ O login local do harness nunca entra no registro do participante, nos eventos de
 - **As credenciais ficam locais.** `authHeaders` e chaves de API só saem do runtime do participante quando o próprio runtime chama o provedor, nunca pelo hub.
 - **Menos pré-requisitos de rede para os participantes.** Um participante precisa de conectividade de saída até o hub e nada mais. Sem redirecionamento de porta, sem anúncio por mDNS, sem exceções no firewall.
 - **Registro seguro para repetir.** O registro de participante é idempotente, e o bootstrap token do túnel é de uso único. Reiniciar um participante com o mesmo ID é seguro.
+- **Reconexão.** Quando o túnel cai, o runtime do participante se registra de novo e reabre o túnel com o mesmo ID de participante. Ele espera 1 segundo e dobra a espera até 30. Apps que roteiam para ele pelo ID mantêm o destino.
+- **Cancelamento.** Quando um app abandona uma requisição, o hub cancela a chamada no túnel e o runtime aborta a requisição ao provedor. Assim, a máquina de ninguém continua gerando à toa.
 
 ## Do que você abre mão
 
 - **O upgrade para WebSocket precisa passar.** Qualquer proxy entre o participante e o hub precisa encaminhar `Upgrade: websocket`. Alguns proxies corporativos bloqueiam isso.
 - **Uma direção, não duas.** O participante precisa alcançar o hub. O hub não precisa alcançar o participante, mas nada passa se a saída estiver bloqueada.
-- **Falhas no túnel precisam de tratamento.** Um runtime de participante não se reconecta sozinho. Quando o túnel fecha, a sessão do SDK termina com o motivo de fechamento `tunnel_closed`, e o `gambi participant join` emite um evento NDJSON `tunnel_failed` e sai com código `3`. Um heartbeat de gerenciamento que falha encerra a sessão com `heartbeat_failed` nos dois casos. Monitore isso e reinicie o participante.
+- **A mesma minor nas duas pontas.** O túnel fala o formato de rede da biblioteca de RPC sobre a qual o Gambi é construído, e esse formato pode mudar entre minors. Um hub recusa no registro um participante de outra minor e informa a versão esperada.
+- **Requisições em andamento não sobrevivem a uma queda.** Uma requisição que o participante estava respondendo quando o túnel caiu falha com `participant_disconnected`. O runtime volta para a próxima.
+- **Um hub reiniciado esquece as salas.** As salas vivem na memória do hub. Um participante que tenta voltar a um hub reiniciado ouve que a sala não existe e para (`left` com `reason: "refused"`). Crie a sala de novo e entre outra vez.
+- **Remoção entre tentativas de reconexão.** `participant leave` fecha o túnel de um runtime conectado com `4002`, e o runtime termina. Se alguém o remover durante a espera entre tentativas, não há túnel para receber o código de fechamento. O registro seguinte o traz de volta à sala.
 
 ## Garantias
 
 O túnel é o único transporte que o hub usa para alcançar os participantes. Isso traz duas garantias:
 
-1. Se um participante não está conectado, ele não está disponível. Nada de DNS desatualizado, nada de sockets meio abertos fingindo estar vivos. A disponibilidade é uma propriedade de uma sessão de túnel ativa.
-2. Se uma requisição aponta para um participante cujo túnel fechou, o hub responde na hora com HTTP `503` e `{"error": "Participant tunnel is not connected."}` em vez de esperar um timeout.
+1. O status de um participante vem só do túnel dele. Se o túnel não está aberto, o participante está `offline` e não está disponível. Nada de DNS desatualizado, nada de sockets meio abertos fingindo estar vivos.
+2. Se uma requisição aponta para um participante cujo túnel não está aberto, o hub responde na hora com HTTP `503` e o código `participant_offline` em vez de esperar um timeout.
 
-Clientes de harness conectados não dependem do túnel do participante. Se o participante é reiniciado e abre um novo túnel, os sockets de attach existentes continuam abertos e o repasse é retomado. Frames que um cliente envia enquanto não há túnel aberto são descartados.
+Clientes de harness conectados não dependem do túnel do participante. Se o túnel do participante cai e volta, os streams de attach existentes continuam abertos, recebem `harness.disconnected` e depois `harness.connected`, e o repasse é retomado. Uma mensagem que um cliente envia enquanto não há túnel aberto é recusada com `PARTICIPANT_UNREACHABLE`.
 
 ## Leitura complementar
 
-- [Visão geral da arquitetura](/pt-br/concepts/architecture/#protocolo-do-túnel): o panorama completo, incluindo os tipos de mensagem do túnel.
+- [Visão geral da arquitetura](/pt-br/concepts/architecture/#protocolo-do-túnel): o panorama completo, incluindo o que passa pelo túnel.
 - [Referência da API: a rota do túnel](/pt-br/reference/api/#get-v1roomscodeparticipantsidtunnel): o contrato exato de HTTP e WebSocket.
-- [Referência do SDK: `createParticipantSession()`](/pt-br/reference/sdk/#createparticipantsessionoptions): o runtime programático que gerencia um túnel para você.
+- [Referência do SDK: `createParticipantSession()`](/pt-br/reference/sdk/#createparticipantsessionoptions-gambi-sdkparticipant-só-bun): o runtime programático que gerencia um túnel para você.
 - [Traga seu harness](/pt-br/guides/bring-your-harness/): como entrar com OpenCode, Claude Code ou Codex.
 - [Runtime de participante customizado](/pt-br/guides/custom-participant/): como construir seu próprio runtime em cima de `createParticipantSession()`.

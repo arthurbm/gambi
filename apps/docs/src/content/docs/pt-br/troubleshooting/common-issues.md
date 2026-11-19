@@ -12,14 +12,14 @@ Sintomas:
 
 Causas e soluções:
 
-1. As verificações de saúde estão falhando.
-   - O participante envia um heartbeat a cada 10 segundos.
-   - Se o hub ficar 30 segundos sem recebê-los, o participante é marcado como offline.
-   - Confira se o processo `gambi participant join` ainda está rodando.
+O status de um participante vem só do túnel dele: `offline` significa que o hub não tem nenhum túnel aberto vindo dele.
 
-2. O túnel do participante está desconectado.
-   - Um participante só recebe roteamento enquanto o túnel dele está conectado.
-   - Reinicie o `gambi participant join`.
+1. O participante está reconectando.
+   - Depois de uma queda, o runtime do participante tenta de novo sozinho, esperando 1 segundo e dobrando até 30. Procure eventos `reconnecting` em `gambi participant join --format ndjson`.
+   - Se ele ficar offline por 60 segundos, o hub o remove da sala. O runtime continua tentando, e o próximo registro dele o traz de volta com o mesmo ID.
+
+2. O túnel não consegue abrir.
+   - Confira se o processo `gambi participant join` ainda está rodando.
    - Confira se um firewall ou proxy está bloqueando o upgrade para WebSocket.
 
 3. O hub está inacessível.
@@ -77,6 +77,8 @@ Sintomas:
 
 Causas e soluções:
 
+O hub responde CORS para qualquer origem, nas duas APIs.
+
 1. Um proxy customizado está removendo os headers de CORS.
 2. Um proxy customizado também está removendo os headers de upgrade para WebSocket necessários aos túneis dos participantes.
 
@@ -89,40 +91,60 @@ Sintomas:
 Causas e soluções:
 
 1. `gambi.model("llama3")` roteia para o primeiro participante disponível com esse modelo.
-   - Use `gambi.participant("worker-1")` para mirar num participante exato.
+   - Use `gambi.participant("worker-1")` para pedir um participante. Ele não é um alvo exato: quando `worker-1` está ocupado ou offline, outro participante disponível que sirva um modelo chamado `worker-1` receberia a requisição. Dê aos participantes IDs que não sejam nomes de modelo.
 
-2. O participante pretendido está offline, ocupado ou com o túnel desconectado.
+2. O participante pretendido está offline ou ocupado. Só participantes `online` são escolhidos.
 
 3. Um valor simples de `model` que não é ID de participante é tratado como nome de modelo. Se nenhum participante disponível tiver o ID enviado, o hub roteia para o primeiro participante disponível que serve um modelo com esse nome. Veja [Roteamento de modelos](/pt-br/reference/api/#roteamento-de-modelo).
 
-## Participante informa `tunnel_failed` ou `heartbeat_failed`
+## Participante entra e é recusado
 
 Sintomas:
 
-- `gambi participant join --format ndjson` emite um evento `tunnel_failed` e sai
-- `gambi participant join --format ndjson` emite um evento `heartbeat_failed` e sai
-- um runtime customizado construído sobre `createParticipantSession()` informa o motivo de fechamento `"tunnel_closed"` ou `"heartbeat_failed"`
+- `gambi participant join` sai com código `4` antes de ficar online
+- um runtime customizado construído sobre `createParticipantSession()` rejeita com um `ParticipantError`
 
-São falhas diferentes. Diagnostique pelo evento de ciclo de vida ou pelo motivo de fechamento. Nem a CLI nem o SDK reconectam sozinhos: reinicie o participante com o mesmo ID de participante.
+Leia o nome do erro (`--format json` o coloca em `error.name`) ou o `code`:
 
-### `tunnel_failed` / motivo de fechamento `"tunnel_closed"`
+1. `VersionMismatch` / `VERSION_MISMATCH`: o participante roda outra minor do Gambi, diferente da do hub. A mensagem indica a versão que o hub espera. Instale uma versão dessa minor no participante, ou atualize o hub e o participante para a versão mais recente, para que os dois fiquem na mesma minor (qualquer `0.8.x` com qualquer outra `0.8.x`). `gambi self update` sempre instala a versão mais recente.
+2. `RoomNotFound` / `ROOM_NOT_FOUND`: confira o código da sala com `gambi room list`.
+3. `InvalidPassword` / `INVALID_PASSWORD`: passe a senha da sala com `--password`.
 
-O túnel WebSocket até o hub foi interrompido. Causas comuns:
+Já o código de saída `3` significa que o participante não conseguiu alcançar algo de que depende: o hub (`HubUnreachable`, `NotAHub`), o provedor dele (`EndpointUnreachable`, `ModelNotOnEndpoint`), o túnel (`TunnelOpenFailed`) ou o harness dele. A mensagem diz qual.
 
-1. Um proxy entre o participante e o hub está removendo o `Upgrade: websocket`. Teste apontando o participante direto para o hub, sem passar pelo proxy.
-2. O processo do hub reiniciou ou caiu. Confira os logs do hub e tente de novo.
-3. O bootstrap token expirou antes de o participante terminar o upgrade. O token tem TTL de 60 segundos; uma rede lenta ou travada pode perder essa janela. Rodar `gambi participant join` de novo emite um token novo.
-4. O hub derrubou o túnel anterior porque o mesmo ID de participante se reconectou de outro lugar. Decida se você quer mesmo rodar dois runtimes com o mesmo ID e, se não quiser, escolha outro ID.
+## Participante para depois que o hub reinicia
 
-### `heartbeat_failed`
+Sintomas:
 
-Uma requisição HTTP de heartbeat de gerenciamento falhou. Uma única falha basta para fechar a sessão. Isso diz respeito ao acesso HTTP a `/v1`, não ao caminho do WebSocket. Causas comuns:
+- o processo do hub reiniciou, e o `gambi participant join` termina com `left` e `reason: "refused"`, mostrando `RoomNotFound` e saindo com código `4`
+- o `session.ended` de um runtime customizado resolve com `reason: "refused"`
 
-1. A URL do hub está errada ou desatualizada.
-2. Um proxy ou firewall está bloqueando `POST /v1/rooms/:code/participants/:id/heartbeat`.
-3. A sala ou o participante foi apagado do hub enquanto o runtime ainda rodava. Confira com `gambi room get` e rode `gambi participant join` de novo.
+As salas vivem na memória do hub, e os códigos de sala são aleatórios. Um hub reiniciado volta sem as salas, então um participante que tenta voltar ouve que a sala não existe e para de propósito. Crie a sala de novo, compartilhe o novo código e entre outra vez.
 
-Depois de `heartbeat_failed`, o runtime tenta se remover da sala. Depois de `tunnel_closed`, não: o registro continua, e o hub marca o participante como offline assim que o túnel fecha. Nos dois casos, reiniciar com o mesmo ID de participante é seguro, porque o registro é idempotente.
+O participante só volta sozinho quando o hub ficou inacessível por um tempo (o Wi-Fi piscou, o notebook dormiu) e retorna com as salas dele.
+
+## Participante termina com `replaced`
+
+Sintomas:
+
+- `gambi participant join` termina com `left` e `reason: "replaced"`, com código de saída `4`
+- o `session.ended` de um runtime customizado resolve com `reason: "replaced"`
+
+Outro runtime entrou na mesma sala com o mesmo participant ID, e o hub ficou com o mais novo. O runtime substituído não tenta de novo, então os dois nunca tomam o túnel um do outro. Dê a cada participante rodando o próprio ID.
+
+## Um participante que você removeu volta
+
+Quando `gambi participant leave` remove um participante conectado, o hub fecha o túnel com `4002`. O `participant join` emite `left` com `reason: "removed"` e termina com código `4`.
+
+Se alguém remover o participante enquanto o runtime espera entre tentativas de reconexão, não há túnel aberto ou em abertura para receber o `4002`. Na próxima tentativa, ele se registra de novo. Rode `participant leave` quando ele estiver online ou encerre o `participant join` com Ctrl+C na máquina dele.
+
+## Requisição de streaming termina com `consumer_too_slow`
+
+O app leu uma resposta em streaming devagar demais, e mais de 8 Mi caracteres dela se acumularam no hub. O hub cancela a requisição no participante e encerra o stream com esse erro. Leia o stream conforme ele chega, ou peça uma resposta que não seja stream.
+
+## Requisição falha com `inference_timeout`
+
+O participante não enviou nada por 5 minutos, antes do primeiro chunk ou entre dois chunks. O hub cancelou a requisição no participante. Um provedor que demora mais que isso para começar a responder (um modelo muito grande carregando, por exemplo) precisa ser aquecido antes.
 
 ## Latência alta
 
@@ -150,18 +172,24 @@ Sintomas e soluções para `gambi participant join --harness`:
 1. Código de saída `3` antes do registro, com uma mensagem pedindo para instalar ou fazer login.
    - O binário do harness ou o adaptador ACP dele não está instalado, ou não há login local. Rode o comando que a CLI imprime, por exemplo `opencode auth login`, `claude auth login` ou `codex login`, e tente de novo. Veja [Traga seu harness](/pt-br/guides/bring-your-harness/#instale-e-autentique-seu-harness).
 
-2. Código de saída `2` e um erro terminando em `cannot be used with --harness`.
+2. Código de saída `2` e um erro dizendo que as flags `cannot be used with --harness`.
    - Remova `--endpoint`, `--header` e `--header-env`. O harness usa o próprio login local.
 
 3. `Claude Code cannot run as a Gambi-hosted harness for third parties.`
-   - Uma aplicação chamou `createHarnessParticipantSession()` com `harnessId: "claude-code"` e `hosted: true`. O SDK rejeita essa combinação. Cada pessoa precisa rodar o Claude Code com o próprio login.
+   - Uma aplicação chamou `createHarnessParticipantSession()` com `harness: "claude-code"` e `hosted: true`. O SDK rejeita essa combinação. Cada pessoa precisa rodar o Claude Code com o próprio login.
 
-4. Uma requisição de inferência retorna HTTP `400` com `Harness participants do not serve inference requests`.
+4. Uma requisição de inferência retorna HTTP `400` com o código `inference_not_supported`.
    - O valor de `model` aponta para um participante harness. Participantes harness não aceitam requisições compatíveis com OpenAI. Use `client.harness.attach()` no lugar.
+
+5. `artifact_skipped` com `cause: "tooLarge"`.
+   - O snapshot do workspace passa de 8 MiB, por isso não foi enviado. Tire os arquivos grandes do workspace.
+
+6. Um processo de harness continua rodando depois que o participante sumiu.
+   - Se o `gambi participant join` (ou o seu programa) foi morto com `kill -9`, ele não conseguiu parar o harness. Um harness que não observa a entrada padrão continua rodando. Encontre-o e pare-o na mão. Ctrl+C e `SIGTERM` param o harness normalmente.
 
 ## Ainda com problemas?
 
-1. Confira a saída do hub. O hub imprime linhas `[gambi] llm.request`, `[gambi] llm.complete` e `[gambi] llm.error` no console, e `gambi events watch --room <code>` mostra os eventos da sala.
+1. Confira a saída do hub. `gambi hub serve` escreve as linhas de log no stderr (`--log-level debug` mostra mais), e `gambi events watch --room <code>` mostra os eventos da sala. Um erro da CLI ou do SDK pode trazer um `requestId`; procure por ele no log do hub.
 
 2. Teste o endpoint do provedor diretamente:
 

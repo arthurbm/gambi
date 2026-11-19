@@ -4,383 +4,116 @@
 [![npm downloads](https://img.shields.io/npm/dm/gambi-sdk)](https://www.npmjs.com/package/gambi-sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-TypeScript SDK for Gambi - a distributed LLM coordination system.
+TypeScript SDK for [Gambi](https://gambi.sh), a hub for sharing OpenAI-compatible LLM endpoints and coding harnesses across a trusted local network.
 
 ## Installation
 
 ```bash
 npm install gambi-sdk
-```
-
-or
-
-```bash
+# or
 bun add gambi-sdk
 ```
 
-or
+## Entries
 
-```bash
-pnpm add gambi-sdk
-```
+| Entry | Exports | Runs on |
+| --- | --- | --- |
+| `gambi-sdk` | `createGambi()`, `createClient()`, `ClientError` | Node and Bun |
+| `gambi-sdk/discovery` | `discoverHubs()`, `discoverRooms()`, `resolveGambiTarget()`, `DiscoveryError` | Node and Bun |
+| `gambi-sdk/hub` | `createHub()`, `HubError` | Bun only |
+| `gambi-sdk/participant` | `createParticipantSession()`, `createHarnessParticipantSession()`, `createLocalDirectoryWorkspace()`, `probeProvider()`, `runFakeAcpAgent()`, `ParticipantError` | Bun only |
 
-## Overview
+Each entry is a separate file: importing one never loads another. Every function returns a `Promise` (or an async iterable), and every entry exports the TypeScript types of what it returns.
 
-The SDK provides organized namespaces for interacting with Gambi hubs:
+A participant hosted with `gambi-sdk/participant` must run the same minor version of Gambi as the hub it joins. Upgrade the SDK and the hub together.
 
-- **`rooms`** - Manage rooms and participants
-- **`participants`** - Create and configure participants
-- **`hub`** - Create and manage hubs
-- **`createClient`** - HTTP client for remote hubs
-- **Types** - Full TypeScript type definitions
+## Inference with the AI SDK
 
-## Quick Start
-
-### Creating a Local Hub
-
-```typescript
-import { hub, rooms, participants } from "gambi-sdk";
-
-// Create a hub
-const myHub = hub.create({ port: 3000 });
-console.log(`Hub running at ${myHub.url}`);
-
-// Create a room
-const room = rooms.create("My AI Room", "host-id-123");
-console.log(`Room code: ${room.code}`);
-
-// Create and add a participant
-const participant = participants.create({
-  nickname: "Local Ollama",
-  model: "llama3",
-  endpoint: "http://localhost:11434",
-  specs: {
-    gpu: "RTX 4090",
-    vram: 24,
-  },
-});
-
-rooms.addParticipant(room.id, participant);
-```
-
-### Using the HTTP Client
-
-Connect to a remote Gambi hub:
-
-```typescript
-import { createClient } from "gambi-sdk";
-
-const client = createClient({ hubUrl: "http://hub.example.com:3000" });
-
-// Create a room
-const { room, hostId } = await client.create("Remote Room");
-
-// Join the room
-await client.join(room.code, {
-  id: "participant-1",
-  nickname: "My Bot",
-  model: "gpt-4",
-  endpoint: "http://localhost:11434",
-});
-
-// Get participants
-const participants = await client.getParticipants(room.code);
-
-// Health check
-await client.healthCheck(room.code, "participant-1");
-
-// Leave the room
-await client.leave(room.code, "participant-1");
-```
-
-### With Vercel AI SDK
-
-Use Gambi as an AI provider:
-
-```typescript
+```ts
 import { createGambi } from "gambi-sdk";
 import { generateText } from "ai";
 
-const gambi = createGambi({ roomCode: "ABC123" });
-
-const result = await generateText({
-  model: gambi.any(), // Defaults to OpenResponses
-  prompt: "Hello, world!",
-});
-
-const legacy = createGambi({
-  roomCode: "ABC123",
-  defaultProtocol: "chatCompletions",
-});
-
-const legacyResult = await generateText({
-  model: legacy.any(),
-  prompt: "Use explicit legacy chat/completions mode",
-});
-```
-
-### Local Network Discovery
-
-For local Node.js or Bun applications, you can resolve a room first and keep the provider/client creation explicit:
-
-```typescript
-import { createGambi, resolveGambiTarget } from "gambi-sdk";
-// or import only discovery (smaller import, no AI SDK needed at runtime):
-// import { resolveGambiTarget } from "gambi-sdk/discovery";
-
-const target = await resolveGambiTarget({
-  roomCode: "ABC123",
-});
-
 const gambi = createGambi({
-  hubUrl: target.hubUrl,
-  roomCode: target.roomCode,
+  roomCode: "ABC123",
+  hubUrl: "http://192.168.1.10:3000",
+});
+
+const { text } = await generateText({
+  model: gambi.any(), // or gambi.model("llama3"), gambi.participant("worker-1")
+  prompt: "Explain how SSE works.",
 });
 ```
 
-The SDK also exposes `discoverHubs()` and `discoverRooms()` if you want to build your own room picker UI. All discovery functions are available from the root export or from `gambi-sdk/discovery`.
+The helpers return AI SDK 6 models (`LanguageModelV3`) and default to the OpenAI Responses API; `gambi.chatCompletions.*` uses Chat Completions. Aborting a request cancels the generation on the participant's machine.
 
-## API Reference
+## Managing a hub
 
-### `rooms`
+```ts
+import { ClientError, createClient } from "gambi-sdk";
 
-Manage rooms and participants:
+const client = createClient({ hubUrl: "http://192.168.1.10:3000" });
 
-```typescript
-// Create a room
-const room = rooms.create(name, hostId);
+const { room } = await client.rooms.create({ name: "Demo" });
+const participants = await client.participants.list(room.code);
 
-// Get rooms
-const room = rooms.get(id);
-const room = rooms.getByCode(code);
-const allRooms = rooms.list();
-const roomsWithCount = rooms.listWithParticipantCount();
-
-// Remove a room
-rooms.remove(id);
-
-// Participant management
-rooms.addParticipant(roomId, participant);
-rooms.removeParticipant(roomId, participantId);
-rooms.getParticipants(roomId);
-rooms.getParticipant(roomId, participantId);
-rooms.updateParticipantStatus(roomId, participantId, status);
-rooms.updateLastSeen(roomId, participantId);
-
-// Find participants
-rooms.findParticipantByModel(roomId, modelName);
-rooms.getRandomOnlineParticipant(roomId);
-
-// Maintenance
-rooms.checkStaleParticipants();
-rooms.clear(); // Testing only
-```
-
-### `participants`
-
-Create and configure participants:
-
-```typescript
-// Create a participant
-const participant = participants.create({
-  nickname: "Bot Name",
-  model: "llama3",
-  endpoint: "http://localhost:11434",
-  specs: {
-    gpu: "RTX 4090",
-    vram: 24,
-    ram: 64,
-    cpu: "AMD Ryzen 9",
-  },
-  config: {
-    temperature: 0.7,
-    max_tokens: 2048,
-  },
-});
-
-// Merge configurations
-const merged = participants.mergeConfig(baseConfig, overrides);
-```
-
-### `hub`
-
-Create and manage hubs:
-
-```typescript
-const myHub = hub.create({
-  port: 3000,
-  hostname: "0.0.0.0",
-  mdns: true,
-  cors: ["*"],
-});
-
-// Hub provides: server, url, mdnsName, close()
-console.log(myHub.url); // http://0.0.0.0:3000
-myHub.close(); // Cleanup
-```
-
-### `createClient`
-
-HTTP client for remote hubs:
-
-```typescript
-const client = createClient({ hubUrl: "http://hub:3000" });
-
-// Create room
-const { room, hostId } = await client.create("Room Name");
-
-// List rooms
-const rooms = await client.list();
-
-// Join room
-const { participant, roomId } = await client.join(code, {
-  id: "participant-id",
-  nickname: "Bot",
-  model: "llama3",
-  endpoint: "http://localhost:11434",
-});
-
-// Leave room
-await client.leave(code, participantId);
-
-// Get participants
-const participants = await client.getParticipants(code);
-
-// Health check
-await client.healthCheck(code, participantId);
-```
-
-## Types
-
-All core types are re-exported:
-
-```typescript
-import type {
-  RoomInfo,
-  ParticipantInfo,
-  ParticipantStatus,
-  GenerationConfig,
-  MachineSpecs,
-  HubConfig,
-  NetworkConfig,
-} from "gambi-sdk";
-```
-
-### Runtime Validation
-
-Zod schemas are exported with `Schema` suffix:
-
-```typescript
-import {
-  ParticipantInfoSchema,
-  RoomInfoSchema,
-  GenerationConfigSchema,
-} from "gambi-sdk";
-
-// Validate at runtime
-const result = ParticipantInfoSchema.parse(data);
-```
-
-## Tree-shaking
-
-Import only what you need for optimal bundle size:
-
-```typescript
-// Import specific namespaces
-import { rooms, participants, hub } from "gambi-sdk";
-
-// Or destructure what you need
-import { createClient, createGambi } from "gambi-sdk";
-```
-
-Modern bundlers (webpack, esbuild, rollup) will tree-shake unused exports.
-
-## Architecture
-
-The SDK is a **zero-duplication wrapper** around `@gambi/core`:
-
-- **`types.ts`** - Re-exports all core types
-- **`protocol.ts`** - Re-exports protocol messages
-- **`rooms.ts`** - Re-exports Room namespace
-- **`participants.ts`** - Re-exports Participant namespace
-- **`hub.ts`** - Re-exports Hub creation
-- **`utils.ts`** - Re-exports utilities (logo, etc)
-- **`client.ts`** - NEW: HTTP client implementation
-
-**Philosophy:** Core contains implementation, SDK is the user-facing API.
-
-## Examples
-
-### Complete Workflow
-
-```typescript
-import { hub, rooms, participants } from "gambi-sdk";
-
-// 1. Create hub
-const myHub = hub.create({ port: 3000 });
-
-// 2. Create room
-const room = rooms.create("AI Collaboration", "host-123");
-
-// 3. Add participants
-const bot1 = participants.create({
-  nickname: "Llama 3",
-  model: "llama3",
-  endpoint: "http://localhost:11434",
-});
-
-const bot2 = participants.create({
-  nickname: "GPT-4",
-  model: "gpt-4",
-  endpoint: "http://localhost:11435",
-});
-
-rooms.addParticipant(room.id, bot1);
-rooms.addParticipant(room.id, bot2);
-
-// 4. List participants
-const allParticipants = rooms.getParticipants(room.id);
-console.log(`${allParticipants.length} participants in room`);
-
-// 5. Cleanup
-myHub.close();
-```
-
-### Health Checks
-
-```typescript
-// Send periodic health checks
-setInterval(() => {
-  rooms.updateLastSeen(roomId, participantId);
-}, 10_000);
-
-// Check for stale participants
-const stale = rooms.checkStaleParticipants();
-for (const { roomId, participantId } of stale) {
-  console.log(`Participant ${participantId} is offline`);
+for await (const event of client.events.watch(room.code)) {
+  console.log(event.type); // "room.snapshot", "participant.online", "llm.complete", ...
 }
 ```
 
-### Error Handling
+Methods return the value itself and reject with a `ClientError` whose `code` names the failure (`ROOM_NOT_FOUND`, `VERSION_MISMATCH`, `HUB_UNREACHABLE`, `NOT_A_HUB`, ...).
 
-```typescript
-import { ClientError } from "gambi-sdk";
+Pass a non-empty `runtimeId` in every `client.participants.register(roomCode, participantId, input)`. To remove a participant, pass its listed owner to `client.participants.remove(roomCode, participantId, runtimeId)`. If ownership has changed, the call rejects with `PARTICIPANT_OF_ANOTHER_RUNTIME` (HTTP 409).
 
-try {
-  await client.join("INVALID", participant);
-} catch (error) {
-  if (error instanceof ClientError) {
-    console.error(`HTTP ${error.status}: ${error.message}`);
-    console.error(error.response); // Original response data
-  }
-}
+`client.harness` attaches to a harness participant (OpenCode, Claude Code, Codex): `openSession`, `send` (one ACP v1 message), `attach` (an async iterable of the harness's messages, session status, and workspace artifacts), and `closeSession`.
+
+## Hosting a hub or a participant (Bun only)
+
+```ts
+import { createHub } from "gambi-sdk/hub";
+import { createParticipantSession } from "gambi-sdk/participant";
+
+const hub = await createHub({ port: 3000 });
+
+const session = await createParticipantSession({
+  hubUrl: hub.url,
+  roomCode: "ABC123",
+  participantId: "worker-1",
+  nickname: "worker-1",
+  model: "llama3",
+  endpoint: "http://localhost:11434",
+  authHeaders: { Authorization: `Bearer ${process.env.PROVIDER_TOKEN}` }, // never leave this machine
+  onLifecycle: (event) => console.log(event.type), // connected, reconnecting, left
+});
+
+await session.leave();
+await hub.close();
 ```
 
-## Testing
+The participant opens a tunnel to the hub and reconnects after a network drop. `createHarnessParticipantSession()` does the same for a local harness, running it in a workspace folder and sending snapshots to attached clients. When the hub removes a connected participant, `session.ended` resolves with `{ reason: "removed" }`. When the session's own `leave()` ends it, the reason is `stopped`. Calling `leave()` after `removed` or `replaced` preserves that reason.
 
-```bash
-bun test
+## Discovery
+
+```ts
+import { createGambi } from "gambi-sdk";
+import { resolveGambiTarget } from "gambi-sdk/discovery";
+
+const target = await resolveGambiTarget({ roomCode: "ABC123", timeoutMs: 1500 });
+const gambi = createGambi({ hubUrl: target.hubUrl, roomCode: target.roomCode });
 ```
+
+Discovery is always explicit: `createGambi()` and `createClient()` never discover anything on their own.
+
+## Documentation
+
+- [SDK reference](https://gambi.sh/reference/sdk/): every option, method, event, and error code
+- [API reference](https://gambi.sh/reference/api/): the HTTP contracts behind the SDK
+- [Build a custom participant runtime](https://gambi.sh/guides/custom-participant/)
+- [Bring your harness](https://gambi.sh/guides/bring-your-harness/)
+
+## Security
+
+The hub has no built-in authentication. Run it only on a trusted network, or behind your own proxy and authentication layer.
 
 ## License
 

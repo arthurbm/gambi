@@ -23,7 +23,7 @@ The actual LLM backend (Ollama, vLLM, OpenRouter, OpenAI, etc.) sitting behind a
 _Avoid_: Backend, upstream, model server (when referring to the runtime; use **Model** for the named model itself).
 
 **Participant runtime**:
-The process on a participant's machine (`gambi participant join`) that registers the participant, holds its tunnel open, and calls the provider or harness locally. Bare "runtime" in this repo means this.
+The process on a participant's machine (`gambi participant join`) that registers the participant, holds its tunnel open, and calls the provider or harness locally. Bare "runtime" in this repo means this. Each participant belongs to one runtime. Its public `runtimeId` identifies that owner across reconnections and is required to remove the participant.
 _Avoid_: Client, agent, daemon.
 
 **Model**:
@@ -33,21 +33,17 @@ _Avoid_: Engine.
 ### Transport
 
 **Tunnel**:
-The WebSocket connection opened by a participant to the hub, over which the hub dispatches every inference request. Always participant-initiated — the hub never originates connections back. (See ADR-0003.)
-_Avoid_: Socket (too generic), channel, bridge.
+The WebSocket connection opened by a participant to the hub, over which the hub makes typed calls into the participant runtime (`effect/rpc`): every inference request, and every message to a harness. Always participant-initiated — the hub never originates connections back. Its open or closed state is the only liveness signal a participant has. (See ADR-0003 and ADR-0007.)
+_Avoid_: Socket (too generic), channel, bridge, connection (as a participant state).
 
 **Bootstrap token**:
 A single-use, 60-second token returned by participant registration that authenticates the WebSocket upgrade. Distinct from any future hub-level auth.
 _Avoid_: Session token, API key.
 
-**Heartbeat**:
-The management-plane liveness signal: a periodic `POST .../heartbeat` from participant to hub. Distinct from the **tunnel ping/pong** — the two run in parallel and answer different questions (heartbeat drives `status`; ping/pong drives `connection.connected`).
-_Avoid_: Ping (when referring to management heartbeat — reserve "ping/pong" for tunnel).
-
 ### API surfaces
 
 **Management plane**:
-The Gambi-native HTTP surface under `/v1/*` — rooms, participants, heartbeats, room events. Used by the CLI, SDK management client, and TUI.
+The Gambi-native HTTP surface under `/v1/*` — rooms, participants, room events, harness attach. Defined once as a contract in `@gambi/protocol`, from which the hub, the CLI, the SDK management client, and the TUI derive.
 _Avoid_: Control plane (acceptable synonym but inconsistent with codebase).
 
 **Inference plane**:
@@ -55,16 +51,14 @@ The OpenAI-compatible HTTP surface under `/rooms/:code/v1/*` — responses, chat
 _Avoid_: Data plane.
 
 **SDK management client**:
-The object returned by `createClient()`; namespaced as `client.rooms.*`, `client.participants.*`, `client.events.*`. Distinct from the inference provider returned by `createGambi()`.
+The object returned by `createClient()`; namespaced as `client.hub.*`, `client.rooms.*`, `client.participants.*`, `client.events.*`, `client.harness.*`. Distinct from the inference provider returned by `createGambi()`.
 _Avoid_: SDK client (ambiguous — `createGambi()` also returns "a client").
 
 ### State
 
 **Status**:
-The participant's lifecycle phase: `online`, `busy`, or `offline`. Derived from the management heartbeat. Orthogonal to **connection**.
-
-**Connection** (participant connection):
-The participant's tunnel state: `{ kind: "tunnel", connected: boolean, lastTunnelSeenAt }`. Derived from tunnel ping/pong. Orthogonal to **status**. A participant can be `online` but `connection.connected: false`, or vice versa — routing requires both to be healthy.
+The one state of a participant, derived from its tunnel alone: `offline` (registered, no open tunnel), `online` (tunnel open, idle), or `busy` (the hub dispatched a request that has not ended). Every change goes through one transition table (`transitionStatus` in `@gambi/protocol`) and emits a room event. Only `online` receives routes. A participant `offline` for longer than the reconnection deadline (60 s) is removed from the room.
+_Avoid_: Connection, connected (there is no separate connection state since 0.8).
 
 **Endpoint** (provider endpoint):
 The URL where a participant's provider listens (e.g. `http://127.0.0.1:11434`). Informational only on the hub side — the hub never connects to it. The participant runtime is the only thing that actually calls this URL.
@@ -73,17 +67,18 @@ _Avoid_: When you mean an HTTP path on the hub, say **route** or **HTTP endpoint
 ### Routing
 
 **Model selector**:
-The value of the `model` field in an inference request, which selects a participant:
-- `<participantId>` — route to one specific participant
-- `model:<name>` — route to any available participant exposing that model
-- `*` or `any` — route to any available participant
+The value of the `model` field in an inference request, which selects a participant. Four forms:
+- `*` or `any` — any `online` participant, at random
+- `model:<name>` — the first `online` participant exposing that model
+- `<participantId>` — that one participant
+- `<name>` — when no `online` participant has that id, the same as `model:<name>`; this is what a plain OpenAI client sends
 
-A participant is "available" only when its tunnel is connected, its status is not offline, and it is not currently handling another request.
+Only `online` participants are picked. Harness participants are never picked by `*`, `any`, or a model name.
 
 ### Harness layer
 
 **Harness**:
-A runtime that turns a model into an agent: it supplies a system prompt, tools, an agentic loop, and a translation layer across models. Supported today: OpenCode, Claude Code, and Codex (plus `fake`, a test adapter). Pi is a candidate, not supported yet. A harness runs on a person's machine, in that person's own context and authentication.
+A runtime that turns a model into an agent: it supplies a system prompt, tools, an agentic loop, and a translation layer across models. Supported today: OpenCode, Claude Code, and Codex (plus `fake`, a test adapter). Pi is a candidate, not supported yet: the hub refuses it as a harness id. A harness runs on a person's machine, in that person's own context and authentication.
 _Avoid_: Agent runtime, coding agent (too narrow), "agent" alone.
 
 **Harness participant**:
@@ -106,8 +101,8 @@ Orchestration vocabulary (orchestrator, steerer, squad, dispatch, draft, decisio
 - A **Room** contains zero-to-many **Participants**.
 - A **Participant** wraps exactly one **Provider** and exposes one or more **Models**, via its **Tunnel**.
 - Every inference request enters through the **Inference plane**, is routed by **Model selector** to one **Participant**, and is dispatched into that participant's **Tunnel**.
-- Every operational call (create room, register participant, send heartbeat, watch events) goes through the **Management plane**.
-- A **Participant** has a **Status** and a **Connection**; both must be healthy for it to receive routes.
+- Every operational call (create room, register participant, watch events, attach to a harness) goes through the **Management plane**.
+- A **Participant** has one **Status**, derived from its **Tunnel**; it receives routes only when `online`.
 - A **Harness participant** is a **Participant**; it holds one-to-many **Harness sessions**.
 - A **Harness session** runs in exactly one **Workspace**; a **Workspace** lives on the participant's machine and never on the hub.
 
@@ -116,11 +111,11 @@ Orchestration vocabulary (orchestrator, steerer, squad, dispatch, draft, decisio
 > **Dev:** "When a **Participant** joins a **Room**, does the **Hub** call the **Provider** to check what models are available?"
 > **Maintainer:** "No — the **Hub** never talks to the **Provider** directly. The **Participant** opens the **Tunnel**, and any capability detection runs on the participant side and is sent up as part of registration."
 
-> **Dev:** "Why does the management response distinguish **Status** from **Connection**? Aren't they the same thing?"
-> **Maintainer:** "They answer different questions. **Status** is 'has the participant been sending heartbeats lately?'. **Connection** is 'is the tunnel WebSocket currently open?'. A participant whose heartbeat lapsed but whose tunnel is still alive is in an inconsistent state — and routing rejects it because it requires both."
+> **Dev:** "How does the hub know a **Participant** is still there?"
+> **Maintainer:** "By its **Tunnel**, and nothing else. When the tunnel drops, its **Status** goes `offline`; the participant runtime reconnects by itself with the same `participantId`, and if it does not come back within 60 seconds the hub removes it from the **Room**."
 
 > **Dev:** "If I want to send a request to a specific machine, do I use the participant ID or the model name?"
-> **Maintainer:** "Use the **Participant ID** as the **Model selector**. `model:<name>` picks any participant exposing that model — explicitly non-deterministic. `*` is for 'I really don't care.'"
+> **Maintainer:** "Use the **Participant ID** as the **Model selector**. `model:<name>`, or the bare model name, picks a participant exposing that model, whichever the hub finds first. `*` is for 'I really don't care.'"
 
 ## Flagged ambiguities
 
@@ -133,13 +128,11 @@ Orchestration vocabulary (orchestrator, steerer, squad, dispatch, draft, decisio
 
 - **"Endpoint"** is overloaded between *provider endpoint* (the participant's local URL the hub never reaches) and *HTTP endpoint / route* (a path on the hub). The codebase uses bare `endpoint` to mean **provider endpoint**. When you mean a hub route, say **route** or **HTTP endpoint** explicitly.
 
-- **"Connection"** in this domain means **participant tunnel state**, not TCP/HTTP connections in general. A participant being "connected" specifically means its tunnel is open.
-
 - **"Gambi"** refers to today's product (transport + room hub). The future umbrella brand also called "Gambi" (per ADR-0001) is *brand framing*, not a renamed product. When ambiguity matters, say **Gambi (the hub)** vs **Gambi (the brand)**.
 
 - **"Substrate" / "social primitives"** are **internal vocabulary** — they name the two layers of the product/research model in `docs/product/research-direction.md`: the *substrate* is what Gambi ships today (hub, tunnel, routing, observability); *social primitives* is the layer above it (turn-taking, shared context, agent-to-agent interaction), still research. Use them freely in `docs/` and in design conversation. _Rule_: never in public copy (landing, docs pages, README). A reader who has not read the research doc gets nothing from either term — say the concrete thing instead ("turn-taking, shared context, models talking to models"). Ruled in ADR-0001 § 7 (E6).
 
 - **"Runtime", "layer", "scope"** are domain words here and also construct names in libraries the code uses (for example Effect's `Runtime`, `Layer`, `Scope`). In prose, bare **runtime** means the **participant runtime**, the **harness layer** is the product layer of harness participants, and a room is a "scope" only in the plain-English sense. _Rule_: library constructs are implementation vocabulary and never get an entry in this file; when you mean one, write it as code (`Layer`, `Scope`).
 
-- **"Heartbeat"** is reserved for the management-plane HTTP heartbeat. The tunnel's keepalive is **ping/pong** (`tunnel.ping` / `tunnel.pong`). Saying "the heartbeat failed" implicitly means management; tunnel failures are "ping/pong stopped" or "tunnel closed."
+- **"Heartbeat"** names nothing since 0.8: the management heartbeat was removed. The tunnel's keepalive is **ping/pong**, which the hub sends; tunnel failures are "the tunnel dropped" or "the hub went silent."
 
