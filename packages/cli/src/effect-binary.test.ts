@@ -371,12 +371,16 @@ it.live(
       });
       joining.kill("SIGTERM");
       expect(yield* Effect.promise(() => joining.exited)).toBe(0);
-      const events = (yield* joiningEvents.rest)
+      const shutdown = (yield* joiningEvents.rest)
         .trim()
         .split("\n")
-        .map((line) => JSON.parse(line));
-      // The prompt edits the Workspace. A settled artifact can precede shutdown.
-      expect(events.slice(-3)).toMatchObject([
+        .map((line) => JSON.parse(line))
+        // The prompt's file change can settle while the participant is leaving.
+        .filter(
+          (event) =>
+            !(event.type === "artifact_sent" && event.data.reason === "watch")
+        );
+      expect(shutdown).toMatchObject([
         { type: "leaving" },
         { type: "artifact_sent", data: { reason: "final" } },
         { type: "left" },
