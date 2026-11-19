@@ -4,6 +4,8 @@
 **Data:** pré-histórico (implementado nas versões iniciais do hub) / 2026-05-20 (registrado como ADR)
 **Escopo:** `packages/core` (hub + participant runtime), `packages/sdk` (participant session), `packages/cli` (`participant join`)
 
+> **Nota (2026-11-18, Gambi 0.8):** a decisão desta ADR (o participante abre o túnel, o hub nunca origina conexão, `ParticipantAuthHeaders` ficam no participant runtime) continua valendo. O mecanismo mudou com a [ADR-0007](0007-effect-as-runtime-foundation.md): o túnel passou a usar chamadas tipadas de `effect/rpc` no lugar dos frames `tunnel.*`, o heartbeat HTTP saiu e o status do participante deriva só do túnel, o runtime reconecta sozinho com o mesmo `participantId`, e o registro não devolve mais `tunnel.url`. Hub e participantes precisam estar na mesma minor. A seção 3 cita um "retry de bootstrap" no participant runtime que nunca existiu no código: antes do 0.8 o runtime não repetia nem o registro nem a abertura do túnel. Os contratos em vigor estão em [`docs/reference/contracts.md`](../reference/contracts.md#tunnel-calls). O corpo desta ADR não foi alterado.
+
 ---
 
 ## 1. Contexto
