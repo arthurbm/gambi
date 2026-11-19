@@ -476,11 +476,17 @@ layer(layerHub({ harnessClientBuffer: 4 }), { excludeTestServices: true })(
             expect(yield* Queue.take(seen)).toEqual(event(index));
           }
 
-          // The one that did not read kept the last four: it lost the
-          // `harness.connected` it started with and the first six events.
-          const kept = yield* slow.pipe(Stream.take(5), Stream.runCollect);
+          // The initial state precedes the loss notice and the last four events.
+          const kept = yield* slow.pipe(
+            Stream.takeUntil(
+              (item) =>
+                item.type === "harness.message" && item.message.index === 9
+            ),
+            Stream.runCollect
+          );
           expect(kept).toEqual([
-            { type: "harness.dropped", count: 7 },
+            { type: "harness.connected" },
+            { type: "harness.dropped", count: 6 },
             event(6),
             event(7),
             event(8),

@@ -198,11 +198,14 @@ export class HarnessClients extends Context.Service<
           Effect.sync(() => {
             const entry = entryOf(keyOf(roomCode, participantId));
             const mailbox = makeMailbox(settings.harnessClientBuffer);
-            mailbox.offer(entry.disconnected ?? { type: "harness.connected" });
             entry.clients.add(mailbox);
-            return mailbox;
+            return {
+              mailbox,
+              initial:
+                entry.disconnected ?? ({ type: "harness.connected" } as const),
+            };
           }),
-          (mailbox) =>
+          ({ mailbox }) =>
             Effect.sync(() => {
               const key = keyOf(roomCode, participantId);
               const entry = attached.get(key);
@@ -212,8 +215,11 @@ export class HarnessClients extends Context.Service<
               }
             })
         ).pipe(
-          Effect.map((mailbox) =>
-            Stream.fromEffectRepeat(mailbox.take).pipe(Stream.flattenArray)
+          Effect.map(({ initial, mailbox }) =>
+            Stream.concat(
+              Stream.succeed(initial),
+              Stream.fromEffectRepeat(mailbox.take).pipe(Stream.flattenArray)
+            )
           )
         );
 
