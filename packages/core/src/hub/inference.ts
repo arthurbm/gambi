@@ -49,7 +49,7 @@
  * stream it reads nothing else, pongs included, so the hub would drop the
  * whole tunnel on a ping timeout (measured, see the ticket notes). What an
  * app has not read yet is bounded instead: past
- * `MAX_PENDING_STREAM_CHARACTERS` the request is cancelled with
+ * `MAX_PENDING_STREAM_BYTES` the request is cancelled with
  * `ConsumerTooSlow`.
  *
  * A failure is an `InferenceError` (`@gambi/protocol`), written in the
@@ -132,22 +132,24 @@ import { Tunnels } from "./tunnels.ts";
 
 /**
  * How much of a streamed response may wait in the hub for the app to read
- * it, in characters. A whole text completion is a small fraction of it; an
+ * it, in UTF-8 bytes. A whole text completion is a small fraction of it; an
  * app only reaches it by not reading while the provider keeps producing.
  */
-export const MAX_PENDING_STREAM_CHARACTERS = 8 * 1024 * 1024;
+export const MAX_PENDING_STREAM_BYTES = 8 * 1024 * 1024;
 
 /**
  * How much of a response that is not a stream the hub holds before it gives
- * up, in characters. A completion with a few images fits many times over.
+ * up, in UTF-8 bytes. A completion with a few images fits many times over.
  */
-export const MAX_HELD_RESPONSE_CHARACTERS = 32 * 1024 * 1024;
+export const MAX_HELD_RESPONSE_BYTES = 32 * 1024 * 1024;
 
 /**
  * How long an unfinished server-sent event may get while the hub holds it,
  * waiting for its end, in characters. Past it the text goes out as it is.
  */
 const MAX_HELD_EVENT_CHARACTERS = 1024 * 1024;
+
+const utf8 = new TextEncoder();
 
 const EVENT_STREAM = "text/event-stream";
 
@@ -466,13 +468,13 @@ const respond = Effect.fnUntraced(function* (
     yield* answer.eachPiece((text) => {
       report.piece();
       parts.push(text);
-      size += text.length;
-      return size > MAX_HELD_RESPONSE_CHARACTERS
+      size += utf8.encode(text).byteLength;
+      return size > MAX_HELD_RESPONSE_BYTES
         ? Effect.fail(
             new ProviderResponseTooLarge({
               roomCode,
               participantId,
-              limitCharacters: MAX_HELD_RESPONSE_CHARACTERS,
+              limitBytes: MAX_HELD_RESPONSE_BYTES,
             })
           )
         : Effect.void;
@@ -489,21 +491,25 @@ const respond = Effect.fnUntraced(function* (
   }
 
   const stream = yield* form.stream;
-  const pending = yield* Queue.unbounded<string, InferenceError | Cause.Done>();
+  const pending = yield* Queue.unbounded<
+    { text: string; bytes: number },
+    InferenceError | Cause.Done
+  >();
   let waiting = 0;
   const send = (text: string) => {
-    waiting += text.length;
-    if (waiting > MAX_PENDING_STREAM_CHARACTERS) {
+    const bytes = utf8.encode(text).byteLength;
+    waiting += bytes;
+    if (waiting > MAX_PENDING_STREAM_BYTES) {
       return Effect.fail(
         new ConsumerTooSlow({
           roomCode,
           participantId,
-          limitCharacters: MAX_PENDING_STREAM_CHARACTERS,
+          limitBytes: MAX_PENDING_STREAM_BYTES,
         })
       );
     }
     if (text !== "") {
-      Queue.offerUnsafe(pending, text);
+      Queue.offerUnsafe(pending, { text, bytes });
     }
     return Effect.void;
   };
@@ -535,8 +541,8 @@ const respond = Effect.fnUntraced(function* (
     Effect.forkIn(call.requestScope)
   );
   const body = Stream.fromQueue(pending).pipe(
-    Stream.map((text) => {
-      waiting -= text.length;
+    Stream.map(({ text, bytes }) => {
+      waiting -= bytes;
       return text;
     }),
     // The provider has finished. Build the closing events when the app reads them.

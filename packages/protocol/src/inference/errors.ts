@@ -104,11 +104,11 @@ export class ProviderResponseTooLarge extends Schema.TaggedError<ProviderRespons
   {
     roomCode: Schema.String,
     participantId: Schema.String,
-    limitCharacters: Schema.Int,
+    limitBytes: Schema.Int,
   }
 ) {
   override get message(): string {
-    return `The provider of participant '${this.participantId}' answered with more than ${this.limitCharacters} characters outside a stream.`;
+    return `The provider of participant '${this.participantId}' answered with more than ${this.limitBytes} bytes outside a stream.`;
   }
 }
 
@@ -123,11 +123,11 @@ export class ConsumerTooSlow extends Schema.TaggedError<ConsumerTooSlow>()(
   {
     roomCode: Schema.String,
     participantId: Schema.String,
-    limitCharacters: Schema.Int,
+    limitBytes: Schema.Int,
   }
 ) {
   override get message(): string {
-    return `More than ${this.limitCharacters} characters of the response were waiting to be read; the request was cancelled.`;
+    return `More than ${this.limitBytes} bytes of the response were waiting to be read; the request was cancelled.`;
   }
 }
 

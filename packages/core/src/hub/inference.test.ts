@@ -186,6 +186,28 @@ layer(layerHub(), { excludeTestServices: true })("inference plane", (it) => {
       })
   );
 
+  it.effect("a non-streaming response over 32 MiB of UTF-8 is rejected", () =>
+    Effect.gen(function* () {
+      const room = yield* makeRoom("Bytes");
+      const provider = yield* fakeProvider({
+        answer: () => jsonAnswer({ text: "á".repeat(16 * 1024 * 1024) }),
+      });
+      yield* joinParticipant({
+        roomCode: room.code,
+        participantId: "one",
+        provider: { endpoint: provider.url },
+      });
+      const response = yield* post(room.url("/chat/completions"), {
+        model: "one",
+        messages,
+      });
+      expect(response.status).toBe(502);
+      expect((yield* json(response)).error.code).toBe(
+        "provider_response_too_large"
+      );
+    })
+  );
+
   it.effect(
     "an app that stops reading a streamed body gets its request cancelled, and the participant's tunnel stays open",
     () =>
@@ -194,7 +216,7 @@ layer(layerHub(), { excludeTestServices: true })("inference plane", (it) => {
         const room = yield* makeRoom("Coco");
         // A provider that produces as fast as it is read, and never ends.
         const piece = new TextEncoder().encode(
-          sseEvent({ delta: "x".repeat(64 * 1024) })
+          sseEvent({ delta: "界".repeat(24 * 1024) })
         );
         const provider = yield* fakeProvider({
           answer: () =>
@@ -234,6 +256,7 @@ layer(layerHub(), { excludeTestServices: true })("inference plane", (it) => {
         const rest = yield* readToEnd(reader);
         expect(lastEvent(rest).event).toBe("error");
         expect(lastEvent(rest).data.code).toBe("consumer_too_slow");
+        expect(lastEvent(rest).data.message).toContain("8388608 bytes");
       })
   );
 

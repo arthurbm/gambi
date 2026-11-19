@@ -391,8 +391,8 @@ A participant is available only when it is `online`: its tunnel is open and it i
 
 - Closing the HTTP request (aborting `fetch`, stopping the stream) cancels the request on the participant's provider, and the participant becomes available again.
 - If the participant sends nothing for 5 minutes, before the first chunk or between two, the hub cancels the request and answers `inference_timeout`.
-- If your app reads a stream so slowly that more than 8 Mi characters of it are waiting, the hub cancels the request and ends the stream with `consumer_too_slow`.
-- An answer that is not a stream is held by the hub until it is complete, up to 32 Mi characters.
+- If your app reads a stream so slowly that more than 8 MiB of it are waiting, the hub cancels the request and ends the stream with `consumer_too_slow`.
+- An answer that is not a stream is held by the hub until it is complete, up to 32 MiB. Both limits count UTF-8 bytes.
 
 ### Inference errors
 

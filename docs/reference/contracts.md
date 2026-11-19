@@ -167,7 +167,7 @@ The Responses API is preferred; Chat Completions remains for compatibility.
 - **Model list.** `GET .../models` lists the participants that share a model endpoint and are not `offline`. Each `id` is the participant id, which is a model selector, and `gambi` says what stands behind it: `{ nickname, model, endpoint, capabilities, status }`.
 - **Cancellation.** When the app closes the HTTP request, the hub interrupts the call in the tunnel, the participant runtime aborts the request to its provider, and the participant goes back to `online`.
 - **Timeout.** A request that receives no piece of the provider's answer for 5 minutes, before the first piece or between any two, is cancelled the same way and fails with `inference_timeout`.
-- **Streaming.** A streamed answer is pumped from the tunnel as soon as each piece arrives. When more than 8 MiB of it is waiting for the app to read, the hub cancels the request and the stream ends with `consumer_too_slow`. An answer that is not a stream is held whole on the hub, up to 32 MiB, so a failure still has a status and a name.
+- **Streaming.** A streamed answer is pumped from the tunnel as soon as each piece arrives. When more than 8 MiB of it is waiting for the app to read, the hub cancels the request and the stream ends with `consumer_too_slow`. An answer that is not a stream is held whole on the hub, up to 32 MiB, so a failure still has a status and a name. Both limits count UTF-8 bytes.
 
 ### Inference errors
 
@@ -362,8 +362,8 @@ Known limits:
 | Registration and tunnel opening limits | 10 s each | `ParticipantRuntimeOptions` |
 | Bootstrap token lifetime | 60 s, single use | `BOOTSTRAP_TOKEN_TTL` in `packages/core/src/hub/tunnels.ts` |
 | Inference idle timeout | 5 min | `HubOptions.inferenceIdleTimeout` |
-| Unread stream limit | 8 Mi characters | `MAX_PENDING_STREAM_CHARACTERS` in `packages/core/src/hub/inference.ts` |
-| Held non-stream answer limit | 32 Mi characters | `MAX_HELD_RESPONSE_CHARACTERS` |
+| Unread stream limit | 8 MiB | `MAX_PENDING_STREAM_BYTES` in `packages/core/src/hub/inference.ts` |
+| Held non-stream answer limit | 32 MiB | `MAX_HELD_RESPONSE_BYTES` |
 | Stored Responses per hub | 10 000 | `HubOptions.storedResponsesLimit` |
 | Room events held per subscriber | 256 | `ROOM_EVENT_BUFFER` in `packages/core/src/hub/room-events.ts` |
 | Attach events held per client | 1024 | `HubOptions.harnessClientBuffer` |

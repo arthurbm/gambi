@@ -391,8 +391,8 @@ Um participante só está disponível quando está `online`: o túnel dele está
 
 - Fechar a requisição HTTP (abortar o `fetch`, parar o stream) cancela a requisição no provedor do participante, e o participante volta a ficar disponível.
 - Se o participante não enviar nada por 5 minutos, antes do primeiro chunk ou entre dois, o hub cancela a requisição e responde `inference_timeout`.
-- Se o seu app lê um stream tão devagar que mais de 8 Mi caracteres dele ficam esperando, o hub cancela a requisição e encerra o stream com `consumer_too_slow`.
-- Uma resposta que não é stream fica retida no hub até estar completa, até 32 Mi caracteres.
+- Se o seu app lê um stream tão devagar que mais de 8 MiB dele ficam esperando, o hub cancela a requisição e encerra o stream com `consumer_too_slow`.
+- Uma resposta que não é stream fica retida no hub até estar completa, até 32 MiB. Os dois limites contam bytes em UTF-8.
 
 ### Erros de inferência
 
