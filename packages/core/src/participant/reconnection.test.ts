@@ -371,7 +371,16 @@ it.effect(
         participantId: "arthur-1",
         reason: "replaced",
       });
-      yield* first.runtime.ended;
+      // For whoever hosts it, being replaced is a failure with a name.
+      const replaced = yield* Effect.flip(first.runtime.ended);
+      expect(replaced).toMatchObject({
+        _tag: "ParticipantReplaced",
+        roomCode,
+        participantId: "arthur-1",
+      });
+      expect(replaced.message).toBe(
+        `Another participant runtime joined room '${roomCode}' as 'arthur-1', and the hub kept that one.`
+      );
       // The longest wait of a reconnection passes: the first never asks the
       // hub for anything again, and the second is never disturbed.
       yield* TestClock.adjust("31 seconds");
@@ -506,7 +515,9 @@ layer(layerHub(), { excludeTestServices: true })(
             participantId: "arthur-1",
             reason: "replaced",
           });
-          yield* first.runtime.ended;
+          expect((yield* Effect.flip(first.runtime.ended))._tag).toBe(
+            "ParticipantReplaced"
+          );
         })
     );
   }

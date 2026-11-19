@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { cpus, totalmem } from "node:os";
 /**
  * The entrypoint of the `gambi` binary, and the only file of the CLI that
  * touches the platform (ADR-0007): the `@effect/platform-bun` layers, the
@@ -7,13 +8,15 @@
  * Everything a command does is in `runCli`. The command tests run that same
  * function (`testing.ts`); `main.test.ts` covers what is only here.
  */
-import { BunHttpServer, BunServices } from "@effect/platform-bun";
+import { BunHttpServer, BunServices, BunSocket } from "@effect/platform-bun";
+import { runFakeAcpAgent } from "@gambi/core/fake-acp-agent";
 import { Mdns } from "@gambi/core/hub/mdns";
 import { Effect, Layer, Runtime } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { HubListen } from "./commands/hub.ts";
 import { ExitCode } from "./exit-codes.ts";
 import { Installation } from "./installation.ts";
+import { Machine } from "./machine.ts";
 import { type CliEnvironment, processExitCode, runCli } from "./run.ts";
 import {
   makeTermination,
@@ -27,6 +30,12 @@ import {
  * copy; after it, a second signal is a person who stopped waiting.
  */
 const DUPLICATE_SIGNAL_WINDOW_MS = 1000;
+
+/**
+ * How `fakeHarnessCommand` (`@gambi/core`) starts the fake ACP agent from a
+ * compiled binary, where the agent's source file does not exist on disk.
+ */
+const FAKE_ACP_AGENT_COMMAND = "__fake-acp-agent";
 
 const termination = makeTermination();
 
@@ -84,13 +93,27 @@ const Platform: Layer.Layer<CliEnvironment> = Layer.mergeAll(
     pid: process.pid,
     platform: process.platform,
   }),
+  Layer.sync(Machine, () => ({
+    cpu: cpus()[0]?.model,
+    memoryBytes: totalmem(),
+  })),
   Mdns.layer,
-  FetchHttpClient.layer
+  FetchHttpClient.layer,
+  BunSocket.layerWebSocketConstructor
 ).pipe(Layer.provideMerge(BunServices.layer));
 
-runCli(process.argv.slice(2)).pipe(
-  Effect.provide(Platform),
-  runMain({
-    teardown: (exit, onExit) => onExit(processExitCode(exit)),
-  })
-);
+const argv = process.argv.slice(2);
+
+if (argv[0] === FAKE_ACP_AGENT_COMMAND) {
+  // Not a command of the CLI: the `fake` harness of a compiled binary is the
+  // binary itself, started with this word. It speaks ACP on its stdio until
+  // its stdin closes.
+  runFakeAcpAgent().catch(() => process.exit(ExitCode.internal));
+} else {
+  runCli(argv).pipe(
+    Effect.provide(Platform),
+    runMain({
+      teardown: (exit, onExit) => onExit(processExitCode(exit)),
+    })
+  );
+}

@@ -61,10 +61,28 @@ export const failureKinds = {
   UpdateDownloadFailed: "connectivity",
   UpdateNotScheduled: "internal",
 
+  // Hosting a participant (`commands/participant-join.ts`).
+  EndpointUnreachable: "connectivity",
+  FlagsDoNotCombine: "usage",
+  // The harness this command depends on is missing, not logged in, did not
+  // start, or ended.
+  HarnessFailed: "connectivity",
+  HarnessNotReady: "connectivity",
+  HarnessStartFailed: "connectivity",
+  ModelNotOnEndpoint: "connectivity",
+  // Another runtime took the participant's place: the hub said no to this one.
+  ParticipantReplaced: "rejected",
+  TunnelOpenFailed: "connectivity",
+  // The folder asked for cannot be a Workspace.
+  WorkspaceFailed: "usage",
+
   // The management contract (`@gambi/protocol`).
   InternalError: "internal",
+  InvalidPassword: "rejected",
   InvalidRequest: "usage",
+  ParticipantNotFound: "rejected",
   RoomNotFound: "rejected",
+  VersionMismatch: "rejected",
 } as const satisfies Record<FailureTag, FailureKind>;
 
 export const exitCodeOf = (failure: CommandFailure): number =>

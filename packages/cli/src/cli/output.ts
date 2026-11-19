@@ -51,6 +51,16 @@ export class Output extends Context.Service<
     /** `text` when a person reads stdout, `json` or `ndjson` otherwise. */
     readonly format: OutputFormat;
     /**
+     * One element of a stream of data (`events watch`). Structured: the value
+     * on one JSON line, as it is, whatever the format. Text: `text(value)`.
+     *
+     * `value` must already be plain JSON, like the one of `result`.
+     */
+    readonly record: <A>(
+      value: A,
+      text: (value: A) => string
+    ) => Effect.Effect<void>;
+    /**
      * The result of a one-shot command. Structured: `{ "data": value }`,
      * indented for `json` and on one line for `ndjson`. Text: `text(value)`.
      *
@@ -94,6 +104,10 @@ export class Output extends Context.Service<
                     null,
                     format === "json" ? 2 : undefined
                   )
+            ),
+          record: (value, text) =>
+            Console.log(
+              format === "text" ? text(value) : JSON.stringify(value)
             ),
           event: (type, data, text) =>
             Effect.gen(function* () {
