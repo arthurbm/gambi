@@ -266,7 +266,9 @@ layer(layerHub(), { excludeTestServices: true })(
             self?: unknown;
             watching: boolean;
           } = { disposed: false, watching: false };
-          const workspace: Workspace = {
+          // A Workspace is an object of the host's, with whatever state it
+          // keeps: here, a reference to itself.
+          const workspace: Workspace & { self?: unknown } = {
             prepare(context) {
               // The host's own object, not a copy of it.
               seen.self = this;
@@ -291,6 +293,7 @@ layer(layerHub(), { excludeTestServices: true })(
               });
             },
           };
+          workspace.self = workspace;
           const session = yield* hosted({
             hubUrl: room.hubUrl,
             roomCode: room.roomCode,

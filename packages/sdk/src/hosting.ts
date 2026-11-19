@@ -24,10 +24,9 @@ export const calling =
   ) =>
   (...args: Args): void => {
     try {
-      const answer: unknown = callback?.(...args);
-      if (answer instanceof Promise) {
-        answer.catch(failed);
-      }
+      // Whatever it answered, a promise of this realm or of another, is
+      // observed, never awaited.
+      Promise.resolve(callback?.(...args)).catch(failed);
     } catch (cause) {
       failed(cause);
     }
@@ -41,6 +40,15 @@ const sink = (
   onLog: ((entry: LogEntry) => void) | undefined
 ): ((entry: LogEntry) => void) => calling(onLog, () => undefined);
 
+/** A cause as text. Anything can be thrown, and not everything can be shown. */
+const shown = (cause: unknown): string => {
+  try {
+    return String(cause);
+  } catch {
+    return "(a cause that cannot be shown)";
+  }
+};
+
 /**
  * What a failure of another callback of the consumer's becomes: a log line
  * of level `ERROR`, for `onLog`.
@@ -50,7 +58,7 @@ export const failureTo =
   (cause: unknown): void =>
     sink(onLog)({
       annotations: {},
-      cause: String(cause),
+      cause: shown(cause),
       level: "ERROR",
       message,
       timestamp: new Date().toISOString(),

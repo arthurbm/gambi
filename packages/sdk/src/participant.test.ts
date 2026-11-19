@@ -1,5 +1,6 @@
 import { expect } from "bun:test";
 import { connect, createServer, type Socket } from "node:net";
+import { runInNewContext } from "node:vm";
 import { Hub } from "@gambi/core/hub/hub";
 import { layerHub } from "@gambi/core/testing/hub";
 import { linkToHub } from "@gambi/core/testing/hub-link";
@@ -440,13 +441,17 @@ layer(layerHub(), { excludeTestServices: true })(
           const told = Promise.withResolvers<void>();
           const session = yield* joined({
             ...arthur(room),
-            // An `async` function is a valid `=> void` callback.
-            onLifecycle: (event) =>
-              event.type === "connected"
-                ? Promise.reject(new Error("The screen is gone."))
-                : (() => {
-                    throw new Error("The screen is still gone.");
-                  })(),
+            // An `async` function is a valid `=> void` callback, and so is
+            // one of another realm, whose promise is not this realm's.
+            onLifecycle: (event) => {
+              if (event.type === "connected") {
+                return runInNewContext(
+                  "(async () => { throw new Error('The screen is gone.'); })()"
+                );
+              }
+              // Not even a cause that cannot be shown stops anything.
+              throw Object.create(null);
+            },
             onLog: (entry) => {
               lines.push(entry);
               if (lines.filter((line) => line.level === "ERROR").length === 2) {
@@ -467,7 +472,7 @@ layer(layerHub(), { excludeTestServices: true })(
             ["The onLifecycle callback failed.", "Error: The screen is gone."],
             [
               "The onLifecycle callback failed.",
-              "Error: The screen is still gone.",
+              "(a cause that cannot be shown)",
             ],
           ]);
           expect(yield* Effect.promise(() => session.ended)).toEqual({

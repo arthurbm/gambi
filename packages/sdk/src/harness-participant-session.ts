@@ -183,13 +183,14 @@ const never = new Promise<never>(() => undefined);
 export const createHarnessParticipantSession = async (
   input: HarnessParticipantSessionOptions
 ): Promise<HarnessParticipantSession> => {
-  const options = withoutUndefined(input);
+  // The Workspace is the host's own object, with whatever state it keeps:
+  // it is used as it was given, and the cleaning of the options never
+  // reads it.
+  const { workspace = createLocalDirectoryWorkspace(), ...data } = input;
+  const options = withoutUndefined(data);
   const hubUrl = options.hubUrl ?? DEFAULT_HUB_URL;
   const { harness: id, participantId, roomCode } = options;
   const model = options.model ?? id;
-  // The host's own object, not the copy the cleaning of the options made:
-  // a Workspace may be an object with state of its own.
-  const workspace = input.workspace ?? createLocalDirectoryWorkspace();
   let notes: readonly string[] = [];
   let warning: string | undefined;
 
