@@ -194,9 +194,10 @@ it.effect(
 
 /**
  * A server in front of the hub of the test that passes plain requests on
- * and never answers `held`: the tunnel's WebSocket upgrade, or everything.
+ * and never answers `held`: the tunnel's WebSocket upgrade, the registration
+ * (which then never reaches the hub), or everything.
  */
-const hubThatHolds = (held: "the tunnel" | "everything") =>
+const hubThatHolds = (held: "the tunnel" | "the registration" | "everything") =>
   Effect.gen(function* () {
     const hub = yield* Hub;
     const holding = Deferred.makeUnsafe<void>();
@@ -207,7 +208,11 @@ const hubThatHolds = (held: "the tunnel" | "everything") =>
           port: 0,
           idleTimeout: 0,
           fetch: async (request) => {
-            if (held === "everything" || request.headers.has("upgrade")) {
+            const isHeld =
+              held === "everything" ||
+              (held === "the tunnel" && request.headers.has("upgrade")) ||
+              (held === "the registration" && request.method === "PUT");
+            if (isHeld) {
               Deferred.doneUnsafe(holding, Effect.void);
               return new Promise<Response>(() => undefined);
             }
@@ -306,5 +311,48 @@ it.effect(
         data: { reason: "stopped", removed: false },
       });
       expect((yield* joining.result).exitCode).toBe(0);
+    }).pipe(Effect.provide(TestHub))
+);
+
+it.effect(
+  "told to leave before its registration reached the hub, it does not take out of the room who is online with its participant id",
+  () =>
+    Effect.gen(function* () {
+      const client = yield* managementClient;
+      const room = yield* newRoom;
+      const provider = yield* fakeProvider();
+      yield* joinParticipant({
+        roomCode: room.code,
+        participantId: "arthur-1",
+      });
+      const slow = yield* hubThatHolds("the registration");
+      const joining = yield* startCommand([
+        "participant",
+        "join",
+        "--room",
+        room.code,
+        "--participant-id",
+        "arthur-1",
+        "--model",
+        FAKE_MODEL,
+        "--endpoint",
+        provider.url,
+        "--no-specs",
+        "--hub",
+        slow.url,
+      ]);
+      yield* slow.holding;
+
+      yield* joining.signal("SIGTERM");
+
+      expect((yield* joining.nextEvent).type).toBe("leaving");
+      expect(yield* joining.nextEvent).toMatchObject({
+        type: "left",
+        data: { reason: "stopped", removed: false },
+      });
+      expect((yield* joining.result).exitCode).toBe(0);
+      expect(
+        yield* client.participants.list({ params: { code: room.code } })
+      ).toMatchObject([{ id: "arthur-1", status: "online" }]);
     }).pipe(Effect.provide(TestHub))
 );

@@ -40,14 +40,33 @@ const LEAVE_TIMEOUT = Duration.seconds(3);
  * confirmed it, or said the participant or the room is already gone; `false`
  * when the hub did not answer in time, and then it removes the participant
  * by itself once the reconnection deadline passes.
+ *
+ * A participant that `neverCameOnline` is the one case in which the entry
+ * with its id may not be its own: the signal came during the join, and the
+ * registration may not have reached the hub. It then removes only an entry
+ * that is offline, as its own would be, and leaves alone a participant that
+ * is online with that id (`false`).
  */
-const leaveRoom = (hubUrl: string, { participantId, roomCode }: Identity) =>
+const leaveRoom = (
+  hubUrl: string,
+  { participantId, roomCode }: Identity,
+  neverCameOnline = false
+) =>
   withHub(hubUrl, (client) =>
-    client.participants.remove({
-      params: { code: roomCode, id: participantId },
+    Effect.gen(function* () {
+      const params = { code: roomCode, id: participantId };
+      if (neverCameOnline) {
+        const inTheRoom = (yield* client.participants.list({
+          params: { code: roomCode },
+        })).find((participant) => participant.id === participantId);
+        if (inTheRoom?.status !== "offline") {
+          return inTheRoom === undefined;
+        }
+      }
+      yield* client.participants.remove({ params });
+      return true;
     })
   ).pipe(
-    Effect.as(true),
     Effect.catchTag(["ParticipantNotFound", "RoomNotFound"], () =>
       Effect.succeed(true)
     ),
@@ -190,7 +209,7 @@ export const stayInRoom = <Hosted, E, R>(stay: Stay<Hosted, E, R>) =>
           return {
             reason: "stopped" as const,
             removed: false,
-            tellTheHub: true,
+            tellTheHub: "ifItRegistered" as const,
             ended: Exit.void,
           };
         }
@@ -272,7 +291,11 @@ export const stayInRoom = <Hosted, E, R>(stay: Stay<Hosted, E, R>) =>
       })
     );
     const removed = ending.tellTheHub
-      ? yield* leaveRoom(stay.hubUrl, identity)
+      ? yield* leaveRoom(
+          stay.hubUrl,
+          identity,
+          ending.tellTheHub === "ifItRegistered"
+        )
       : ending.removed;
     yield* output.event(
       "left",
