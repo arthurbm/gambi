@@ -5,13 +5,13 @@ description: Join a Gambi room with your local OpenCode, Claude Code, or Codex p
 
 Use a harness participant when you want to share a local OpenCode, Claude Code, or Codex process with an application in a Gambi room. The harness runs on your machine, in its own workspace, with your existing login.
 
-This is different from sharing a model endpoint. Harness participants exchange ACP v1 messages through the management attach channel. They never receive OpenAI-compatible inference requests.
+This is different from sharing a model endpoint. Applications reach a harness participant through the harness attach of the management API, which carries ACP v1 messages. Harness participants never receive OpenAI-compatible inference requests.
 
 ## Before you start
 
 You need:
 
-- the Gambi CLI installed
+- the Gambi CLI installed, on the same minor version as the hub
 - a reachable hub on a trusted network
 - an existing room code
 - a stable participant ID that you can reuse after a reconnect
@@ -67,21 +67,21 @@ Run one of these commands. Replace the room code, participant ID, and name with 
 gambi participant join \
   --room ABC123 \
   --participant-id arthur-opencode \
-  --name Arthur \
+  --nickname Arthur \
   --harness opencode
 
 # Claude Code
 gambi participant join \
   --room ABC123 \
   --participant-id bia-claude \
-  --name Bia \
+  --nickname Bia \
   --harness claude-code
 
 # Codex
 gambi participant join \
   --room ABC123 \
   --participant-id caio-codex \
-  --name Caio \
+  --nickname Caio \
   --harness codex
 ```
 
@@ -92,7 +92,7 @@ gambi participant join \
   --hub http://192.168.1.10:3000 \
   --room ABC123 \
   --participant-id arthur-opencode \
-  --name Arthur \
+  --nickname Arthur \
   --harness opencode
 ```
 
@@ -100,14 +100,13 @@ Add `--password` for a password-protected room. Do not pass `--endpoint`, `--hea
 
 ## Check the running participant
 
-When startup succeeds, the CLI reports four milestones:
+When startup succeeds, the CLI reports three milestones:
 
-1. participant registration completed
-2. the participant tunnel connected
-3. the harness process started
-4. the ACP session opened
+1. the harness process started and its first ACP session opened
+2. participant registration completed
+3. the participant tunnel connected
 
-The process stays in the foreground. Press Ctrl+C once to stop the harness process, remove the participant, and leave the room.
+The process stays in the foreground. If the network drops for a moment, the participant reconnects by itself with the same ID, and attached applications keep their streams. Press Ctrl+C once to stop: the harness gets 2 seconds to exit before it is killed, the final workspace snapshot goes up, and the participant leaves the room.
 
 For machine-readable lifecycle output, use NDJSON:
 
@@ -119,7 +118,7 @@ gambi participant join \
   --format ndjson
 ```
 
-The startup events are `registered`, `tunnel_connected`, `harness_spawned`, and `session_opened`. File changes produce `artifact_sent`. Clean shutdown produces `harness_exited` and `left`.
+The startup events are `harness_started`, `registered`, and `tunnel_connected`. File changes produce `artifact_sent`, or `artifact_skipped` when the workspace is too large to send. A dropped tunnel produces `reconnecting`, then `tunnel_connected` again. Ctrl+C produces `leaving` and `left`. If the harness exits on its own, the CLI prints `harness_exited`, leaves the room, and exits with code `3`.
 
 ## Understand the workspace
 
@@ -139,63 +138,67 @@ gambi participant join \
   --workspace ./my-project
 ```
 
-The participant watches this directory and sends a versioned snapshot one second after file changes settle. It excludes `.git`, `node_modules`, and Gambi's local runtime metadata.
+The participant watches this directory and sends a versioned snapshot of the whole folder one second after file changes settle. It excludes `.git`, `node_modules`, symbolic links, and Gambi's local runtime metadata.
 
-The harness login remains local. It is not part of participant registration, lifecycle events, or tunnel frames. Workspace files are different. The participant sends them deliberately as artifacts so the attached application can consume the harness output. Nothing travels the other way. The hub cannot write files into your workspace.
+Two limits to know:
+
+- A snapshot larger than 8 MiB is not sent at all. The CLI prints `artifact_skipped` with `cause: "tooLarge"`. Keep large files, datasets, and build output out of the workspace.
+- `artifact_sent` means the snapshot was queued for the hub. If the tunnel drops before it leaves, that snapshot is lost; the next change sends a new one.
+
+The harness login remains local. It is not part of participant registration, lifecycle events, or the tunnel. Workspace files are different. The participant sends them deliberately as artifacts so the attached application can consume the harness output. Nothing travels the other way. The hub cannot write files into your workspace.
 
 ## Use the harness from an application
 
-Any application on the network can attach to your harness with `gambi-sdk`, send it a prompt, and read what it answers and writes:
+Any application on the network can attach to your harness with `gambi-sdk`, open a harness session, send it a prompt, and read what it answers and writes. The application talks to the hub; the hub relays through your tunnel.
 
 ```ts
 import { createClient } from "gambi-sdk";
 
 const client = createClient({ hubUrl: "http://192.168.1.10:3000" });
-const channel = await client.harness.attach({
-  roomCode: "ABC123",
-  participantId: "arthur-opencode",
-});
+const room = "ABC123";
+const participant = "arthur-opencode";
+const sessionId = "demo"; // the session ID is yours to pick
 
-const sessionId = "demo";
-channel.send({ type: "tunnel.harness.control", sessionId, action: "open" });
+await client.harness.openSession(room, participant, sessionId);
 
-for await (const frame of channel.messages) {
-  if (frame.type === "tunnel.harness.status" && frame.status === "opened") {
-    channel.send({
-      type: "tunnel.harness.message",
-      sessionId,
-      message: {
-        jsonrpc: "2.0",
-        id: 1,
-        method: "session/prompt",
-        params: {
-          sessionId,
-          prompt: [{ type: "text", text: "Write a README for this folder." }],
-        },
+let prompted = false;
+for await (const event of client.harness.attach(room, participant)) {
+  // The stream replays nothing, so send the prompt once it is open.
+  if (event.type === "harness.connected" && !prompted) {
+    prompted = true;
+    await client.harness.send(room, participant, sessionId, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "session/prompt",
+      params: {
+        sessionId,
+        prompt: [{ type: "text", text: "Write a README for this folder." }],
       },
     });
   }
-  if (frame.type === "tunnel.harness.message") {
-    const { update } = (frame.message.params ?? {}) as {
+  if (event.type === "harness.message" && event.sessionId === sessionId) {
+    const { update } = (event.message.params ?? {}) as {
       update?: { sessionUpdate?: string; content?: { text?: string } };
     };
     if (update?.sessionUpdate === "agent_message_chunk") {
       process.stdout.write(update.content?.text ?? "");
     }
   }
-  if (frame.type === "tunnel.harness.artifact") {
-    console.log(`\nartifact v${frame.version}: ${frame.files.map((file) => file.path).join(", ")}`);
+  if (event.type === "harness.artifact") {
+    console.log(`\nartifact v${event.version}: ${event.files.map((file) => file.path).join(", ")}`);
   }
 }
 ```
 
-The `message` payload is plain ACP v1, so every update type in the [ACP schema](https://agentclientprotocol.com/protocol/schema) can arrive here. The SDK reference also shows how an application can [host harness participants itself](/reference/sdk/#createharnessparticipantsessionoptions).
+The first event of the stream says whether the hub is receiving your harness: `harness.connected`, or `harness.disconnected` while your tunnel is down. Nothing that happened before the application attached is replayed, which is why the example sends the prompt only after `harness.connected`. If the participant leaves the room, the stream ends with `harness.detached`.
+
+The `message` payload is plain ACP v1, so every update type in the [ACP schema](https://agentclientprotocol.com/protocol/schema) can arrive here. The SDK reference also shows how an application can [host harness participants itself](/reference/sdk/#createharnessparticipantsessionoptions-gambi-sdkparticipant-bun-only).
 
 For a complete application that orchestrates several harness participants with people steering them, see the experiments in [gambiarra-lab](https://github.com/arthurbm/gambiarra-lab).
 
 ## Preview without starting the harness
 
-Use `--dry-run` to check the resolved room, participant ID, workspace, and registration payload:
+Use `--dry-run` to check that the harness is installed and logged in, and to see the resolved room, participant ID, workspace, harness command, and registration payload:
 
 ```bash
 gambi participant join \
@@ -206,22 +209,26 @@ gambi participant join \
   --format json
 ```
 
-This preview does not start the harness process and does not verify the local harness login. Run the normal command for the full readiness check.
+This preview does not start the harness process, does not create the workspace folder, and does not talk to the hub.
 
 ## Common failures
 
 | Symptom | What to do |
 | --- | --- |
-| exit code `2` and "unsupported harness" | use `opencode`, `claude-code`, or `codex` (`fake` is a deterministic test harness that calls no model) |
+| exit code `2` and an invalid value for `--harness` | use `opencode`, `claude-code`, or `codex` (`fake` is a deterministic test harness that calls no model) |
 | exit code `2` for `--endpoint` or auth headers | remove model-provider flags from the harness command |
 | exit code `2` for `--workspace` | add `--harness`; model participants have no workspace |
 | exit code `3` before registration | run the install or login command printed by the CLI, then retry |
-| tunnel disconnects immediately | confirm that the hub is reachable and every proxy forwards WebSocket upgrades |
-| the CLI exits with `tunnel_failed` later | the participant does not reconnect on its own. Run the same command again; attached applications keep their sockets |
-| an inference request returns HTTP `400` for the participant ID | use `client.harness.attach()` instead; harness participants are not model endpoints |
+| exit code `4` and `VersionMismatch` | install the Gambi version the error names, so your CLI and the hub are on the same minor version |
+| exit code `3` and `TunnelOpenFailed` | confirm that the hub is reachable and every proxy forwards WebSocket upgrades |
+| `reconnecting` events that keep coming | the hub is unreachable; the participant keeps trying, waiting up to 30 seconds between attempts |
+| `left` with `reason: "refused"` and `RoomNotFound` | the hub restarted and lost the room. Create the room again and rejoin |
+| `left` with `reason: "replaced"` | another process joined with the same participant ID. Use a different ID for each process |
+| `artifact_skipped` with `cause: "tooLarge"` | the workspace is larger than 8 MiB; move large files out of it |
+| an inference request returns HTTP `400` with `inference_not_supported` | use `client.harness.attach()` instead; harness participants are not model endpoints |
 
 ## Next steps
 
 - [CLI reference](/reference/cli/#gambi-participant-join) lists every harness flag and lifecycle event.
-- [SDK reference](/reference/sdk/#clientharnessattach-roomcode-participantid-signal-) shows how an application attaches to the participant.
+- [SDK reference](/reference/sdk/#clientharness) shows how an application attaches to the participant.
 - [How tunnels work](/concepts/tunnel-first/#the-opaque-acp-relay) explains what the hub relays and what it does not inspect.

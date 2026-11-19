@@ -21,16 +21,16 @@ Then guide me one step at a time, and ask before you install anything or start a
 1. Run \`gambi --version\`. If the CLI is missing, install it with the method for this OS from the installation page.
 2. Ask me whether this machine runs the hub or joins a hub that already exists.
    - Runs the hub: start \`gambi hub serve\` in its own terminal, then tell me the URL other machines should use (this machine's LAN IP and port 3000).
-   - Joins: ask me for the hub URL and pass it as \`--hub\` from now on.
+   - Joins: ask me for the hub URL and pass it as \`--hub\` from now on. This CLI must be on the same minor version as the hub (0.8.x with 0.8.x); if the join fails with \`VersionMismatch\`, install the version the error names.
 3. If I don't have a room code yet, create a room with \`gambi room create --name "<name>" --no-interactive\` and show me the code.
 4. Ask me what I want to share:
    - A model: look for an OpenAI-compatible server already running (Ollama on localhost:11434, LM Studio on localhost:1234, vLLM on localhost:8000), list its models, and join with \`gambi participant join --room <code> --participant-id <id> --model <model> --endpoint <url>\`.
    - A harness: check that Claude Code, Codex, or OpenCode is installed and logged in, as the bring-your-harness page describes, then join with \`gambi participant join --room <code> --participant-id <id> --harness <claude-code|codex|opencode>\`.
    \`participant join\` stays in the foreground, so run it in its own terminal.
 5. Prove it works:
-   - \`curl http://<hub>/rooms/<code>/v1/models\` lists every model participant in the room.
+   - \`curl http://<hub>/rooms/<code>/v1/models\` lists the model participants of the room that are connected.
    - For a model, send \`curl -X POST http://<hub>/rooms/<code>/v1/responses -H "Content-Type: application/json" -d '{"model":"*","input":"Say hello in one sentence."}'\` and show me the answer.
-   - For a harness, confirm that the join output says the ACP session opened (the \`session_opened\` event with \`--format ndjson\`).
+   - For a harness, confirm that the join output says the harness started and the tunnel connected (the \`harness_started\` and \`tunnel_connected\` events with \`--format ndjson\`).
 
 Rules:
 - Never type, print, or store my API keys. If a provider needs one, ask me to set an environment variable myself (its value is \`Bearer <key>\`), then pass \`--header-env Authorization=<VARIABLE_NAME>\`.
@@ -50,16 +50,16 @@ Depois me guie um passo de cada vez, e pergunte antes de instalar qualquer coisa
 1. Rode \`gambi --version\`. Se a CLI não estiver instalada, instale com o método deste sistema operacional descrito na página de instalação.
 2. Pergunte se esta máquina vai rodar o hub ou entrar em um hub que já existe.
    - Vai rodar o hub: inicie \`gambi hub serve\` em um terminal próprio e me diga a URL que as outras máquinas devem usar (o IP desta máquina na rede local e a porta 3000).
-   - Vai entrar: peça a URL do hub e passe com \`--hub\` daqui em diante.
+   - Vai entrar: peça a URL do hub e passe com \`--hub\` daqui em diante. Esta CLI precisa estar na mesma minor do hub (0.8.x com 0.8.x); se o join falhar com \`VersionMismatch\`, instale a versão que o erro indica.
 3. Se eu ainda não tiver um código de sala, crie uma sala com \`gambi room create --name "<nome>" --no-interactive\` e me mostre o código.
 4. Pergunte o que eu quero compartilhar:
    - Um modelo: procure um servidor compatível com OpenAI já rodando (Ollama em localhost:11434, LM Studio em localhost:1234, vLLM em localhost:8000), liste os modelos dele e entre com \`gambi participant join --room <código> --participant-id <id> --model <modelo> --endpoint <url>\`.
    - Um harness: confira se Claude Code, Codex ou OpenCode está instalado e logado, como descreve a página "Traga seu harness", e entre com \`gambi participant join --room <código> --participant-id <id> --harness <claude-code|codex|opencode>\`.
    O \`participant join\` fica em primeiro plano, então rode-o em um terminal próprio.
 5. Prove que funciona:
-   - \`curl http://<hub>/rooms/<código>/v1/models\` lista todos os participantes de modelo da sala.
+   - \`curl http://<hub>/rooms/<código>/v1/models\` lista os participantes de modelo da sala que estão conectados.
    - Para um modelo, envie \`curl -X POST http://<hub>/rooms/<código>/v1/responses -H "Content-Type: application/json" -d '{"model":"*","input":"Diga olá em uma frase."}'\` e me mostre a resposta.
-   - Para um harness, confirme que a saída do join diz que a sessão ACP foi aberta (o evento \`session_opened\` com \`--format ndjson\`).
+   - Para um harness, confirme que a saída do join diz que o harness subiu e o túnel conectou (os eventos \`harness_started\` e \`tunnel_connected\` com \`--format ndjson\`).
 
 Regras:
 - Nunca digite, mostre ou guarde minhas chaves de API. Se um provedor precisar de uma, peça para eu mesmo definir uma variável de ambiente (o valor é \`Bearer <chave>\`) e passe \`--header-env Authorization=<NOME_DA_VARIAVEL>\`.

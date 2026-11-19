@@ -12,14 +12,14 @@ Symptoms:
 
 Causes and solutions:
 
-1. Health checks are failing.
-   - The participant sends a heartbeat every 10 seconds.
-   - If the hub misses them for 30 seconds, the participant is marked offline.
-   - Check whether the `gambi participant join` process is still running.
+A participant's status comes from its tunnel alone: `offline` means the hub has no open tunnel from it.
 
-2. The participant tunnel is disconnected.
-   - A participant is only routable while its tunnel is connected.
-   - Restart `gambi participant join`.
+1. The participant is reconnecting.
+   - After a drop, the participant runtime tries again by itself, waiting 1 second and doubling up to 30. Watch for `reconnecting` events in `gambi participant join --format ndjson`.
+   - If it stays offline for 60 seconds, the hub removes it from the room. The runtime keeps trying, and its next registration brings it back with the same ID.
+
+2. The tunnel cannot open.
+   - Check whether the `gambi participant join` process is still running.
    - Check whether a firewall or proxy is blocking WebSocket upgrades.
 
 3. The hub is unreachable.
@@ -77,6 +77,8 @@ Symptoms:
 
 Causes and solutions:
 
+The hub answers CORS for any origin, on both APIs.
+
 1. A custom proxy is stripping CORS headers.
 2. A custom proxy is also stripping WebSocket upgrade headers needed for participant tunnels.
 
@@ -91,38 +93,56 @@ Causes and solutions:
 1. `gambi.model("llama3")` routes to the first available participant with that model.
    - Use `gambi.participant("worker-1")` for exact targeting.
 
-2. The intended participant is offline, busy, or tunnel-disconnected.
+2. The intended participant is offline or busy. Only `online` participants are picked.
 
 3. A plain `model` value that is not a participant ID is treated as a model name. If no available participant has the ID you sent, the hub routes to the first available participant serving a model with that name. See [Model routing](/reference/api/#model-routing).
 
-## Participant reports `tunnel_failed` or `heartbeat_failed`
+## Participant joins and is refused
 
 Symptoms:
 
-- `gambi participant join --format ndjson` emits a `tunnel_failed` event and exits
-- `gambi participant join --format ndjson` emits a `heartbeat_failed` event and exits
-- a custom runtime built on `createParticipantSession()` reports a close reason of `"tunnel_closed"` or `"heartbeat_failed"`
+- `gambi participant join` exits with code `4` before it is online
+- a custom runtime built on `createParticipantSession()` rejects with a `ParticipantError`
 
-These are different failures. Diagnose by the lifecycle event or close reason. Neither the CLI nor the SDK reconnects on its own: restart the participant with the same participant ID.
+Read the error name (`--format json` puts it in `error.name`) or the `code`:
 
-### `tunnel_failed` / close reason `"tunnel_closed"`
+1. `VersionMismatch` / `VERSION_MISMATCH`: the participant runs another minor version of Gambi than the hub. The message names the version the hub expects. Install it with `gambi self update` or the installer, or update the hub, so both are on the same minor (any `0.8.x` with any other `0.8.x`).
+2. `RoomNotFound` / `ROOM_NOT_FOUND`: check the room code with `gambi room list`.
+3. `InvalidPassword` / `INVALID_PASSWORD`: pass the room password with `--password`.
 
-The WebSocket tunnel to the hub was interrupted. Common causes:
+Exit code `3` instead means the participant could not reach what it depends on: the hub (`HubUnreachable`, `NotAHub`), its provider (`EndpointUnreachable`, `ModelNotOnEndpoint`), the tunnel (`TunnelOpenFailed`), or its harness. The message says which.
 
-1. A proxy between the participant and the hub is stripping `Upgrade: websocket`. Test by pointing the participant directly at the hub, bypassing the proxy.
-2. The hub process was restarted or crashed. Check hub logs and retry.
-3. The bootstrap token expired before the participant finished upgrading. The token has a 60-second TTL; a stalled or slow network can miss that window. Re-running `gambi participant join` issues a new token.
-4. The hub evicted the previous tunnel because the same participant id reconnected from elsewhere. Decide whether you intend to run two runtimes with the same id and pick a different id if not.
+## Participant stops after the hub restarts
 
-### `heartbeat_failed`
+Symptoms:
 
-A management HTTP heartbeat request failed. One failed request is enough to close the session. This is about HTTP reachability to `/v1`, not the WebSocket path. Common causes:
+- the hub process was restarted, and `gambi participant join` ends with `left` and `reason: "refused"`, printing `RoomNotFound` and exiting with code `4`
+- a custom runtime's `session.ended` resolves with `reason: "refused"`
 
-1. The hub URL is wrong or stale.
-2. A proxy or firewall is blocking `POST /v1/rooms/:code/participants/:id/heartbeat`.
-3. The room or participant was deleted from the hub while the runtime was still running. Check with `gambi room get` and `gambi participant join` again.
+Rooms live in the hub's memory, and room codes are random. A restarted hub comes back without its rooms, so a participant that tries to come back hears that the room does not exist and stops on purpose. Create the room again, share the new code, and join again.
 
-After `heartbeat_failed`, the runtime tries to remove itself from the room. After `tunnel_closed`, it does not: the registration stays, and the hub marks the participant offline as soon as the tunnel closes. Either way, restarting with the same participant ID is safe, because registration is idempotent.
+The participant only comes back by itself when the hub was unreachable for a while (a Wi-Fi blink, a sleeping laptop) and returns with its rooms.
+
+## Participant ends with `replaced`
+
+Symptoms:
+
+- `gambi participant join` ends with `left` and `reason: "replaced"`, exit code `4`
+- a custom runtime's `session.ended` resolves with `reason: "replaced"`
+
+Another runtime joined the same room with the same participant ID, and the hub kept the newer one. The replaced runtime does not try again, so the two never take the tunnel from each other. Give each running participant its own ID.
+
+## A participant you removed comes back
+
+`gambi participant leave` (or `DELETE /v1/rooms/:code/participants/:id`) removes a participant whoever hosts it. If its `gambi participant join` is still running, that runtime treats the closed tunnel as a drop and registers again about one second later. To take a running participant out for good, stop its `participant join` with Ctrl+C on its own machine.
+
+## Streaming request ends with `consumer_too_slow`
+
+The app read a streamed answer too slowly, and more than 8 MiB of it piled up on the hub. The hub cancels the request on the participant and ends the stream with this error. Read the stream as it arrives, or ask for an answer that is not a stream.
+
+## Request fails with `inference_timeout`
+
+The participant sent nothing for 5 minutes, before the first chunk or between two. The hub cancelled the request on the participant. A provider that takes longer than that to start answering (a very large model loading, for example) needs to be warmed up first.
 
 ## High latency
 
@@ -150,18 +170,24 @@ Symptoms and fixes for `gambi participant join --harness`:
 1. Exit code `3` before registration, with a message to install or log in.
    - The harness binary or its ACP adapter is missing, or there is no local login. Run the command the CLI prints, for example `opencode auth login`, `claude auth login`, or `codex login`, then retry. See [Bring your harness](/guides/bring-your-harness/#install-and-authenticate-your-harness).
 
-2. Exit code `2` and an error ending in `cannot be used with --harness`.
+2. Exit code `2` and an error that says the flags `cannot be used with --harness`.
    - Remove `--endpoint`, `--header`, and `--header-env`. The harness uses its own local login.
 
 3. `Claude Code cannot run as a Gambi-hosted harness for third parties.`
-   - An application called `createHarnessParticipantSession()` with `harnessId: "claude-code"` and `hosted: true`. The SDK rejects that combination. Each person must run Claude Code with their own login.
+   - An application called `createHarnessParticipantSession()` with `harness: "claude-code"` and `hosted: true`. The SDK rejects that combination. Each person must run Claude Code with their own login.
 
-4. An inference request returns HTTP `400` with `Harness participants do not serve inference requests`.
+4. An inference request returns HTTP `400` with the code `inference_not_supported`.
    - The `model` value names a harness participant. Harness participants do not take OpenAI-compatible requests. Attach with `client.harness.attach()` instead.
+
+5. `artifact_skipped` with `cause: "tooLarge"`.
+   - The workspace snapshot is larger than 8 MiB, so it was not sent. Move large files out of the workspace.
+
+6. A harness process keeps running after the participant is gone.
+   - If `gambi participant join` (or your program) was killed with `kill -9`, it could not stop the harness. A harness that does not watch its standard input keeps running. Find it and stop it by hand. Ctrl+C and `SIGTERM` stop it normally.
 
 ## Still having issues?
 
-1. Check the hub output. The hub prints `[gambi] llm.request`, `[gambi] llm.complete`, and `[gambi] llm.error` lines to the console, and `gambi events watch --room <code>` shows room events.
+1. Check the hub output. `gambi hub serve` writes its log lines to stderr (`--log-level debug` shows more), and `gambi events watch --room <code>` shows room events. An error from the CLI or the SDK may carry a `requestId`; look for it in the hub's log.
 
 2. Test the provider endpoint directly:
 

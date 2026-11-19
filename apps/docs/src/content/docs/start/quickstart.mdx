@@ -9,7 +9,7 @@ This tutorial runs Gambi from scratch. By the end, you'll have a hub running, a 
 
 ## What you'll need
 
-- **The Gambi CLI** on each machine. See [Installation](/start/installation/).
+- **The Gambi CLI** on each machine, on the same minor version as the hub (any `0.8.x` works with any other `0.8.x`). See [Installation](/start/installation/).
 - **A machine to run the hub.** Any computer on the network works. It doesn't need a GPU, because the hub only routes traffic.
 - **At least one model endpoint.** Ollama, LM Studio, vLLM, or any OpenAI-compatible API.
 
@@ -35,7 +35,7 @@ gambi hub serve --port 3000 --mdns
 
 The `--mdns` flag advertises the hub so other machines on the network can discover it.
 
-Other machines reach the hub at `http://<hub-ip>:3000`, where `<hub-ip>` is this machine's address on your network, such as `192.168.1.10`. Every other command takes that URL as `--hub`. Without `--hub`, the CLI uses `http://localhost:3000`, which only works on the hub machine itself.
+Other machines reach the hub at `http://<hub-ip>:3000`, where `<hub-ip>` is this machine's address on your network, such as `192.168.1.10`. Every other command takes that URL as `--hub`, or from the `GAMBI_HUB` environment variable. Without either, the CLI uses `http://localhost:3000`, which only works on the hub machine itself.
 
 :::caution[Trusted networks only]
 The hub has no built-in authentication. Anyone who can reach its port can create rooms and send inference requests to any room. A room password only protects joining. Run it only on a network you trust. If you need to expose it beyond that, put it behind your own proxy and authentication layer.
@@ -44,7 +44,7 @@ The hub has no built-in authentication. Anyone who can reach its port can create
 ### 2. Create a room
 
 ```bash
-# In a terminal, prompts for the room name and an optional password:
+# In a terminal, prompts for the room name:
 gambi room create
 
 # Or with flags:
@@ -60,7 +60,7 @@ host_id: …
 
 Share the room code with everyone who wants to join.
 
-You can also create a password-protected room:
+To protect the room with a password, pass it as a flag; the CLI never asks for one:
 
 ```bash
 gambi room create --name "Private Room" --password secret123
@@ -105,7 +105,9 @@ gambi participant join \
   --endpoint http://localhost:8000
 ```
 
-The CLI probes your local endpoint, checks that the model exists, detects which protocols it supports, registers the participant, opens a tunnel to the hub, and keeps the session alive until you stop it.
+The CLI probes your local endpoint, checks that the model exists, detects which protocols it supports, registers the participant, and opens a tunnel to the hub. It stays in the room until you press Ctrl+C. If the network drops for a moment, it reconnects by itself with the same participant ID.
+
+If the hub runs another minor version of Gambi, the join fails with `VersionMismatch` and names the version to install.
 
 Your provider endpoint can stay on `localhost`, even when the hub runs on another machine in the same trusted network. The hub never connects to it. For the reasoning, see [How tunnels work](/concepts/tunnel-first/).
 
