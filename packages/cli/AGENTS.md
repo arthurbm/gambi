@@ -34,7 +34,7 @@ gambi self update
 
 ## Contratos operacionais
 
-- **Saída estruturada**: `--format text|json`; sem a flag, `text` num terminal e `json` fora dele. `GAMBI_FORMAT` é o fallback. Um comando que roda até ser parado escreve um evento JSON por linha.
+- **Saída estruturada**: `--format text|json|ndjson`; sem a flag, `text` num terminal e `json` fora dele. `GAMBI_FORMAT` é o fallback. Um comando que roda até ser parado escreve um evento JSON por linha.
 - **Interatividade**: uma flag obrigatória que falta vira pergunta só num terminal. `--no-interactive` e `GAMBI_NO_INTERACTIVE=1` nunca perguntam.
 - **Hub**: `--hub`, depois `GAMBI_HUB`, depois `http://localhost:3000`.
 - **Log**: `--log-level`, em stderr. stdout é só dado.

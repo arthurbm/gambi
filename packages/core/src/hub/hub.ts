@@ -1,6 +1,5 @@
 /**
- * The hub, on Effect (ADR-0007). It lives beside the current `../hub.ts`
- * until the migration replaces it.
+ * The hub, on Effect (ADR-0007).
  *
  * `Hub.layer` acquires the port first (`options.listen`). Everything else is
  * built on top of it: the state (`Rooms`), the routes, and the mDNS
