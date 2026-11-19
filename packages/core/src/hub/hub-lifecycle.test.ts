@@ -80,16 +80,19 @@ it.live("announces itself over mDNS only after it holds the port", () =>
     const hub = yield* start(layerHub({ mdns: true }));
     const { port, mdnsName } = Context.get(hub.context, Hub);
 
-    expect(mdnsName).toBe(`gambi-hub-${port}`);
-    expect(yield* Context.get(hub.context, Mdns).announced).toEqual([
+    expect(mdnsName).toStartWith(`gambi-hub-${port}-`);
+    expect(yield* Context.get(hub.context, Mdns).announced).toMatchObject([
       {
-        name: `gambi-hub-${port}`,
+        name: mdnsName,
         port,
         type: "gambi",
         txt: { version: "1.0", protocol: "http" },
       },
     ]);
     yield* hub.close;
+    const second = yield* start(layerHub({ port, mdns: true }));
+    expect(Context.get(second.context, Hub).mdnsName).not.toBe(mdnsName);
+    yield* second.close;
   })
 );
 
@@ -177,11 +180,11 @@ it.live("announces with the real mDNS responder and withdraws on close", () =>
       layerHubWithoutMdns({ mdns: true }).pipe(Layer.provideMerge(Mdns.layer))
     );
     const mdns = Context.get(hub.context, Mdns);
-    const { port } = Context.get(hub.context, Hub);
+    const { mdnsName } = Context.get(hub.context, Hub);
 
-    expect(
-      (yield* mdns.announced).map((announcement) => announcement.name)
-    ).toEqual([`gambi-hub-${port}`]);
+    const [announcement] = yield* mdns.announced;
+    expect(announcement).toBeDefined();
+    expect(mdnsName).toBe(announcement?.name);
 
     yield* hub.close;
     expect(yield* mdns.announced).toEqual([]);

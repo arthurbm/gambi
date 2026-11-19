@@ -97,7 +97,9 @@ it.live("hub serve --mdns announces the hub and says under which name", () =>
     expect(started.data.mdns).toBe(true);
     expect(yield* serving.nextEvent).toMatchObject({
       type: "mdns_registered",
-      data: { name: `gambi-hub-${started.data.port}` },
+      data: {
+        name: expect.stringContaining(`gambi-hub-${started.data.port}-`),
+      },
     });
 
     yield* serving.signal("SIGINT");

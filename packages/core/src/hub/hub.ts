@@ -173,8 +173,6 @@ const listening = (
   );
 };
 
-const mdnsName = (port: number) => `gambi-hub-${port}`;
-
 export class Hub extends Context.Service<
   Hub,
   {
@@ -250,7 +248,10 @@ export class Hub extends Context.Service<
         const host =
           hostname === "0.0.0.0" || hostname === "::" ? "localhost" : hostname;
         const url = `http://${host.includes(":") ? `[${host}]` : host}:${address.port}`;
-        const name = options.mdns === true ? mdnsName(address.port) : undefined;
+        const name =
+          options.mdns === true
+            ? `gambi-hub-${address.port}-${yield* (yield* SecureRandom.SecureRandom).uuidV4()}`
+            : undefined;
         if (name !== undefined) {
           const mdns = yield* Mdns;
           yield* mdns.announce({
@@ -265,7 +266,7 @@ export class Hub extends Context.Service<
         );
         return Hub.of({ mdnsName: name, port: address.port, url });
       })
-    );
+    ).pipe(Layer.provide(SecureRandom.layerWebCrypto));
 
     // Built last, so released first: the tunnels and the open streams close
     // before the routes and the server start to stop. Each of them is a
