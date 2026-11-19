@@ -31,6 +31,7 @@ export function createParticipant(
     model: "llama3",
     endpoint: "http://localhost:11434",
     status: "online",
+    runtimeId: `runtime-of-${id}`,
     joinedAt: now,
     updatedAt: now,
     specs: {},

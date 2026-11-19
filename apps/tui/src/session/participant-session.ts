@@ -110,9 +110,14 @@ const whyItEnded = (
   if (event.error !== undefined) {
     return event.error.message;
   }
-  return event.reason === "replaced"
-    ? "Another participant runtime joined the room with this participant's id."
-    : "Participant tunnel closed.";
+  switch (event.reason) {
+    case "replaced":
+      return "Another participant runtime joined the room with this participant's id.";
+    case "removed":
+      return "This participant was taken out of the room.";
+    default:
+      return "Participant tunnel closed.";
+  }
 };
 
 /**
@@ -138,7 +143,8 @@ export const followLifecycle = (event: ParticipantLifecycleEvent): void => {
       store.setError(whyItEnded(event));
       // The runtime is over: release what it still holds. The hub is not
       // told that the participant left: after `replaced`, the participant
-      // with this id is another runtime, and it stays in the room.
+      // with this id is another runtime, and it stays in the room; after
+      // `removed` there is none.
       ended?.stop();
       return;
     }

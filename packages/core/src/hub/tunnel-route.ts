@@ -58,7 +58,12 @@ const openTunnel = Effect.fn("Hub.openTunnel")(function* (
       })
     );
   }
-  yield* tunnels.serve(roomCode, participantId, upgraded.success);
+  yield* tunnels.serve(
+    roomCode,
+    participantId,
+    upgraded.success,
+    redeemed.success
+  );
   return HttpServerResponse.empty();
 });
 

@@ -34,6 +34,23 @@ export type Platform =
 
 export const DEFAULT_LEAVE_TIMEOUT_MS = 3000;
 
+type EndReason = ParticipantSessionEnd["reason"];
+
+/**
+ * The ends after which the room has no participant of this runtime: another
+ * runtime has its id, or someone took it out.
+ */
+const NOT_OURS_ANY_MORE: ReadonlySet<EndReason> = new Set([
+  "replaced",
+  "removed",
+]);
+
+/** The ends a session that is leaving brought about itself. */
+const OUR_OWN_DOING: ReadonlySet<EndReason> = new Set([
+  "removed",
+  "tunnelDropped",
+]);
+
 export interface Session<A, R> extends SessionControls {
   readonly boundary: PromiseBoundary<R>;
   /** What `joined` read once the participant was online. */
@@ -57,16 +74,22 @@ export const joinRoom = async <A, R>(options: {
   readonly leaveTimeoutMs: number | undefined;
   readonly onLifecycle: SessionOptions["onLifecycle"];
   readonly onLog: SessionOptions["onLog"];
-  readonly participant: (
-    onLifecycle: (event: RuntimeLifecycleEvent) => Effect.Effect<void>
-  ) => Layer.Layer<R, ParticipantFailure | ParticipantError, Platform>;
+  /** The participant, hosted by a runtime that takes these two as options. */
+  readonly participant: (runtime: {
+    readonly onLifecycle: (event: RuntimeLifecycleEvent) => Effect.Effect<void>;
+    readonly runtimeId: string;
+  }) => Layer.Layer<R, ParticipantFailure | ParticipantError, Platform>;
   readonly participantId: string;
   readonly roomCode: string;
 }): Promise<Session<A, R>> => {
   // After `leave` or `stop` started, a drop of the tunnel is our own doing.
   let stopping = false;
-  // Another runtime has this participant's id now: the room's is not ours.
-  let replaced = false;
+  // The room has no participant of this runtime any more: another runtime
+  // has its id, or someone took it out.
+  let gone = false;
+  // The id of the runtime this session hosts. Leaving names it, so that the
+  // hub takes out this runtime's participant and no other with the same id.
+  const runtimeId = crypto.randomUUID();
   // Whether the tunnel is open, as far as the runtime said.
   let online = true;
   // How the runtime ended, once it did.
@@ -98,11 +121,12 @@ export const joinRoom = async <A, R>(options: {
   const onLifecycle = (event: RuntimeLifecycleEvent) =>
     Effect.sync(() => {
       if (event.type === "left") {
-        replaced = event.reason === "replaced";
-        // A tunnel that drops while the session leaves is the hub closing
-        // the tunnel of the participant it took out: our own doing.
+        gone = NOT_OURS_ANY_MORE.has(event.reason);
+        // A participant taken out while the session leaves was taken out
+        // because the session asked: our own doing. So is a tunnel that
+        // drops meanwhile.
         const reason =
-          stopping && event.reason === "tunnelDropped"
+          stopping && OUR_OWN_DOING.has(event.reason)
             ? "stopped"
             : event.reason;
         end = {
@@ -129,7 +153,7 @@ export const joinRoom = async <A, R>(options: {
 
   const { boundary, value } = await host(
     options
-      .participant(onLifecycle)
+      .participant({ onLifecycle, runtimeId })
       .pipe(
         Layer.provide([
           BunServices.layer,
@@ -163,7 +187,7 @@ export const joinRoom = async <A, R>(options: {
     );
     await Promise.race([
       client.participants
-        .remove(options.roomCode, options.participantId)
+        .remove(options.roomCode, options.participantId, runtimeId)
         .catch(() => undefined),
       gaveUp.promise,
     ]);
@@ -174,7 +198,7 @@ export const joinRoom = async <A, R>(options: {
 
   const leave = async (): Promise<void> => {
     stopping = true;
-    if (replaced) {
+    if (gone) {
       await boundary.close();
     } else if (options.leaves === "beforeStopping" && online) {
       await tellHub();
@@ -185,7 +209,7 @@ export const joinRoom = async <A, R>(options: {
       await boundary.close();
       // Closing takes a while (the last artifact), and the tunnel is open
       // meanwhile: another runtime may have taken this participant's place.
-      if (!replaced) {
+      if (!gone) {
         await tellHub();
       }
     }

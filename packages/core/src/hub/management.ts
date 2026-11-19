@@ -79,7 +79,8 @@ const ParticipantsHandlers = HttpApiBuilder.group(
         const room = yield* rooms.get(params.code);
         return yield* participants.list(room.code);
       }),
-      remove: ({ params }) => leaveRoom(params.code, params.id),
+      remove: ({ params, query }) =>
+        leaveRoom(params.code, params.id, query.runtimeId),
     });
   })
 );

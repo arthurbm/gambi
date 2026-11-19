@@ -187,6 +187,7 @@ layer(layerHub(), { excludeTestServices: true })(
           client.participants.register(room.code, "lia-1", {
             nickname: "Lia",
             model: "qwen3",
+            runtimeId: "a-runtime",
             endpoint: "http://localhost:11434",
           })
         );

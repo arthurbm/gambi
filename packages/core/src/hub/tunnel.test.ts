@@ -283,7 +283,12 @@ layer(layerHub(), { excludeTestServices: true })("tunnel", (it) => {
       const room = yield* makeRoom("Cavalo-marinho");
       yield* client.participants.register({
         params: { code: room.code, id: "arthur-1" },
-        payload: { nickname: "Arthur", model: "m", version: GAMBI_VERSION },
+        payload: {
+          nickname: "Arthur",
+          model: "m",
+          runtimeId: "runtime-of-arthur",
+          version: GAMBI_VERSION,
+        },
       });
 
       const error = yield* tunnels

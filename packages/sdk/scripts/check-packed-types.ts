@@ -218,6 +218,18 @@ async function onlineNicknames(roomCode: string): Promise<string[]> {
     .map((participant) => participant.nickname);
 }
 
+// A removal names the runtime the participant belongs to, as the listing
+// shows it.
+async function takeOut(roomCode: string, participantId: string): Promise<string | undefined> {
+  const participants = await client.participants.list(roomCode);
+  const participant = participants.find((listed) => listed.id === participantId);
+  if (participant === undefined) {
+    return undefined;
+  }
+  const left = await client.participants.remove(roomCode, participantId, participant.runtimeId);
+  return left.participantId;
+}
+
 // The events are a union told apart by \`type\`, and the watch is a plain
 // AsyncIterable: no type of Effect is needed to consume it.
 async function watch(roomCode: string, signal: AbortSignal): Promise<string[]> {
@@ -386,6 +398,7 @@ export {
   provider,
   roomNames,
   runFakeAcpAgent,
+  takeOut,
   watch,
 };
 `;

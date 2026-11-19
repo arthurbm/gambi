@@ -152,10 +152,20 @@ export interface GambiClient {
       participantId: string,
       input: RegisterParticipantInput
     ) => Promise<ParticipantRegistered>;
-    /** Takes a participant out of a room at once, closing its tunnel. */
+    /**
+     * Takes a participant out of a room at once and closes its tunnel for
+     * good: its participant runtime ends, and does not come back.
+     *
+     * `runtimeId` names the runtime the participant belongs to, as
+     * `participants.list` shows it. When the participant belongs to another
+     * runtime by the time the hub hears this (one that joined with the same
+     * id since), the call rejects with `PARTICIPANT_OF_ANOTHER_RUNTIME` and
+     * the participant stays.
+     */
     readonly remove: (
       roomCode: string,
-      participantId: string
+      participantId: string,
+      runtimeId: string
     ) => Promise<ParticipantLeft>;
   };
   readonly rooms: {
@@ -223,10 +233,11 @@ export const createClient = (options: ClientOptions = {}): GambiClient => {
             }),
           })
         ),
-      remove: (roomCode, participantId) =>
+      remove: (roomCode, participantId, runtimeId) =>
         call((management) =>
           management.participants.remove({
             params: { code: roomCode, id: participantId },
+            query: { runtimeId },
           })
         ),
     },

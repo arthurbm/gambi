@@ -291,6 +291,7 @@ layer(layerHub(), { excludeTestServices: true })("Responses API", (it) => {
         );
         yield* client.participants.remove({
           params: { code: room.code, id: "arthur-1" },
+          query: { runtimeId: participant.runtime.runtimeId },
         });
         const left = yield* call("GET", room.url(`/responses/${created.id}`));
 

@@ -70,6 +70,8 @@ export const failureKinds = {
   HarnessNotReady: "connectivity",
   HarnessStartFailed: "connectivity",
   ModelNotOnEndpoint: "connectivity",
+  // Someone took the participant out of the room: the hub ended this stay.
+  ParticipantRemoved: "rejected",
   // Another runtime took the participant's place: the hub said no to this one.
   ParticipantReplaced: "rejected",
   TunnelOpenFailed: "connectivity",
@@ -81,6 +83,8 @@ export const failureKinds = {
   InvalidPassword: "rejected",
   InvalidRequest: "usage",
   ParticipantNotFound: "rejected",
+  // The participant is another runtime's by now: the hub kept it.
+  ParticipantOfAnotherRuntime: "rejected",
   RoomNotFound: "rejected",
   VersionMismatch: "rejected",
 } as const satisfies Record<FailureTag, FailureKind>;

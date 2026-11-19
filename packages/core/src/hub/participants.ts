@@ -12,6 +12,17 @@
  * is the first step of coming back, and it issues a bootstrap token that
  * needs the participant to still be in the room.
  *
+ * A participant belongs to one participant runtime (`runtimeId`): the one
+ * that registered it, until another takes it, by registering while it is
+ * `offline` or by dialing its tunnel (`handOver`). Leaving is for that
+ * runtime alone, so that a removal that arrives late never takes out
+ * another runtime that joined with the same id.
+ *
+ * A participant that is removed and whose id is registered again is another
+ * participant: it has another `generation`. That is what a bootstrap token
+ * is tied to, so that a tunnel never opens for a participant other than the
+ * one its runtime registered.
+ *
  * The service does not know rooms: the caller answers for the room existing.
  * `Rooms` reads `count` for its summaries.
  */
@@ -36,21 +47,28 @@ import { HarnessClients } from "./harness-clients.ts";
 import { RoomEvents } from "./room-events.ts";
 import { HubSettings } from "./settings.ts";
 
-/** What a registration says about the participant: everything but the password and the version. */
+/**
+ * What a registration says about the participant: everything but the
+ * password, the version and the runtime that registers.
+ */
 export type ParticipantProfile = Omit<
   RegisterParticipant,
-  "authHeaders" | "password" | "version"
+  "authHeaders" | "password" | "runtimeId" | "version"
 >;
 
 interface ParticipantState {
   readonly capabilities: ParticipantCapabilities;
   readonly config: RuntimeConfig;
   readonly endpoint: string | undefined;
+  /** Which participant with this id this is, counting from the hub's start. */
+  readonly generation: number;
   readonly harness: HarnessProfile | undefined;
   readonly id: string;
   readonly joinedAt: number;
   readonly model: string;
   readonly nickname: string;
+  /** The participant runtime the participant belongs to. */
+  readonly runtimeId: string;
   readonly specs: NonNullable<ParticipantProfile["specs"]>;
   readonly status: ParticipantStatus;
   readonly updatedAt: number;
@@ -105,6 +123,7 @@ const toSummary = (participant: ParticipantState): ParticipantSummary => ({
   specs: participant.specs,
   capabilities: participant.capabilities,
   status: participant.status,
+  runtimeId: participant.runtimeId,
   joinedAt: participant.joinedAt,
   updatedAt: participant.updatedAt,
 });
@@ -147,6 +166,30 @@ export class Participants extends Context.Service<
       participantId: string
     ) => Effect.Effect<ParticipantSummary | undefined>;
     /**
+     * Which participant with that id is in the room: a number that changes
+     * when the participant is removed and its id is registered again.
+     * `undefined` when it is not in the room.
+     */
+    readonly generation: (
+      roomCode: string,
+      participantId: string
+    ) => Effect.Effect<number | undefined>;
+    /**
+     * Makes the participant the runtime `runtimeId`'s, whatever its status:
+     * that runtime dialed its tunnel, which replaces the one the participant
+     * has. From here on a removal the replaced runtime asked for is late.
+     *
+     * Only for the participant that runtime registered (`generation`):
+     * answers `false`, and changes nothing, when that one is not in the room
+     * any more, even if another with the same id is.
+     */
+    readonly handOver: (
+      roomCode: string,
+      participantId: string,
+      runtimeId: string,
+      generation: number
+    ) => Effect.Effect<boolean>;
+    /**
      * Routes a request: picks the participant the model selector asks for
      * and marks it `busy`. Only an `online` participant is picked, so a
      * participant never takes two requests at once.
@@ -177,14 +220,25 @@ export class Participants extends Context.Service<
       roomCode: string
     ) => Effect.Effect<readonly ParticipantSummary[]>;
     /**
-     * Adds the participant to the room, `offline`. An id that is already in
-     * the room is updated instead and keeps its `joinedAt` and its status.
+     * Adds the participant to the room, `offline`, as the participant of the
+     * runtime `runtimeId`. An id that is already in the room is updated
+     * instead and keeps its `joinedAt` and its status. It becomes that
+     * runtime's only while it is `offline`: one whose tunnel is open stays
+     * with the runtime of that tunnel until another tunnel opens.
+     *
+     * Answers the participant and its `generation`, read in the same step
+     * as the registration wrote it: that is the one a bootstrap token of
+     * this registration is for.
      */
     readonly register: (
       roomCode: string,
       participantId: string,
-      profile: ParticipantProfile
-    ) => Effect.Effect<ParticipantSummary>;
+      profile: ParticipantProfile,
+      runtimeId: string
+    ) => Effect.Effect<{
+      readonly generation: number;
+      readonly participant: ParticipantSummary;
+    }>;
     /** The status of a participant; `undefined` when it is not in the room. */
     readonly status: (
       roomCode: string,
@@ -193,11 +247,16 @@ export class Participants extends Context.Service<
     /**
      * Applies `event` to the participant. Answers the change, or `undefined`
      * when the status table has no row for it (nothing changed).
+     *
+     * Leaving (`left`) and coming online (`tunnelOpened`) are for the
+     * participant runtime the participant belongs to: with another
+     * `runtimeId` they change nothing and answer `undefined`.
      */
     readonly transition: (
       roomCode: string,
       participantId: string,
-      event: StatusEvent
+      event: StatusEvent,
+      runtimeId?: string
     ) => Effect.Effect<StatusChange | undefined>;
   }
 >()("gambi/core/Participants") {
@@ -210,6 +269,7 @@ export class Participants extends Context.Service<
       // One fiber per offline participant, sleeping until its deadline.
       const deadlines = yield* FiberMap.make<string>();
       const byRoom = new Map<string, Map<string, ParticipantState>>();
+      let generations = 0;
 
       const roomOf = (roomCode: string) => {
         let room = byRoom.get(roomCode);
@@ -238,13 +298,23 @@ export class Participants extends Context.Service<
       )(function* (
         roomCode: string,
         participantId: string,
-        event: StatusEvent
+        event: StatusEvent,
+        runtimeId?: string
       ) {
         const room = roomOf(roomCode);
         const participant = room.get(participantId);
         const to = transitionStatus(participant?.status, event);
         // Only registration brings a participant in, with its profile.
         if (to === undefined || participant === undefined) {
+          return undefined;
+        }
+        // Leaving and coming online are for the runtime the participant
+        // belongs to. Checked and applied in one step: nothing runs between
+        // this and the change.
+        if (
+          (event === "left" || event === "tunnelOpened") &&
+          participant.runtimeId !== runtimeId
+        ) {
           return undefined;
         }
         const after: ParticipantState | undefined =
@@ -293,7 +363,8 @@ export class Participants extends Context.Service<
       const register = Effect.fn("Participants.register")(function* (
         roomCode: string,
         participantId: string,
-        profile: ParticipantProfile
+        profile: ParticipantProfile,
+        runtimeId: string
       ) {
         const room = roomOf(roomCode);
         const existing = room.get(participantId);
@@ -317,6 +388,12 @@ export class Participants extends Context.Service<
           specs: profile.specs ?? {},
           capabilities: profile.capabilities ?? UNKNOWN_CAPABILITIES,
           status,
+          generation: existing?.generation ?? ++generations,
+          // While a tunnel is open the participant is that tunnel's runtime's.
+          runtimeId:
+            existing === undefined || existing.status === "offline"
+              ? runtimeId
+              : existing.runtimeId,
           joinedAt: existing?.joinedAt ?? now,
           updatedAt: now,
         };
@@ -337,7 +414,7 @@ export class Participants extends Context.Service<
               : "participant.updated",
           participant: summary,
         });
-        return summary;
+        return { participant: summary, generation: participant.generation };
       });
 
       const MODEL_PREFIX = "model:";
@@ -428,6 +505,24 @@ export class Participants extends Context.Service<
             return participant === undefined
               ? undefined
               : toSummary(participant);
+          }),
+        generation: (roomCode, participantId) =>
+          Effect.sync(
+            () => byRoom.get(roomCode)?.get(participantId)?.generation
+          ),
+        handOver: (roomCode, participantId, runtimeId, generation) =>
+          Effect.sync(() => {
+            const room = byRoom.get(roomCode);
+            const participant = room?.get(participantId);
+            if (
+              room === undefined ||
+              participant === undefined ||
+              participant.generation !== generation
+            ) {
+              return false;
+            }
+            room.set(participantId, { ...participant, runtimeId });
+            return true;
           }),
         list: (roomCode) =>
           Effect.sync(() =>

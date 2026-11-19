@@ -148,6 +148,7 @@ it.live(
         client.participants.register(room.code, "arthur-1", {
           nickname: "Arthur",
           model: "llama3",
+          runtimeId: "a-runtime",
         })
       );
       const joined = yield* Effect.promise(() => events.next());

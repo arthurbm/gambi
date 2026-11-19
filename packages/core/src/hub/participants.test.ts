@@ -14,6 +14,7 @@ const registration = {
   nickname: "Arthur",
   model: "llama3.1:8b",
   endpoint: "http://127.0.0.1:11434",
+  runtimeId: "runtime-of-arthur",
   version: "0.8.0",
 };
 
@@ -56,6 +57,7 @@ layer(layerHub({ version: "0.8.3" }), { excludeTestServices: true })(
               chatCompletions: "unknown",
             },
             status: "offline",
+            runtimeId: expect.any(String),
             joinedAt: expect.any(Number),
             updatedAt: expect.any(Number),
           });
@@ -107,6 +109,7 @@ layer(layerHub({ version: "0.8.3" }), { excludeTestServices: true })(
                 chatCompletions: "unknown",
               },
               status: "offline",
+              runtimeId: expect.any(String),
               joinedAt: expect.any(Number),
               updatedAt: expect.any(Number),
             },
@@ -310,6 +313,7 @@ layer(layerHub({ version: "0.8.3" }), { excludeTestServices: true })(
                 HttpClientRequest.bodyJsonUnsafe({
                   nickname: "Arthur",
                   model: harness,
+                  runtimeId: "runtime-of-arthur",
                   version: "0.8.0",
                   harness: { id: harness },
                 })
