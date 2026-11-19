@@ -259,6 +259,45 @@ layer(layerHub({ version: "0.8.3" }), { excludeTestServices: true })(
     );
 
     it.effect(
+      "refuses a registration without its required fields, or that is not JSON, and stores nothing",
+      () =>
+        Effect.gen(function* () {
+          const client = yield* managementClient;
+          const { room } = yield* client.rooms.create({
+            payload: { name: "Baião" },
+          });
+          const url = (hubUrl: string) =>
+            `${hubUrl}/v1/rooms/${room.code}/participants/arthur-1`;
+
+          const empty = yield* raw((hubUrl) =>
+            HttpClientRequest.put(url(hubUrl)).pipe(
+              HttpClientRequest.bodyJsonUnsafe({})
+            )
+          );
+          const notJson = yield* raw((hubUrl) =>
+            HttpClientRequest.put(url(hubUrl)).pipe(
+              HttpClientRequest.bodyText("{not json", "application/json")
+            )
+          );
+
+          expect(empty.status).toBe(400);
+          expect(empty.body).toMatchObject({
+            error: {
+              code: "INVALID_REQUEST",
+              details: { issues: [{ path: ["payload", "nickname"] }] },
+            },
+          });
+          expect(notJson.status).toBe(400);
+          expect(notJson.body).toMatchObject({
+            error: { code: "INVALID_REQUEST" },
+          });
+          expect(
+            yield* client.participants.list({ params: { code: room.code } })
+          ).toEqual([]);
+        })
+    );
+
+    it.effect(
       "refuses a harness that has no adapter: only opencode, claude-code, codex and fake can be contributed",
       () =>
         Effect.gen(function* () {

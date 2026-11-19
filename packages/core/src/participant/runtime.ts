@@ -1,6 +1,5 @@
 /**
- * The participant runtime, on Effect (ADR-0007). It lives beside the current
- * `../participant-session.ts` until the migration replaces it.
+ * The participant runtime, on Effect (ADR-0007).
  *
  * It does three things, each a function of this file:
  *

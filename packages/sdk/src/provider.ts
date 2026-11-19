@@ -2,6 +2,7 @@ import { createOpenResponses } from "@ai-sdk/open-responses";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { createClient, DEFAULT_HUB_URL, type GambiClient } from "./client.ts";
+import { fetchRoomModels } from "./room-models.ts";
 import type {
   ParticipantCapabilities,
   ParticipantStatus,
@@ -29,23 +30,6 @@ export interface GambiModel {
   status: Exclude<ParticipantStatus, "offline">;
 }
 
-interface ModelsResponse {
-  object: string;
-  data: Array<{
-    id: string;
-    object: string;
-    created: number;
-    owned_by: string;
-    gambi?: {
-      nickname: string;
-      model: string;
-      endpoint: string;
-      capabilities?: ParticipantCapabilities;
-      status?: GambiModel["status"];
-    };
-  }>;
-}
-
 export interface GambiProtocolNamespace {
   participant: (id: string) => LanguageModelV3;
   model: (name: string) => LanguageModelV3;
@@ -55,6 +39,10 @@ export interface GambiProtocolNamespace {
 export interface GambiProvider extends GambiProtocolNamespace {
   chatCompletions: GambiProtocolNamespace;
   defaultProtocol: GambiProtocol;
+  /**
+   * The models the room can be asked for, from the hub's inference plane.
+   * Rejects with a `ClientError`, like the management client.
+   */
   listModels: () => Promise<GambiModel[]>;
   /**
    * The participants of the room, from the hub's management plane. Rejects
@@ -111,7 +99,8 @@ function createNamespace(
  */
 export function createGambi(options: GambiOptions): GambiProvider {
   const hubUrl = options.hubUrl ?? DEFAULT_HUB_URL;
-  const baseURL = `${hubUrl}/rooms/${options.roomCode}/v1`;
+  const { roomCode } = options;
+  const baseURL = `${hubUrl}/rooms/${roomCode}/v1`;
   const defaultProtocol = options.defaultProtocol ?? DEFAULT_PROTOCOL;
 
   const openResponses = createNamespace("openResponses", baseURL);
@@ -131,25 +120,21 @@ export function createGambi(options: GambiOptions): GambiProvider {
 
     listParticipants() {
       management ??= createClient({ hubUrl });
-      return management.participants.list(options.roomCode);
+      return management.participants.list(roomCode);
     },
 
     async listModels(): Promise<GambiModel[]> {
-      const response = await fetch(`${baseURL}/models`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch models: ${response.statusText}`);
-      }
-      const data = (await response.json()) as ModelsResponse;
-      return data.data.map((model) => ({
-        id: model.id,
-        nickname: model.gambi?.nickname ?? model.owned_by,
-        model: model.gambi?.model ?? model.id,
-        endpoint: model.gambi?.endpoint ?? "",
-        capabilities: model.gambi?.capabilities ?? {
+      const entries = await fetchRoomModels(hubUrl, roomCode);
+      return entries.map((entry) => ({
+        id: entry.id,
+        nickname: entry.gambi?.nickname ?? entry.owned_by ?? entry.id,
+        model: entry.gambi?.model ?? entry.id,
+        endpoint: entry.gambi?.endpoint ?? "",
+        capabilities: entry.gambi?.capabilities ?? {
           openResponses: "unknown",
           chatCompletions: "unknown",
         },
-        status: model.gambi?.status ?? "online",
+        status: entry.gambi?.status ?? "online",
       }));
     },
 

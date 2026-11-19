@@ -6,7 +6,7 @@ import { it } from "@gambi/testing/effect";
 import { Effect } from "effect";
 
 /**
- * The new CLI (`cli/main.ts`) survives `bun build --compile`: `effect`,
+ * The CLI (`cli/main.ts`) survives `bun build --compile`: `effect`,
  * `effect/cli`, `@effect/platform-bun` and the hub all run from one binary,
  * and that binary can replace itself with `self update`.
  */

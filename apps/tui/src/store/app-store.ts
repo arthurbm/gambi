@@ -27,8 +27,7 @@ interface AppState {
 
 // Load initial values from config
 const initialConfig = loadConfig();
-const initialParticipantId =
-  initialConfig.participantId ?? crypto.randomUUID();
+const initialParticipantId = initialConfig.participantId ?? crypto.randomUUID();
 if (!initialConfig.participantId) {
   updateConfig({ participantId: initialParticipantId });
 }

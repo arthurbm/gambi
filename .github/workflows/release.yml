@@ -255,7 +255,7 @@ jobs:
             "$TARBALLS/gambi-linux-x64-$RELEASE_VERSION.tgz" "$TARBALLS/gambi-$RELEASE_VERSION.tgz"
           printed=$(./node_modules/.bin/gambi --version)
           echo "gambi --version: $printed"
-          if [ "$printed" != "$RELEASE_VERSION" ]; then
+          if [ "$printed" != "gambi v$RELEASE_VERSION" ]; then
             echo "::error::the packed gambi printed '$printed'"
             exit 1
           fi
@@ -339,7 +339,7 @@ jobs:
           cd "$(mktemp -d)"
           printed=$(npx -y "gambi@$RELEASE_VERSION" --version)
           echo "gambi --version: $printed"
-          if [ "$printed" != "$RELEASE_VERSION" ]; then
+          if [ "$printed" != "gambi v$RELEASE_VERSION" ]; then
             echo "::error::npx gambi@$RELEASE_VERSION printed '$printed'"
             exit 1
           fi

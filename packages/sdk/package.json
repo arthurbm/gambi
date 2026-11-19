@@ -58,8 +58,7 @@
   "dependencies": {
     "@ai-sdk/open-responses": "^1.0.6",
     "@ai-sdk/openai-compatible": "^2.0.2",
-    "@ai-sdk/provider": "^3.0.1",
-    "openai": "^6.15.0"
+    "@ai-sdk/provider": "^3.0.1"
   },
   "peerDependencies": {
     "ai": "^4 || ^5 || ^6",
