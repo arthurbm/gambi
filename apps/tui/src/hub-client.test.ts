@@ -3,7 +3,7 @@ import { Hub } from "@gambi/core/hub/hub";
 import { layerHub } from "@gambi/core/testing/hub";
 import { layer } from "@gambi/testing/effect";
 import { Effect } from "effect";
-import { createRoom, hubClient } from "./hub-client";
+import { hubClient } from "./hub-client";
 
 layer(layerHub(), { excludeTestServices: true })("hub client", (it) => {
   it.effect(
@@ -15,7 +15,7 @@ layer(layerHub(), { excludeTestServices: true })("hub client", (it) => {
 
         // What the create-room screen sends when only the name was typed.
         const created = yield* Effect.promise(() =>
-          createRoom(client, {
+          client.rooms.create({
             name: "Frevo",
             password: undefined,
             defaults: undefined,

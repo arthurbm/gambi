@@ -30,6 +30,7 @@ import {
   type Scope,
   Stream,
 } from "effect";
+import { participantKey } from "./participant-key.ts";
 import { HubSettings } from "./settings.ts";
 
 /** The events held for one attached client, until it reads them. */
@@ -125,10 +126,6 @@ const NO_TUNNEL = {
   reason: "NoTunnel",
 } as const;
 
-// A room code never contains a space, so the pair is unambiguous.
-const keyOf = (roomCode: string, participantId: string) =>
-  `${roomCode} ${participantId}`;
-
 export class HarnessClients extends Context.Service<
   HarnessClients,
   {
@@ -196,7 +193,7 @@ export class HarnessClients extends Context.Service<
       const attach = (roomCode: string, participantId: string) =>
         Effect.acquireRelease(
           Effect.sync(() => {
-            const entry = entryOf(keyOf(roomCode, participantId));
+            const entry = entryOf(participantKey(roomCode, participantId));
             const mailbox = makeMailbox(settings.harnessClientBuffer);
             entry.clients.add(mailbox);
             return {
@@ -207,7 +204,7 @@ export class HarnessClients extends Context.Service<
           }),
           ({ mailbox }) =>
             Effect.sync(() => {
-              const key = keyOf(roomCode, participantId);
+              const key = participantKey(roomCode, participantId);
               const entry = attached.get(key);
               if (entry !== undefined) {
                 entry.clients.delete(mailbox);
@@ -229,7 +226,7 @@ export class HarnessClients extends Context.Service<
         event: HarnessAttachEvent
       ) =>
         Effect.sync(() => {
-          const key = keyOf(roomCode, participantId);
+          const key = participantKey(roomCode, participantId);
           const entry = entryOf(key);
           if (event.type === "harness.connected") {
             entry.disconnected = undefined;
@@ -248,7 +245,7 @@ export class HarnessClients extends Context.Service<
         reason: HarnessDetached["reason"]
       ) =>
         Effect.sync(() => {
-          const key = keyOf(roomCode, participantId);
+          const key = participantKey(roomCode, participantId);
           const entry = attached.get(key);
           if (entry === undefined) {
             return;
@@ -266,7 +263,8 @@ export class HarnessClients extends Context.Service<
         count: (roomCode, participantId) =>
           Effect.sync(
             () =>
-              attached.get(keyOf(roomCode, participantId))?.clients.size ?? 0
+              attached.get(participantKey(roomCode, participantId))?.clients
+                .size ?? 0
           ),
         deliver,
       });

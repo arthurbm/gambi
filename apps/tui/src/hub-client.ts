@@ -8,7 +8,6 @@ import {
   type CreateRoomInput,
   createClient,
   type GambiClient,
-  type RoomCreated,
 } from "gambi-sdk";
 
 const clients = new Map<string, GambiClient>();
@@ -36,8 +35,3 @@ export interface CreateRoomData {
   name: string;
   password?: string | undefined;
 }
-
-export const createRoom = (
-  client: GambiClient,
-  data: CreateRoomData
-): Promise<RoomCreated> => client.rooms.create(data);

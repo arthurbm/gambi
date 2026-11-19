@@ -44,6 +44,7 @@ import {
 } from "@gambi/protocol";
 import { Clock, Context, Effect, FiberMap, Layer, Random } from "effect";
 import { HarnessClients } from "./harness-clients.ts";
+import { participantKey } from "./participant-key.ts";
 import { RoomEvents } from "./room-events.ts";
 import { HubSettings } from "./settings.ts";
 
@@ -147,10 +148,6 @@ const toSummary = (participant: ParticipantState): ParticipantSummary => ({
   joinedAt: participant.joinedAt,
   updatedAt: participant.updatedAt,
 });
-
-// A room code never contains a space, so the pair is unambiguous.
-const keyOf = (roomCode: string, participantId: string) =>
-  `${roomCode} ${participantId}`;
 
 /** Only the current runtime and the request that acquired busy may finish their work. */
 const acceptsTransition = (
@@ -333,7 +330,7 @@ export class Participants extends Context.Service<
           Effect.andThen(
             transition(roomCode, participantId, "reconnectDeadlinePassed")
           ),
-          FiberMap.run(deadlines, keyOf(roomCode, participantId)),
+          FiberMap.run(deadlines, participantKey(roomCode, participantId)),
           Effect.asVoid
         );
 
@@ -401,7 +398,10 @@ export class Participants extends Context.Service<
           yield* startDeadline(roomCode, participantId);
         } else if (event !== "reconnectDeadlinePassed") {
           // The deadline that passed is the fiber running this.
-          yield* FiberMap.remove(deadlines, keyOf(roomCode, participantId));
+          yield* FiberMap.remove(
+            deadlines,
+            participantKey(roomCode, participantId)
+          );
         }
         return change;
       });

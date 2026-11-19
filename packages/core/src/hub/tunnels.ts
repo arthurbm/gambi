@@ -59,6 +59,7 @@ import {
 } from "effect/rpc";
 import { Socket } from "effect/socket";
 import { HarnessClients } from "./harness-clients.ts";
+import { participantKey } from "./participant-key.ts";
 import { type ParticipantProfile, Participants } from "./participants.ts";
 import { HubSettings } from "./settings.ts";
 
@@ -162,10 +163,6 @@ const disconnectedBy = (
   reason: error._tag === "RpcClientError" ? error.reason._tag : error._tag,
   message: error.message,
 });
-
-// A room code never contains a space, so the pair is unambiguous.
-const keyOf = (roomCode: string, participantId: string) =>
-  `${roomCode} ${participantId}`;
 
 export class Tunnels extends Context.Service<
   Tunnels,
@@ -337,7 +334,7 @@ export class Tunnels extends Context.Service<
           socket: Socket.Socket,
           token: RedeemedToken
         ) {
-          const key = keyOf(roomCode, participantId);
+          const key = participantKey(roomCode, participantId);
           const dropped = yield* Deferred.make<void>();
           const gone = yield* Deferred.make<void>();
           // The socket lives in `socketScope`. The RPC client lives in
@@ -626,14 +623,16 @@ export class Tunnels extends Context.Service<
       return Tunnels.of({
         awaitDrop: (roomCode, participantId) =>
           Effect.suspend(
-            () => open.get(keyOf(roomCode, participantId))?.gone ?? Effect.void
+            () =>
+              open.get(participantKey(roomCode, participantId))?.gone ??
+              Effect.void
           ),
         close: (roomCode, participantId, reason, leaving) =>
           Effect.suspend(() => {
             if (leaving !== undefined) {
               markLeft(roomCode, participantId, leaving);
             }
-            const tunnel = open.get(keyOf(roomCode, participantId));
+            const tunnel = open.get(participantKey(roomCode, participantId));
             return (
               tunnel?.close(
                 reason,
@@ -646,7 +645,7 @@ export class Tunnels extends Context.Service<
         closeAll,
         client: (roomCode, participantId, runtimeId) =>
           Effect.suspend(() => {
-            const tunnel = open.get(keyOf(roomCode, participantId));
+            const tunnel = open.get(participantKey(roomCode, participantId));
             return tunnel === undefined ||
               (runtimeId !== undefined && tunnel.runtimeId !== runtimeId)
               ? Effect.fail(new TunnelNotOpen({ roomCode, participantId }))
