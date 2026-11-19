@@ -117,6 +117,28 @@ const HttpUrl = Schema.String.check(
 );
 
 /**
+ * A `Name=Value` pair with a blank side is a mistake of whoever typed it (a
+ * variable that expanded to nothing, a stray space), and the provider would
+ * answer it with an error about something else.
+ */
+const withoutBlankParts = Effect.fnUntraced(function* (
+  option: string,
+  pairs: Record<string, string>
+) {
+  for (const [name, value] of Object.entries(pairs)) {
+    if (name.trim() === "" || value.trim() === "") {
+      return yield* new CliError.InvalidValue({
+        option,
+        value: `${name}=${value}`,
+        expected: "a name and a value that are not blank",
+        kind: "flag",
+      });
+    }
+  }
+  return pairs;
+});
+
+/**
  * `--header Name=Value`, repeatable: a `ParticipantAuthHeader`. It is added
  * to every request this machine makes to its provider, and never leaves it.
  */
@@ -125,6 +147,7 @@ const headerFlag = Flag.KeyValuePair("header").pipe(
   Flag.withDescription(
     "Header for the requests to the provider, such as Authorization. Repeatable. It stays on this machine"
   ),
+  Flag.mapEffect((pairs) => withoutBlankParts("header", pairs)),
   Flag.withDefault({})
 );
 
@@ -135,20 +158,23 @@ const headerEnvFlag = Flag.KeyValuePair("header-env").pipe(
     "Header for the requests to the provider, with its value read from an environment variable. Repeatable"
   ),
   Flag.mapEffect(
-    Effect.fnUntraced(function* (pairs) {
+    Effect.fnUntraced(function* (given) {
+      const pairs = yield* withoutBlankParts("header-env", given);
       const headers: Record<string, string> = {};
       for (const [name, variable] of Object.entries(pairs)) {
-        headers[name] = yield* Config.NonEmptyString(variable).pipe(
-          Effect.mapError(
-            () =>
-              new CliError.InvalidValue({
-                option: "header-env",
-                value: `${name}=${variable}`,
-                expected: `the environment variable ${variable} to be set`,
-                kind: "flag",
-              })
-          )
+        const unset = new CliError.InvalidValue({
+          option: "header-env",
+          value: `${name}=${variable}`,
+          expected: `the environment variable ${variable} to be set`,
+          kind: "flag",
+        });
+        const value = yield* Config.NonEmptyString(variable).pipe(
+          Effect.mapError(() => unset)
         );
+        if (value.trim() === "") {
+          return yield* unset;
+        }
+        headers[name] = value;
       }
       return headers;
     })

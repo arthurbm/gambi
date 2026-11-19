@@ -159,7 +159,7 @@ async function build() {
 
     console.log(`  Building ${target.assetName}...`);
     await mkdir(packageBinaryDir, { recursive: true });
-    await $`bun build ./src/cli.ts --compile --target=${target.compileTarget} --define ${versionDefine} --outfile=${releaseAssetPath}`;
+    await $`bun build ./src/cli/main.ts --compile --target=${target.compileTarget} --define ${versionDefine} --outfile=${releaseAssetPath}`;
     await copyFile(releaseAssetPath, packageBinaryPath);
 
     if (target.platform !== "windows") {

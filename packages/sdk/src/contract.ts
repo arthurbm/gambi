@@ -153,7 +153,15 @@ const fromHubError = (error: HubError): ClientError => {
   });
 };
 
-const hubUnreachable = (hubUrl: string, cause: unknown): ClientError =>
+/**
+ * The `ROOM_NOT_FOUND` of a route outside the management contract. The
+ * inference plane names the same failure in the OpenAI error format, and a
+ * consumer catches one error whichever plane the SDK asked.
+ */
+export const roomNotFound = (roomCode: string): ClientError =>
+  fromHubError(new RoomNotFound({ roomCode }));
+
+export const hubUnreachable = (hubUrl: string, cause: unknown): ClientError =>
   new ClientError({
     cause,
     code: "HUB_UNREACHABLE",
@@ -162,7 +170,7 @@ const hubUnreachable = (hubUrl: string, cause: unknown): ClientError =>
     message: `Could not reach a hub at ${hubUrl}.`,
   });
 
-const notAHub = (
+export const notAHub = (
   hubUrl: string,
   cause: unknown,
   status?: number
