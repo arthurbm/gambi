@@ -332,21 +332,22 @@ for await (const event of client.events.watch("ABC123")) {
 Harness clients can attach to a harness participant without exposing that harness to inference routing:
 
 ```ts
-await client.harness.openSession("ABC123", "harness-1", "session-1");
+const sessionId = crypto.randomUUID(); // one session per client
+await client.harness.openSession("ABC123", "harness-1", sessionId);
 
 let sent = false;
 for await (const event of client.harness.attach("ABC123", "harness-1")) {
   if (event.type === "harness.connected" && !sent) {
     // The stream replays nothing, so send once it is open.
     sent = true;
-    await client.harness.send("ABC123", "harness-1", "session-1", {
+    await client.harness.send("ABC123", "harness-1", sessionId, {
       jsonrpc: "2.0",
       id: 1,
       method: "session/prompt",
-      params: { sessionId: "session-1", prompt: [{ type: "text", text: "Hi" }] },
+      params: { sessionId, prompt: [{ type: "text", text: "Hi" }] },
     });
   }
-  if (event.type === "harness.message" && event.sessionId === "session-1") {
+  if (event.type === "harness.message" && event.sessionId === sessionId) {
     const { message } = event;
     if (message.id === 1 && ("result" in message || "error" in message)) {
       break; // the answer to the prompt
@@ -354,7 +355,7 @@ for await (const event of client.harness.attach("ABC123", "harness-1")) {
   }
 }
 
-await client.harness.closeSession("ABC123", "harness-1", "session-1");
+await client.harness.closeSession("ABC123", "harness-1", sessionId);
 ```
 
 Host a hub or a participant inside your own program (Bun only):
