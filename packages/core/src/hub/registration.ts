@@ -11,7 +11,6 @@ import {
   type ParticipantRegistered,
   type RegisterParticipant,
   sameMinor,
-  TUNNEL_REMOVED_CLOSE_CODE,
   VersionMismatch,
 } from "@gambi/protocol";
 import { Effect } from "effect";
@@ -66,8 +65,8 @@ export const registerParticipant = Effect.fn("Hub.registerParticipant")(
  *
  * Only for the participant runtime the participant belongs to (`runtimeId`):
  * a removal that names another one arrived late, after another runtime
- * joined with the same id, and is refused. The tunnel closes with a code of
- * its own, which tells the runtime that it left for good.
+ * joined with the same id, and is refused. The runtime is told that it left
+ * for good (`Tunnels.close`).
  */
 export const leaveRoom = Effect.fn("Hub.leaveRoom")(function* (
   roomCode: string,
@@ -98,7 +97,7 @@ export const leaveRoom = Effect.fn("Hub.leaveRoom")(function* (
     room.code,
     participantId,
     "the participant left the room",
-    TUNNEL_REMOVED_CLOSE_CODE
+    runtimeId
   );
   return { participantId } satisfies ParticipantLeft;
 });

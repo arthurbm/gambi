@@ -162,13 +162,13 @@ export class Participants extends Context.Service<
      * Makes the participant the runtime `runtimeId`'s, whatever its status:
      * that runtime dialed its tunnel, which replaces the one the participant
      * has. From here on a removal the replaced runtime asked for is late.
-     * Does nothing when the participant is not in the room.
+     * Answers `false` when the participant is not in the room.
      */
     readonly handOver: (
       roomCode: string,
       participantId: string,
       runtimeId: string
-    ) => Effect.Effect<void>;
+    ) => Effect.Effect<boolean>;
     /**
      * Routes a request: picks the participant the model selector asks for
      * and marks it `busy`. Only an `online` participant is picked, so a
@@ -221,12 +221,9 @@ export class Participants extends Context.Service<
      * Applies `event` to the participant. Answers the change, or `undefined`
      * when the status table has no row for it (nothing changed).
      *
-     * Leaving (`left`) is for the participant runtime the participant
-     * belongs to: with another `runtimeId` it changes nothing and answers
-     * `undefined`.
-     *
-     * `tunnelOpened` answers `undefined` for a participant that is not in
-     * the room: it left while its tunnel was on its way in.
+     * Leaving (`left`) and coming online (`tunnelOpened`) are for the
+     * participant runtime the participant belongs to: with another
+     * `runtimeId` they change nothing and answer `undefined`.
      */
     readonly transition: (
       roomCode: string,
@@ -283,9 +280,13 @@ export class Participants extends Context.Service<
         if (to === undefined || participant === undefined) {
           return undefined;
         }
-        // Leaving is for the runtime the participant belongs to. Checked
-        // and removed in one step: nothing runs between this and the delete.
-        if (event === "left" && participant.runtimeId !== runtimeId) {
+        // Leaving and coming online are for the runtime the participant
+        // belongs to. Checked and applied in one step: nothing runs between
+        // this and the change.
+        if (
+          (event === "left" || event === "tunnelOpened") &&
+          participant.runtimeId !== runtimeId
+        ) {
           return undefined;
         }
         const after: ParticipantState | undefined =
@@ -480,9 +481,11 @@ export class Participants extends Context.Service<
           Effect.sync(() => {
             const room = byRoom.get(roomCode);
             const participant = room?.get(participantId);
-            if (participant !== undefined) {
-              room?.set(participantId, { ...participant, runtimeId });
+            if (room === undefined || participant === undefined) {
+              return false;
             }
+            room.set(participantId, { ...participant, runtimeId });
+            return true;
           }),
         list: (roomCode) =>
           Effect.sync(() =>

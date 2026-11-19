@@ -152,7 +152,10 @@ layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
           Effect.flip
         );
 
+        // The tunnel does not open, and the runtime that dialed it is told
+        // why: it left, and must not try again.
         expect(error).toBeInstanceOf(TunnelOpenFailed);
+        expect(error.closed).toBe("removed");
         expect(
           yield* client.participants.list({ params: { code: room.code } })
         ).toEqual([]);
@@ -367,6 +370,7 @@ layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
         );
 
         expect(error).toBeInstanceOf(TunnelOpenFailed);
+        expect(error.closed).toBe("removed");
         expect(
           yield* client.participants.list({ params: { code: room.code } })
         ).toMatchObject([
@@ -416,7 +420,7 @@ layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
   });
 
   it.effect(
-    "a tunnel that arrives for a participant taken out of the room meanwhile is closed as removed, and never welcomed",
+    "a tunnel whose runtime left the room while it was on its way in is closed as removed, never welcomed, and takes nothing from who registered the id since",
     () =>
       Effect.gen(function* () {
         const client = yield* managementClient;
@@ -424,11 +428,35 @@ layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
         const { room } = yield* client.rooms.create({
           payload: { name: "Maracatu" },
         });
+        const params = { code: room.code, id: "arthur-1" };
+        const registerAs = (runtimeId: string) =>
+          client.participants.register({
+            params,
+            payload: {
+              nickname: "Arthur",
+              model: "llama3.1:8b",
+              runtimeId,
+              version: GAMBI_VERSION,
+            },
+          });
         const { socket, next } = yield* tunnelSocket;
+        const { tunnel } = yield* registerAs("runtime-of-arthur");
 
-        // Its token was good, and it left before the tunnel was in place.
+        // The hub took the token of the tunnel that is arriving, and before
+        // the tunnel is in place its runtime leaves the room and another
+        // one registers the same id.
+        const redeemed = yield* tunnels.redeemToken(
+          room.code,
+          "arthur-1",
+          tunnel.token
+        );
+        yield* client.participants.remove({
+          params,
+          query: { runtimeId: "runtime-of-arthur" },
+        });
+        yield* registerAs("another-runtime");
         yield* tunnels
-          .serve(room.code, "arthur-1", socket, "runtime-of-arthur")
+          .serve(room.code, "arthur-1", socket, redeemed)
           .pipe(Effect.forkScoped);
 
         // The first thing the participant's end sees is the close, not a
@@ -437,6 +465,59 @@ layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
         expect(
           yield* tunnels.client(room.code, "arthur-1").pipe(Effect.flip)
         ).toMatchObject({ _tag: "TunnelNotOpen" });
+        // The participant is still the other runtime's, to take out.
+        expect(
+          yield* client.participants.list({ params: { code: room.code } })
+        ).toMatchObject([
+          { id: "arthur-1", status: "offline", runtimeId: "another-runtime" },
+        ]);
+        yield* client.participants.remove({
+          params,
+          query: { runtimeId: "another-runtime" },
+        });
       }).pipe(Effect.provide(Socket.layerWebSocketConstructorGlobal))
+  );
+
+  it.effect(
+    "a token another runtime holds for a participant that left opens no tunnel, and that runtime is not told that it left",
+    () =>
+      Effect.gen(function* () {
+        const client = yield* managementClient;
+        const hub = yield* Hub;
+        const { room } = yield* client.rooms.create({
+          payload: { name: "Coco" },
+        });
+        const online = yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+        });
+        const options = {
+          hubUrl: hub.url,
+          roomCode: room.code,
+          participantId: "arthur-1",
+          runtimeId: "another-runtime",
+          profile: { nickname: "Arthur", model: "llama3.1:8b" },
+        } satisfies ParticipantRuntimeOptions;
+        const { tunnel } = yield* register(options);
+        yield* client.participants.remove({
+          params: { code: room.code, id: "arthur-1" },
+          query: { runtimeId: online.runtime.runtimeId },
+        });
+
+        const error = yield* openTunnel(options, tunnel.token).pipe(
+          Effect.flip
+        );
+
+        // Nobody took this runtime out: it may register again.
+        expect(error).toBeInstanceOf(TunnelOpenFailed);
+        expect(error.closed).toBeUndefined();
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            defaultHandlers,
+            Socket.layerWebSocketConstructorGlobal
+          )
+        )
+      )
   );
 });

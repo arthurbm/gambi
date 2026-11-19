@@ -42,8 +42,8 @@ const openTunnel = Effect.fn("Hub.openTunnel")(function* (
     return yield* invalid(roomCode);
   }
 
-  // The token is spent by now, whatever the upgrade does: a caller that
-  // fails here registers again.
+  // The token is spent by now, and the participant is its runtime's,
+  // whatever the upgrade does: a caller that fails here registers again.
   const upgraded = yield* Effect.result(request.upgrade);
   if (upgraded._tag === "Failure") {
     return yield* refuse(
