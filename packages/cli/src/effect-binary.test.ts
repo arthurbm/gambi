@@ -2,8 +2,17 @@ import { expect } from "bun:test";
 import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  FAKE_MODEL,
+  fakeProvider,
+  openAiAnswer,
+  openStream,
+  sseEvent,
+} from "@gambi/core/testing/provider";
+import { makeManagementClient } from "@gambi/protocol";
 import { it } from "@gambi/testing/effect";
-import { Effect } from "effect";
+import { Effect, Queue, Stream } from "effect";
+import { FetchHttpClient } from "effect/http";
 
 /**
  * The CLI (`cli/main.ts`) survives `bun build --compile`: `effect`,
@@ -15,38 +24,23 @@ const ENTRYPOINT = join(import.meta.dir, "cli", "main.ts");
 const COMPILE_TIMEOUT_MS = 120_000;
 
 const run = (cmd: string[], env: Record<string, string> = {}) =>
-  Effect.promise(async () => {
-    const child = Bun.spawn(cmd, {
-      env: { ...process.env, ...env },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    return { exitCode, stderr, stdout };
-  });
-
-const temporaryDirectory = Effect.acquireRelease(
-  Effect.promise(() => mkdtemp(join(tmpdir(), "gambi-effect-binary-"))),
-  (directory) =>
-    Effect.promise(() => rm(directory, { force: true, recursive: true }))
-);
-
-/** `hub serve` from the binary, on a free port. Killed when the scope closes. */
-const servingHub = (binary: string) =>
-  Effect.acquireRelease(
+  Effect.acquireUseRelease(
     Effect.sync(() =>
-      Bun.spawn(
-        [binary, "hub", "serve", "--host", "127.0.0.1", "--port", "0"],
-        {
-          stdout: "pipe",
-          stderr: "ignore",
-        }
-      )
+      Bun.spawn(cmd, {
+        env: { ...process.env, ...env },
+        stdout: "pipe",
+        stderr: "pipe",
+      })
     ),
+    (child) =>
+      Effect.promise(async () => {
+        const [stdout, stderr, exitCode] = await Promise.all([
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+          child.exited,
+        ]);
+        return { exitCode, stderr, stdout };
+      }),
     (child) =>
       Effect.promise(async () => {
         child.kill("SIGKILL");
@@ -54,30 +48,29 @@ const servingHub = (binary: string) =>
       })
   );
 
-const firstEvent = (stdout: ReadableStream<Uint8Array>) =>
-  Effect.promise(async () => {
-    const reader = stdout.getReader();
-    const decoder = new TextDecoder();
-    let text = "";
-    while (!text.includes("\n")) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      text += decoder.decode(value, { stream: true });
-    }
-    reader.releaseLock();
-    return JSON.parse(text.split("\n")[0] ?? "");
-  });
+const temporaryDirectory = Effect.acquireRelease(
+  Effect.promise(() => mkdtemp(join(tmpdir(), "gambi-effect-binary-"))),
+  (directory) =>
+    Effect.promise(() => rm(directory, { force: true, recursive: true }))
+);
 
 /** A process of the binary, with its stdout on a pipe. Killed when the scope closes. */
 const spawned = (cmd: string[]) =>
   Effect.acquireRelease(
     Effect.sync(() => Bun.spawn(cmd, { stdout: "pipe", stderr: "ignore" })),
     (child) =>
-      Effect.promise(async () => {
-        child.kill("SIGKILL");
-        await child.exited;
+      Effect.gen(function* () {
+        child.kill("SIGTERM");
+        yield* Effect.promise(() => child.exited).pipe(
+          Effect.timeoutOrElse({
+            duration: "5 seconds",
+            orElse: () =>
+              Effect.promise(async () => {
+                child.kill("SIGKILL");
+                return await child.exited;
+              }),
+          })
+        );
       })
   );
 
@@ -118,7 +111,10 @@ const releaseServing = (body: string) =>
       Bun.serve({
         hostname: "127.0.0.1",
         port: 0,
-        fetch: () => new Response(body),
+        fetch: (request) =>
+          new URL(request.url).pathname.startsWith("/gambi-")
+            ? new Response(body)
+            : new Response(null, { status: 404 }),
       })
     ),
     (server) => Effect.promise(() => server.stop(true))
@@ -126,7 +122,7 @@ const releaseServing = (body: string) =>
 
 // Live: it compiles and spawns a real binary.
 it.live(
-  "the compiled CLI serves a hub, creates a room, reports errors and updates itself",
+  "the compiled CLI routes streams, cancels generation, hosts a fake harness and updates itself",
   () =>
     Effect.gen(function* () {
       const directory = yield* temporaryDirectory;
@@ -149,8 +145,16 @@ it.live(
         stdout: "gambi v9.9.9\n",
       });
 
-      const hub = yield* servingHub(binary);
-      const started = yield* firstEvent(hub.stdout);
+      const hub = yield* spawned([
+        binary,
+        "hub",
+        "serve",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "0",
+      ]);
+      const started = JSON.parse(yield* linesOf(hub.stdout).next);
       expect(started.type).toBe("started");
       const hubUrl: string = started.data.hubUrl;
 
@@ -166,6 +170,9 @@ it.live(
       expect(created.exitCode).toBe(0);
       expect(JSON.parse(created.stdout).data.room.name).toBe("Compilada");
 
+      const roomCode: string = JSON.parse(created.stdout).data.room.code;
+      const client = yield* makeManagementClient(hubUrl);
+
       // A port that is already taken names the port and is invalid usage (#54).
       const busy = yield* run([
         binary,
@@ -175,12 +182,114 @@ it.live(
         "127.0.0.1",
         "--port",
         String(started.data.port),
+        "--mdns",
       ]);
       expect(busy.exitCode).toBe(2);
       expect(busy.stdout).toBe("");
-      expect(busy.stderr).toContain(
-        `Port ${started.data.port} is already in use`
+      expect(JSON.parse(busy.stderr).error).toMatchObject({
+        name: "PortInUse",
+        message: expect.stringContaining(
+          `Port ${started.data.port} is already in use`
+        ),
+      });
+      expect(busy.stderr).not.toContain("mDNS announcement published");
+
+      const generating = yield* openStream();
+      let answer = openAiAnswer;
+      const provider = yield* fakeProvider({ answer: (call) => answer(call) });
+      const endpoint = yield* spawned([
+        binary,
+        "participant",
+        "join",
+        "--room",
+        roomCode,
+        "--participant-id",
+        "endpoint-1",
+        "--model",
+        FAKE_MODEL,
+        "--endpoint",
+        provider.url,
+        "--no-specs",
+        "--hub",
+        hubUrl,
+      ]);
+      const lifecycle = linesOf(endpoint.stdout);
+      expect(JSON.parse(yield* lifecycle.next).type).toBe("registered");
+      expect(JSON.parse(yield* lifecycle.next).type).toBe("tunnel_connected");
+
+      const inferenceEvents = yield* client.events
+        .watch({ params: { code: roomCode } })
+        .pipe(
+          Stream.unwrap,
+          Stream.filter(
+            (event) =>
+              event.type === "room.snapshot" ||
+              event.type === "participant.busy" ||
+              event.type === "llm.error" ||
+              event.type === "participant.online"
+          ),
+          Stream.toQueue({ capacity: 16 })
+        );
+      expect(yield* Queue.take(inferenceEvents)).toMatchObject({
+        type: "room.snapshot",
+        participants: [{ id: "endpoint-1", status: "online" }],
+      });
+      const chat = (signal?: AbortSignal) =>
+        Effect.promise(() =>
+          fetch(`${hubUrl}/rooms/${roomCode}/v1/chat/completions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: "endpoint-1",
+              stream: true,
+              messages: [{ role: "user", content: "Oi" }],
+            }),
+            signal,
+          })
+        );
+      const complete = yield* chat();
+      expect(complete.status).toBe(200);
+      expect(complete.headers.get("content-type")).toBe("text/event-stream");
+      const body = yield* Effect.promise(() => complete.text());
+      expect(body).toContain('"content":"Recife!"');
+      expect(body.endsWith("data: [DONE]\n\n")).toBe(true);
+      expect((yield* Queue.take(inferenceEvents)).type).toBe(
+        "participant.busy"
       );
+      expect((yield* Queue.take(inferenceEvents)).type).toBe(
+        "participant.online"
+      );
+
+      answer = () => generating.response;
+      yield* generating.send(sseEvent({ delta: "Olá" }));
+      const consumer = new AbortController();
+      const partial = yield* chat(consumer.signal);
+      expect(partial.status).toBe(200);
+      if (!partial.body) {
+        throw new Error("Missing streaming body");
+      }
+      expect(yield* linesOf(partial.body).next).toBe('data: {"delta":"Olá"}');
+      expect((yield* Queue.take(inferenceEvents)).type).toBe(
+        "participant.busy"
+      );
+      const call = (yield* provider.calls).at(-1);
+      if (!call) {
+        throw new Error("The provider did not receive the request");
+      }
+      consumer.abort();
+      yield* call.aborted;
+      expect(yield* Queue.take(inferenceEvents)).toMatchObject({
+        type: "llm.error",
+        participantId: "endpoint-1",
+        stage: "stream",
+        code: "request_cancelled",
+      });
+      expect(yield* Queue.take(inferenceEvents)).toMatchObject({
+        type: "participant.online",
+        participant: { id: "endpoint-1", status: "online" },
+      });
+      endpoint.kill("SIGTERM");
+      expect(yield* Effect.promise(() => endpoint.exited)).toBe(0);
 
       // A harness participant hosted by the same binary. Its fake harness
       // is the binary itself, and the hub and the participant agree on the
@@ -195,7 +304,7 @@ it.live(
         "--workspace",
         workspace,
         "--room",
-        JSON.parse(created.stdout).data.room.code,
+        roomCode,
         "--participant-id",
         "arthur-1",
         "--no-specs",
@@ -213,20 +322,75 @@ it.live(
         type: "tunnel_connected",
         data: { hubVersion: "9.9.9" },
       });
+      const params = { code: roomCode, id: "arthur-1" };
+      const attached = yield* client.harness.events({ params }).pipe(
+        Stream.unwrap,
+        Stream.filter(
+          (event) =>
+            event.type === "harness.connected" ||
+            event.type === "harness.message"
+        ),
+        Stream.toQueue({ capacity: 8 })
+      );
+      expect(yield* Queue.take(attached)).toEqual({
+        type: "harness.connected",
+      });
+      const sessionId: string = harnessStarted.data.sessionId;
+      yield* client.harness.send({
+        params,
+        payload: {
+          sessionId,
+          message: {
+            jsonrpc: "2.0",
+            id: 17,
+            method: "session/prompt",
+            params: {
+              sessionId,
+              prompt: [{ type: "text", text: "Oi, Gambi" }],
+            },
+          },
+        },
+      });
+      expect(yield* Queue.take(attached)).toMatchObject({
+        type: "harness.message",
+        sessionId,
+        message: {
+          method: "session/update",
+          params: {
+            sessionId,
+            update: {
+              content: { type: "text", text: "Fake ACP response: Oi, Gambi" },
+            },
+          },
+        },
+      });
+      expect(yield* Queue.take(attached)).toMatchObject({
+        type: "harness.message",
+        sessionId,
+        message: { jsonrpc: "2.0", id: 17, result: { stopReason: "end_turn" } },
+      });
       joining.kill("SIGTERM");
       expect(yield* Effect.promise(() => joining.exited)).toBe(0);
-      expect(
-        (yield* joiningEvents.rest)
-          .trim()
-          .split("\n")
-          .map((line) => JSON.parse(line).type)
-      ).toEqual(["leaving", "artifact_sent", "left"]);
+      const shutdown = (yield* joiningEvents.rest)
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line))
+        // The prompt's file change can settle while the participant is leaving.
+        .filter(
+          (event) =>
+            !(event.type === "artifact_sent" && event.data.reason === "watch")
+        );
+      expect(shutdown).toMatchObject([
+        { type: "leaving" },
+        { type: "artifact_sent", data: { reason: "final" } },
+        { type: "left" },
+      ]);
       expect(() => process.kill(harnessStarted.data.pid, 0)).toThrow();
 
       hub.kill("SIGTERM");
       expect(yield* Effect.promise(() => hub.exited)).toBe(0);
 
-      // Nothing listens there any more: a named error, not "Error: undefined" (#55).
+      // Nothing listens there any more: a named connectivity error.
       const unreachable = yield* run([binary, "room", "list", "--hub", hubUrl]);
       expect(unreachable.exitCode).toBe(3);
       expect(unreachable.stdout).toBe("");
@@ -236,6 +400,23 @@ it.live(
       // package, it is a standalone install, and updates itself in place
       // from the release it is pointed at.
       const releaseUrl = yield* releaseServing("the next gambi");
+      // Another HTTP server answers, but its response is outside the hub contract (#55).
+      const wrongServer = yield* run([
+        binary,
+        "room",
+        "list",
+        "--hub",
+        releaseUrl,
+      ]);
+      expect(wrongServer.exitCode).toBe(3);
+      expect(wrongServer.stdout).toBe("");
+      expect(JSON.parse(wrongServer.stderr).error).toMatchObject({
+        name: "NotAHub",
+        message: expect.stringContaining(
+          "did not answer like a Gambi hub (HTTP 404)"
+        ),
+      });
+
       const installedAt = yield* Effect.promise(() => realpath(binary));
       const updated = yield* run([binary, "self", "update"], {
         GAMBI_UPDATE_BASE_URL: releaseUrl,
@@ -249,6 +430,9 @@ it.live(
       expect(yield* Effect.promise(() => readFile(binary, "utf8"))).toBe(
         "the next gambi"
       );
-    }),
+    }).pipe(
+      Effect.provide(FetchHttpClient.layer),
+      Effect.timeout("90 seconds")
+    ),
   COMPILE_TIMEOUT_MS
 );
