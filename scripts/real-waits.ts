@@ -53,9 +53,12 @@ const REAL_CLOCK =
   /\bit\.live\b|excludeTestServices:\s*true|\bEffect\.run[A-Z]\w*|\bManagedRuntime\b/;
 /**
  * A test that is not one of the helper's: `test(...)`, `it(...)`,
- * `test.each(...)`. Whatever Effect it runs, it runs on the real clock.
+ * `test.each(...)`. Whatever Effect it runs, it runs on the real clock. The
+ * helper's own `it.effect`, `it.live`, `it.layer` and `it.flakyTest` are not
+ * plain tests.
  */
-const PLAIN_TEST = /(?<![.\w])(?:test|it)(?:\.(?!effect\b|live\b)\w+)*\s*\(/;
+const PLAIN_TEST =
+  /(?<![.\w])(?:test|it)(?:\.(?!(?:effect|live|layer|flakyTest)\b)\w+)*\s*\(/;
 const COMMENT_LINE = /^\s*(?:\/\/|\/\*|\*)/;
 
 /** A file that only tests import: a `testing` or `__tests__` folder, or a `testing.ts`. */

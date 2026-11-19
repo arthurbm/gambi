@@ -67,6 +67,18 @@ describe("a real wait in a test", () => {
     expect(waitsOf(source)).toEqual(["Effect.sleep"]);
   });
 
+  test("a nested layer of the helper keeps the file on the test clock", () => {
+    const source = [
+      'layer(Rooms.layerTest)("rooms", (it) => {',
+      '  it.layer(Tunnels.layerTest)("tunnels", (it) => {',
+      '    it.effect("virtual", () => it.flakyTest(Effect.sleep("1 hour")));',
+      "  });",
+      "});",
+    ].join("\n");
+
+    expect(waitsOf(source)).toEqual([]);
+  });
+
   test("a comment does not decide which clock a file runs on", () => {
     const source = [
       "// Unlike a ManagedRuntime or it.live, this runs on the test clock.",
