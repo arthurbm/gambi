@@ -520,4 +520,187 @@ layer(layerHub(), { excludeTestServices: true })("leaving a room", (it) => {
         )
       )
   );
+
+  /** Registers `arthur-1` in the room as the runtime `runtimeId`. */
+  const registerArthurAs = (roomCode: string, runtimeId: string) =>
+    Effect.gen(function* () {
+      const client = yield* managementClient;
+      return yield* client.participants.register({
+        params: { code: roomCode, id: "arthur-1" },
+        payload: {
+          nickname: "Arthur",
+          model: "llama3.1:8b",
+          runtimeId,
+          version: GAMBI_VERSION,
+        },
+      });
+    });
+
+  it.effect(
+    "a tunnel whose participant left and was registered again by another runtime just closes: it is not welcomed and takes nothing from that one",
+    () =>
+      Effect.gen(function* () {
+        const client = yield* managementClient;
+        const tunnels = yield* Tunnels;
+        const { room } = yield* client.rooms.create({
+          payload: { name: "Afoxé" },
+        });
+        const online = yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+        });
+        const { socket, next } = yield* tunnelSocket;
+        const { tunnel } = yield* registerArthurAs(room.code, "late-runtime");
+
+        // The hub took the token of the tunnel that is arriving. Before the
+        // tunnel is in place, the runtime that was online leaves, which takes
+        // the participant out, and another one registers the id.
+        const redeemed = yield* tunnels.redeemToken(
+          room.code,
+          "arthur-1",
+          tunnel.token
+        );
+        yield* client.participants.remove({
+          params: { code: room.code, id: "arthur-1" },
+          query: { runtimeId: online.runtime.runtimeId },
+        });
+        yield* registerArthurAs(room.code, "another-runtime");
+        // The tunnel ends by itself, before anything reaches its other end:
+        // no `Welcome`, and no word that the runtime left, because nobody
+        // took it out. It may register again.
+        const ended = yield* Effect.raceFirst(
+          Effect.as(
+            tunnels.serve(room.code, "arthur-1", socket, redeemed),
+            "closed"
+          ),
+          next
+        );
+
+        expect(ended).toBe("closed");
+        expect(
+          yield* client.participants.list({ params: { code: room.code } })
+        ).toMatchObject([
+          { id: "arthur-1", status: "offline", runtimeId: "another-runtime" },
+        ]);
+      }).pipe(Effect.provide(Socket.layerWebSocketConstructorGlobal))
+  );
+
+  it.effect(
+    "a token sent without a WebSocket upgrade takes the participant from nobody",
+    () =>
+      Effect.gen(function* () {
+        const client = yield* managementClient;
+        const hub = yield* Hub;
+        const { room } = yield* client.rooms.create({
+          payload: { name: "Ijexá" },
+        });
+        const online = yield* joinParticipant({
+          roomCode: room.code,
+          participantId: "arthur-1",
+        });
+        const { tunnel } = yield* registerArthurAs(
+          room.code,
+          "another-runtime"
+        );
+
+        const response = yield* HttpClient.execute(
+          HttpClientRequest.get(
+            `${hub.url}/v1/rooms/${room.code}/participants/arthur-1/tunnel?token=${tunnel.token}`
+          )
+        );
+
+        expect(response.status).toBe(400);
+        // The participant is still the runtime's whose tunnel is open.
+        expect(
+          yield* client.participants.remove({
+            params: { code: room.code, id: "arthur-1" },
+            query: { runtimeId: online.runtime.runtimeId },
+          })
+        ).toEqual({ participantId: "arthur-1" });
+      })
+  );
+
+  it.effect(
+    "of two tunnels dialed for the same participant, the last to arrive stays open, whichever token the hub took first",
+    () =>
+      Effect.gen(function* () {
+        const client = yield* managementClient;
+        const tunnels = yield* Tunnels;
+        const { room } = yield* client.rooms.create({
+          payload: { name: "Carimbó" },
+        });
+        const first = yield* tunnelSocket;
+        const second = yield* tunnelSocket;
+        const tokenOf = (runtimeId: string) =>
+          registerArthurAs(room.code, runtimeId).pipe(
+            Effect.flatMap(({ tunnel }) =>
+              tunnels.redeemToken(room.code, "arthur-1", tunnel.token)
+            )
+          );
+        // The hub takes the token of one runtime, then of the other, and
+        // their tunnels arrive in the other order.
+        const slow = yield* tokenOf("slow-runtime");
+        const quick = yield* tokenOf("quick-runtime");
+
+        yield* tunnels
+          .serve(room.code, "arthur-1", first.socket, quick)
+          .pipe(Effect.forkScoped);
+        expect(yield* first.next).toMatchObject({
+          message: expect.stringContaining("Welcome"),
+        });
+        yield* tunnels
+          .serve(room.code, "arthur-1", second.socket, slow)
+          .pipe(Effect.forkScoped);
+
+        expect(yield* second.next).toMatchObject({
+          message: expect.stringContaining("Welcome"),
+        });
+        expect(
+          yield* client.participants.list({ params: { code: room.code } })
+        ).toMatchObject([
+          { id: "arthur-1", status: "online", runtimeId: "slow-runtime" },
+        ]);
+      }).pipe(Effect.provide(Socket.layerWebSocketConstructorGlobal))
+  );
+
+  it.effect(
+    "a runtime that left is still told so on the tunnel it had asked for, after another one came and went with its id",
+    () =>
+      Effect.gen(function* () {
+        const client = yield* managementClient;
+        const hub = yield* Hub;
+        const { room } = yield* client.rooms.create({
+          payload: { name: "Lundu" },
+        });
+        const leave = (runtimeId: string) =>
+          client.participants.remove({
+            params: { code: room.code, id: "arthur-1" },
+            query: { runtimeId },
+          });
+        const options = {
+          hubUrl: hub.url,
+          roomCode: room.code,
+          participantId: "arthur-1",
+          runtimeId: "runtime-of-arthur",
+          profile: { nickname: "Arthur", model: "llama3.1:8b" },
+        } satisfies ParticipantRuntimeOptions;
+        const { tunnel } = yield* register(options);
+        yield* leave("runtime-of-arthur");
+        yield* registerArthurAs(room.code, "another-runtime");
+        yield* leave("another-runtime");
+
+        const error = yield* openTunnel(options, tunnel.token).pipe(
+          Effect.flip
+        );
+
+        expect(error.closed).toBe("removed");
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            defaultHandlers,
+            Socket.layerWebSocketConstructorGlobal
+          )
+        )
+      )
+  );
 });

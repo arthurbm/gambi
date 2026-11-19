@@ -18,6 +18,11 @@
  * runtime alone, so that a removal that arrives late never takes out
  * another runtime that joined with the same id.
  *
+ * A participant that is removed and whose id is registered again is another
+ * participant: it has another `generation`. That is what a bootstrap token
+ * is tied to, so that a tunnel never opens for a participant other than the
+ * one its runtime registered.
+ *
  * The service does not know rooms: the caller answers for the room existing.
  * `Rooms` reads `count` for its summaries.
  */
@@ -55,6 +60,8 @@ interface ParticipantState {
   readonly capabilities: ParticipantCapabilities;
   readonly config: RuntimeConfig;
   readonly endpoint: string | undefined;
+  /** Which participant with this id this is, counting from the hub's start. */
+  readonly generation: number;
   readonly harness: HarnessProfile | undefined;
   readonly id: string;
   readonly joinedAt: number;
@@ -159,15 +166,28 @@ export class Participants extends Context.Service<
       participantId: string
     ) => Effect.Effect<ParticipantSummary | undefined>;
     /**
+     * Which participant with that id is in the room: a number that changes
+     * when the participant is removed and its id is registered again.
+     * `undefined` when it is not in the room.
+     */
+    readonly generation: (
+      roomCode: string,
+      participantId: string
+    ) => Effect.Effect<number | undefined>;
+    /**
      * Makes the participant the runtime `runtimeId`'s, whatever its status:
      * that runtime dialed its tunnel, which replaces the one the participant
      * has. From here on a removal the replaced runtime asked for is late.
-     * Answers `false` when the participant is not in the room.
+     *
+     * Only for the participant that runtime registered (`generation`):
+     * answers `false`, and changes nothing, when that one is not in the room
+     * any more, even if another with the same id is.
      */
     readonly handOver: (
       roomCode: string,
       participantId: string,
-      runtimeId: string
+      runtimeId: string,
+      generation: number | undefined
     ) => Effect.Effect<boolean>;
     /**
      * Routes a request: picks the participant the model selector asks for
@@ -242,6 +262,7 @@ export class Participants extends Context.Service<
       // One fiber per offline participant, sleeping until its deadline.
       const deadlines = yield* FiberMap.make<string>();
       const byRoom = new Map<string, Map<string, ParticipantState>>();
+      let generations = 0;
 
       const roomOf = (roomCode: string) => {
         let room = byRoom.get(roomCode);
@@ -360,6 +381,7 @@ export class Participants extends Context.Service<
           specs: profile.specs ?? {},
           capabilities: profile.capabilities ?? UNKNOWN_CAPABILITIES,
           status,
+          generation: existing?.generation ?? ++generations,
           // While a tunnel is open the participant is that tunnel's runtime's.
           runtimeId:
             existing === undefined || existing.status === "offline"
@@ -477,11 +499,19 @@ export class Participants extends Context.Service<
               ? undefined
               : toSummary(participant);
           }),
-        handOver: (roomCode, participantId, runtimeId) =>
+        generation: (roomCode, participantId) =>
+          Effect.sync(
+            () => byRoom.get(roomCode)?.get(participantId)?.generation
+          ),
+        handOver: (roomCode, participantId, runtimeId, generation) =>
           Effect.sync(() => {
             const room = byRoom.get(roomCode);
             const participant = room?.get(participantId);
-            if (room === undefined || participant === undefined) {
+            if (
+              room === undefined ||
+              participant === undefined ||
+              participant.generation !== generation
+            ) {
               return false;
             }
             room.set(participantId, { ...participant, runtimeId });

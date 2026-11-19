@@ -238,7 +238,12 @@ it.effect(
       const participants = yield* Participants;
       const participant = yield* participantAfter("tunnelOpened");
 
-      yield* participants.handOver(ROOM, "arthur-1", "runtime-2");
+      yield* participants.handOver(
+        ROOM,
+        "arthur-1",
+        "runtime-2",
+        yield* participants.generation(ROOM, "arthur-1")
+      );
 
       // A removal the old runtime asked for is late from this moment on.
       expect(

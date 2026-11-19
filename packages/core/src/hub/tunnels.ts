@@ -93,6 +93,11 @@ export class TunnelNotOpen extends Schema.TaggedError<TunnelNotOpen>()(
  * in reads it to know that there is nobody to be online as.
  */
 export interface RedeemedToken {
+  /**
+   * The participant the token was issued for (`Participants.generation`):
+   * another one with the same id is not it.
+   */
+  readonly generation: number | undefined;
   readonly left: boolean;
   /** The participant runtime the token was issued to. */
   readonly runtimeId: string;
@@ -192,8 +197,7 @@ export class Tunnels extends Context.Service<
      * runtime, and the runtime is told so, to end instead of coming back: a
      * tunnel of its own closes with `TUNNEL_REMOVED_CLOSE_CODE`, and so
      * does, without a welcome, one it dials with a token it was handed
-     * before. The tokens other runtimes hold for the participant are spent:
-     * the participant they registered is gone, and they were not taken out.
+     * before.
      */
     readonly close: (
       roomCode: string,
@@ -221,12 +225,11 @@ export class Tunnels extends Context.Service<
       runtimeId: string
     ) => Effect.Effect<BootstrapToken>;
     /**
-     * Spends a bootstrap token, and makes the participant the runtime's it
-     * was issued to: its tunnel is the one that counts from here on. It
-     * fails when the token was not issued for that participant of that room,
-     * has expired or was already spent, and when the participant is no
-     * longer in the room. The token of a runtime that left the room is
-     * taken all the same, so that `serve` can tell it so.
+     * Spends a bootstrap token. It fails when the token was not issued for
+     * that participant of that room, has expired or was already spent, and
+     * when the participant it was issued for is no longer in the room. The
+     * token of a runtime that left the room is taken all the same, so that
+     * `serve` can tell it so.
      */
     readonly redeemToken: (
       roomCode: string,
@@ -235,14 +238,14 @@ export class Tunnels extends Context.Service<
     ) => Effect.Effect<RedeemedToken, TunnelTokenInvalid>;
     /**
      * Runs the participant's tunnel over the socket a runtime dialed with
-     * `token`, and returns when the tunnel is gone. The participant is
-     * `online` while it runs. A tunnel the participant already had is
-     * closed first: the new one wins.
+     * `token`, and returns when the tunnel is gone. The participant is that
+     * runtime's from here on, and `online` while the tunnel runs. A tunnel
+     * the participant already had is closed first: the new one wins.
      *
      * A tunnel whose runtime left the room meanwhile is not welcomed, and
      * closes with `TUNNEL_REMOVED_CLOSE_CODE`. One whose participant is
-     * another runtime's by the time it would open is not welcomed either,
-     * and just closes.
+     * gone, or another runtime's by the time it would open, is not welcomed
+     * either, takes nothing from anyone, and just closes.
      */
     readonly serve: (
       roomCode: string,
@@ -282,6 +285,7 @@ export class Tunnels extends Context.Service<
           roomCode,
           participantId,
           runtimeId,
+          generation: yield* participants.generation(roomCode, participantId),
           expiresAt,
           left: false,
           spent: false,
@@ -302,15 +306,13 @@ export class Tunnels extends Context.Service<
           issued.roomCode !== roomCode ||
           issued.participantId !== participantId ||
           issued.expiresAt <= now ||
-          // The participant is gone, and not because this runtime left: the
-          // reconnection deadline passed.
+          // The participant it was issued for is gone, and not because this
+          // runtime left: another runtime took it out, or its time to
+          // reconnect passed.
           !(
             issued.left ||
-            (yield* participants.handOver(
-              roomCode,
-              participantId,
-              issued.runtimeId
-            ))
+            (yield* participants.generation(roomCode, participantId)) ===
+              issued.generation
           )
         ) {
           return yield* new TunnelTokenInvalid({ roomCode, participantId });
@@ -455,11 +457,27 @@ export class Tunnels extends Context.Service<
             if (token.left) {
               return yield* leftTheRoom;
             }
+            const notThisTunnels = closedByHub(
+              "the participant is not this tunnel's any more"
+            );
             // The new tunnel wins: a participant that comes back before the
             // hub noticed its old tunnel die must not be kept out by it. If
             // the old tunnel is alive instead, it belongs to another runtime
             // with the same id, and the close code tells that one it was
             // replaced, so it does not dial again and take the tunnel back.
+            // The participant is the new runtime's first: while the old
+            // tunnel closes, a removal its runtime asked for is already
+            // late. A tunnel whose participant is gone replaces nothing.
+            if (
+              !(yield* participants.handOver(
+                roomCode,
+                participantId,
+                token.runtimeId,
+                token.generation
+              ))
+            ) {
+              return yield* end(notThisTunnels);
+            }
             for (
               let previous = open.get(key);
               previous !== undefined;
@@ -509,12 +527,10 @@ export class Tunnels extends Context.Service<
             );
             if (opened === undefined) {
               // The participant is not this runtime's to be online as: it is
-              // gone, or another runtime registered it since. The tunnel is
-              // not welcomed; its runtime was not taken out, and may register
+              // gone, or another runtime took it since. The tunnel is not
+              // welcomed; its runtime was not taken out, and may register
               // again.
-              return yield* end(
-                closedByHub("the participant is not this tunnel's any more")
-              );
+              return yield* end(notThisTunnels);
             }
             yield* Effect.logInfo("tunnel opened");
             // The participant runtime waits for this call to know it is
@@ -565,24 +581,19 @@ export class Tunnels extends Context.Service<
       );
 
       // The participant left the room as the runtime `leaving`: a tunnel that
-      // runtime dials with a token of before is told so, and the tokens of
-      // the other runtimes open nothing.
+      // runtime dials with a token of before is told so.
       const markLeft = (
         roomCode: string,
         participantId: string,
         leaving: string
       ) => {
-        for (const [token, issued] of tokens) {
+        for (const issued of tokens.values()) {
           if (
-            issued.roomCode !== roomCode ||
-            issued.participantId !== participantId
+            issued.roomCode === roomCode &&
+            issued.participantId === participantId &&
+            issued.runtimeId === leaving
           ) {
-            continue;
-          }
-          if (issued.runtimeId === leaving) {
             issued.left = true;
-          } else {
-            tokens.delete(token);
           }
         }
       };
