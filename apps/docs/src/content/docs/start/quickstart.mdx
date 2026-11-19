@@ -107,7 +107,7 @@ gambi participant join \
   --endpoint http://localhost:8000
 ```
 
-The CLI probes your local endpoint, checks that the model exists, detects which protocols it supports, registers the participant, and opens a tunnel to the hub. It stays in the room until you press Ctrl+C. If the network drops for a moment, it reconnects by itself with the same participant ID.
+The CLI probes your local endpoint, checks that the model exists, detects which protocols it supports, registers the participant, and opens a tunnel to the hub. Press Ctrl+C to leave, or use `gambi participant leave` from another terminal. If the network drops for a moment, the participant reconnects by itself with the same participant ID.
 
 If the hub runs another minor version of Gambi, the join fails with `VersionMismatch` and names the version to install.
 

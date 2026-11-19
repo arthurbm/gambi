@@ -202,20 +202,24 @@ for (const participant of participants) {
 }
 ```
 
-`status` is `offline`, `online`, or `busy`, derived from the participant's tunnel.
+`status` is `offline`, `online`, or `busy`, derived from the participant's tunnel. `runtimeId` identifies the runtime that owns the participant.
 
 ### `client.participants.register(roomCode, participantId, input)`
 
-Create or update a participant registration. It takes the same fields as the [registration route](/reference/api/#put-v1roomscodeparticipantsid) and fills `version` with the SDK's own version when you leave it out. It resolves with `{ participant, tunnel: { token, expiresAt } }`.
+Create or update a participant registration. It takes the same fields as the [registration route](/reference/api/#put-v1roomscodeparticipantsid) and fills `version` with the SDK's own version when you leave it out. It resolves with `{ participant, tunnel: { token, expiresAt } }`. Supply a non-empty `input.runtimeId` on every registration, using the same value for the lifetime of your runtime.
 
 Registration alone does not bring a participant online: that takes a tunnel, and a participant that never opens one is removed after 60 seconds. To run a participant, use [`createParticipantSession()`](#createparticipantsessionoptions-gambi-sdkparticipant-bun-only); `register` is for tests and automation.
 
-### `client.participants.remove(roomCode, participantId)`
+### `client.participants.remove(roomCode, participantId, runtimeId)`
 
-Take a participant out of the room. Resolves with `{ participantId }`.
+Pass the `runtimeId` from the participant listing. The call resolves with `{ participantId }`. If another runtime took ownership in the meantime, it rejects with `PARTICIPANT_OF_ANOTHER_RUNTIME` and leaves the new owner in the room.
 
 ```ts
-await client.participants.remove("ABC123", "worker-1");
+const participants = await client.participants.list("ABC123");
+const worker = participants.find((participant) => participant.id === "worker-1");
+if (worker) {
+  await client.participants.remove("ABC123", worker.id, worker.runtimeId);
+}
 ```
 
 ### `client.events.watch(roomCode, { signal? })`
@@ -377,13 +381,14 @@ Options of the endpoint session: `nickname`, `model`, and `endpoint` (required),
 | --- | --- | --- |
 | `connected` | `attempt`, `hubVersion` | the tunnel is open; `attempt` is `0` for the join |
 | `reconnecting` | `attempt`, `delayMillis`, `reason` | the tunnel dropped and the runtime tries again in `delayMillis` (1 second, doubling up to 30) |
-| `left` | `reason`, `error` | the runtime ended; always the last event |
+| `left` | `reason`, `error?` | the runtime ended. Always the last event |
 
 `reconnecting.reason` is `tunnelDropped`, `hubSilent` (the hub stopped answering pings), `hubUnreachable`, `tunnelOpenFailed`, or `hubError`. `left.reason` is:
 
 - `stopped`: your program called `leave()` or `stop()`
 - `refused`: the hub refused the way back, and `error` has its `name` and `message`. A hub that restarted has no rooms, so a session that tries to come back to it ends here with `RoomNotFound`.
 - `replaced`: another runtime joined the room with the same `participantId`, and the hub kept that one
+- `removed`: someone removed the participant through the hub. Once the runtime receives `4002`, `session.ended` resolves with `{ reason: "removed" }`, even with `reconnect: false`
 - `tunnelDropped`: the tunnel dropped and the session runs with `reconnect: false`
 
 Callbacks are never awaited, and an error thrown or rejected by one never stops the session.
@@ -392,11 +397,13 @@ Callbacks are never awaited, and an error thrown or rejected by one never stops 
 
 | Field | Description |
 | --- | --- |
-| `participant` | the participant as the hub registered it |
+| `participant` | the registered participant, with this session's own `runtimeId` |
 | `ended` | resolves with `{ reason, error? }` when the runtime ended and will not try again. It never rejects |
 | `leave()` | take the participant out of the room and stop. Never rejects, and gives up on the hub after `leaveTimeoutMs` |
 | `stop()` | stop without telling the hub; the room shows the participant `offline` and removes it after 60 seconds |
 | `[Symbol.asyncDispose]` | the same as `leave()`, for `await using` |
+
+The session creates its own runtime ID. Its `leave()` names that ID and reports `stopped` in both `onLifecycle` and `ended`. After `removed` or `replaced`, `leave()` skips the request to the hub.
 
 The SDK installs no signal handlers. To leave on Ctrl+C, call `leave()` from your own handler.
 
@@ -473,6 +480,7 @@ The session adds `harness` to the session shape:
 
 Known limits:
 
+- If someone removes a session while it waits between reconnection attempts, it can register again because it has no tunnel to receive the close code.
 - `artifactSent` means the snapshot entered the queue to the hub, not that it arrived. A snapshot queued when the tunnel drops is lost.
 - A snapshot larger than 8 MiB is not sent at all: `onArtifact` receives `artifactSkipped` with `cause: "tooLarge"`.
 - If your process is killed with `kill -9`, a harness that does not watch its standard input can keep running.
@@ -584,6 +592,7 @@ Each entry rejects with its own error class, and `code` tells the cases apart.
 | `code` | Meaning |
 | --- | --- |
 | `ROOM_NOT_FOUND`, `PARTICIPANT_NOT_FOUND` | what the call named is not there |
+| `PARTICIPANT_OF_ANOTHER_RUNTIME` | removal named a different runtime from the current owner (HTTP 409). `details` has `roomCode` and `participantId` |
 | `INVALID_PASSWORD` | the room has a password and the call brought none, or the wrong one |
 | `VERSION_MISMATCH` | the participant and the hub are on different minor versions |
 | `INVALID_REQUEST` | the call does not match the management API; checked before anything is sent when possible |

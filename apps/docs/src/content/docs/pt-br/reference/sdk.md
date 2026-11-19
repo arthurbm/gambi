@@ -202,20 +202,24 @@ for (const participant of participants) {
 }
 ```
 
-`status` é `offline`, `online` ou `busy`, derivado do túnel do participante.
+`status` é `offline`, `online` ou `busy`, derivado do túnel do participante. `runtimeId` identifica o runtime ao qual o participante pertence.
 
 ### `client.participants.register(roomCode, participantId, input)`
 
-Cria ou atualiza o registro de um participante. Recebe os mesmos campos da [rota de registro](/pt-br/reference/api/#put-v1roomscodeparticipantsid) e preenche `version` com a versão do próprio SDK quando você a omite. Resolve com `{ participant, tunnel: { token, expiresAt } }`.
+Cria ou atualiza o registro de um participante. Recebe os mesmos campos da [rota de registro](/pt-br/reference/api/#put-v1roomscodeparticipantsid) e preenche `version` com a versão do próprio SDK quando você a omite. Resolve com `{ participant, tunnel: { token, expiresAt } }`. Envie um `input.runtimeId` não vazio em todo registro. Use o mesmo valor durante toda a vida do runtime.
 
 Só o registro não deixa um participante online: para isso é preciso um túnel, e um participante que nunca abre um é removido depois de 60 segundos. Para rodar um participante, use [`createParticipantSession()`](#createparticipantsessionoptions-gambi-sdkparticipant-só-bun); `register` serve para testes e automação.
 
-### `client.participants.remove(roomCode, participantId)`
+### `client.participants.remove(roomCode, participantId, runtimeId)`
 
-Tira um participante da sala. Resolve com `{ participantId }`.
+Passe o `runtimeId` da listagem de participantes. A chamada resolve com `{ participantId }`. Se o participante passou a pertencer a outro runtime nesse intervalo, a chamada rejeita com `PARTICIPANT_OF_ANOTHER_RUNTIME` e mantém o novo dono na sala.
 
 ```ts
-await client.participants.remove("ABC123", "worker-1");
+const participants = await client.participants.list("ABC123");
+const worker = participants.find((participant) => participant.id === "worker-1");
+if (worker) {
+  await client.participants.remove("ABC123", worker.id, worker.runtimeId);
+}
 ```
 
 ### `client.events.watch(roomCode, { signal? })`
@@ -377,13 +381,14 @@ Opções da sessão de endpoint: `nickname`, `model` e `endpoint` (obrigatórias
 | --- | --- | --- |
 | `connected` | `attempt`, `hubVersion` | o túnel está aberto; `attempt` é `0` na entrada |
 | `reconnecting` | `attempt`, `delayMillis`, `reason` | o túnel caiu e o runtime tenta de novo em `delayMillis` (1 segundo, dobrando até 30) |
-| `left` | `reason`, `error` | o runtime terminou; é sempre o último evento |
+| `left` | `reason`, `error?` | o runtime terminou. É sempre o último evento |
 
 `reconnecting.reason` é `tunnelDropped`, `hubSilent` (o hub parou de responder aos pings), `hubUnreachable`, `tunnelOpenFailed` ou `hubError`. `left.reason` é:
 
 - `stopped`: o seu programa chamou `leave()` ou `stop()`
 - `refused`: o hub recusou a volta, e `error` traz o `name` e a `message` dele. Um hub que reiniciou não tem salas, então uma sessão que tenta voltar para ele termina aqui com `RoomNotFound`.
 - `replaced`: outro runtime entrou na sala com o mesmo `participantId`, e o hub ficou com aquele
+- `removed`: alguém tirou o participante da sala pelo hub. Quando o runtime recebe `4002`, `session.ended` resolve com `{ reason: "removed" }`, mesmo com `reconnect: false`
 - `tunnelDropped`: o túnel caiu e a sessão roda com `reconnect: false`
 
 Os callbacks nunca são aguardados, e um erro lançado ou rejeitado por um deles nunca para a sessão.
@@ -392,11 +397,13 @@ Os callbacks nunca são aguardados, e um erro lançado ou rejeitado por um deles
 
 | Campo | Descrição |
 | --- | --- |
-| `participant` | o participante como o hub o registrou |
+| `participant` | o participante registrado, com o `runtimeId` da própria sessão |
 | `ended` | resolve com `{ reason, error? }` quando o runtime terminou e não vai tentar de novo. Nunca rejeita |
 | `leave()` | tira o participante da sala e para. Nunca rejeita, e desiste do hub depois de `leaveTimeoutMs` |
 | `stop()` | para sem avisar o hub; a sala mostra o participante `offline` e o remove depois de 60 segundos |
 | `[Symbol.asyncDispose]` | o mesmo que `leave()`, para `await using` |
+
+A sessão cria o próprio ID de runtime. Seu `leave()` envia esse ID e informa `stopped` tanto em `onLifecycle` quanto em `ended`. Depois de `removed` ou `replaced`, `leave()` dispensa a requisição ao hub.
 
 O SDK não instala handlers de sinal. Para sair com Ctrl+C, chame `leave()` no seu próprio handler.
 
@@ -473,6 +480,7 @@ A sessão adiciona `harness` ao formato da sessão:
 
 Limites conhecidos:
 
+- Se alguém remover a sessão enquanto ela espera entre tentativas de reconexão, ela pode se registrar de novo, pois não há túnel para receber o código de fechamento.
 - `artifactSent` significa que o snapshot entrou na fila para o hub, não que chegou. Um snapshot na fila quando o túnel cai se perde.
 - Um snapshot maior que 8 MiB não é enviado: `onArtifact` recebe `artifactSkipped` com `cause: "tooLarge"`.
 - Se o seu processo for morto com `kill -9`, um harness que não observa a própria entrada padrão pode continuar rodando.
@@ -584,6 +592,7 @@ Cada entrada rejeita com a própria classe de erro, e `code` distingue os casos.
 | `code` | Significado |
 | --- | --- |
 | `ROOM_NOT_FOUND`, `PARTICIPANT_NOT_FOUND` | o que a chamada nomeou não existe |
+| `PARTICIPANT_OF_ANOTHER_RUNTIME` | a remoção indicou um runtime diferente do dono atual (HTTP 409). `details` traz `roomCode` e `participantId` |
 | `INVALID_PASSWORD` | a sala tem senha e a chamada não trouxe nenhuma, ou trouxe a errada |
 | `VERSION_MISMATCH` | o participante e o hub estão em minors diferentes |
 | `INVALID_REQUEST` | a chamada não corresponde à API de gerenciamento; verificado antes de enviar qualquer coisa, quando possível |

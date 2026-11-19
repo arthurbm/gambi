@@ -128,7 +128,7 @@ gambi participant join \
 
 `--model` must match a name the provider lists exactly; Ollama names include a tag (`ollama list`).
 
-`gambi participant join` probes the local endpoint, registers the participant, opens a participant tunnel to the hub, and stays in the room until Ctrl+C, reconnecting by itself if the tunnel drops. This works the same way for local hubs and remote hubs on the same trusted network: the endpoint can stay loopback-only on the participant machine.
+`gambi participant join` probes the local endpoint, registers the participant, opens a participant tunnel to the hub, and reconnects after a network drop. Press Ctrl+C to leave. This works the same way for local hubs and remote hubs on the same trusted network: the endpoint can stay loopback-only on the participant machine.
 
 To join with the OpenCode agent already installed and authenticated on your
 machine:
@@ -267,6 +267,8 @@ gambi events watch
 gambi self update
 ```
 
+`gambi participant leave` removes a connected participant and ends its `participant join` process. To join again, start a new runtime.
+
 Agent-first behavior:
 
 - `--format text|json|ndjson` on every command; `json` when stdout is not a terminal
@@ -387,8 +389,8 @@ Management API:
 - `POST /v1/rooms`
 - `GET /v1/rooms/:code`
 - `GET /v1/rooms/:code/participants`
-- `PUT /v1/rooms/:code/participants/:id`
-- `DELETE /v1/rooms/:code/participants/:id`
+- `PUT /v1/rooms/:code/participants/:id` (send the runtime's public `runtimeId` on every registration)
+- `DELETE /v1/rooms/:code/participants/:id?runtimeId=...` (use the owner's ID from the participant listing)
 - `GET /v1/rooms/:code/events` (SSE)
 - `GET /v1/rooms/:code/participants/:id/harness/events` (SSE)
 - `POST /v1/rooms/:code/participants/:id/harness/messages`

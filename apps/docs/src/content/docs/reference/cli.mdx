@@ -109,7 +109,7 @@ Named environments are gone since 0.8: there is no `--env`, no `GAMBI_ENV`, and 
 | `1` | internal or unexpected failure |
 | `2` | invalid usage (missing flag, bad value, flags that do not combine, port already in use, request the hub found invalid) |
 | `3` | connectivity or dependency failure (unreachable hub, a server that is not a hub, unreachable provider, harness not installed or not logged in, tunnel that did not open) |
-| `4` | the hub refused (room or participant not found, wrong password, version mismatch, participant replaced) |
+| `4` | hub refusal (missing room or participant, wrong password, version mismatch, or ownership conflict), or a runtime that was replaced or removed |
 | `130` | a signal stopped a command that was not waiting for one |
 
 Automation supervisors can key retries off these codes. Do not retry `2`. Retry `3` in most cases. `4` means the hub refused the operation because of its current state. On error, `name` in the JSON (or `Error (Name)` in text) is the stable name of the failure, such as `RoomNotFound` or `HubUnreachable`.
@@ -233,7 +233,7 @@ gambi room get --code ABC123 --format json
 
 ## `gambi participant join`
 
-Join a room with a model endpoint or a local ACP harness, and stay until Ctrl+C.
+Join a room with a model endpoint or a local ACP harness. Press Ctrl+C to leave.
 
 ```bash
 gambi participant join --room <room> --participant-id <id> --model <model> [options]
@@ -266,8 +266,8 @@ Notes:
 - The CLI probes the endpoint before registration: an endpoint that does not answer fails with `EndpointUnreachable`, and a model the endpoint does not list fails with `ModelNotOnEndpoint`, both with exit code `3`. `--model` must match a listed name exactly: Ollama lists names with their tag, such as `llama3:latest` (see `ollama list`).
 - Every participant joins through a tunnel, so the provider endpoint can stay on `localhost` even when the hub runs on another machine. `--header` and `--header-env` values are used only for the probe and the requests to the provider, on this machine. See [How tunnels work](/concepts/tunnel-first/).
 - When the tunnel drops, the participant reconnects by itself, waiting 1 second and doubling up to 30, with the same participant ID. If it stays away for more than 60 seconds the hub removes it, and the next attempt brings it back as a new participant with the same ID.
-- The participant ends instead of reconnecting when the hub refuses it on the way back (for example, a restarted hub has no room with that code) or when another runtime joins with the same participant ID.
-- On Ctrl+C, the command takes the participant out of the room and exits `0`. If the hub does not answer within 3 seconds, the command exits anyway and the hub removes the participant after 60 seconds.
+- The runtime ends when the hub refuses its return (for example, after a restart that lost the room), another runtime takes its tunnel, or the hub closes it because someone removed the participant.
+- Ctrl+C exits `0`. The command names its own `runtimeId` when it asks the hub to remove the participant, even if the signal arrives during the join. If the runtime is waiting to reconnect, the CLI stops it before sending the request. If the hub does not answer within 3 seconds, the CLI exits and the offline deadline still applies.
 - `--dry-run` probes the endpoint, or detects the harness and checks its login, then prints the registration with the password and headers redacted. It does not talk to the hub.
 
 Harness mode:
@@ -358,9 +358,10 @@ Lifecycle events (`--format json|ndjson`). Every event's `data` has `roomCode`, 
 | `stopped` | a signal asked the participant to leave | `0` |
 | `refused` | the hub refused the participant on the way back; the error is on stderr | the error's code, usually `4` |
 | `replaced` | another runtime joined the room with the same participant ID | `4` |
+| `removed` | the hub closed this runtime's tunnel because someone removed the participant. The error on stderr is `ParticipantRemoved` | `4` |
 | `harnessExited` | the harness ended on its own | `3` |
 
-`left.removed` is `true` when the hub confirmed the participant left the room.
+`left.removed` is `true` when the hub confirms the participant is out of the room, including `reason: "removed"`. If another runtime owns the ID when a local join stops, its participant stays in the room (online or offline) and `removed` is `false`.
 
 ## `gambi participant leave`
 
@@ -384,7 +385,7 @@ Example:
 gambi participant leave --room ABC123 --participant-id worker-1
 ```
 
-The structured result is `{ "data": { "participantId" } }`. Use this command for a participant whose `participant join` is gone (a crashed machine, for example). A `participant join` that is still running reconnects about one second later; stop it with Ctrl+C in its own terminal.
+The command reads the participant's `runtimeId` from the room listing. Success prints `{ "data": { "participantId" } }` and a connected `participant join` exits with code `4` without reconnecting. If the participant changes owners between listing and removal, `leave` exits with `ParticipantOfAnotherRuntime` (code `4`) and the new owner stays. A runtime removed [between reconnection attempts](/troubleshooting/common-issues/#a-participant-you-removed-comes-back) can return.
 
 ## `gambi events watch`
 

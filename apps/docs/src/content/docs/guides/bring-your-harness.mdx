@@ -224,6 +224,7 @@ This preview does not start the harness process, does not create the workspace f
 | `reconnecting` events that keep coming | the hub is unreachable; the participant keeps trying, waiting up to 30 seconds between attempts |
 | `left` with `reason: "refused"` and `RoomNotFound` | the hub restarted and lost the room. Create the room again and rejoin |
 | `left` with `reason: "replaced"` | another process joined with the same participant ID. Use a different ID for each process |
+| `left` with `reason: "removed"` | someone removed the participant through the hub. The runtime stops and the command exits with code `4` |
 | `artifact_skipped` with `cause: "tooLarge"` | the workspace is larger than 8 MiB; move large files out of it |
 | an inference request returns HTTP `400` with `inference_not_supported` | use `client.harness.attach()` instead; harness participants are not model endpoints |
 

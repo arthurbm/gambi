@@ -45,6 +45,8 @@ Current signals:
 
 `requestId` is the id of the HTTP request on the hub: the same in the three events of one request and in the hub's log lines about it.
 
+Participant summaries in the room snapshot and status events include the current owner’s `runtimeId`. An explicit removal emits `participant.removed` with `participantId` and `reason: "left"`. The runtime that receives close code `4002` reports `left` with `reason: "removed"` to its host.
+
 Harness sessions and artifacts are not room events. A consumer that needs them attaches to the harness participant with `client.harness.attach()` (`GET /v1/rooms/:code/participants/:id/harness/events`).
 
 The room stream has no replay: events have no id, a subscriber more than 256 events behind loses the oldest, and each connection starts with a `room.snapshot`. Applications above the hub may keep their own event streams (the event board in `gambiarra-lab` keeps one backed by SQLite). That never makes the hub's room stream persistent.

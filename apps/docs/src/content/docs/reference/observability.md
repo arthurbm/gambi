@@ -59,7 +59,7 @@ Events have no ID and the hub keeps no history. A subscriber that falls more tha
 | `participant` | `ParticipantSummary` | the participant after the change |
 | `previousStatus` | `"offline" \| "online" \| "busy"` | its status before the change |
 
-`participant.removed` carries `participantId` and `reason`: `left` when it left the room, `reconnectDeadlinePassed` when it stayed offline for 60 seconds.
+`participant.removed` carries `participantId` and `reason`: `left` when it left the room, `reconnectDeadlinePassed` when it stayed offline for 60 seconds. A runtime notified of explicit removal reports `left` with `reason: "removed"` to its host. The snapshot and events that carry a participant summary include the owner's `runtimeId`.
 
 ### `llm.request`
 

@@ -87,6 +87,7 @@ const { reason, error } = await session.ended;
 | `"stopped"` | seu código chamou `leave()` ou `stop()` | encerre normalmente |
 | `"refused"` | o hub recusou a volta; `error` traz o `name` e a `message` dele | em geral a sala sumiu, porque o hub reiniciou. Crie a sala de novo e inicie uma nova sessão |
 | `"replaced"` | outro runtime entrou na sala com o mesmo participant ID, e o hub ficou com ele | não reinicie com o mesmo ID; dois runtimes não podem compartilhá-lo |
+| `"removed"` | alguém removeu o participante pelo hub | a sessão terminou. Inicie outra se quiser voltar à sala |
 | `"tunnelDropped"` | o túnel caiu e você passou `reconnect: false` | inicie uma nova sessão se quiser voltar |
 
 Um participante que fica fora por mais de 60 segundos é removido da sala. O runtime não desiste depois disso: o próximo registro dele o traz de volta como um novo participante com o mesmo ID.

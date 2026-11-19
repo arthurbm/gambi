@@ -111,7 +111,7 @@ like any external client. Nothing in this repository imports from there
 
 ## Participant lifecycle
 
-Registration is an idempotent upsert, `PUT /v1/rooms/:code/participants/:id`. The first registration creates the participant, `offline`; a later one with the same id updates its profile and keeps its status. The response carries a single-use bootstrap token, and the runtime dials the tunnel with it.
+Registration is an idempotent upsert, `PUT /v1/rooms/:code/participants/:id`. The first registration creates the participant, `offline`; a later one with the same id updates its profile and keeps its status. The response carries a single-use bootstrap token, and the runtime dials the tunnel with it. Each runtime creates a public `runtimeId` and sends it on every registration. A runtime takes ownership when it registers an offline participant or opens a tunnel for that participant. Registering while another tunnel is open only updates the profile.
 
 A participant has one **status**, derived from its tunnel alone:
 
@@ -128,6 +128,8 @@ A participant has one **status**, derived from its tunnel alone:
 Every transition goes through one pure function, `transitionStatus`, and emits the matching room event (`participant.joined`, `participant.online`, `participant.busy`, `participant.offline`, `participant.removed`). Only `online` participants receive routes. There is no heartbeat and no separate connection state.
 
 The participant runtime joins once: register, open the tunnel, wait for the hub's `Welcome`. After that it reconnects by itself when the tunnel drops, waiting 1 second and doubling up to 30, with the same `participantId`, so whoever routes to it by id keeps the target. If it stays away for 60 seconds the hub removes it, and the next registration brings it back as a new participant with the same id. The hub pings every tunnel; the runtime watches what it receives and drops a tunnel whose hub went silent, which catches a frozen hub process. A refusal on the way back (`ROOM_NOT_FOUND`, `INVALID_PASSWORD`, `VERSION_MISMATCH`, `INVALID_REQUEST`) ends the runtime.
+
+A host that leaves names its own `runtimeId`. The hub checks ownership before removing the participant. The removed runtime receives WebSocket close code `4002` and stops reconnecting. A runtime between retries can miss the close and register again.
 
 Rooms live in the hub's memory. A hub that restarts comes back without its rooms, and runtimes trying to come back end with `ROOM_NOT_FOUND`. Recovering from that is issue #132.
 

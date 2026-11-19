@@ -41,11 +41,11 @@ O hub e os participantes dele precisam rodar a mesma minor do Gambi. Um hub recu
 ## Fluxo de registro
 
 1. O runtime do participante testa localmente o endpoint do provedor. Um participante de harness, em vez disso, verifica se o harness está instalado e com login feito.
-2. Ele se registra com `PUT /v1/rooms/:code/participants/:id`.
+2. Ele cria um `runtimeId` público e o envia em todo registro (`PUT /v1/rooms/:code/participants/:id`), inclusive ao reconectar.
 3. O hub confere a versão do participante e a senha da sala, e retorna `{ participant, tunnel }` com um token de uso único.
 4. O runtime abre `GET /v1/rooms/:code/participants/:id/tunnel?token=...`.
 5. O hub aceita o túnel, marca o participante como `online` e envia a ele uma chamada de boas-vindas. A partir daí, o hub chama o participante pelo túnel.
-6. Quando o túnel cai, o runtime se registra de novo e abre um novo túnel com o mesmo ID de participante.
+6. Quando o túnel cai, o runtime se registra de novo e abre um novo túnel com o mesmo ID de participante. Quando alguém remove o participante, o hub fecha o túnel com `4002` e o runtime termina.
 
 ## Fluxo de requisição
 

@@ -23,7 +23,7 @@ The actual LLM backend (Ollama, vLLM, OpenRouter, OpenAI, etc.) sitting behind a
 _Avoid_: Backend, upstream, model server (when referring to the runtime; use **Model** for the named model itself).
 
 **Participant runtime**:
-The process on a participant's machine (`gambi participant join`) that registers the participant, holds its tunnel open, and calls the provider or harness locally. Bare "runtime" in this repo means this.
+The process on a participant's machine (`gambi participant join`) that registers the participant, holds its tunnel open, and calls the provider or harness locally. Bare "runtime" in this repo means this. Each participant belongs to one runtime. Its public `runtimeId` identifies that owner across reconnections and is required to remove the participant.
 _Avoid_: Client, agent, daemon.
 
 **Model**:

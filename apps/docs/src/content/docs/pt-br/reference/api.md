@@ -75,6 +75,7 @@ Códigos de erro:
 | --- | --- | --- |
 | `ROOM_NOT_FOUND` | `404` | o código da sala não existe |
 | `PARTICIPANT_NOT_FOUND` | `404` | a sala não tem participante com esse ID |
+| `PARTICIPANT_OF_ANOTHER_RUNTIME` | `409` | o participante pertence a outro runtime. `details` traz `roomCode` e `participantId` |
 | `INVALID_PASSWORD` | `401` | a sala tem senha e a requisição não trouxe nenhuma, ou trouxe a errada |
 | `VERSION_MISMATCH` | `409` | o participante roda outra minor do Gambi que não a do hub; `details` tem `hubVersion` e `participantVersion` |
 | `TUNNEL_TOKEN_INVALID` | `401` | o upgrade do túnel chegou sem um bootstrap token válido |
@@ -151,6 +152,7 @@ curl http://localhost:3000/v1/rooms/ABC123/participants
 Os resumos de participante incluem:
 
 - `id`
+- `runtimeId` (ID público do runtime que detém o participante)
 - `nickname`
 - `model`
 - `endpoint` (só participantes de modelo)
@@ -178,12 +180,13 @@ Um participante de harness não tem `endpoint`. O objeto `harness` dele contém 
 
 Cria ou atualiza o registro de um participante. Os runtimes de participante (a CLI, a entrada `gambi-sdk/participant` do SDK) chamam esta rota por você; raramente você a chama à mão.
 
-Esta rota é idempotente e é o caminho canônico de registro. Ela sempre responde `200`. Registrar um ID que já está na sala atualiza o perfil dele e mantém o status. O hub guarda o `endpoint` do participante como metadado e nunca se conecta a ele.
+Quando o registro dá certo, o hub responde `200`. Registrar o mesmo ID de participante atualiza o perfil e mantém o status. Se o participante está `offline`, ele passa a pertencer ao runtime que o registrou. Se o túnel está aberto, o participante só muda de dono quando o novo runtime abre seu túnel. O hub guarda o `endpoint` do participante como metadado e nunca se conecta a ele.
 
 Corpo da requisição:
 
 | Campo | Tipo | Obrigatório | Descrição |
 | --- | --- | --- | --- |
+| `runtimeId` | `string` | sim | ID não vazio que o runtime cria uma vez e envia em todo registro, inclusive nas reconexões |
 | `nickname` | `string` | sim | nome de exibição mostrado aos operadores |
 | `model` | `string` | sim | nome do modelo exposto pelo participante |
 | `version` | `string` | sim | versão do Gambi do runtime do participante, como `0.8.0` |
@@ -222,6 +225,7 @@ Campos de `RuntimeConfig` (todos opcionais): `temperature`, `top_p`, `max_tokens
 curl -X PUT http://localhost:3000/v1/rooms/ABC123/participants/worker-1 \
   -H "Content-Type: application/json" \
   -d '{
+    "runtimeId": "runtime-1",
     "nickname": "worker-1",
     "model": "llama3",
     "version": "0.8.0",
@@ -240,6 +244,7 @@ Exemplo de resposta:
   "data": {
     "participant": {
       "id": "worker-1",
+      "runtimeId": "runtime-1",
       "nickname": "worker-1",
       "model": "llama3",
       "endpoint": "http://localhost:11434",
@@ -278,15 +283,17 @@ Ciclo de vida do token:
 
 Um token ausente, desconhecido, expirado ou já consumido, um token de outro participante e uma sala desconhecida são todos `401 TUNNEL_TOKEN_INVALID`. Uma requisição com token válido e sem upgrade de WebSocket consome o token e recebe `400 INVALID_REQUEST`.
 
+Se o participante saiu da sala depois do registro, um token ainda válido do runtime removido permite o upgrade para um WebSocket que fecha com `4002` antes de `Welcome`. Quando um novo túnel substitui o anterior, o hub fecha o antigo com `4001`. Um runtime que recebe qualquer um desses códigos durante a reconexão termina, mesmo que ainda esteja esperando o `Welcome`.
+
 ### DELETE /v1/rooms/:code/participants/:id
 
-Tira um participante de uma sala. O hub fecha o túnel dele e a sala recebe `participant.removed`.
+Passe na query o `runtimeId` que aparece na listagem de participantes. Com esse valor público, o hub confere se o participante ainda pertence ao mesmo runtime. Se o valor faltar ou estiver vazio, o hub responde `400 INVALID_REQUEST`. Se o dono for outro, responde `409 PARTICIPANT_OF_ANOTHER_RUNTIME` e mantém o participante na sala.
 
 ```bash
-curl -X DELETE http://localhost:3000/v1/rooms/ABC123/participants/worker-1
+curl -X DELETE "http://localhost:3000/v1/rooms/ABC123/participants/worker-1?runtimeId=runtime-1"
 ```
 
-A resposta é `{ "participantId" }` dentro do envelope. Um runtime de participante que ainda está rodando trata o túnel fechado como uma queda e se registra de novo cerca de um segundo depois.
+Quando a remoção dá certo, o hub responde `200` com `{ participantId }` dentro do envelope. A sala recebe `participant.removed` com `reason: "left"`. O hub fecha o túnel do dono com o código `4002`. O runtime que recebe esse código emite `left` com `reason: "removed"` e para de tentar reconectar.
 
 ### GET /v1/rooms/:code/events
 

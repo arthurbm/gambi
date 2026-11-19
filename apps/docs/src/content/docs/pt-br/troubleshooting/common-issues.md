@@ -134,7 +134,9 @@ Outro runtime entrou na mesma sala com o mesmo participant ID, e o hub ficou com
 
 ## Um participante que você removeu volta
 
-`gambi participant leave` (ou `DELETE /v1/rooms/:code/participants/:id`) remove um participante, seja quem for que o hospeda. Se o `gambi participant join` dele ainda estiver rodando, esse runtime trata o túnel fechado como uma queda e se registra de novo cerca de um segundo depois. Para tirar de vez um participante que está rodando, pare o `participant join` dele com Ctrl+C na própria máquina dele.
+Quando `gambi participant leave` remove um participante conectado, o hub fecha o túnel com `4002`. O `participant join` emite `left` com `reason: "removed"` e termina com código `4`.
+
+Se alguém remover o participante enquanto o runtime espera entre tentativas de reconexão, não há túnel aberto ou em abertura para receber o `4002`. Na próxima tentativa, ele se registra de novo. Rode `participant leave` quando ele estiver online ou encerre o `participant join` com Ctrl+C na máquina dele.
 
 ## Requisição de streaming termina com `consumer_too_slow`
 

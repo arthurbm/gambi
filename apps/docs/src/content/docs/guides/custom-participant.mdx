@@ -87,6 +87,7 @@ const { reason, error } = await session.ended;
 | `"stopped"` | your code called `leave()` or `stop()` | exit cleanly |
 | `"refused"` | the hub refused the way back; `error` has its `name` and `message` | usually the room is gone, because the hub restarted. Create the room again and start a new session |
 | `"replaced"` | another runtime joined the room with the same participant ID, and the hub kept that one | do not restart with the same ID; two runtimes cannot share it |
+| `"removed"` | someone removed the participant through the hub | the session has ended. Start a new one if you want to rejoin |
 | `"tunnelDropped"` | the tunnel dropped and you passed `reconnect: false` | start a new session if you want to come back |
 
 A participant that stays away for more than 60 seconds is removed from the room. The runtime does not give up after that: its next registration brings it back as a new participant with the same ID.

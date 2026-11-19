@@ -75,6 +75,7 @@ Error codes:
 | --- | --- | --- |
 | `ROOM_NOT_FOUND` | `404` | the room code does not exist |
 | `PARTICIPANT_NOT_FOUND` | `404` | the room has no participant with that ID |
+| `PARTICIPANT_OF_ANOTHER_RUNTIME` | `409` | the participant belongs to a different runtime from the one named in the removal. `details` has `roomCode` and `participantId` |
 | `INVALID_PASSWORD` | `401` | the room has a password and the request brought none, or the wrong one |
 | `VERSION_MISMATCH` | `409` | the participant runs another minor version of Gambi than the hub; `details` has `hubVersion` and `participantVersion` |
 | `TUNNEL_TOKEN_INVALID` | `401` | the tunnel upgrade came without a valid bootstrap token |
@@ -151,6 +152,7 @@ curl http://localhost:3000/v1/rooms/ABC123/participants
 Participant summaries include:
 
 - `id`
+- `runtimeId` (the current owner's public ID)
 - `nickname`
 - `model`
 - `endpoint` (model participants only)
@@ -178,12 +180,13 @@ A harness participant has no `endpoint`. Its `harness` object contains `id` (`op
 
 Create or update a participant registration. Participant runtimes (the CLI, the SDK's `gambi-sdk/participant` entry) call it for you; you rarely call it by hand.
 
-This route is idempotent and is the canonical registration path. It always answers `200`. Registering an ID that is already in the room updates its profile and keeps its status. The hub stores the participant `endpoint` as metadata and never connects to it.
+A successful registration returns `200`. Registering the same participant ID updates its profile and keeps its status. If the participant is `offline`, the registering runtime becomes its owner. If the tunnel is open, ownership changes only when the new runtime opens its tunnel. The hub stores the participant `endpoint` as metadata and never connects to it.
 
 Request body:
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
+| `runtimeId` | `string` | yes | non-empty ID created once by the runtime and sent on every registration, including reconnections |
 | `nickname` | `string` | yes | display name shown to operators |
 | `model` | `string` | yes | model name exposed by the participant |
 | `version` | `string` | yes | Gambi version of the participant runtime, such as `0.8.0` |
@@ -222,6 +225,7 @@ Provider credentials are not part of participant registration. A body that carri
 curl -X PUT http://localhost:3000/v1/rooms/ABC123/participants/worker-1 \
   -H "Content-Type: application/json" \
   -d '{
+    "runtimeId": "runtime-1",
     "nickname": "worker-1",
     "model": "llama3",
     "version": "0.8.0",
@@ -240,6 +244,7 @@ Example response:
   "data": {
     "participant": {
       "id": "worker-1",
+      "runtimeId": "runtime-1",
       "nickname": "worker-1",
       "model": "llama3",
       "endpoint": "http://localhost:11434",
@@ -278,15 +283,17 @@ Token lifecycle:
 
 A missing, unknown, expired, or spent token, a token of another participant, and an unknown room are all `401 TUNNEL_TOKEN_INVALID`. A request with a valid token and no WebSocket upgrade spends the token and gets `400 INVALID_REQUEST`.
 
+If the owner was removed after registration, its still-valid token upgrades to a WebSocket that closes with `4002` before `Welcome`. A replacement tunnel closes the old tunnel with `4001`. A runtime reconnecting when it receives either code stops, even if it has yet to receive `Welcome`.
+
 ### DELETE /v1/rooms/:code/participants/:id
 
-Take a participant out of a room. The hub closes its tunnel and the room hears `participant.removed`.
+Pass the owner's `runtimeId` from the participant listing in the query. This public value lets the hub check that the participant still belongs to the same runtime. A missing or empty value returns `400 INVALID_REQUEST`. A different owner returns `409 PARTICIPANT_OF_ANOTHER_RUNTIME` and the participant stays in the room.
 
 ```bash
-curl -X DELETE http://localhost:3000/v1/rooms/ABC123/participants/worker-1
+curl -X DELETE "http://localhost:3000/v1/rooms/ABC123/participants/worker-1?runtimeId=runtime-1"
 ```
 
-The response is `{ "participantId" }` inside the envelope. A participant runtime that is still running treats the closed tunnel as a drop and registers again about one second later.
+On success the hub returns `200` with `{ participantId }` inside the envelope. The room receives `participant.removed` with `reason: "left"`. The hub closes the owner's tunnel with code `4002`. The runtime that receives it emits `left` with `reason: "removed"` and stops reconnecting.
 
 ### GET /v1/rooms/:code/events
 

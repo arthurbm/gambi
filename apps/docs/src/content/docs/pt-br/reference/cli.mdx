@@ -109,7 +109,7 @@ Os ambientes nomeados acabaram na 0.8: não existe mais `--env`, `GAMBI_ENV` nem
 | `1` | falha interna ou inesperada |
 | `2` | uso inválido (flag faltando, valor ruim, flags que não combinam, porta já em uso, requisição que o hub achou inválida) |
 | `3` | falha de conectividade ou de dependência (hub inacessível, um servidor que não é um hub, provedor inacessível, harness não instalado ou sem login, túnel que não abriu) |
-| `4` | o hub recusou (sala ou participante não encontrado, senha errada, versões incompatíveis, participante substituído) |
+| `4` | recusa do hub (sala ou participante ausente, senha incorreta, versão incompatível ou conflito de dono), ou runtime substituído ou removido |
 | `130` | um sinal parou um comando que não estava esperando por um |
 
 Supervisores de automação podem decidir as novas tentativas com base nesses códigos. Não tente de novo no `2`. No `3`, tente de novo na maioria dos casos. O `4` indica que o hub recusou a operação por causa do estado atual dele. Em caso de erro, `name` no JSON (ou `Error (Name)` no texto) é o nome estável da falha, como `RoomNotFound` ou `HubUnreachable`.
@@ -233,7 +233,7 @@ gambi room get --code ABC123 --format json
 
 ## `gambi participant join`
 
-Entra numa sala com um endpoint de modelo ou um harness ACP local e fica até o Ctrl+C.
+Entre na sala com um endpoint de modelo ou um harness ACP local. Pressione Ctrl+C para sair.
 
 ```bash
 gambi participant join --room <room> --participant-id <id> --model <model> [options]
@@ -266,8 +266,8 @@ Observações:
 - A CLI sonda o endpoint antes do registro: um endpoint que não responde falha com `EndpointUnreachable`, e um modelo que o endpoint não lista falha com `ModelNotOnEndpoint`, os dois com código de saída `3`. `--model` precisa ser exatamente um nome listado: o Ollama lista os nomes com a tag, como `llama3:latest` (veja `ollama list`).
 - Todo participante entra por um túnel, então o endpoint do provedor pode ficar em `localhost` mesmo quando o hub roda em outra máquina. Os valores de `--header` e `--header-env` só são usados na sondagem e nas requisições ao provedor, nesta máquina. Veja [Como os túneis funcionam](/pt-br/concepts/tunnel-first/).
 - Quando o túnel cai, o participante reconecta sozinho, esperando 1 segundo e dobrando até 30, com o mesmo ID de participante. Se ele ficar fora por mais de 60 segundos, o hub o remove, e a tentativa seguinte o traz de volta como um novo participante com o mesmo ID.
-- O participante termina em vez de reconectar quando o hub o recusa na volta (por exemplo, um hub reiniciado não tem sala com aquele código) ou quando outro runtime entra com o mesmo ID de participante.
-- No Ctrl+C, o comando tira o participante da sala e sai com `0`. Se o hub não responder em 3 segundos, o comando sai mesmo assim e o hub remove o participante depois de 60 segundos.
+- O runtime termina quando o hub recusa a volta (por exemplo, se reiniciou e perdeu a sala), outro runtime assume o túnel ou o hub fecha o túnel porque alguém removeu o participante.
+- Ctrl+C encerra o comando com código `0`. A CLI envia seu próprio `runtimeId` ao pedir a remoção, mesmo quando o sinal chega durante a entrada na sala. Se o runtime está esperando para reconectar, a CLI o encerra antes de enviar o pedido. Se o hub não responder em 3 segundos, a CLI termina e o prazo de remoção por inatividade continua valendo.
 - `--dry-run` sonda o endpoint, ou detecta o harness e verifica o login dele, e depois imprime o registro com a senha e os headers ocultos. Ele não fala com o hub.
 
 Modo harness:
@@ -358,9 +358,10 @@ Eventos de ciclo de vida (`--format json|ndjson`). O `data` de todo evento tem `
 | `stopped` | um sinal pediu que o participante saísse | `0` |
 | `refused` | o hub recusou o participante na volta; o erro está no stderr | o código do erro, em geral `4` |
 | `replaced` | outro runtime entrou na sala com o mesmo ID de participante | `4` |
+| `removed` | o hub fechou o túnel deste runtime porque alguém removeu o participante. O erro no stderr é `ParticipantRemoved` | `4` |
 | `harnessExited` | o harness terminou sozinho | `3` |
 
-`left.removed` é `true` quando o hub confirmou que o participante saiu da sala.
+`left.removed` é `true` quando o hub confirma que o participante está fora da sala, inclusive com `reason: "removed"`. Se outro runtime detém o ID quando o `join` local é interrompido, o participante dele fica na sala (online ou offline) e `removed` é `false`.
 
 ## `gambi participant leave`
 
@@ -384,7 +385,7 @@ Exemplo:
 gambi participant leave --room ABC123 --participant-id worker-1
 ```
 
-O resultado estruturado é `{ "data": { "participantId" } }`. Use este comando para um participante cujo `participant join` não existe mais (uma máquina que travou, por exemplo). Um `participant join` que ainda está rodando reconecta cerca de um segundo depois; pare-o com Ctrl+C no terminal dele.
+O comando lê o `runtimeId` na listagem de participantes da sala. Quando dá certo, imprime `{ "data": { "participantId" } }` e o `participant join` conectado termina com código `4`, sem reconectar. Se o participante mudar de dono entre a listagem e a remoção, `leave` termina com `ParticipantOfAnotherRuntime` (código `4`) e o novo dono fica na sala. Um runtime removido [entre tentativas de reconexão](/pt-br/troubleshooting/common-issues/#um-participante-que-você-removeu-volta) pode voltar.
 
 ## `gambi events watch`
 

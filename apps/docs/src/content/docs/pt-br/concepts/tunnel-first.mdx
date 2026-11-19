@@ -89,6 +89,7 @@ O login local do harness nunca entra no registro do participante, nos eventos de
 - **A mesma minor nas duas pontas.** O túnel fala o formato de rede da biblioteca de RPC sobre a qual o Gambi é construído, e esse formato pode mudar entre minors. Um hub recusa no registro um participante de outra minor e informa a versão esperada.
 - **Requisições em andamento não sobrevivem a uma queda.** Uma requisição que o participante estava respondendo quando o túnel caiu falha com `participant_disconnected`. O runtime volta para a próxima.
 - **Um hub reiniciado esquece as salas.** As salas vivem na memória do hub. Um participante que tenta voltar a um hub reiniciado ouve que a sala não existe e para (`left` com `reason: "refused"`). Crie a sala de novo e entre outra vez.
+- **Remoção entre tentativas de reconexão.** `participant leave` fecha o túnel de um runtime conectado com `4002`, e o runtime termina. Se alguém o remover durante a espera entre tentativas, não há túnel para receber o código de fechamento. O registro seguinte o traz de volta à sala.
 
 ## Garantias
 

@@ -63,6 +63,8 @@ for await (const event of client.events.watch(room.code)) {
 
 Methods return the value itself and reject with a `ClientError` whose `code` names the failure (`ROOM_NOT_FOUND`, `VERSION_MISMATCH`, `HUB_UNREACHABLE`, `NOT_A_HUB`, ...).
 
+Pass a non-empty `runtimeId` in every `client.participants.register(roomCode, participantId, input)`. To remove a participant, pass its listed owner to `client.participants.remove(roomCode, participantId, runtimeId)`. If ownership has changed, the call rejects with `PARTICIPANT_OF_ANOTHER_RUNTIME` (HTTP 409).
+
 `client.harness` attaches to a harness participant (OpenCode, Claude Code, Codex): `openSession`, `send` (one ACP v1 message), `attach` (an async iterable of the harness's messages, session status, and workspace artifacts), and `closeSession`.
 
 ## Hosting a hub or a participant (Bun only)
@@ -88,7 +90,7 @@ await session.leave();
 await hub.close();
 ```
 
-The participant opens a tunnel to the hub and reconnects by itself when it drops. `createHarnessParticipantSession()` does the same for a local harness, running it in a workspace folder and sending snapshots of that folder to attached clients.
+The participant opens a tunnel to the hub and reconnects by itself when it drops. `createHarnessParticipantSession()` does the same for a local harness, running it in a workspace folder and sending snapshots of that folder to attached clients. When the hub removes a connected participant, `session.ended` resolves with `{ reason: "removed" }` and the runtime stops. Calling the session's own `leave()` reports `stopped`.
 
 ## Discovery
 

@@ -41,11 +41,11 @@ The hub and its participants must run the same minor version of Gambi. A hub ref
 ## Registration flow
 
 1. The participant runtime probes its provider endpoint locally. A harness participant checks that the harness is installed and logged in instead.
-2. It registers with `PUT /v1/rooms/:code/participants/:id`.
+2. It creates a public `runtimeId` and sends it with every registration (`PUT /v1/rooms/:code/participants/:id`), including reconnections.
 3. The hub checks the participant's version and the room password, and returns `{ participant, tunnel }` with a single-use token.
 4. The runtime opens `GET /v1/rooms/:code/participants/:id/tunnel?token=...`.
 5. The hub accepts the tunnel, marks the participant `online`, and sends it a welcome call. From then on the hub calls the participant through the tunnel.
-6. When the tunnel drops, the runtime registers again and opens a new tunnel with the same participant ID.
+6. When the tunnel drops, the runtime registers again and opens a new tunnel with the same participant ID. When someone explicitly removes the participant, the hub closes its tunnel with `4002` and the runtime stops.
 
 ## Request flow
 

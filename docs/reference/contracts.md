@@ -49,6 +49,7 @@ Each typed error class declares its `code` and its HTTP status (`packages/protoc
 |---|---|---|---|
 | `ROOM_NOT_FOUND` | 404 | The room code does not exist. | `roomCode` |
 | `PARTICIPANT_NOT_FOUND` | 404 | The room has no participant with that id. | `roomCode`, `participantId` |
+| `PARTICIPANT_OF_ANOTHER_RUNTIME` | 409 | The removal names a different runtime from the one that owns the participant. The participant stays in the room. | `roomCode`, `participantId` |
 | `INVALID_PASSWORD` | 401 | The room has a password and the request brought none, or the wrong one. | `roomCode` |
 | `VERSION_MISMATCH` | 409 | The participant runtime is on another minor version than the hub. The message names the version the hub expects. | `hubVersion`, `participantVersion` |
 | `TUNNEL_TOKEN_INVALID` | 401 | The tunnel upgrade came without a valid bootstrap token. | `roomCode`, `participantId` |
@@ -61,7 +62,7 @@ Each typed error class declares its `code` and its HTTP status (`packages/protoc
 | `ROUTE_NOT_FOUND` | 404 | No management route for that method and path. | `method`, `path` |
 | `INTERNAL_ERROR` | 500 | A bug in the hub. The cause stays in the hub's log. | none |
 
-Every endpoint can answer `INVALID_REQUEST` and `INTERNAL_ERROR`. The SDK surfaces all of these as `ClientError` with the same `code` (see [SDK management client](#sdk-management-client)).
+Every endpoint can answer `INVALID_REQUEST` and `INTERNAL_ERROR`. The SDK surfaces management errors returned by its typed routes as `ClientError` (see [SDK management client](#sdk-management-client)).
 
 ## Management plane endpoints
 
@@ -75,7 +76,7 @@ All under `/v1`:
 | `GET` | `/v1/rooms/:code` | `RoomSummary` | `ROOM_NOT_FOUND` |
 | `PUT` | `/v1/rooms/:code/participants/:id` | `200` `{ participant, tunnel: { token, expiresAt } }` | `ROOM_NOT_FOUND`, `INVALID_PASSWORD`, `VERSION_MISMATCH` |
 | `GET` | `/v1/rooms/:code/participants` | `ParticipantSummary[]` | `ROOM_NOT_FOUND` |
-| `DELETE` | `/v1/rooms/:code/participants/:id` | `{ participantId }` | `ROOM_NOT_FOUND`, `PARTICIPANT_NOT_FOUND` |
+| `DELETE` | `/v1/rooms/:code/participants/:id?runtimeId=...` | `{ participantId }` | `ROOM_NOT_FOUND`, `PARTICIPANT_NOT_FOUND`, `PARTICIPANT_OF_ANOTHER_RUNTIME` |
 | `GET` | `/v1/rooms/:code/events` | SSE stream of [room events](#sse-room-events) | `ROOM_NOT_FOUND` |
 | `GET` | `/v1/rooms/:code/participants/:id/harness/events` | SSE stream of [attach events](#harness-attach) | `ROOM_NOT_FOUND`, `PARTICIPANT_NOT_FOUND`, `NOT_A_HARNESS_PARTICIPANT` |
 | `POST` | `/v1/rooms/:code/participants/:id/harness/messages` | `202` `{ sessionId }` | the three above, `PARTICIPANT_UNREACHABLE`, `HARNESS_FAILED`, `HARNESS_SESSION_NOT_OPEN` |
@@ -87,8 +88,8 @@ All under `/v1`:
 Notes:
 
 - `POST /v1/rooms` is not idempotent. The body is `{ name, password?, defaults? }`.
-- `PUT .../participants/:id` is an idempotent upsert and always answers `200`. Registering an id that is already in the room updates its profile and keeps its `joinedAt` and its status. The hub checks the version first, then the room, then the password, so a participant on another minor hears "update" even with a wrong password.
-- `DELETE .../participants/:id` takes the participant out at once and closes its tunnel. The room hears one `participant.removed` with `reason: "left"`.
+- `PUT .../participants/:id` is an idempotent upsert and answers `200` on success. Registering an id that is already in the room updates its profile and keeps its `joinedAt` and its status. The hub checks the version first, then the room, then the password, so a participant on another minor hears "update" even with a wrong password. Another runtime takes ownership when it registers an offline participant. While the tunnel is open, registration only updates the profile. The new runtime takes ownership when it opens its tunnel.
+- `DELETE .../participants/:id?runtimeId=...` removes the participant only if `runtimeId` matches the owner. The room hears one `participant.removed` with `reason: "left"`. The hub closes the owner's tunnel with code `4002`. A missing or empty `runtimeId` returns `400 INVALID_REQUEST`.
 - The tunnel route is internal: only a participant runtime calls it, with the token its registration returned. A missing, unknown, expired, or spent token, a token of another participant, and a room that does not exist are all `401 TUNNEL_TOKEN_INVALID`. The token is spent before the upgrade, so a request with a valid token and no WebSocket upgrade burns it and gets `400 INVALID_REQUEST`.
 - Any other path under `/v1` answers `404 ROUTE_NOT_FOUND` in the error envelope. The inference plane, outside `/v1`, answers in the OpenAI format.
 - Both planes answer CORS openly: `Access-Control-Allow-Origin: *`, and `204` to `OPTIONS`.
@@ -110,6 +111,7 @@ Runtime defaults (`RuntimeConfig`) accept `temperature` (0 to 2), `top_p` (0 to 
 `ParticipantSummary`:
 
 - `id`, `nickname`, `model`
+- `runtimeId`: the public ID of the runtime that currently owns the participant
 - `endpoint?`: the provider endpoint on the participant's machine. Informational: the hub never calls it.
 - `harness?`: `{ id, model?, hosted? }` on a harness participant. Valid ids are `opencode`, `claude-code`, `codex`, and `fake`.
 - `config`: the participant's runtime config, redacted like the room defaults
@@ -122,7 +124,9 @@ There is no `connection` field: the status already derives from the tunnel.
 
 ### Registration body
 
-`RegisterParticipant`: `nickname`, `model`, `endpoint?`, `harness?`, `password?`, `specs?`, `config?`, `capabilities?`, and `version` (required, the participant runtime's Gambi version). A body that carries `authHeaders` is refused with `400 INVALID_REQUEST` and the message does not repeat the value: `ParticipantAuthHeaders` stay in the participant runtime.
+`RegisterParticipant` requires `runtimeId`, `nickname`, `model`, and `version` (the runtime's Gambi version). Optional fields are `endpoint`, `harness`, `password`, `specs`, `config`, and `capabilities`. The runtime creates its `runtimeId` once and sends it on every registration, including reconnections. A missing or empty ID returns `400 INVALID_REQUEST`. The hub publishes the ID so clients can name the owner when removing a participant. It grants no authentication.
+
+A body that carries `authHeaders` is refused with `400 INVALID_REQUEST` and the message does not repeat the value. `ParticipantAuthHeaders` stay in the participant runtime.
 
 ## Participant status
 
@@ -307,6 +311,7 @@ Opening and keeping the tunnel:
 3. The hub marks the participant `online` and calls `Welcome`. The runtime counts the join as done when `Welcome` arrives.
 4. The hub pings every tunnel every 5 seconds and drops one that stays silent for one more interval. The runtime watches the frames it receives and drops the tunnel itself after three ping intervals of silence (15 seconds by default), which catches a frozen hub.
 5. When a runtime opens a second tunnel for the same participant, the hub keeps the new one and closes the old one with the WebSocket close code `4001` (`TUNNEL_REPLACED_CLOSE_CODE`). A runtime that sees that code was replaced by another runtime with its `participantId` and does not dial again.
+6. On explicit removal, the hub sends `4002` (`TUNNEL_REMOVED_CLOSE_CODE`) on the removed runtime's open tunnel. If that runtime dials with a still-valid bootstrap token issued before removal, the hub accepts the upgrade and closes with `4002` before `Welcome`.
 
 ## Participant runtime
 
@@ -314,7 +319,8 @@ The participant runtime (`packages/core/src/participant/runtime.ts`) joins once:
 
 | Failure on the way back | What the runtime does |
 |---|---|
-| Hub unreachable, tunnel did not open, `INTERNAL_ERROR` | tries again |
+| Hub unreachable, transient failure opening the tunnel, `INTERNAL_ERROR` | tries again |
+| Tunnel closed with `4001` or `4002`, even before `Welcome` | ends with `replaced` or `removed`, respectively |
 | `VERSION_MISMATCH`, `ROOM_NOT_FOUND`, `INVALID_PASSWORD`, `INVALID_REQUEST` | ends (`left` with `reason: "refused"`) |
 
 Lifecycle events, reported in order from the join on (CLI events and the SDK's `onLifecycle` are built on them):
@@ -323,11 +329,16 @@ Lifecycle events, reported in order from the join on (CLI events and the SDK's `
 |---|---|---|
 | `connected` | `attempt`, `hubVersion` | The tunnel opened and the participant is `online`. `attempt` is `0` for the join, then the number of the attempt that brought it back. |
 | `reconnecting` | `attempt`, `delayMillis`, `reason` | Not connected; tries again in `delayMillis`. `reason`: `tunnelDropped`, `hubSilent`, `hubUnreachable`, `tunnelOpenFailed`, `hubError`. |
-| `left` | `reason`, `error?` | The runtime ended. `reason`: `stopped`, `refused` (with the hub's error), `replaced`, or `tunnelDropped` (only with reconnection turned off). |
+| `left` | `reason`, `error?` | The runtime ended. `reason` is `stopped`, `refused` (with the hub's error), `replaced`, `removed`, or `tunnelDropped` (only with reconnection turned off). |
 
-The runtime does not tell the hub that it stopped. Whoever hosts it sends `DELETE .../participants/:id` to leave; otherwise the hub shows the participant `offline` and removes it after 60 seconds.
+A runtime that receives `4002` emits `left` with `reason: "removed"` and no `error`, even with `reconnect: false`. It never registers or dials again. Its `ParticipantRuntime.ended` fails with `ParticipantRemoved` (`roomCode`, `participantId`). On the initial join, a final close before `Welcome` fails the join with `TunnelOpenFailed` and sets its `closed` field to `removed` or `replaced`.
 
-Known limit: rooms live in the hub's memory and room codes are random, so a hub that restarts comes back without the room. A runtime trying to come back hears `ROOM_NOT_FOUND` and ends with `refused`. The runtime only comes back by itself when the hub was unreachable and returns with the room still there. Recreating a room under a chosen code is issue #132.
+Stopping the runtime locally closes the tunnel. Its host sends `DELETE .../participants/:id?runtimeId=...` to leave the room immediately. Otherwise the participant stays `offline` until the 60-second deadline.
+
+Known limits:
+
+- If someone removes a runtime between reconnection attempts, it has no open or pending tunnel to receive `4002`. Its next attempt registers it in the room again. A local leave stops the retry.
+- A restarted hub loses its rooms. A runtime trying to come back hears `ROOM_NOT_FOUND` and ends with `refused`. Recreating a room under a chosen code is issue #132.
 
 ### Harness participant runtime
 
@@ -401,7 +412,7 @@ The table from typed error to exit code is `failureKinds` in `packages/cli/src/c
 | `1` | Internal failure: a bug here or in the hub. | `InternalError`, `HubListenFailed`, `PackageManagerFailed`, `PackageManagerUnavailable`, `BinaryReplaceFailed`, `UpdateNotScheduled`, `UnexpectedFailure` (a defect) |
 | `2` | Invalid usage. Retrying will not help. | every parse error (`MissingOption`, `InvalidValue`, `UnrecognizedOption`, ...), a cancelled prompt for a missing flag, `PortInUse`, `InvalidRequest`, `FlagsDoNotCombine`, `WorkspaceFailed` |
 | `3` | Something the command depends on is not there: the hub, the network, the provider, the harness. Retry later. | `HubUnreachable`, `NotAHub`, `MdnsAnnounceFailed`, `EndpointUnreachable`, `ModelNotOnEndpoint`, `TunnelOpenFailed`, `HarnessNotReady`, `HarnessStartFailed`, `HarnessFailed`, `UnknownInstallSource`, `UpdateDownloadFailed` |
-| `4` | The hub understood the request and refused it. | `RoomNotFound`, `ParticipantNotFound`, `InvalidPassword`, `VersionMismatch`, `ParticipantReplaced` |
+| `4` | The hub refused the request, replaced the runtime, or removed it. | `RoomNotFound`, `ParticipantNotFound`, `InvalidPassword`, `VersionMismatch`, `ParticipantReplaced`, `ParticipantRemoved`, `ParticipantOfAnotherRuntime` |
 | `130` | A signal stopped a command that was not waiting for one, or a second signal arrived while the command was stopping. | |
 
 `hub serve`, `participant join`, and `events watch` wait for a signal: the first Ctrl+C or SIGTERM makes them clean up and exit `0`.
@@ -465,9 +476,9 @@ Events, each with `roomCode` in `data`, and `participantId` in all of them but `
 | `leaving` | `signal` | SIGINT or SIGTERM asked the command to leave. |
 | `left` | `reason`, `removed` | The stay ended. Always the last event. |
 
-`left.reason` is `stopped` (a signal; exit `0`), `refused` (the hub refused the way back; exit code of the hub's error), `replaced` (another runtime joined with the same id; exit `4`), or `harnessExited` (exit `3`). `left.removed` says whether the hub confirmed the removal: it is `false` when the hub did not answer in 3 seconds (the hub then removes the participant after 60), and always `false` after `refused` and `replaced`.
+`left.reason` is `stopped` (a signal, exit `0`), `refused` (exit code of the hub's error), `replaced` (another runtime took over, exit `4`), `removed` (the hub removed this runtime, exit `4`), or `harnessExited` (exit `3`). `left.removed` is true for `removed` and false for `refused` and `replaced`. On local leave it is true if the hub removed the participant or confirmed it was already absent. It is false if another runtime owns the participant or the CLI could not confirm removal within 3 seconds.
 
-On a signal, an endpoint participant leaves the room first and then stops. A harness participant first takes the final artifact while the harness and the tunnel are still running (best effort, up to 2 seconds), then closes the tunnel, stops the harness, and leaves the room. A harness that is not installed or not logged in fails the join with exit code `3` and a message that says what to do.
+On a signal, an online endpoint participant leaves the room first and then stops. A runtime waiting to reconnect stops before sending the removal. If a signal interrupts the join and another runtime owns the ID, the CLI leaves that participant in the room, online or offline. On a terminal it prints `Stopped. Another participant runtime holds <id> in room <room>, and it stays there.` A harness participant first takes the final artifact while the harness and the tunnel are still running (best effort, up to 2 seconds), then closes the tunnel, stops the harness, and leaves the room. A harness that is not installed or not logged in fails the join with exit code `3` and a message that says what to do.
 
 Harness adapters and readiness checks, all local:
 
@@ -482,7 +493,7 @@ If neither OpenCode check gives a recognized answer, the join continues with a w
 
 ### Other commands
 
-- `participant leave` prints `{ "data": { "participantId" } }`. It removes the participant whoever hosts it. A runtime that is still running treats the closed tunnel as a drop and comes back about one second later, so use it for a participant whose runtime is gone; stop a live one with Ctrl+C in its own terminal.
+- `participant leave` reads the participant's `runtimeId` from the room listing and sends it with the removal. Success prints `{ "data": { "participantId" } }`. A connected `participant join` ends with `ParticipantRemoved`. If ownership changes between the list and the removal, `participant leave` exits with `ParticipantOfAnotherRuntime` (code `4`) and the new owner stays.
 - `events watch` ends with `0` on Ctrl+C and also when the hub closes the stream. It does not reconnect.
 - `self update` updates to the latest release (it cannot pick a version) with `bun`, with `npm`, or by replacing the standalone binary, depending on how gambi was installed. Outside a terminal it updates without asking. Answering no (or cancelling the question) exits `0`. A package manager failure exits `1` with its own exit code in `details.code`; a failed download exits `3`.
 

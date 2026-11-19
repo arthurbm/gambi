@@ -89,6 +89,7 @@ The local harness login never enters participant registration, lifecycle events,
 - **Same minor version on both ends.** The tunnel speaks the wire format of the RPC library Gambi is built on, which can change between minor versions. A hub refuses a participant from another minor at registration and names the version it expects.
 - **Requests in flight do not survive a drop.** A request the participant was answering when its tunnel dropped fails with `participant_disconnected`. The runtime comes back for the next one.
 - **A restarted hub forgets its rooms.** Rooms live in the hub's memory. A participant that tries to come back to a restarted hub hears that the room does not exist and stops (`left` with `reason: "refused"`). Create the room again and rejoin.
+- **Removal between retries.** `participant leave` closes a connected runtime's tunnel with `4002` and the runtime stops. If someone removes it while it waits between retries, there is no tunnel to receive the close code. Its next registration brings it back.
 
 ## Guarantees
 

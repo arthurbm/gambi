@@ -134,7 +134,9 @@ Another runtime joined the same room with the same participant ID, and the hub k
 
 ## A participant you removed comes back
 
-`gambi participant leave` (or `DELETE /v1/rooms/:code/participants/:id`) removes a participant whoever hosts it. If its `gambi participant join` is still running, that runtime treats the closed tunnel as a drop and registers again about one second later. To take a running participant out for good, stop its `participant join` with Ctrl+C on its own machine.
+When `gambi participant leave` removes a connected participant, the hub closes its tunnel with `4002`. Its `participant join` reports `left` with `reason: "removed"` and exits with code `4`.
+
+If someone removes the participant while its runtime is waiting between retries, there is no open or pending tunnel to receive `4002`. Its next attempt registers it again. Run `participant leave` once it is online, or stop `participant join` with Ctrl+C on its own machine.
 
 ## Streaming request ends with `consumer_too_slow`
 
