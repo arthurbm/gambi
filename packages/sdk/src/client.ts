@@ -274,7 +274,7 @@ export const createClient = (options: ClientOptions = {}): GambiClient => {
         call((management) =>
           management.harness.send({
             params: { code: roomCode, id: participantId },
-            payload: { sessionId, message },
+            payload: { sessionId, message: withoutUndefined(message) },
           })
         ),
     },

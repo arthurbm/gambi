@@ -490,6 +490,7 @@ Rules:
 - Each entry has its own error class (`ClientError`, `HubError`, `ParticipantError`), never one class shared by name: an entry embeds its own copy of everything, so the "same" class of two entries would fail `instanceof` across them.
 - Nothing crosses from one entry to another but plain JSON and `Promise`s. Each entry is one file with its own copy of `effect`: a `Layer`, an `Effect` or a schema of one entry means nothing to another.
 - A hosting entry never logs by itself. The log lines of what it hosts go to the `onLog` of its options, as plain JSON, or nowhere: stdout belongs to the program that hosts.
+- A callback of the consumer's (`onLifecycle`, `onArtifact`, `onLog`) is called through `calling` (`hosting.ts`) and never awaited. It may throw, and it may be `async` and reject later; either way nothing hosted fails for it, and the failure of the first two becomes an `ERROR` line for `onLog`. Awaiting it would deadlock a callback that stops its own session.
 - A hosting entry is Bun only and says so: its first import is `./bun-only.ts`, which throws in any other runtime before a missing built-in can fail in a stranger way.
 
 To cover another group of the contract in the client:
@@ -505,7 +506,7 @@ To host something new in the consumer's process, build it on `host` (`hosting.ts
 
 A participant session leaves a room in one of two orders, and the order is part of what it promises. A session that shares a model endpoint tells the hub first and stops its runtime after, so the room hears one event (`participant.removed`). A harness participant session stops its runtime first, because its last artifact goes up through the tunnel that leaving would close, and tells the hub after. A session whose runtime was `replaced` tells the hub nothing: the participant with that id in the room is another runtime. After any other end (`refused`, `tunnelDropped`) the participant in the room is still this one, `offline`, and leaving takes it out.
 
-A runtime that ended by itself holds nothing worth keeping, so the session releases what it hosted (the harness, the Workspace) and only then settles `ended`. While a session leaves, a drop of its tunnel is the hub closing the tunnel of the participant it took out: the runtime is released at its `reconnecting`, before it registers again. Both are started from the lifecycle callback and run after it returned (`queueMicrotask`): releasing waits for the fiber the callback runs in.
+A runtime that ended by itself holds nothing worth keeping, so the session releases what it hosted (the harness, the Workspace) and only then settles `ended`. While a session leaves, a drop of its tunnel is the hub closing the tunnel of the participant it took out: the runtime is released at its `reconnecting`, before it registers again, and a `tunnelDropped` end is reported as `stopped`. A session that leaves while its runtime is already waiting to come back stops the runtime first and tells the hub after, whatever its order. Both are started from the lifecycle callback and run after it returned (`queueMicrotask`): releasing waits for the fiber the callback runs in.
 
 A Workspace of the consumer's is watched as soon as it is prepared, before the harness starts, like the default one (`workspace-layer.ts`): a change is never missed for having come before the artifacts started to be taken.
 

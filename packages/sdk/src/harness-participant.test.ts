@@ -200,6 +200,8 @@ layer(layerHub(), { excludeTestServices: true })(
               params: {
                 sessionId: "roda-1",
                 prompt: [{ type: "text", text: "Oi" }],
+                // A key left undefined is a key not given, here too.
+                _meta: undefined,
               },
             })
           );
@@ -261,10 +263,13 @@ layer(layerHub(), { excludeTestServices: true })(
             changed?: () => void;
             context?: WorkspaceContext;
             disposed: boolean;
+            self?: unknown;
             watching: boolean;
           } = { disposed: false, watching: false };
           const workspace: Workspace = {
-            prepare: (context) => {
+            prepare(context) {
+              // The host's own object, not a copy of it.
+              seen.self = this;
               seen.context = context;
               return Promise.resolve({
                 path: folder,
@@ -311,6 +316,7 @@ layer(layerHub(), { excludeTestServices: true })(
             participantId: "frevo-bot",
             roomCode: room.roomCode,
           });
+          expect(seen.self).toBe(workspace);
           expect(session.harness.workspacePath).toBe(folder);
           expect(artifact).toMatchObject({
             sessionId: session.harness.sessionId,
@@ -458,12 +464,18 @@ layer(layerHub(), { excludeTestServices: true })(
           const folder = yield* emptyFolder;
           const collecting = Promise.withResolvers<void>();
           const collected = Promise.withResolvers<void>();
+          const left = Promise.withResolvers<string>();
           const session = yield* hosted({
             hubUrl: room.hubUrl,
             roomCode: room.roomCode,
             participantId: "frevo-bot",
             nickname: "Frevo bot",
             harness: "fake",
+            onLifecycle: (event) => {
+              if (event.type === "left") {
+                left.resolve(event.reason);
+              }
+            },
             // The last artifact is held: the session stays closing, with its
             // tunnel still open, for as long as the test wants.
             workspace: {
@@ -499,11 +511,14 @@ layer(layerHub(), { excludeTestServices: true })(
             ),
             (joined) => Effect.promise(() => joined.stop())
           );
-          const end = yield* Effect.promise(() => session.ended);
+          const reason = yield* Effect.promise(() => left.promise);
           collected.resolve();
           yield* Effect.promise(() => leaving);
 
-          expect(end).toEqual({ reason: "replaced" });
+          expect(reason).toBe("replaced");
+          expect(yield* Effect.promise(() => session.ended)).toEqual({
+            reason: "replaced",
+          });
           expect(other.participant.nickname).toBe("Another frevo bot");
           const participants = yield* Effect.promise(() =>
             room.client.participants.list(room.roomCode)

@@ -12,32 +12,74 @@ import type { LogEntry } from "./log.ts";
 import { makePromiseBoundary, type PromiseBoundary } from "./promise.ts";
 
 /**
+ * A callback of the consumer's, as something hosted calls it: it may throw,
+ * and it may be `async` and reject later (an `async` function is a valid
+ * `=> void` callback). Either way `failed` hears of it and nothing of what
+ * is hosted fails for it. The callback is never awaited.
+ */
+export const calling =
+  <Args extends readonly unknown[]>(
+    callback: ((...args: Args) => void) | undefined,
+    failed: (cause: unknown) => void
+  ) =>
+  (...args: Args): void => {
+    try {
+      const answer: unknown = callback?.(...args);
+      if (answer instanceof Promise) {
+        answer.catch(failed);
+      }
+    } catch (cause) {
+      failed(cause);
+    }
+  };
+
+/**
+ * `onLog`, safe to call. A sink that fails must not fail what was only being
+ * logged, and there is nowhere left to say so.
+ */
+const sink = (
+  onLog: ((entry: LogEntry) => void) | undefined
+): ((entry: LogEntry) => void) => calling(onLog, () => undefined);
+
+/**
+ * What a failure of another callback of the consumer's becomes: a log line
+ * of level `ERROR`, for `onLog`.
+ */
+export const failureTo =
+  (onLog: ((entry: LogEntry) => void) | undefined, message: string) =>
+  (cause: unknown): void =>
+    sink(onLog)({
+      annotations: {},
+      cause: String(cause),
+      level: "ERROR",
+      message,
+      timestamp: new Date().toISOString(),
+    });
+
+/**
  * Where the log lines of something hosted go: to `onLog`, or nowhere. Never
  * to stdout by themselves, which belongs to the program that hosts.
  */
 export const logsTo = (
   onLog: ((entry: LogEntry) => void) | undefined
-): Layer.Layer<never> =>
-  Logger.layer(
+): Layer.Layer<never> => {
+  const tell = sink(onLog);
+  return Logger.layer(
     onLog === undefined
       ? []
       : [
           Logger.map(Logger.formatStructured, (line) => {
-            try {
-              onLog({
-                annotations: line.annotations,
-                level: line.level,
-                message: line.message,
-                timestamp: line.timestamp,
-                ...(line.cause === undefined ? {} : { cause: line.cause }),
-              });
-            } catch {
-              // A sink that throws must not fail what was only being logged,
-              // and there is nowhere left to say so.
-            }
+            tell({
+              annotations: line.annotations,
+              level: line.level,
+              message: line.message,
+              timestamp: line.timestamp,
+              ...(line.cause === undefined ? {} : { cause: line.cause }),
+            });
           }),
         ]
   );
+};
 
 /** `layer`, failing with `translate(error)` instead of with its own error. */
 export const failingWith =

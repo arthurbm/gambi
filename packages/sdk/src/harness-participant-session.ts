@@ -5,6 +5,7 @@ import { ParticipantRuntime } from "@gambi/core/participant/runtime";
 import { Effect, Layer } from "effect";
 import { DEFAULT_HUB_URL } from "./client.ts";
 import { type FakeAgentCommand, ownFakeAgentCommand } from "./fake-harness.ts";
+import { calling, failureTo } from "./hosting.ts";
 import { withoutUndefined } from "./input.ts";
 import { ParticipantError } from "./participant-error.ts";
 import { joinRoom } from "./session.ts";
@@ -186,7 +187,9 @@ export const createHarnessParticipantSession = async (
   const hubUrl = options.hubUrl ?? DEFAULT_HUB_URL;
   const { harness: id, participantId, roomCode } = options;
   const model = options.model ?? id;
-  const workspace = options.workspace ?? createLocalDirectoryWorkspace();
+  // The host's own object, not the copy the cleaning of the options made:
+  // a Workspace may be an object with state of its own.
+  const workspace = input.workspace ?? createLocalDirectoryWorkspace();
   let notes: readonly string[] = [];
   let warning: string | undefined;
 
@@ -220,7 +223,10 @@ export const createHarnessParticipantSession = async (
           ).pipe(Effect.provide(HarnessTools.layer));
           notes = resolved.notes;
           warning = resolved.warning;
-          const onArtifact = options.onArtifact;
+          const tellHost = calling(
+            options.onArtifact,
+            failureTo(options.onLog, "The onArtifact callback failed.")
+          );
           return harnessParticipant({
             runtime: {
               hubUrl,
@@ -249,18 +255,7 @@ export const createHarnessParticipantSession = async (
               finalTimeout: options.artifacts?.finalTimeoutMs,
               maxBytes: options.artifacts?.maxBytes,
               settleTime: options.artifacts?.settleTimeMs,
-              onArtifact:
-                onArtifact === undefined
-                  ? undefined
-                  : (event) =>
-                      Effect.sync(() => onArtifact(event)).pipe(
-                        Effect.catchCause((cause) =>
-                          Effect.logError(
-                            "The onArtifact callback threw.",
-                            cause
-                          )
-                        )
-                      ),
+              onArtifact: (event) => Effect.sync(() => tellHost(event)),
             },
           }).pipe(
             Layer.provide(

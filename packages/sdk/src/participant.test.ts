@@ -13,6 +13,7 @@ import { Effect } from "effect";
 import { createClient } from "./client.ts";
 import {
   createParticipantSession,
+  type LogEntry,
   ParticipantError,
   type ParticipantLifecycleEvent,
   type ParticipantSessionOptions,
@@ -92,6 +93,8 @@ const arthur = (room: { hubUrl: string; roomCode: string }) => ({
  * - `holdAnswersToLeaves`: the `DELETE` reaches the hub, which takes the
  *   participant out, and the answer is held on its way back until
  *   `releaseAnswers`.
+ * - `dropConnections`: every open connection is cut, the tunnel included.
+ *   New ones go through.
  */
 const hubThatStopsAnsweringLeaves = Effect.gen(function* () {
   const hub = yield* Hub;
@@ -155,6 +158,12 @@ const hubThatStopsAnsweringLeaves = Effect.gen(function* () {
   return {
     /** Completes when the client gave up a request to leave it had sent. */
     abandoned: Effect.promise(() => abandoned.promise),
+    dropConnections: Effect.sync(() => {
+      for (const socket of sockets) {
+        socket.destroy();
+      }
+      sockets.clear();
+    }),
     holdAnswersToLeaves: Effect.sync(() => {
       holdingAnswers = true;
     }),
@@ -354,6 +363,116 @@ layer(layerHub(), { excludeTestServices: true })(
               room.client.participants.list(room.roomCode)
             )
           ).toEqual([]);
+        })
+    );
+
+    it.effect(
+      "leaving while the runtime waits to come back stops it first, so it does not come back",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* frevo;
+          const hub = yield* hubThatStopsAnsweringLeaves;
+          const waiting = Promise.withResolvers<void>();
+          const session = yield* joined({
+            ...arthur(room),
+            hubUrl: hub.url,
+            leaveTimeoutMs: 600_000,
+            onLifecycle: (event) => {
+              if (event.type === "reconnecting") {
+                waiting.resolve();
+              }
+            },
+          });
+          const watch = yield* watching(room.roomCode);
+
+          yield* hub.dropConnections;
+          yield* Effect.promise(() => waiting.promise);
+          yield* hub.holdAnswersToLeaves;
+          const leaving = session.leave();
+          // The runtime is stopped before the hub is told: its attempt to
+          // come back, a second from now, never happens.
+          const end = yield* Effect.promise(() => session.ended);
+          const offline = yield* watch.next;
+          const removed = yield* watch.next;
+          yield* hub.releaseAnswers;
+          yield* Effect.promise(() => leaving);
+
+          expect(end).toEqual({ reason: "stopped" });
+          expect(offline.type).toBe("participant.offline");
+          expect(removed.type).toBe("participant.removed");
+          expect(
+            yield* Effect.promise(() =>
+              room.client.participants.list(room.roomCode)
+            )
+          ).toEqual([]);
+        })
+    );
+
+    it.effect(
+      "a session that does not reconnect still ends as stopped when it is the hub that closes its tunnel on the way out",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* frevo;
+          const hub = yield* hubThatStopsAnsweringLeaves;
+          const session = yield* joined({
+            ...arthur(room),
+            hubUrl: hub.url,
+            leaveTimeoutMs: 600_000,
+            reconnect: false,
+          });
+
+          yield* hub.holdAnswersToLeaves;
+          const leaving = session.leave();
+          const end = yield* Effect.promise(() => session.ended);
+          yield* hub.releaseAnswers;
+          yield* Effect.promise(() => leaving);
+
+          expect(end).toEqual({ reason: "stopped" });
+        })
+    );
+
+    it.effect(
+      "a callback that fails, at once or later, is told to onLog and stops nothing",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* frevo;
+          const lines: LogEntry[] = [];
+          const told = Promise.withResolvers<void>();
+          const session = yield* joined({
+            ...arthur(room),
+            // An `async` function is a valid `=> void` callback.
+            onLifecycle: (event) =>
+              event.type === "connected"
+                ? Promise.reject(new Error("The screen is gone."))
+                : (() => {
+                    throw new Error("The screen is still gone.");
+                  })(),
+            onLog: (entry) => {
+              lines.push(entry);
+              if (lines.filter((line) => line.level === "ERROR").length === 2) {
+                told.resolve();
+              }
+              return Promise.reject(new Error("The log sink is broken."));
+            },
+          });
+
+          yield* Effect.promise(() => session.leave());
+          yield* Effect.promise(() => told.promise);
+
+          expect(
+            lines
+              .filter((line) => line.level === "ERROR")
+              .map((line) => [line.message, line.cause])
+          ).toEqual([
+            ["The onLifecycle callback failed.", "Error: The screen is gone."],
+            [
+              "The onLifecycle callback failed.",
+              "Error: The screen is still gone.",
+            ],
+          ]);
+          expect(yield* Effect.promise(() => session.ended)).toEqual({
+            reason: "stopped",
+          });
         })
     );
 

@@ -13,7 +13,7 @@ import { Effect, Layer } from "effect";
 import { FetchHttpClient, type HttpClient } from "effect/http";
 import type { Socket } from "effect/socket";
 import { createClient } from "./client.ts";
-import { failingWith, host, logsTo } from "./hosting.ts";
+import { calling, failingWith, failureTo, host, logsTo } from "./hosting.ts";
 import type { ParticipantError } from "./participant-error.ts";
 import {
   type ParticipantFailure,
@@ -67,6 +67,8 @@ export const joinRoom = async <A, R>(options: {
   let stopping = false;
   // Another runtime has this participant's id now: the room's is not ours.
   let replaced = false;
+  // Whether the tunnel is open, as far as the runtime said.
+  let online = true;
   // How the runtime ended, once it did.
   let end: ParticipantSessionEnd | undefined;
   // Releases everything the session holds. Set once the join returned.
@@ -86,33 +88,44 @@ export const joinRoom = async <A, R>(options: {
     release().then(resolve, resolve);
   };
 
+  const tellHost = calling(
+    options.onLifecycle,
+    failureTo(options.onLog, "The onLifecycle callback failed.")
+  );
+
   // Releasing waits for the runtime's fibers, and this runs inside one of
   // them: whatever releases is started after the callback returned.
   const onLifecycle = (event: RuntimeLifecycleEvent) =>
     Effect.sync(() => {
       if (event.type === "left") {
         replaced = event.reason === "replaced";
+        // A tunnel that drops while the session leaves is the hub closing
+        // the tunnel of the participant it took out: our own doing.
+        const reason =
+          stopping && event.reason === "tunnelDropped"
+            ? "stopped"
+            : event.reason;
         end = {
-          reason: event.reason,
+          reason,
           ...(event.error === undefined ? {} : { error: event.error }),
         };
         queueMicrotask(settle);
-      } else if (stopping) {
-        // The hub closed the tunnel of the participant it took out. The
-        // runtime stops here, before it registers again as if that were a
-        // drop to come back from.
+        tellHost({ ...event, reason });
+        return;
+      }
+      online = event.type === "connected";
+      if (stopping) {
+        // The same closing, seen by a runtime that reconnects: it stops
+        // here, before it registers again as if that were a drop to come
+        // back from.
         if (event.type === "reconnecting") {
           // `leave` awaits the same release and hears how it went.
           queueMicrotask(() => release?.().catch(() => undefined));
         }
         return;
       }
-      options.onLifecycle?.(event);
-    }).pipe(
-      Effect.catchCause((cause) =>
-        Effect.logError("The onLifecycle callback threw.", cause)
-      )
-    );
+      tellHost(event);
+    });
 
   const { boundary, value } = await host(
     options
@@ -163,10 +176,12 @@ export const joinRoom = async <A, R>(options: {
     stopping = true;
     if (replaced) {
       await boundary.close();
-    } else if (options.leaves === "beforeStopping") {
+    } else if (options.leaves === "beforeStopping" && online) {
       await tellHub();
       await boundary.close();
     } else {
+      // Also for a runtime that is waiting to come back: stopped first, it
+      // cannot register again after the hub took the participant out.
       await boundary.close();
       // Closing takes a while (the last artifact), and the tunnel is open
       // meanwhile: another runtime may have taken this participant's place.
