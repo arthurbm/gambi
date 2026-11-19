@@ -363,6 +363,32 @@ layer(layerHub(), { excludeTestServices: true })(
     );
 
     it.effect(
+      "a fast reader receives the full closing events of a large translated Response",
+      () =>
+        Effect.gen(function* () {
+          const room = yield* makeRoom("Cauda");
+          const chunk = chatChunk({ content: "x".repeat(64 * 1024) });
+          const provider = yield* fakeProvider({
+            answer: () => sseAnswer(new Array<string>(48).fill(chunk)),
+          });
+          yield* joinParticipant({
+            roomCode: room.code,
+            participantId: "arthur-1",
+            profile: { capabilities: chatOnly },
+            provider: { endpoint: provider.url },
+          });
+          const response = yield* post(room.url("/responses"), {
+            model: "arthur-1",
+            input: "Oi",
+            stream: true,
+          });
+          const body = yield* Effect.promise(() => response.text());
+          expect(body.includes("event: response.completed")).toBe(true);
+          expect(body.trimEnd().endsWith("data: [DONE]")).toBe(true);
+        })
+    );
+
+    it.effect(
       "cancelling a streamed Response that goes through Chat Completions aborts the request to the provider and frees the participant",
       () =>
         Effect.gen(function* () {

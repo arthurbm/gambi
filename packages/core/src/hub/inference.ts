@@ -518,7 +518,6 @@ const respond = Effect.fnUntraced(function* (
         return Effect.flatMap(stream.piece(text), send);
       })
     ),
-    Effect.andThen(Effect.flatMap(stream.end, send)),
     Effect.tap(() => Effect.sync(() => report.completed(answer.status))),
     Effect.tapError((error) => {
       report.failed(error);
@@ -539,7 +538,9 @@ const respond = Effect.fnUntraced(function* (
     Stream.map((text) => {
       waiting -= text.length;
       return text;
-    })
+    }),
+    // The provider has finished. Build the closing events when the app reads them.
+    Stream.concat(Stream.fromEffect(stream.end))
   );
   return {
     streaming: true,
